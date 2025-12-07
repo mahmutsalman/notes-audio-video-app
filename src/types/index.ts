@@ -98,6 +98,7 @@ export interface ElectronAPI {
   };
   clipboard: {
     readImage: () => Promise<{ success: boolean; buffer?: ArrayBuffer; extension?: string }>;
+    readFileUrl: () => Promise<{ success: boolean; filePath?: string }>;
   };
 }
 

@@ -212,5 +212,18 @@ export function setupIpcHandlers(): void {
     };
   });
 
+  ipcMain.handle('clipboard:readFileUrl', async () => {
+    if (process.platform === 'darwin') {
+      const fileUrl = clipboard.read('public.file-url');
+      if (fileUrl) {
+        // Decode the file URL and remove the file:// prefix
+        const filePath = decodeURIComponent(fileUrl.replace('file://', ''));
+        return { success: true, filePath };
+      }
+    }
+    // Windows support could be added here with clipboard.read('FileNameW')
+    return { success: false };
+  });
+
   console.log('IPC handlers registered');
 }

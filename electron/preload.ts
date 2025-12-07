@@ -74,6 +74,8 @@ const electronAPI = {
   clipboard: {
     readImage: (): Promise<{ success: boolean; buffer?: Buffer; extension?: string }> =>
       ipcRenderer.invoke('clipboard:readImage'),
+    readFileUrl: (): Promise<{ success: boolean; filePath?: string }> =>
+      ipcRenderer.invoke('clipboard:readFileUrl'),
   },
 };
 

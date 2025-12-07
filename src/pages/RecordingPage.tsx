@@ -70,29 +70,26 @@ export default function RecordingPage() {
   const handleAddVideos = async () => {
     if (!id) return;
     try {
-      const clipboardItems = await navigator.clipboard.read();
-      let foundVideo = false;
+      // Try to read file URL from clipboard (works with CleanShot, Finder, etc.)
+      const result = await window.electronAPI.clipboard.readFileUrl();
 
-      for (const item of clipboardItems) {
-        // Look for video types
-        const videoType = item.types.find(type => type.startsWith('video/'));
-        if (videoType) {
-          const blob = await item.getType(videoType);
-          const arrayBuffer = await blob.arrayBuffer();
-          const extension = videoType.split('/')[1] || 'mp4';
-          await window.electronAPI.media.addVideoFromClipboard(id, arrayBuffer, extension);
-          foundVideo = true;
+      if (result.success && result.filePath) {
+        // Check if the file is a video by extension
+        const videoExtensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v'];
+        const ext = result.filePath.toLowerCase().slice(result.filePath.lastIndexOf('.'));
+
+        if (videoExtensions.includes(ext)) {
+          await window.electronAPI.media.addVideo(id, result.filePath);
+          await refetch();
+        } else {
+          alert(`The copied file is not a video (${ext}). Supported formats: MP4, MOV, WebM, AVI, MKV, M4V`);
         }
-      }
-
-      if (foundVideo) {
-        await refetch();
       } else {
-        alert('No video found in clipboard. Note: Videos in clipboard are rarely supported by most systems.');
+        alert('No file found in clipboard. Copy a video file first (e.g., from CleanShot or Finder), then click Paste.');
       }
     } catch (error) {
       console.error('Failed to read clipboard:', error);
-      alert('Could not read clipboard. Make sure you have copied a video.');
+      alert('Could not read clipboard. Make sure you have copied a video file.');
     }
   };
 

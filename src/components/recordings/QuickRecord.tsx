@@ -17,7 +17,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [selectedImages, setSelectedImages] = useState<{ data: ArrayBuffer; extension: string }[]>([]);
-  const [selectedVideos, setSelectedVideos] = useState<{ data: ArrayBuffer; extension: string }[]>([]);
+  const [selectedVideos, setSelectedVideos] = useState<string[]>([]); // File paths from clipboard
 
   const recorder = useVoiceRecorder();
 
@@ -59,26 +59,25 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
 
   const handlePickVideos = async () => {
     try {
-      const clipboardItems = await navigator.clipboard.read();
-      let foundVideo = false;
+      // Try to read file URL from clipboard (works with CleanShot, Finder, etc.)
+      const result = await window.electronAPI.clipboard.readFileUrl();
 
-      for (const item of clipboardItems) {
-        const videoType = item.types.find(type => type.startsWith('video/'));
-        if (videoType) {
-          const blob = await item.getType(videoType);
-          const arrayBuffer = await blob.arrayBuffer();
-          const extension = videoType.split('/')[1] || 'mp4';
-          setSelectedVideos(prev => [...prev, { data: arrayBuffer, extension }]);
-          foundVideo = true;
+      if (result.success && result.filePath) {
+        // Check if the file is a video by extension
+        const videoExtensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v'];
+        const ext = result.filePath.toLowerCase().slice(result.filePath.lastIndexOf('.'));
+
+        if (videoExtensions.includes(ext)) {
+          setSelectedVideos(prev => [...prev, result.filePath!]);
+        } else {
+          alert(`The copied file is not a video (${ext}). Supported formats: MP4, MOV, WebM, AVI, MKV, M4V`);
         }
-      }
-
-      if (!foundVideo) {
-        alert('No video found in clipboard. Note: Videos in clipboard are rarely supported.');
+      } else {
+        alert('No file found in clipboard. Copy a video file first (e.g., from CleanShot or Finder), then click Paste.');
       }
     } catch (error) {
       console.error('Failed to read clipboard:', error);
-      alert('Could not read clipboard. Make sure you have copied a video.');
+      alert('Could not read clipboard. Make sure you have copied a video file.');
     }
   };
 
@@ -109,9 +108,9 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
         await window.electronAPI.media.addImageFromClipboard(recording.id, image.data, image.extension);
       }
 
-      // Add videos from clipboard data
-      for (const video of selectedVideos) {
-        await window.electronAPI.media.addVideoFromClipboard(recording.id, video.data, video.extension);
+      // Add videos from file paths
+      for (const videoPath of selectedVideos) {
+        await window.electronAPI.media.addVideo(recording.id, videoPath);
       }
 
       // Reset and close
@@ -232,10 +231,11 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                     </div>
                   );
                 })}
-                {selectedVideos.map((_, i) => (
+                {selectedVideos.map((videoPath, i) => (
                   <div
                     key={i}
                     className="relative w-16 h-16 rounded overflow-hidden bg-gray-100 dark:bg-dark-border flex items-center justify-center"
+                    title={videoPath.split('/').pop()}
                   >
                     <span className="text-2xl">🎬</span>
                     <button
