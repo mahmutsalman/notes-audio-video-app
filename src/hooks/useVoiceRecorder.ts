@@ -37,6 +37,8 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const startTimeRef = useRef<number>(0);
+  const accumulatedTimeRef = useRef<number>(0);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -111,13 +113,18 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
       // Start recording
       mediaRecorder.start(100); // Collect data every 100ms
 
-      // Start duration timer
+      // Start duration tracking with timestamps for accuracy
+      startTimeRef.current = Date.now();
+      accumulatedTimeRef.current = 0;
+
+      // Update display every 100ms for smooth UI
       timerRef.current = setInterval(() => {
+        const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
         setState(prev => ({
           ...prev,
-          duration: prev.duration + 1,
+          duration: Math.floor(elapsed / 1000),
         }));
-      }, 1000);
+      }, 100);
 
       setState(prev => ({
         ...prev,
@@ -188,6 +195,9 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     if (mediaRecorder && mediaRecorder.state === 'recording') {
       mediaRecorder.pause();
 
+      // Accumulate elapsed time before pausing
+      accumulatedTimeRef.current += Date.now() - startTimeRef.current;
+
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -203,12 +213,16 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     if (mediaRecorder && mediaRecorder.state === 'paused') {
       mediaRecorder.resume();
 
+      // Reset start time for new segment
+      startTimeRef.current = Date.now();
+
       timerRef.current = setInterval(() => {
+        const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
         setState(prev => ({
           ...prev,
-          duration: prev.duration + 1,
+          duration: Math.floor(elapsed / 1000),
         }));
-      }, 1000);
+      }, 100);
 
       setState(prev => ({ ...prev, isPaused: false }));
     }
@@ -255,6 +269,8 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
 
     audioChunksRef.current = [];
     mediaRecorderRef.current = null;
+    startTimeRef.current = 0;
+    accumulatedTimeRef.current = 0;
   }, [state.audioUrl]);
 
   return {

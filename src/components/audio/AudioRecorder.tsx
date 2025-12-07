@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { UseVoiceRecorderReturn } from '../../hooks/useVoiceRecorder';
 import { formatDuration } from '../../utils/formatters';
 import WaveformVisualizer from './WaveformVisualizer';
@@ -18,6 +19,24 @@ export default function AudioRecorder({ recorder, onStopRecording }: AudioRecord
     pauseRecording,
     resumeRecording,
   } = recorder;
+
+  // Space bar keyboard shortcut for pause/resume
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle space bar when recording is active
+      if (e.code === 'Space' && isRecording) {
+        e.preventDefault(); // Prevent page scroll
+        if (isPaused) {
+          resumeRecording();
+        } else {
+          pauseRecording();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isRecording, isPaused, pauseRecording, resumeRecording]);
 
   return (
     <div className="flex flex-col items-center py-8">
@@ -103,7 +122,7 @@ export default function AudioRecorder({ recorder, onStopRecording }: AudioRecord
       {/* Instructions */}
       <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
         {isRecording
-          ? 'Click stop when finished recording'
+          ? 'Press Space to pause/resume • Click stop when finished'
           : 'Click the microphone to start recording'}
       </p>
     </div>
