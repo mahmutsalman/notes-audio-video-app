@@ -283,8 +283,16 @@ export default function RecordingPage() {
                 key={video.id}
                 className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-dark-hover rounded-lg group"
               >
-                <div className="w-16 h-16 rounded bg-gray-200 dark:bg-dark-border flex items-center justify-center text-2xl">
-                  🎬
+                <div className="w-16 h-16 rounded bg-gray-200 dark:bg-dark-border flex items-center justify-center overflow-hidden">
+                  {video.thumbnail_path ? (
+                    <img
+                      src={window.electronAPI.paths.getFileUrl(video.thumbnail_path)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-2xl">🎬</span>
+                  )}
                 </div>
                 <div className="flex-1">
                   <p className="text-gray-900 dark:text-gray-100 font-medium">

@@ -2,6 +2,7 @@ import { app } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
+import { generateVideoThumbnail } from './videoThumbnail';
 
 const MEDIA_DIR = path.join(app.getPath('userData'), 'media');
 
@@ -114,10 +115,11 @@ export async function saveVideoFile(
   await fs.copyFile(sourcePath, filePath);
   console.log('Video saved to:', filePath);
 
-  // TODO: Extract thumbnail with ffmpeg
-  // TODO: Get duration with ffprobe
-  const thumbnailPath = null;
-  const duration = null;
+  // Generate thumbnail using canvas-based approach
+  const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
+  const thumbnailPath = await generateVideoThumbnail(filePath, thumbPath);
+
+  const duration = null; // TODO: Get duration if needed
 
   return { filePath, thumbnailPath, duration };
 }
@@ -138,8 +140,11 @@ export async function saveVideoFromBuffer(
   await fs.writeFile(filePath, Buffer.from(videoBuffer));
   console.log('Video saved from clipboard to:', filePath);
 
-  const thumbnailPath = null;
-  const duration = null;
+  // Generate thumbnail using canvas-based approach
+  const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
+  const thumbnailPath = await generateVideoThumbnail(filePath, thumbPath);
+
+  const duration = null; // TODO: Get duration if needed
 
   return { filePath, thumbnailPath, duration };
 }
