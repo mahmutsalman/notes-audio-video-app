@@ -138,7 +138,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
 
             {/* Audio player */}
             {recorder.audioUrl && (
-              <AudioPlayer src={recorder.audioUrl} />
+              <AudioPlayer src={recorder.audioUrl} duration={recorder.duration} />
             )}
 
             {/* Notes input */}

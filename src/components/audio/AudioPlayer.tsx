@@ -3,20 +3,29 @@ import { formatDuration } from '../../utils/formatters';
 
 interface AudioPlayerProps {
   src: string;
+  duration?: number;  // Optional: pass duration explicitly for blob URLs
 }
 
-export default function AudioPlayer({ src }: AudioPlayerProps) {
+export default function AudioPlayer({ src, duration: propDuration }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [metadataDuration, setMetadataDuration] = useState(0);
+
+  // Use prop duration if provided (for blob URLs), otherwise use metadata
+  const duration = propDuration ?? metadataDuration;
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
     const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const handleDurationChange = () => setDuration(audio.duration);
+    const handleDurationChange = () => {
+      // Only use metadata duration if it's valid (not NaN, Infinity)
+      if (Number.isFinite(audio.duration)) {
+        setMetadataDuration(audio.duration);
+      }
+    };
     const handleEnded = () => setIsPlaying(false);
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
