@@ -16,8 +16,8 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
   const [phase, setPhase] = useState<'recording' | 'review'>('recording');
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [selectedImages, setSelectedImages] = useState<string[]>([]);
-  const [selectedVideos, setSelectedVideos] = useState<string[]>([]);
+  const [selectedImages, setSelectedImages] = useState<{ data: ArrayBuffer; extension: string }[]>([]);
+  const [selectedVideos, setSelectedVideos] = useState<{ data: ArrayBuffer; extension: string }[]>([]);
 
   const recorder = useVoiceRecorder();
 
@@ -43,13 +43,43 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
   };
 
   const handlePickImages = async () => {
-    const files = await window.electronAPI.media.pickFiles('image');
-    setSelectedImages(prev => [...prev, ...files]);
+    try {
+      const result = await window.electronAPI.clipboard.readImage();
+
+      if (result.success && result.buffer) {
+        setSelectedImages(prev => [...prev, { data: result.buffer!, extension: result.extension || 'png' }]);
+      } else {
+        alert('No image found in clipboard. Copy an image first, then click Paste.');
+      }
+    } catch (error) {
+      console.error('Failed to read clipboard:', error);
+      alert('Could not read clipboard. Make sure you have copied an image.');
+    }
   };
 
   const handlePickVideos = async () => {
-    const files = await window.electronAPI.media.pickFiles('video');
-    setSelectedVideos(prev => [...prev, ...files]);
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      let foundVideo = false;
+
+      for (const item of clipboardItems) {
+        const videoType = item.types.find(type => type.startsWith('video/'));
+        if (videoType) {
+          const blob = await item.getType(videoType);
+          const arrayBuffer = await blob.arrayBuffer();
+          const extension = videoType.split('/')[1] || 'mp4';
+          setSelectedVideos(prev => [...prev, { data: arrayBuffer, extension }]);
+          foundVideo = true;
+        }
+      }
+
+      if (!foundVideo) {
+        alert('No video found in clipboard. Note: Videos in clipboard are rarely supported.');
+      }
+    } catch (error) {
+      console.error('Failed to read clipboard:', error);
+      alert('Could not read clipboard. Make sure you have copied a video.');
+    }
   };
 
   const handleSave = async () => {
@@ -74,14 +104,14 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
         `recording_${Date.now()}.webm`
       );
 
-      // Add images
-      for (const imagePath of selectedImages) {
-        await window.electronAPI.media.addImage(recording.id, imagePath);
+      // Add images from clipboard data
+      for (const image of selectedImages) {
+        await window.electronAPI.media.addImageFromClipboard(recording.id, image.data, image.extension);
       }
 
-      // Add videos
-      for (const videoPath of selectedVideos) {
-        await window.electronAPI.media.addVideo(recording.id, videoPath);
+      // Add videos from clipboard data
+      for (const video of selectedVideos) {
+        await window.electronAPI.media.addVideoFromClipboard(recording.id, video.data, video.extension);
       }
 
       // Reset and close
@@ -163,7 +193,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                 onClick={handlePickImages}
                 type="button"
               >
-                + Images {selectedImages.length > 0 && `(${selectedImages.length})`}
+                📋 Paste Image {selectedImages.length > 0 && `(${selectedImages.length})`}
               </Button>
               <Button
                 variant="secondary"
@@ -171,32 +201,38 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                 onClick={handlePickVideos}
                 type="button"
               >
-                + Videos {selectedVideos.length > 0 && `(${selectedVideos.length})`}
+                📋 Paste Video {selectedVideos.length > 0 && `(${selectedVideos.length})`}
               </Button>
             </div>
 
             {/* Preview selected files */}
             {(selectedImages.length > 0 || selectedVideos.length > 0) && (
               <div className="flex flex-wrap gap-2">
-                {selectedImages.map((path, i) => (
-                  <div
-                    key={i}
-                    className="relative w-16 h-16 rounded overflow-hidden bg-gray-100 dark:bg-dark-border"
-                  >
-                    <img
-                      src={window.electronAPI.paths.getFileUrl(path)}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      onClick={() => setSelectedImages(prev => prev.filter((_, idx) => idx !== i))}
-                      className="absolute top-0 right-0 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center"
+                {selectedImages.map((image, i) => {
+                  // Create a blob URL for preview
+                  const blob = new Blob([image.data], { type: `image/${image.extension}` });
+                  const previewUrl = URL.createObjectURL(blob);
+                  return (
+                    <div
+                      key={i}
+                      className="relative w-16 h-16 rounded overflow-hidden bg-gray-100 dark:bg-dark-border"
                     >
-                      ×
-                    </button>
-                  </div>
-                ))}
-                {selectedVideos.map((_path, i) => (
+                      <img
+                        src={previewUrl}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        onLoad={() => URL.revokeObjectURL(previewUrl)}
+                      />
+                      <button
+                        onClick={() => setSelectedImages(prev => prev.filter((_, idx) => idx !== i))}
+                        className="absolute top-0 right-0 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+                {selectedVideos.map((_, i) => (
                   <div
                     key={i}
                     className="relative w-16 h-16 rounded overflow-hidden bg-gray-100 dark:bg-dark-border flex items-center justify-center"

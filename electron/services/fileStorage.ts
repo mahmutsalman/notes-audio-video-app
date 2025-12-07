@@ -76,6 +76,28 @@ export async function saveImageFile(
   return { filePath, thumbnailPath };
 }
 
+export async function saveImageFromBuffer(
+  recordingId: number,
+  imageBuffer: ArrayBuffer,
+  extension: string = 'png'
+): Promise<{ filePath: string; thumbnailPath: string | null }> {
+  const dir = path.join(MEDIA_DIR, 'images', String(recordingId));
+  const thumbDir = path.join(dir, 'thumbnails');
+  await fs.mkdir(thumbDir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+
+  // Write buffer directly to file
+  await fs.writeFile(filePath, Buffer.from(imageBuffer));
+  console.log('Image saved from clipboard to:', filePath);
+
+  // Use original as thumbnail for now
+  const thumbnailPath = filePath;
+
+  return { filePath, thumbnailPath };
+}
+
 export async function saveVideoFile(
   recordingId: number,
   sourcePath: string
@@ -94,6 +116,28 @@ export async function saveVideoFile(
 
   // TODO: Extract thumbnail with ffmpeg
   // TODO: Get duration with ffprobe
+  const thumbnailPath = null;
+  const duration = null;
+
+  return { filePath, thumbnailPath, duration };
+}
+
+export async function saveVideoFromBuffer(
+  recordingId: number,
+  videoBuffer: ArrayBuffer,
+  extension: string = 'mp4'
+): Promise<{ filePath: string; thumbnailPath: string | null; duration: number | null }> {
+  const dir = path.join(MEDIA_DIR, 'videos', String(recordingId));
+  const thumbDir = path.join(dir, 'thumbnails');
+  await fs.mkdir(thumbDir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+
+  // Write buffer directly to file
+  await fs.writeFile(filePath, Buffer.from(videoBuffer));
+  console.log('Video saved from clipboard to:', filePath);
+
   const thumbnailPath = null;
   const duration = null;
 

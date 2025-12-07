@@ -78,6 +78,8 @@ export interface ElectronAPI {
   media: {
     addImage: (recordingId: number, filePath: string) => Promise<Image>;
     addVideo: (recordingId: number, filePath: string) => Promise<Video>;
+    addImageFromClipboard: (recordingId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<Image>;
+    addVideoFromClipboard: (recordingId: number, videoBuffer: ArrayBuffer, extension?: string) => Promise<Video>;
     getImages: (recordingId: number) => Promise<Image[]>;
     getVideos: (recordingId: number) => Promise<Video[]>;
     deleteImage: (id: number) => Promise<void>;
@@ -93,6 +95,9 @@ export interface ElectronAPI {
     get: () => Promise<'light' | 'dark' | 'system'>;
     set: (theme: 'light' | 'dark' | 'system') => Promise<void>;
     onSystemThemeChange: (callback: (isDark: boolean) => void) => () => void;
+  };
+  clipboard: {
+    readImage: () => Promise<{ success: boolean; buffer?: ArrayBuffer; extension?: string }>;
   };
 }
 

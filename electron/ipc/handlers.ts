@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, nativeTheme } from 'electron';
+import { ipcMain, dialog, shell, nativeTheme, clipboard } from 'electron';
 import {
   TopicsOperations,
   RecordingsOperations,
@@ -9,7 +9,9 @@ import {
   saveAudioFile,
   getAudioPath,
   saveImageFile,
+  saveImageFromBuffer,
   saveVideoFile,
+  saveVideoFromBuffer,
   deleteFile,
   deleteRecordingMedia,
   getMediaDir,
@@ -133,6 +135,28 @@ export function setupIpcHandlers(): void {
     VideosOperations.delete(id);
   });
 
+  // Clipboard-based media addition
+  ipcMain.handle('media:addImageFromClipboard', async (_, recordingId: number, imageBuffer: ArrayBuffer, extension: string = 'png') => {
+    const { filePath, thumbnailPath } = await saveImageFromBuffer(recordingId, imageBuffer, extension);
+    return ImagesOperations.create({
+      recording_id: recordingId,
+      file_path: filePath,
+      thumbnail_path: thumbnailPath,
+      sort_order: 0,
+    });
+  });
+
+  ipcMain.handle('media:addVideoFromClipboard', async (_, recordingId: number, videoBuffer: ArrayBuffer, extension: string = 'mp4') => {
+    const { filePath, thumbnailPath, duration } = await saveVideoFromBuffer(recordingId, videoBuffer, extension);
+    return VideosOperations.create({
+      recording_id: recordingId,
+      file_path: filePath,
+      thumbnail_path: thumbnailPath,
+      duration: duration,
+      sort_order: 0,
+    });
+  });
+
   ipcMain.handle('media:pickFiles', async (_, type: 'image' | 'video' | 'both') => {
     const filters = type === 'image'
       ? [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }]
@@ -171,6 +195,21 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('theme:set', async (_, theme: 'light' | 'dark' | 'system') => {
     nativeTheme.themeSource = theme;
+  });
+
+  // ============ Clipboard ============
+  ipcMain.handle('clipboard:readImage', async () => {
+    const image = clipboard.readImage();
+    if (image.isEmpty()) {
+      return { success: false };
+    }
+    // Convert NativeImage to PNG buffer
+    const buffer = image.toPNG();
+    return {
+      success: true,
+      buffer: buffer,
+      extension: 'png'
+    };
   });
 
   console.log('IPC handlers registered');

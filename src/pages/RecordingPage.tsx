@@ -52,20 +52,48 @@ export default function RecordingPage() {
 
   const handleAddImages = async () => {
     if (!id) return;
-    const files = await window.electronAPI.media.pickFiles('image');
-    for (const file of files) {
-      await window.electronAPI.media.addImage(id, file);
+    try {
+      const result = await window.electronAPI.clipboard.readImage();
+
+      if (result.success && result.buffer) {
+        await window.electronAPI.media.addImageFromClipboard(id, result.buffer, result.extension || 'png');
+        await refetch();
+      } else {
+        alert('No image found in clipboard. Copy an image first, then click Paste.');
+      }
+    } catch (error) {
+      console.error('Failed to read clipboard:', error);
+      alert('Could not read clipboard. Make sure you have copied an image.');
     }
-    await refetch();
   };
 
   const handleAddVideos = async () => {
     if (!id) return;
-    const files = await window.electronAPI.media.pickFiles('video');
-    for (const file of files) {
-      await window.electronAPI.media.addVideo(id, file);
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      let foundVideo = false;
+
+      for (const item of clipboardItems) {
+        // Look for video types
+        const videoType = item.types.find(type => type.startsWith('video/'));
+        if (videoType) {
+          const blob = await item.getType(videoType);
+          const arrayBuffer = await blob.arrayBuffer();
+          const extension = videoType.split('/')[1] || 'mp4';
+          await window.electronAPI.media.addVideoFromClipboard(id, arrayBuffer, extension);
+          foundVideo = true;
+        }
+      }
+
+      if (foundVideo) {
+        await refetch();
+      } else {
+        alert('No video found in clipboard. Note: Videos in clipboard are rarely supported by most systems.');
+      }
+    } catch (error) {
+      console.error('Failed to read clipboard:', error);
+      alert('Could not read clipboard. Make sure you have copied a video.');
     }
-    await refetch();
   };
 
   const handleDeleteImage = async (imageId: number) => {
@@ -207,7 +235,7 @@ export default function RecordingPage() {
             Images ({images.length})
           </h2>
           <Button variant="ghost" size="sm" onClick={handleAddImages}>
-            + Add
+            📋 Paste
           </Button>
         </div>
         {images.length > 0 ? (
@@ -247,7 +275,7 @@ export default function RecordingPage() {
             Videos ({videos.length})
           </h2>
           <Button variant="ghost" size="sm" onClick={handleAddVideos}>
-            + Add
+            📋 Paste
           </Button>
         </div>
         {videos.length > 0 ? (

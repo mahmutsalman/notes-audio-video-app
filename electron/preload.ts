@@ -38,6 +38,10 @@ const electronAPI = {
       ipcRenderer.invoke('media:addImage', recordingId, filePath),
     addVideo: (recordingId: number, filePath: string): Promise<Video> =>
       ipcRenderer.invoke('media:addVideo', recordingId, filePath),
+    addImageFromClipboard: (recordingId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<Image> =>
+      ipcRenderer.invoke('media:addImageFromClipboard', recordingId, imageBuffer, extension),
+    addVideoFromClipboard: (recordingId: number, videoBuffer: ArrayBuffer, extension?: string): Promise<Video> =>
+      ipcRenderer.invoke('media:addVideoFromClipboard', recordingId, videoBuffer, extension),
     getImages: (recordingId: number): Promise<Image[]> => ipcRenderer.invoke('media:getImages', recordingId),
     getVideos: (recordingId: number): Promise<Video[]> => ipcRenderer.invoke('media:getVideos', recordingId),
     deleteImage: (id: number): Promise<void> => ipcRenderer.invoke('media:deleteImage', id),
@@ -64,6 +68,12 @@ const electronAPI = {
       ipcRenderer.on('theme:changed', handler);
       return () => ipcRenderer.removeListener('theme:changed', handler);
     },
+  },
+
+  // Clipboard
+  clipboard: {
+    readImage: (): Promise<{ success: boolean; buffer?: Buffer; extension?: string }> =>
+      ipcRenderer.invoke('clipboard:readImage'),
   },
 };
 
