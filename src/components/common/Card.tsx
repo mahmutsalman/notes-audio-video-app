@@ -4,6 +4,7 @@ interface CardProps {
   children: ReactNode;
   className?: string;
   onClick?: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
   hoverable?: boolean;
 }
 
@@ -11,6 +12,7 @@ export default function Card({
   children,
   className = '',
   onClick,
+  onContextMenu,
   hoverable = false,
 }: CardProps) {
   const baseStyles = 'bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl shadow-sm';
@@ -20,6 +22,7 @@ export default function Card({
     <div
       className={`${baseStyles} ${hoverStyles} ${className}`}
       onClick={onClick}
+      onContextMenu={onContextMenu}
     >
       {children}
     </div>

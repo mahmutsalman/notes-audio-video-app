@@ -5,18 +5,27 @@ import { formatDuration, formatRelativeTime, truncateNotes } from '../../utils/f
 
 interface RecordingCardProps {
   recording: Recording;
+  onContextMenu?: (e: React.MouseEvent, recording: Recording) => void;
 }
 
-export default function RecordingCard({ recording }: RecordingCardProps) {
+export default function RecordingCard({ recording, onContextMenu }: RecordingCardProps) {
   const navigate = useNavigate();
 
   const images = recording.images ?? [];
   const videos = recording.videos ?? [];
   const truncatedNotes = truncateNotes(recording.notes_content);
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (onContextMenu) {
+      e.preventDefault();
+      onContextMenu(e, recording);
+    }
+  };
+
   return (
     <Card
       onClick={() => navigate(`/recording/${recording.id}`)}
+      onContextMenu={handleContextMenu}
       hoverable
       className="p-4"
     >

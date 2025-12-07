@@ -17,7 +17,7 @@ export default function TopicDetailPage() {
   const id = topicId ? parseInt(topicId, 10) : null;
 
   const { topic, loading: topicLoading, refetch: refetchTopic } = useTopic(id);
-  const { recordings, loading: recordingsLoading, fetchRecordings } = useRecordings(id);
+  const { recordings, loading: recordingsLoading, fetchRecordings, deleteRecording } = useRecordings(id);
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -49,6 +49,12 @@ export default function TopicDetailPage() {
 
   const handleRecordingSaved = () => {
     fetchRecordings();
+    refetchTopic();
+  };
+
+  const handleDeleteRecording = async (recordingId: number) => {
+    await deleteRecording(recordingId);
+    // Refresh topic to update counts
     refetchTopic();
   };
 
@@ -139,7 +145,11 @@ export default function TopicDetailPage() {
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
           Recordings ({recordings.length})
         </h2>
-        <RecordingList recordings={recordings} loading={recordingsLoading} />
+        <RecordingList
+          recordings={recordings}
+          loading={recordingsLoading}
+          onDeleteRecording={handleDeleteRecording}
+        />
       </div>
 
       {/* Quick Record FAB */}
