@@ -149,7 +149,7 @@ export default function RecordingPage() {
           </span>
         </h2>
         {audioUrl ? (
-          <AudioPlayer src={audioUrl} />
+          <AudioPlayer src={audioUrl} duration={recording.audio_duration ?? undefined} />
         ) : (
           <p className="text-gray-500 dark:text-gray-400">No audio file available</p>
         )}
