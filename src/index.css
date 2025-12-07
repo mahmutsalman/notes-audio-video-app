@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 dark:bg-dark-surface;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-dark-border rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400 dark:bg-gray-600;
+}
+
+/* Smooth transitions for dark mode */
+* {
+  @apply transition-colors duration-200;
+}
+
+/* Custom utility classes */
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg
+           font-medium transition-colors focus:outline-none focus:ring-2
+           focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-dark-bg
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-gray-200 dark:bg-dark-hover hover:bg-gray-300
+           dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg
+           font-medium transition-colors focus:outline-none focus:ring-2
+           focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-offset-dark-bg;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg
+           font-medium transition-colors focus:outline-none focus:ring-2
+           focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-dark-bg;
+  }
+
+  .card {
+    @apply bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border
+           rounded-xl shadow-sm hover:shadow-md transition-shadow;
+  }
+
+  .input-field {
+    @apply w-full px-3 py-2 bg-white dark:bg-dark-surface border border-gray-300
+           dark:border-dark-border rounded-lg focus:outline-none focus:ring-2
+           focus:ring-primary-500 focus:border-transparent
+           placeholder-gray-400 dark:placeholder-gray-500
+           text-gray-900 dark:text-gray-100;
+  }
+
+  .tag {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+           bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-300;
+  }
+}
+
+/* Recording animation */
+@keyframes recording-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 15px rgba(239, 68, 68, 0);
+  }
+}
+
+.recording-pulse {
+  animation: recording-pulse 1.5s infinite;
+}
+
+/* Drag and drop area */
+.drop-zone {
+  @apply border-2 border-dashed border-gray-300 dark:border-dark-border
+         rounded-xl p-8 text-center transition-colors;
+}
+
+.drop-zone.active {
+  @apply border-primary-500 bg-primary-50 dark:bg-primary-900/10;
+}
+
+/* Line clamp utilities */
+.line-clamp-1 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.line-clamp-2 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* Titlebar drag region for macOS */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
