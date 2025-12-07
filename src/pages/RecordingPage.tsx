@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useRecording } from '../hooks/useRecordings';
+import { useRecording, useRecordings } from '../hooks/useRecordings';
 import { useTopic } from '../hooks/useTopics';
 import AudioPlayer from '../components/audio/AudioPlayer';
 import Modal from '../components/common/Modal';
@@ -14,6 +14,14 @@ export default function RecordingPage() {
 
   const { recording, loading, refetch } = useRecording(id);
   const { topic } = useTopic(recording?.topic_id ?? null);
+  const { recordings: topicRecordings } = useRecordings(recording?.topic_id ?? null);
+
+  // Calculate adjacent recording IDs for navigation
+  const currentIndex = topicRecordings.findIndex(r => r.id === id);
+  const prevRecordingId = currentIndex > 0 ? topicRecordings[currentIndex - 1].id : null;
+  const nextRecordingId = currentIndex >= 0 && currentIndex < topicRecordings.length - 1
+    ? topicRecordings[currentIndex + 1].id
+    : null;
 
   const [isEditing, setIsEditing] = useState(false);
   const [notes, setNotes] = useState('');
@@ -122,6 +130,33 @@ export default function RecordingPage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedImageIndex, images.length]);
+
+  // Keyboard navigation for recording navigation (between recordings in same topic)
+  useEffect(() => {
+    const handleRecordingNav = (e: KeyboardEvent) => {
+      // Skip if image lightbox is open (image navigation takes priority)
+      if (selectedImageIndex !== null) return;
+
+      // Skip if video lightbox is open
+      if (selectedVideo !== null) return;
+
+      // Skip if editing notes
+      if (isEditing) return;
+
+      // Skip if user is focused on any input field
+      const activeEl = document.activeElement;
+      if (activeEl?.tagName === 'INPUT' || activeEl?.tagName === 'TEXTAREA') return;
+
+      if (e.key === 'ArrowLeft' && prevRecordingId) {
+        navigate(`/recording/${prevRecordingId}`);
+      } else if (e.key === 'ArrowRight' && nextRecordingId) {
+        navigate(`/recording/${nextRecordingId}`);
+      }
+    };
+
+    window.addEventListener('keydown', handleRecordingNav);
+    return () => window.removeEventListener('keydown', handleRecordingNav);
+  }, [selectedImageIndex, selectedVideo, isEditing, prevRecordingId, nextRecordingId, navigate]);
 
   if (loading) {
     return (
