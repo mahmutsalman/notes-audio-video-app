@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useRecording } from '../hooks/useRecordings';
 import { useTopic } from '../hooks/useTopics';
@@ -20,7 +20,7 @@ export default function RecordingPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
 
   const handleEditNotes = () => {
@@ -104,6 +104,25 @@ export default function RecordingPage() {
     await refetch();
   };
 
+  // Keyboard navigation for image lightbox
+  const images = recording?.images ?? [];
+  useEffect(() => {
+    if (selectedImageIndex === null) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        setSelectedImageIndex(i => (i !== null && i > 0 ? i - 1 : i));
+      } else if (e.key === 'ArrowRight') {
+        setSelectedImageIndex(i => (i !== null && i < images.length - 1 ? i + 1 : i));
+      } else if (e.key === 'Escape') {
+        setSelectedImageIndex(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedImageIndex, images.length]);
+
   if (loading) {
     return (
       <div className="p-6 max-w-4xl mx-auto">
@@ -130,7 +149,6 @@ export default function RecordingPage() {
     );
   }
 
-  const images = recording.images ?? [];
   const videos = recording.videos ?? [];
   const audioUrl = recording.audio_path
     ? window.electronAPI.paths.getFileUrl(recording.audio_path)
@@ -238,11 +256,16 @@ export default function RecordingPage() {
         </div>
         {images.length > 0 ? (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {images.map((img) => (
+            {images.map((img, index) => (
               <div key={img.id} className="relative group">
+                {/* Number badge */}
+                <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
+                                rounded-full flex items-center justify-center text-xs font-bold z-10">
+                  {index + 1}
+                </div>
                 <div
                   className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
-                  onClick={() => setSelectedImage(img.file_path)}
+                  onClick={() => setSelectedImageIndex(index)}
                 >
                   <img
                     src={window.electronAPI.paths.getFileUrl(img.thumbnail_path || img.file_path)}
@@ -328,23 +351,59 @@ export default function RecordingPage() {
       </div>
 
       {/* Image lightbox */}
-      {selectedImage && (
+      {selectedImageIndex !== null && images[selectedImageIndex] && (
         <div
           className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setSelectedImage(null)}
+          onClick={() => setSelectedImageIndex(null)}
         >
+          {/* Close button */}
           <button
-            className="absolute top-4 right-4 text-white text-2xl"
-            onClick={() => setSelectedImage(null)}
+            className="absolute top-4 right-4 text-white text-2xl hover:text-gray-300 z-10"
+            onClick={() => setSelectedImageIndex(null)}
           >
             ×
           </button>
+
+          {/* Image counter */}
+          <div className="absolute top-4 left-4 text-white text-lg font-medium">
+            {selectedImageIndex + 1} / {images.length}
+          </div>
+
+          {/* Previous button */}
+          {selectedImageIndex > 0 && (
+            <button
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-5xl
+                         hover:text-gray-300 transition-colors px-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedImageIndex(i => i! - 1);
+              }}
+            >
+              ‹
+            </button>
+          )}
+
+          {/* Image */}
           <img
-            src={window.electronAPI.paths.getFileUrl(selectedImage)}
+            src={window.electronAPI.paths.getFileUrl(images[selectedImageIndex].file_path)}
             alt=""
             className="max-w-full max-h-full object-contain"
             onClick={(e) => e.stopPropagation()}
           />
+
+          {/* Next button */}
+          {selectedImageIndex < images.length - 1 && (
+            <button
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-5xl
+                         hover:text-gray-300 transition-colors px-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedImageIndex(i => i! + 1);
+              }}
+            >
+              ›
+            </button>
+          )}
         </div>
       )}
 
