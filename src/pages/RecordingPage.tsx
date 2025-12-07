@@ -21,6 +21,7 @@ export default function RecordingPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
 
   const handleEditNotes = () => {
     setNotes(recording?.notes_content ?? '');
@@ -298,9 +299,9 @@ export default function RecordingPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => window.electronAPI.paths.openFile(video.file_path)}
+                  onClick={() => setSelectedVideo(video.file_path)}
                 >
-                  Open
+                  Play
                 </Button>
                 <button
                   onClick={() => handleDeleteVideo(video.id)}
@@ -334,6 +335,28 @@ export default function RecordingPage() {
             src={window.electronAPI.paths.getFileUrl(selectedImage)}
             alt=""
             className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
+      {/* Video lightbox */}
+      {selectedVideo && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setSelectedVideo(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white text-2xl z-10"
+            onClick={() => setSelectedVideo(null)}
+          >
+            ×
+          </button>
+          <video
+            src={window.electronAPI.paths.getFileUrl(selectedVideo)}
+            controls
+            autoPlay
+            className="max-w-full max-h-full"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
