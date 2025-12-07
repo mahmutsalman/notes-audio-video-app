@@ -53,11 +53,7 @@ export default function RecordingPage() {
     // Skip if modals open or editing
     if (selectedImageIndex !== null || selectedVideo !== null || isEditing || showDeleteConfirm) return;
 
-    // Animate entire content block
-    setIsContentPressed(true);
-    setTimeout(() => setIsContentPressed(false), 100);
-
-    // Toggle audio playback
+    // Toggle audio playback (depress effect is handled separately on Audio section)
     audioPlayerRef.current?.toggle();
   };
 
@@ -255,12 +251,11 @@ export default function RecordingPage() {
     <div
       className="min-h-screen cursor-pointer"
       onClick={handlePageClick}
+      onMouseDown={() => setIsContentPressed(true)}
+      onMouseUp={() => setIsContentPressed(false)}
+      onMouseLeave={() => setIsContentPressed(false)}
     >
-      <div className={`p-6 max-w-4xl mx-auto
-                      rounded-xl
-                      shadow-[0_4px_0_0_rgba(0,0,0,0.08)] dark:shadow-[0_4px_0_0_rgba(0,0,0,0.25)]
-                      transition-all duration-75
-                      ${isContentPressed ? 'translate-y-1 shadow-none' : ''}`}>
+      <div className="p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
@@ -289,7 +284,13 @@ export default function RecordingPage() {
       </div>
 
       {/* Audio player */}
-      <div className="mb-6">
+      <div
+        className={`mb-6 p-4 -mx-4 cursor-pointer rounded-xl
+                    bg-gray-50 dark:bg-dark-surface
+                    shadow-[0_4px_0_0_rgba(0,0,0,0.08)] dark:shadow-[0_4px_0_0_rgba(0,0,0,0.25)]
+                    transition-all duration-75
+                    ${isContentPressed ? 'translate-y-1 shadow-none' : ''}`}
+      >
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2">
           <span>🎙️</span>
           Audio
