@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import type { Recording } from '../../types';
+import type { Recording, ImportanceColor } from '../../types';
 import RecordingCard from './RecordingCard';
-import ContextMenu from '../common/ContextMenu';
+import ContextMenu, { type ContextMenuItemType } from '../common/ContextMenu';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
 
@@ -9,12 +9,14 @@ interface RecordingListProps {
   recordings: Recording[];
   loading?: boolean;
   onDeleteRecording?: (recordingId: number) => Promise<void>;
+  onUpdateRecording?: (recordingId: number, updates: { importance_color: ImportanceColor }) => Promise<void>;
 }
 
 export default function RecordingList({
   recordings,
   loading,
   onDeleteRecording,
+  onUpdateRecording,
 }: RecordingListProps) {
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -58,6 +60,12 @@ export default function RecordingList({
       });
     }
     closeContextMenu();
+  };
+
+  const handleImportanceChange = async (color: ImportanceColor) => {
+    if (contextMenu.recording && onUpdateRecording) {
+      await onUpdateRecording(contextMenu.recording.id, { importance_color: color });
+    }
   };
 
   const handleConfirmDelete = async () => {
@@ -116,7 +124,7 @@ export default function RecordingList({
           <RecordingCard
             key={recording.id}
             recording={recording}
-            onContextMenu={onDeleteRecording ? handleContextMenu : undefined}
+            onContextMenu={(onDeleteRecording || onUpdateRecording) ? handleContextMenu : undefined}
           />
         ))}
       </div>
@@ -127,13 +135,19 @@ export default function RecordingList({
         position={contextMenu.position}
         onClose={closeContextMenu}
         items={[
-          {
+          ...(onUpdateRecording ? [{
+            type: 'color-picker' as const,
+            label: 'Importance',
+            value: contextMenu.recording?.importance_color ?? null,
+            onChange: handleImportanceChange,
+          }] : []),
+          ...(onDeleteRecording ? [{
             label: 'Delete',
             icon: '🗑️',
             danger: true,
             onClick: handleDeleteClick,
-          },
-        ]}
+          }] : []),
+        ] as ContextMenuItemType[]}
       />
 
       {/* Delete Confirmation Modal */}

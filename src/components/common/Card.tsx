@@ -1,8 +1,9 @@
-import { ReactNode } from 'react';
+import { ReactNode, CSSProperties } from 'react';
 
 interface CardProps {
   children: ReactNode;
   className?: string;
+  style?: CSSProperties;
   onClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   hoverable?: boolean;
@@ -11,6 +12,7 @@ interface CardProps {
 export default function Card({
   children,
   className = '',
+  style,
   onClick,
   onContextMenu,
   hoverable = false,
@@ -21,6 +23,7 @@ export default function Card({
   return (
     <div
       className={`${baseStyles} ${hoverStyles} ${className}`}
+      style={style}
       onClick={onClick}
       onContextMenu={onContextMenu}
     >

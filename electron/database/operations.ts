@@ -170,6 +170,10 @@ export const RecordingsOperations = {
       fields.push('notes_content = ?');
       values.push(updates.notes_content);
     }
+    if (updates.importance_color !== undefined) {
+      fields.push('importance_color = ?');
+      values.push(updates.importance_color);
+    }
 
     if (fields.length > 0) {
       fields.push('updated_at = CURRENT_TIMESTAMP');

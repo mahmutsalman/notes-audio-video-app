@@ -17,7 +17,7 @@ export default function TopicDetailPage() {
   const id = topicId ? parseInt(topicId, 10) : null;
 
   const { topic, loading: topicLoading, refetch: refetchTopic } = useTopic(id);
-  const { recordings, loading: recordingsLoading, fetchRecordings, deleteRecording } = useRecordings(id);
+  const { recordings, loading: recordingsLoading, fetchRecordings, deleteRecording, updateRecording } = useRecordings(id);
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -56,6 +56,10 @@ export default function TopicDetailPage() {
     await deleteRecording(recordingId);
     // Refresh topic to update counts
     refetchTopic();
+  };
+
+  const handleUpdateRecording = async (recordingId: number, updates: Parameters<typeof updateRecording>[1]) => {
+    await updateRecording(recordingId, updates);
   };
 
   if (topicLoading) {
@@ -149,6 +153,7 @@ export default function TopicDetailPage() {
           recordings={recordings}
           loading={recordingsLoading}
           onDeleteRecording={handleDeleteRecording}
+          onUpdateRecording={handleUpdateRecording}
         />
       </div>
 

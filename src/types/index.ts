@@ -1,5 +1,7 @@
 // Database Models
 
+export type ImportanceColor = 'emerald' | 'amber' | 'rose' | null;
+
 export interface Topic {
   id: number;
   name: string;
@@ -19,6 +21,7 @@ export interface Recording {
   audio_path: string | null;
   audio_duration: number | null;
   notes_content: string | null;
+  importance_color: ImportanceColor;
   created_at: string;
   updated_at: string;
   // Relations (loaded separately)
@@ -60,7 +63,7 @@ export type UpdateDuration = Partial<Pick<Duration, 'note'>>;
 export type CreateTopic = Omit<Topic, 'id' | 'created_at' | 'updated_at' | 'total_recordings' | 'total_images' | 'total_videos'>;
 export type UpdateTopic = Partial<CreateTopic>;
 
-export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos'>;
+export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color'> & { importance_color?: ImportanceColor };
 export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;

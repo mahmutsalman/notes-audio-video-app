@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Recording } from '../../types';
 import Card from '../common/Card';
 import { formatDuration, formatRelativeTime, truncateNotes } from '../../utils/formatters';
+import { getImportanceBorderStyle } from '../../utils/importance';
 
 interface RecordingCardProps {
   recording: Recording;
@@ -22,12 +23,15 @@ export default function RecordingCard({ recording, onContextMenu }: RecordingCar
     }
   };
 
+  const importanceBorderStyle = getImportanceBorderStyle(recording.importance_color);
+
   return (
     <Card
       onClick={() => navigate(`/recording/${recording.id}`)}
       onContextMenu={handleContextMenu}
       hoverable
       className="p-4"
+      style={importanceBorderStyle}
     >
       {/* Audio indicator + duration */}
       <div className="flex items-center gap-2 mb-2">
