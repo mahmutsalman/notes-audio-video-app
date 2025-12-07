@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { formatDuration } from '../../utils/formatters';
 
 interface AudioPlayerProps {
@@ -6,9 +6,16 @@ interface AudioPlayerProps {
   duration?: number;  // Optional: pass duration explicitly for blob URLs
 }
 
-export default function AudioPlayer({ src, duration: propDuration }: AudioPlayerProps) {
+export interface AudioPlayerHandle {
+  toggle: () => void;
+  setPressed: (pressed: boolean) => void;
+}
+
+const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
+  function AudioPlayer({ src, duration: propDuration }, ref) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [metadataDuration, setMetadataDuration] = useState(0);
 
@@ -51,6 +58,12 @@ export default function AudioPlayer({ src, duration: propDuration }: AudioPlayer
     setIsPlaying(!isPlaying);
   };
 
+  // Expose toggle and setPressed to parent via ref
+  useImperativeHandle(ref, () => ({
+    toggle: togglePlay,
+    setPressed: setIsPressed,
+  }));
+
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -65,11 +78,12 @@ export default function AudioPlayer({ src, duration: propDuration }: AudioPlayer
   return (
     <div
       onClick={togglePlay}
-      className="flex items-center gap-4 p-4 rounded-lg cursor-pointer select-none
+      className={`flex items-center gap-4 p-4 rounded-lg cursor-pointer select-none
                  bg-gray-100 dark:bg-dark-hover
                  shadow-[0_4px_0_0_rgba(0,0,0,0.15)] dark:shadow-[0_4px_0_0_rgba(0,0,0,0.4)]
                  active:translate-y-1 active:shadow-none
-                 transition-all duration-75"
+                 transition-all duration-75
+                 ${isPressed ? 'translate-y-1 shadow-none' : ''}`}
     >
       <audio ref={audioRef} src={src} preload="metadata" />
 
@@ -109,4 +123,6 @@ export default function AudioPlayer({ src, duration: propDuration }: AudioPlayer
       </div>
     </div>
   );
-}
+});
+
+export default AudioPlayer;

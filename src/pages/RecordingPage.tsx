@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useRecording, useRecordings } from '../hooks/useRecordings';
 import { useTopic } from '../hooks/useTopics';
-import AudioPlayer from '../components/audio/AudioPlayer';
+import AudioPlayer, { AudioPlayerHandle } from '../components/audio/AudioPlayer';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import { formatDuration, formatDate } from '../utils/formatters';
@@ -30,6 +30,26 @@ export default function RecordingPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [isContentPressed, setIsContentPressed] = useState(false);
+
+  const audioPlayerRef = useRef<AudioPlayerHandle>(null);
+
+  // Handle clicks on empty page areas to toggle audio playback
+  const handlePageClick = (e: React.MouseEvent) => {
+    // Skip if clicking on interactive elements
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, textarea, [role="button"], video, img')) return;
+
+    // Skip if modals open or editing
+    if (selectedImageIndex !== null || selectedVideo !== null || isEditing || showDeleteConfirm) return;
+
+    // Animate entire content block
+    setIsContentPressed(true);
+    setTimeout(() => setIsContentPressed(false), 100);
+
+    // Toggle audio playback
+    audioPlayerRef.current?.toggle();
+  };
 
   const handleEditNotes = () => {
     setNotes(recording?.notes_content ?? '');
@@ -190,7 +210,15 @@ export default function RecordingPage() {
     : null;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div
+      className="min-h-screen cursor-pointer"
+      onClick={handlePageClick}
+    >
+      <div className={`p-6 max-w-4xl mx-auto
+                      rounded-xl
+                      shadow-[0_4px_0_0_rgba(0,0,0,0.08)] dark:shadow-[0_4px_0_0_rgba(0,0,0,0.25)]
+                      transition-all duration-75
+                      ${isContentPressed ? 'translate-y-1 shadow-none' : ''}`}>
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
@@ -228,7 +256,7 @@ export default function RecordingPage() {
           </span>
         </h2>
         {audioUrl ? (
-          <AudioPlayer src={audioUrl} duration={recording.audio_duration ?? undefined} />
+          <AudioPlayer ref={audioPlayerRef} src={audioUrl} duration={recording.audio_duration ?? undefined} />
         ) : (
           <p className="text-gray-500 dark:text-gray-400">No audio file available</p>
         )}
@@ -497,6 +525,7 @@ export default function RecordingPage() {
           </div>
         </div>
       </Modal>
+      </div>
     </div>
   );
 }
