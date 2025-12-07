@@ -66,3 +66,6 @@ scratch/
 # Package manager locks (optional - uncomment if you want to ignore)
 # package-lock.json
 # yarn.lock
+
+# Local resources (scripts, screenshots, etc.)
+localResources/
