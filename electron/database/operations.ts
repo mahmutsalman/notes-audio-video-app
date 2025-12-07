@@ -4,7 +4,7 @@ import type {
   Recording, CreateRecording, UpdateRecording,
   Image, CreateImage,
   Video, CreateVideo,
-  Duration, CreateDuration
+  Duration, CreateDuration, UpdateDuration
 } from '../../src/types';
 
 // Helper to parse tags from JSON string
@@ -304,17 +304,38 @@ export const DurationsOperations = {
   create(duration: CreateDuration): Duration {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO durations (recording_id, start_time, end_time)
-      VALUES (?, ?, ?)
+      INSERT INTO durations (recording_id, start_time, end_time, note)
+      VALUES (?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       duration.recording_id,
       duration.start_time,
-      duration.end_time
+      duration.end_time,
+      duration.note ?? null
     );
 
     return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  update(id: number, updates: UpdateDuration): Duration {
+    const db = getDatabase();
+    const fields: string[] = [];
+    const values: unknown[] = [];
+
+    if (updates.note !== undefined) {
+      fields.push('note = ?');
+      values.push(updates.note);
+    }
+
+    if (fields.length > 0) {
+      values.push(id);
+      db.prepare(`
+        UPDATE durations SET ${fields.join(', ')} WHERE id = ?
+      `).run(...values);
+    }
+
+    return this.getById(id)!;
   },
 
   delete(id: number): void {

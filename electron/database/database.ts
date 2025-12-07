@@ -105,6 +105,14 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_durations_recording ON durations(recording_id);
   `);
 
+  // Migration: Add note column to durations table if it doesn't exist
+  const durationsColumns = db.prepare("PRAGMA table_info(durations)").all() as { name: string }[];
+  const hasNoteColumn = durationsColumns.some(col => col.name === 'note');
+  if (!hasNoteColumn) {
+    db.exec(`ALTER TABLE durations ADD COLUMN note TEXT`);
+    console.log('Added note column to durations table');
+  }
+
   // Create the stats view (drop and recreate to handle schema changes)
   db.exec(`
     DROP VIEW IF EXISTS topic_stats;

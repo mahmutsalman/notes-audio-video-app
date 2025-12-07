@@ -12,6 +12,7 @@ export interface VoiceRecorderState {
 export interface DurationMark {
   start: number;  // seconds
   end: number;    // seconds
+  note?: string;  // optional note for this mark
 }
 
 export interface VoiceRecorderControls {
@@ -21,11 +22,13 @@ export interface VoiceRecorderControls {
   resumeRecording: () => void;
   resetRecording: () => void;
   handleMarkToggle: () => void;
+  setMarkNote: (note: string) => void;
 }
 
 export interface UseVoiceRecorderReturn extends VoiceRecorderState, VoiceRecorderControls {
   analyserNode: AnalyserNode | null;
   pendingMarkStart: number | null;
+  pendingMarkNote: string;
   completedMarks: DurationMark[];
   isMarking: boolean;
 }
@@ -51,6 +54,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
 
   // Duration marking state
   const [pendingMarkStart, setPendingMarkStart] = useState<number | null>(null);
+  const [pendingMarkNote, setPendingMarkNote] = useState<string>('');
   const [completedMarks, setCompletedMarks] = useState<DurationMark[]>([]);
 
   // Cleanup on unmount
@@ -287,6 +291,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
 
     // Reset marking state
     setPendingMarkStart(null);
+    setPendingMarkNote('');
     setCompletedMarks([]);
   }, [state.audioUrl]);
 
@@ -309,17 +314,25 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     if (pendingMarkStart === null) {
       // First press: start marking
       setPendingMarkStart(currentTime);
+      setPendingMarkNote('');
     } else {
       // Second press: complete marking (only if end > start)
       if (currentTime > pendingMarkStart) {
         setCompletedMarks(prev => [...prev, {
           start: pendingMarkStart,
-          end: currentTime
+          end: currentTime,
+          note: pendingMarkNote.trim() || undefined
         }]);
       }
       setPendingMarkStart(null);
+      setPendingMarkNote('');
     }
-  }, [state.isRecording, pendingMarkStart, getCurrentElapsedTime]);
+  }, [state.isRecording, pendingMarkStart, pendingMarkNote, getCurrentElapsedTime]);
+
+  // Set note for the current pending mark
+  const setMarkNote = useCallback((note: string) => {
+    setPendingMarkNote(note);
+  }, []);
 
   return {
     ...state,
@@ -330,7 +343,9 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     resumeRecording,
     resetRecording,
     handleMarkToggle,
+    setMarkNote,
     pendingMarkStart,
+    pendingMarkNote,
     completedMarks,
     isMarking: pendingMarkStart !== null,
   };

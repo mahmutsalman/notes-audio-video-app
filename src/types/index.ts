@@ -50,8 +50,11 @@ export interface Duration {
   recording_id: number;
   start_time: number;  // seconds
   end_time: number;    // seconds
+  note: string | null; // optional note for this duration mark
   created_at: string;
 }
+
+export type UpdateDuration = Partial<Pick<Duration, 'note'>>;
 
 // Create types (omit auto-generated fields)
 export type CreateTopic = Omit<Topic, 'id' | 'created_at' | 'updated_at' | 'total_recordings' | 'total_images' | 'total_videos'>;
@@ -62,7 +65,7 @@ export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
 export type CreateVideo = Omit<Video, 'id' | 'created_at'>;
-export type CreateDuration = Omit<Duration, 'id' | 'created_at'>;
+export type CreateDuration = Omit<Duration, 'id' | 'created_at'> & { note?: string | null };
 
 // IPC Types
 export interface ElectronAPI {
@@ -112,6 +115,7 @@ export interface ElectronAPI {
   durations: {
     getByRecording: (recordingId: number) => Promise<Duration[]>;
     create: (duration: CreateDuration) => Promise<Duration>;
+    update: (id: number, updates: UpdateDuration) => Promise<Duration>;
     delete: (id: number) => Promise<void>;
   };
 }

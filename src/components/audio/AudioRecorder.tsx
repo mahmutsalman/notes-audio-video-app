@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { UseVoiceRecorderReturn } from '../../hooks/useVoiceRecorder';
 import { formatDuration } from '../../utils/formatters';
 import WaveformVisualizer from './WaveformVisualizer';
@@ -19,10 +19,21 @@ export default function AudioRecorder({ recorder, onStopRecording }: AudioRecord
     pauseRecording,
     resumeRecording,
     handleMarkToggle,
+    setMarkNote,
     isMarking,
     pendingMarkStart,
+    pendingMarkNote,
     completedMarks,
   } = recorder;
+
+  const noteInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-focus note input when marking starts
+  useEffect(() => {
+    if (isMarking && noteInputRef.current) {
+      noteInputRef.current.focus();
+    }
+  }, [isMarking]);
 
   // Keyboard shortcuts: Space for pause/resume, Enter for marking durations
   useEffect(() => {
@@ -30,7 +41,11 @@ export default function AudioRecorder({ recorder, onStopRecording }: AudioRecord
       // Only handle when recording is active
       if (!isRecording) return;
 
-      if (e.code === 'Space') {
+      // Don't intercept keyboard events when typing in note input (except Enter/Space)
+      const target = e.target as HTMLElement;
+      const isTypingNote = target === noteInputRef.current;
+
+      if (e.code === 'Space' && !isTypingNote) {
         e.preventDefault(); // Prevent page scroll
         if (isPaused) {
           resumeRecording();
@@ -78,12 +93,25 @@ export default function AudioRecorder({ recorder, onStopRecording }: AudioRecord
 
       {/* Duration marking indicator */}
       {isRecording && (
-        <div className="flex items-center gap-3 mb-2">
+        <div className="flex flex-col items-center gap-2 mb-2">
           {isMarking ? (
-            <div className="flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium">
-              <span className="w-2 h-2 bg-primary-600 dark:bg-primary-400 rounded-full animate-pulse" />
-              Marking from {formatDuration(pendingMarkStart ?? 0)}...
-            </div>
+            <>
+              <div className="flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium">
+                <span className="w-2 h-2 bg-primary-600 dark:bg-primary-400 rounded-full animate-pulse" />
+                Marking from {formatDuration(pendingMarkStart ?? 0)}...
+              </div>
+              <input
+                ref={noteInputRef}
+                type="text"
+                value={pendingMarkNote}
+                onChange={(e) => setMarkNote(e.target.value)}
+                placeholder="Type a note (optional)..."
+                className="w-64 px-3 py-1.5 text-sm rounded-lg border border-primary-300 dark:border-primary-600
+                           bg-white dark:bg-dark-bg text-gray-900 dark:text-gray-100
+                           focus:outline-none focus:ring-2 focus:ring-primary-500
+                           placeholder-gray-400 dark:placeholder-gray-500"
+              />
+            </>
           ) : completedMarks.length > 0 ? (
             <div className="text-gray-500 dark:text-gray-400 text-sm">
               {completedMarks.length} mark{completedMarks.length !== 1 ? 's' : ''} saved

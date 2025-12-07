@@ -119,6 +119,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
           recording_id: recording.id,
           start_time: mark.start,
           end_time: mark.end,
+          note: mark.note ?? null,
         });
       }
 

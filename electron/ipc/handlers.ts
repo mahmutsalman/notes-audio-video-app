@@ -18,7 +18,7 @@ import {
   getMediaDir,
   getFileUrl,
 } from '../services/fileStorage';
-import type { CreateTopic, UpdateTopic, CreateRecording, UpdateRecording, CreateDuration } from '../../src/types';
+import type { CreateTopic, UpdateTopic, CreateRecording, UpdateRecording, CreateDuration, UpdateDuration } from '../../src/types';
 
 export function setupIpcHandlers(): void {
   // ============ Topics ============
@@ -233,6 +233,10 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durations:create', async (_, duration: CreateDuration) => {
     return DurationsOperations.create(duration);
+  });
+
+  ipcMain.handle('durations:update', async (_, id: number, updates: UpdateDuration) => {
+    return DurationsOperations.update(id, updates);
   });
 
   ipcMain.handle('durations:delete', async (_, id: number) => {

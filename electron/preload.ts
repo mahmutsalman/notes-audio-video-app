@@ -3,7 +3,7 @@ import type {
   Topic, CreateTopic, UpdateTopic,
   Recording, CreateRecording, UpdateRecording,
   Image, Video,
-  Duration, CreateDuration
+  Duration, CreateDuration, UpdateDuration
 } from '../src/types';
 
 // Type-safe API exposed to renderer
@@ -85,6 +85,8 @@ const electronAPI = {
       ipcRenderer.invoke('durations:getByRecording', recordingId),
     create: (duration: CreateDuration): Promise<Duration> =>
       ipcRenderer.invoke('durations:create', duration),
+    update: (id: number, updates: UpdateDuration): Promise<Duration> =>
+      ipcRenderer.invoke('durations:update', id, updates),
     delete: (id: number): Promise<void> =>
       ipcRenderer.invoke('durations:delete', id),
   },

@@ -18,7 +18,7 @@ export default function RecordingPage() {
   const { recording, loading, refetch } = useRecording(id);
   const { topic } = useTopic(recording?.topic_id ?? null);
   const { recordings: topicRecordings } = useRecordings(recording?.topic_id ?? null);
-  const { durations, deleteDuration } = useDurations(id);
+  const { durations, deleteDuration, updateDuration } = useDurations(id);
 
   // Calculate adjacent recording IDs for navigation
   const currentIndex = topicRecordings.findIndex(r => r.id === id);
@@ -165,6 +165,11 @@ export default function RecordingPage() {
     await deleteDuration(id);
   };
 
+  // Handle duration note update
+  const handleUpdateNote = async (durationId: number, note: string | null) => {
+    await updateDuration(durationId, { note });
+  };
+
   // Keyboard navigation for image lightbox
   const images = recording?.images ?? [];
   useEffect(() => {
@@ -305,6 +310,7 @@ export default function RecordingPage() {
         activeDurationId={activeDurationId}
         onDurationClick={handleDurationClick}
         onDeleteDuration={handleDeleteDuration}
+        onUpdateNote={handleUpdateNote}
       />
 
       {/* Notes */}

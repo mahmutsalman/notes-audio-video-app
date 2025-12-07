@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Duration, CreateDuration } from '../types';
+import type { Duration, CreateDuration, UpdateDuration } from '../types';
 
 export function useDurations(recordingId: number | null) {
   const [durations, setDurations] = useState<Duration[]>([]);
@@ -36,6 +36,12 @@ export function useDurations(recordingId: number | null) {
     return newDuration;
   };
 
+  const updateDuration = async (id: number, updates: UpdateDuration): Promise<Duration> => {
+    const updatedDuration = await window.electronAPI.durations.update(id, updates);
+    setDurations(prev => prev.map(d => d.id === id ? updatedDuration : d));
+    return updatedDuration;
+  };
+
   const deleteDuration = async (id: number): Promise<void> => {
     await window.electronAPI.durations.delete(id);
     setDurations(prev => prev.filter(d => d.id !== id));
@@ -47,6 +53,7 @@ export function useDurations(recordingId: number | null) {
     error,
     fetchDurations,
     createDuration,
+    updateDuration,
     deleteDuration,
   };
 }
