@@ -91,6 +91,18 @@ function runMigrations(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_videos_recording ON videos(recording_id);
+
+    -- Durations table (marked time segments within recordings)
+    CREATE TABLE IF NOT EXISTS durations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recording_id INTEGER NOT NULL,
+      start_time REAL NOT NULL,
+      end_time REAL NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (recording_id) REFERENCES recordings(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_durations_recording ON durations(recording_id);
   `);
 
   // Create the stats view (drop and recreate to handle schema changes)

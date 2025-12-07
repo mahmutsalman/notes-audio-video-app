@@ -9,16 +9,25 @@ export interface VoiceRecorderState {
   error: string | null;
 }
 
+export interface DurationMark {
+  start: number;  // seconds
+  end: number;    // seconds
+}
+
 export interface VoiceRecorderControls {
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<Blob | null>;
   pauseRecording: () => void;
   resumeRecording: () => void;
   resetRecording: () => void;
+  handleMarkToggle: () => void;
 }
 
 export interface UseVoiceRecorderReturn extends VoiceRecorderState, VoiceRecorderControls {
   analyserNode: AnalyserNode | null;
+  pendingMarkStart: number | null;
+  completedMarks: DurationMark[];
+  isMarking: boolean;
 }
 
 export function useVoiceRecorder(): UseVoiceRecorderReturn {
@@ -39,6 +48,10 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const startTimeRef = useRef<number>(0);
   const accumulatedTimeRef = useRef<number>(0);
+
+  // Duration marking state
+  const [pendingMarkStart, setPendingMarkStart] = useState<number | null>(null);
+  const [completedMarks, setCompletedMarks] = useState<DurationMark[]>([]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -271,7 +284,42 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     mediaRecorderRef.current = null;
     startTimeRef.current = 0;
     accumulatedTimeRef.current = 0;
+
+    // Reset marking state
+    setPendingMarkStart(null);
+    setCompletedMarks([]);
   }, [state.audioUrl]);
+
+  // Get current elapsed time in seconds
+  const getCurrentElapsedTime = useCallback(() => {
+    if (!state.isRecording) return 0;
+    if (state.isPaused) {
+      return Math.floor(accumulatedTimeRef.current / 1000);
+    }
+    const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+    return Math.floor(elapsed / 1000);
+  }, [state.isRecording, state.isPaused]);
+
+  // Toggle duration marking (Enter key handler)
+  const handleMarkToggle = useCallback(() => {
+    if (!state.isRecording) return;
+
+    const currentTime = getCurrentElapsedTime();
+
+    if (pendingMarkStart === null) {
+      // First press: start marking
+      setPendingMarkStart(currentTime);
+    } else {
+      // Second press: complete marking (only if end > start)
+      if (currentTime > pendingMarkStart) {
+        setCompletedMarks(prev => [...prev, {
+          start: pendingMarkStart,
+          end: currentTime
+        }]);
+      }
+      setPendingMarkStart(null);
+    }
+  }, [state.isRecording, pendingMarkStart, getCurrentElapsedTime]);
 
   return {
     ...state,
@@ -281,5 +329,9 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     pauseRecording,
     resumeRecording,
     resetRecording,
+    handleMarkToggle,
+    pendingMarkStart,
+    completedMarks,
+    isMarking: pendingMarkStart !== null,
   };
 }

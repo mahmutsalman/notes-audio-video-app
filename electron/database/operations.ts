@@ -3,7 +3,8 @@ import type {
   Topic, CreateTopic, UpdateTopic,
   Recording, CreateRecording, UpdateRecording,
   Image, CreateImage,
-  Video, CreateVideo
+  Video, CreateVideo,
+  Duration, CreateDuration
 } from '../../src/types';
 
 // Helper to parse tags from JSON string
@@ -281,5 +282,43 @@ export const VideosOperations = {
   delete(id: number): void {
     const db = getDatabase();
     db.prepare('DELETE FROM videos WHERE id = ?').run(id);
+  },
+};
+
+// Durations Operations (marked time segments within recordings)
+export const DurationsOperations = {
+  getByRecording(recordingId: number): Duration[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM durations
+      WHERE recording_id = ?
+      ORDER BY start_time
+    `).all(recordingId) as Duration[];
+  },
+
+  getById(id: number): Duration | null {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM durations WHERE id = ?').get(id) as Duration | undefined ?? null;
+  },
+
+  create(duration: CreateDuration): Duration {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO durations (recording_id, start_time, end_time)
+      VALUES (?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      duration.recording_id,
+      duration.start_time,
+      duration.end_time
+    );
+
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM durations WHERE id = ?').run(id);
   },
 };

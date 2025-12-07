@@ -2,10 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useRecording, useRecordings } from '../hooks/useRecordings';
 import { useTopic } from '../hooks/useTopics';
+import { useDurations } from '../hooks/useDurations';
 import AudioPlayer, { AudioPlayerHandle } from '../components/audio/AudioPlayer';
+import DurationList from '../components/recordings/DurationList';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import { formatDuration, formatDate } from '../utils/formatters';
+import type { Duration } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -15,6 +18,7 @@ export default function RecordingPage() {
   const { recording, loading, refetch } = useRecording(id);
   const { topic } = useTopic(recording?.topic_id ?? null);
   const { recordings: topicRecordings } = useRecordings(recording?.topic_id ?? null);
+  const { durations, deleteDuration } = useDurations(id);
 
   // Calculate adjacent recording IDs for navigation
   const currentIndex = topicRecordings.findIndex(r => r.id === id);
@@ -31,8 +35,14 @@ export default function RecordingPage() {
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [isContentPressed, setIsContentPressed] = useState(false);
+  const [activeDurationId, setActiveDurationId] = useState<number | null>(null);
 
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
+
+  // Reset loop state when changing recordings
+  useEffect(() => {
+    setActiveDurationId(null);
+  }, [id]);
 
   // Handle clicks on empty page areas to toggle audio playback
   const handlePageClick = (e: React.MouseEvent) => {
@@ -132,6 +142,29 @@ export default function RecordingPage() {
     await refetch();
   };
 
+  // Handle duration click for loop playback
+  const handleDurationClick = (duration: Duration) => {
+    if (activeDurationId === duration.id) {
+      // Already looping this one - stop
+      audioPlayerRef.current?.clearLoopRegion();
+      setActiveDurationId(null);
+    } else {
+      // Start looping this duration
+      audioPlayerRef.current?.setLoopRegion(duration.start_time, duration.end_time);
+      setActiveDurationId(duration.id);
+    }
+  };
+
+  // Handle duration delete
+  const handleDeleteDuration = async (id: number) => {
+    // If deleting the active duration, clear the loop first
+    if (activeDurationId === id) {
+      audioPlayerRef.current?.clearLoopRegion();
+      setActiveDurationId(null);
+    }
+    await deleteDuration(id);
+  };
+
   // Keyboard navigation for image lightbox
   const images = recording?.images ?? [];
   useEffect(() => {
@@ -171,12 +204,16 @@ export default function RecordingPage() {
         navigate(`/recording/${prevRecordingId}`);
       } else if (e.key === 'ArrowRight' && nextRecordingId) {
         navigate(`/recording/${nextRecordingId}`);
+      } else if (e.key === 'Escape' && activeDurationId !== null) {
+        // Stop loop playback on Escape
+        audioPlayerRef.current?.clearLoopRegion();
+        setActiveDurationId(null);
       }
     };
 
     window.addEventListener('keydown', handleRecordingNav);
     return () => window.removeEventListener('keydown', handleRecordingNav);
-  }, [selectedImageIndex, selectedVideo, isEditing, prevRecordingId, nextRecordingId, navigate]);
+  }, [selectedImageIndex, selectedVideo, isEditing, prevRecordingId, nextRecordingId, navigate, activeDurationId]);
 
   if (loading) {
     return (
@@ -261,6 +298,14 @@ export default function RecordingPage() {
           <p className="text-gray-500 dark:text-gray-400">No audio file available</p>
         )}
       </div>
+
+      {/* Duration markers */}
+      <DurationList
+        durations={durations}
+        activeDurationId={activeDurationId}
+        onDurationClick={handleDurationClick}
+        onDeleteDuration={handleDeleteDuration}
+      />
 
       {/* Notes */}
       <div className="mb-6">

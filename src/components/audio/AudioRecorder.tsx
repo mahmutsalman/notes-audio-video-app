@@ -18,25 +18,34 @@ export default function AudioRecorder({ recorder, onStopRecording }: AudioRecord
     startRecording,
     pauseRecording,
     resumeRecording,
+    handleMarkToggle,
+    isMarking,
+    pendingMarkStart,
+    completedMarks,
   } = recorder;
 
-  // Space bar keyboard shortcut for pause/resume
+  // Keyboard shortcuts: Space for pause/resume, Enter for marking durations
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle space bar when recording is active
-      if (e.code === 'Space' && isRecording) {
+      // Only handle when recording is active
+      if (!isRecording) return;
+
+      if (e.code === 'Space') {
         e.preventDefault(); // Prevent page scroll
         if (isPaused) {
           resumeRecording();
         } else {
           pauseRecording();
         }
+      } else if (e.code === 'Enter') {
+        e.preventDefault();
+        handleMarkToggle();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isRecording, isPaused, pauseRecording, resumeRecording]);
+  }, [isRecording, isPaused, pauseRecording, resumeRecording, handleMarkToggle]);
 
   return (
     <div className="flex flex-col items-center py-8">
@@ -64,6 +73,22 @@ export default function AudioRecorder({ recorder, onStopRecording }: AudioRecord
       {!isRecording && (
         <div className="text-gray-500 dark:text-gray-400 text-lg font-medium mb-2">
           Ready to record
+        </div>
+      )}
+
+      {/* Duration marking indicator */}
+      {isRecording && (
+        <div className="flex items-center gap-3 mb-2">
+          {isMarking ? (
+            <div className="flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium">
+              <span className="w-2 h-2 bg-primary-600 dark:bg-primary-400 rounded-full animate-pulse" />
+              Marking from {formatDuration(pendingMarkStart ?? 0)}...
+            </div>
+          ) : completedMarks.length > 0 ? (
+            <div className="text-gray-500 dark:text-gray-400 text-sm">
+              {completedMarks.length} mark{completedMarks.length !== 1 ? 's' : ''} saved
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -120,9 +145,9 @@ export default function AudioRecorder({ recorder, onStopRecording }: AudioRecord
       </div>
 
       {/* Instructions */}
-      <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+      <p className="mt-4 text-sm text-gray-500 dark:text-gray-400 text-center">
         {isRecording
-          ? 'Press Space to pause/resume • Click stop when finished'
+          ? 'Space: pause/resume • Enter: mark duration • Stop when finished'
           : 'Click the microphone to start recording'}
       </p>
     </div>

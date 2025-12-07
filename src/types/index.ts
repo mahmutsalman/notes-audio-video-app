@@ -45,6 +45,14 @@ export interface Video {
   created_at: string;
 }
 
+export interface Duration {
+  id: number;
+  recording_id: number;
+  start_time: number;  // seconds
+  end_time: number;    // seconds
+  created_at: string;
+}
+
 // Create types (omit auto-generated fields)
 export type CreateTopic = Omit<Topic, 'id' | 'created_at' | 'updated_at' | 'total_recordings' | 'total_images' | 'total_videos'>;
 export type UpdateTopic = Partial<CreateTopic>;
@@ -54,6 +62,7 @@ export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
 export type CreateVideo = Omit<Video, 'id' | 'created_at'>;
+export type CreateDuration = Omit<Duration, 'id' | 'created_at'>;
 
 // IPC Types
 export interface ElectronAPI {
@@ -99,6 +108,11 @@ export interface ElectronAPI {
   clipboard: {
     readImage: () => Promise<{ success: boolean; buffer?: ArrayBuffer; extension?: string }>;
     readFileUrl: () => Promise<{ success: boolean; filePath?: string }>;
+  };
+  durations: {
+    getByRecording: (recordingId: number) => Promise<Duration[]>;
+    create: (duration: CreateDuration) => Promise<Duration>;
+    delete: (id: number) => Promise<void>;
   };
 }
 

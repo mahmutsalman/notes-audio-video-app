@@ -2,7 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   Topic, CreateTopic, UpdateTopic,
   Recording, CreateRecording, UpdateRecording,
-  Image, Video
+  Image, Video,
+  Duration, CreateDuration
 } from '../src/types';
 
 // Type-safe API exposed to renderer
@@ -76,6 +77,16 @@ const electronAPI = {
       ipcRenderer.invoke('clipboard:readImage'),
     readFileUrl: (): Promise<{ success: boolean; filePath?: string }> =>
       ipcRenderer.invoke('clipboard:readFileUrl'),
+  },
+
+  // Durations (marked time segments within recordings)
+  durations: {
+    getByRecording: (recordingId: number): Promise<Duration[]> =>
+      ipcRenderer.invoke('durations:getByRecording', recordingId),
+    create: (duration: CreateDuration): Promise<Duration> =>
+      ipcRenderer.invoke('durations:create', duration),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('durations:delete', id),
   },
 };
 

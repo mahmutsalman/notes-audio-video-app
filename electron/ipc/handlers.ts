@@ -4,6 +4,7 @@ import {
   RecordingsOperations,
   ImagesOperations,
   VideosOperations,
+  DurationsOperations,
 } from '../database/operations';
 import {
   saveAudioFile,
@@ -17,7 +18,7 @@ import {
   getMediaDir,
   getFileUrl,
 } from '../services/fileStorage';
-import type { CreateTopic, UpdateTopic, CreateRecording, UpdateRecording } from '../../src/types';
+import type { CreateTopic, UpdateTopic, CreateRecording, UpdateRecording, CreateDuration } from '../../src/types';
 
 export function setupIpcHandlers(): void {
   // ============ Topics ============
@@ -223,6 +224,19 @@ export function setupIpcHandlers(): void {
     }
     // Windows support could be added here with clipboard.read('FileNameW')
     return { success: false };
+  });
+
+  // ============ Durations (marked time segments) ============
+  ipcMain.handle('durations:getByRecording', async (_, recordingId: number) => {
+    return DurationsOperations.getByRecording(recordingId);
+  });
+
+  ipcMain.handle('durations:create', async (_, duration: CreateDuration) => {
+    return DurationsOperations.create(duration);
+  });
+
+  ipcMain.handle('durations:delete', async (_, id: number) => {
+    DurationsOperations.delete(id);
   });
 
   console.log('IPC handlers registered');

@@ -113,6 +113,15 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
         await window.electronAPI.media.addVideo(recording.id, videoPath);
       }
 
+      // Save duration marks
+      for (const mark of recorder.completedMarks) {
+        await window.electronAPI.durations.create({
+          recording_id: recording.id,
+          start_time: mark.start,
+          end_time: mark.end,
+        });
+      }
+
       // Reset and close
       recorder.resetRecording();
       setIsOpen(false);

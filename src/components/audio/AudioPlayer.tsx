@@ -6,9 +6,17 @@ interface AudioPlayerProps {
   duration?: number;  // Optional: pass duration explicitly for blob URLs
 }
 
+export interface LoopRegion {
+  start: number;
+  end: number;
+}
+
 export interface AudioPlayerHandle {
   toggle: () => void;
   setPressed: (pressed: boolean) => void;
+  setLoopRegion: (start: number, end: number) => void;
+  clearLoopRegion: () => void;
+  isLooping: boolean;
 }
 
 const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
@@ -18,6 +26,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   const [isPressed, setIsPressed] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [metadataDuration, setMetadataDuration] = useState(0);
+  const [loopRegion, setLoopRegionState] = useState<LoopRegion | null>(null);
 
   // Use prop duration if provided (for blob URLs), otherwise use metadata
   const duration = propDuration ?? metadataDuration;
@@ -58,10 +67,49 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     setIsPlaying(!isPlaying);
   };
 
-  // Expose toggle and setPressed to parent via ref
+  // Loop region boundary checking
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !loopRegion) return;
+
+    const handleTimeUpdate = () => {
+      if (audio.currentTime >= loopRegion.end) {
+        audio.currentTime = loopRegion.start;
+      }
+    };
+
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    return () => audio.removeEventListener('timeupdate', handleTimeUpdate);
+  }, [loopRegion]);
+
+  // Set loop region and start playing from start
+  const setLoopRegion = (start: number, end: number) => {
+    const audio = audioRef.current;
+    setLoopRegionState({ start, end });
+    if (audio) {
+      audio.currentTime = start;
+      audio.play();
+      setIsPlaying(true);
+    }
+  };
+
+  // Clear loop region and stop playing
+  const clearLoopRegion = () => {
+    const audio = audioRef.current;
+    setLoopRegionState(null);
+    if (audio) {
+      audio.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  // Expose controls to parent via ref
   useImperativeHandle(ref, () => ({
     toggle: togglePlay,
     setPressed: setIsPressed,
+    setLoopRegion,
+    clearLoopRegion,
+    isLooping: loopRegion !== null,
   }));
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -89,11 +137,11 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
 
       {/* Play/Pause button */}
       <div
-        className="w-12 h-12 bg-primary-600 text-white rounded-full
+        className={`w-12 h-12 text-white rounded-full
                    flex items-center justify-center text-xl
-                   flex-shrink-0"
+                   flex-shrink-0 ${loopRegion ? 'bg-primary-500 ring-2 ring-primary-300' : 'bg-primary-600'}`}
       >
-        {isPlaying ? '⏸️' : '▶️'}
+        {loopRegion ? '🔁' : isPlaying ? '⏸️' : '▶️'}
       </div>
 
       {/* Progress and time */}
