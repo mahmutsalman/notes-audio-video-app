@@ -63,19 +63,24 @@ export default function AudioPlayer({ src, duration: propDuration }: AudioPlayer
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-dark-hover rounded-lg">
+    <div
+      onClick={togglePlay}
+      className="flex items-center gap-4 p-4 rounded-lg cursor-pointer select-none
+                 bg-gray-100 dark:bg-dark-hover
+                 shadow-[0_4px_0_0_rgba(0,0,0,0.15)] dark:shadow-[0_4px_0_0_rgba(0,0,0,0.4)]
+                 active:translate-y-1 active:shadow-none
+                 transition-all duration-75"
+    >
       <audio ref={audioRef} src={src} preload="metadata" />
 
       {/* Play/Pause button */}
-      <button
-        onClick={togglePlay}
-        className="w-12 h-12 bg-primary-600 hover:bg-primary-700 text-white rounded-full
-                   flex items-center justify-center text-xl shadow-md
-                   focus:outline-none focus:ring-4 focus:ring-primary-500/50
-                   transition-all flex-shrink-0"
+      <div
+        className="w-12 h-12 bg-primary-600 text-white rounded-full
+                   flex items-center justify-center text-xl
+                   flex-shrink-0"
       >
         {isPlaying ? '⏸️' : '▶️'}
-      </button>
+      </div>
 
       {/* Progress and time */}
       <div className="flex-1 min-w-0">
@@ -91,6 +96,7 @@ export default function AudioPlayer({ src, duration: propDuration }: AudioPlayer
             max={duration || 0}
             value={currentTime}
             onChange={handleSeek}
+            onClick={(e) => e.stopPropagation()}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
         </div>
