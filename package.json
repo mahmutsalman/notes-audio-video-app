@@ -59,7 +59,12 @@
     ],
     "mac": {
       "target": "dmg",
-      "icon": "resources/icons/icon.icns"
+      "icon": "resources/icons/icon.icns",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "This app needs microphone access to record audio notes"
+      }
     },
     "win": {
       "target": "nsis",

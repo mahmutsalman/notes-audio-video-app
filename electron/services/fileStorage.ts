@@ -4,24 +4,25 @@ import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { generateVideoThumbnail } from './videoThumbnail';
 
-const MEDIA_DIR = path.join(app.getPath('userData'), 'media');
+// Lazy getter to ensure app.setPath() has been called before accessing userData
+// This is necessary because this module is imported before main.ts sets the path
+export function getMediaDir(): string {
+  return path.join(app.getPath('userData'), 'media');
+}
 
 export async function ensureMediaDirs(): Promise<void> {
+  const mediaDir = getMediaDir();
   const dirs = [
-    path.join(MEDIA_DIR, 'audio'),
-    path.join(MEDIA_DIR, 'images'),
-    path.join(MEDIA_DIR, 'videos'),
+    path.join(mediaDir, 'audio'),
+    path.join(mediaDir, 'images'),
+    path.join(mediaDir, 'videos'),
   ];
 
   for (const dir of dirs) {
     await fs.mkdir(dir, { recursive: true });
   }
 
-  console.log('Media directories ensured at:', MEDIA_DIR);
-}
-
-export function getMediaDir(): string {
-  return MEDIA_DIR;
+  console.log('Media directories ensured at:', mediaDir);
 }
 
 export async function saveAudioFile(
@@ -29,7 +30,7 @@ export async function saveAudioFile(
   audioBuffer: ArrayBuffer,
   filename: string
 ): Promise<string> {
-  const dir = path.join(MEDIA_DIR, 'audio', String(recordingId));
+  const dir = path.join(getMediaDir(), 'audio', String(recordingId));
   await fs.mkdir(dir, { recursive: true });
 
   const filePath = path.join(dir, filename);
@@ -40,7 +41,7 @@ export async function saveAudioFile(
 }
 
 export async function getAudioPath(recordingId: number): Promise<string | null> {
-  const dir = path.join(MEDIA_DIR, 'audio', String(recordingId));
+  const dir = path.join(getMediaDir(), 'audio', String(recordingId));
 
   try {
     const files = await fs.readdir(dir);
@@ -58,7 +59,7 @@ export async function saveImageFile(
   recordingId: number,
   sourcePath: string
 ): Promise<{ filePath: string; thumbnailPath: string | null }> {
-  const dir = path.join(MEDIA_DIR, 'images', String(recordingId));
+  const dir = path.join(getMediaDir(), 'images', String(recordingId));
   const thumbDir = path.join(dir, 'thumbnails');
   await fs.mkdir(thumbDir, { recursive: true });
 
@@ -82,7 +83,7 @@ export async function saveImageFromBuffer(
   imageBuffer: ArrayBuffer,
   extension: string = 'png'
 ): Promise<{ filePath: string; thumbnailPath: string | null }> {
-  const dir = path.join(MEDIA_DIR, 'images', String(recordingId));
+  const dir = path.join(getMediaDir(), 'images', String(recordingId));
   const thumbDir = path.join(dir, 'thumbnails');
   await fs.mkdir(thumbDir, { recursive: true });
 
@@ -103,7 +104,7 @@ export async function saveVideoFile(
   recordingId: number,
   sourcePath: string
 ): Promise<{ filePath: string; thumbnailPath: string | null; duration: number | null }> {
-  const dir = path.join(MEDIA_DIR, 'videos', String(recordingId));
+  const dir = path.join(getMediaDir(), 'videos', String(recordingId));
   const thumbDir = path.join(dir, 'thumbnails');
   await fs.mkdir(thumbDir, { recursive: true });
 
@@ -129,7 +130,7 @@ export async function saveVideoFromBuffer(
   videoBuffer: ArrayBuffer,
   extension: string = 'mp4'
 ): Promise<{ filePath: string; thumbnailPath: string | null; duration: number | null }> {
-  const dir = path.join(MEDIA_DIR, 'videos', String(recordingId));
+  const dir = path.join(getMediaDir(), 'videos', String(recordingId));
   const thumbDir = path.join(dir, 'thumbnails');
   await fs.mkdir(thumbDir, { recursive: true });
 
@@ -159,9 +160,10 @@ export async function deleteFile(filePath: string): Promise<void> {
 }
 
 export async function deleteRecordingMedia(recordingId: number): Promise<void> {
-  const audiDir = path.join(MEDIA_DIR, 'audio', String(recordingId));
-  const imagesDir = path.join(MEDIA_DIR, 'images', String(recordingId));
-  const videosDir = path.join(MEDIA_DIR, 'videos', String(recordingId));
+  const mediaDir = getMediaDir();
+  const audiDir = path.join(mediaDir, 'audio', String(recordingId));
+  const imagesDir = path.join(mediaDir, 'images', String(recordingId));
+  const videosDir = path.join(mediaDir, 'videos', String(recordingId));
 
   for (const dir of [audiDir, imagesDir, videosDir]) {
     try {

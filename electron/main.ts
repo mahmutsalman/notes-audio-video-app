@@ -5,6 +5,16 @@ import { initDatabase, closeDatabase } from './database/database';
 import { ensureMediaDirs } from './services/fileStorage';
 import { setupIpcHandlers } from './ipc/handlers';
 
+// Force consistent app name and userData path (ensures dev and prod use same database)
+// This is critical: dev mode uses package.json 'name', prod uses 'productName'
+// By explicitly setting the path, we ensure both environments use the same folder
+const APP_NAME = 'NotesWithAudioAndVideo';
+app.setName(APP_NAME);
+
+// Set userData path explicitly to ensure dev and prod use the same location
+const userDataPath = path.join(app.getPath('appData'), APP_NAME);
+app.setPath('userData', userDataPath);
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 // This is only needed for Windows installers
 // if (require('electron-squirrel-startup')) {

@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Dark background -->
+  <rect width="1024" height="1024" fill="#1a1a1a"/>
+
+  <!-- Microphone group - centered and scaled -->
+  <g transform="translate(512, 480)">
+    <!-- Microphone body (capsule shape) -->
+    <defs>
+      <!-- Gradient for depth -->
+      <linearGradient id="micGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" style="stop-color:#d0d0d0"/>
+        <stop offset="50%" style="stop-color:#ffffff"/>
+        <stop offset="100%" style="stop-color:#c0c0c0"/>
+      </linearGradient>
+
+      <!-- Grill pattern gradient -->
+      <linearGradient id="grillGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" style="stop-color:#a0a0a0"/>
+        <stop offset="50%" style="stop-color:#e0e0e0"/>
+        <stop offset="100%" style="stop-color:#909090"/>
+      </linearGradient>
+    </defs>
+
+    <!-- Outer microphone body -->
+    <rect x="-120" y="-280" width="240" height="340" rx="120" ry="120" fill="url(#micGradient)"/>
+
+    <!-- Inner grill area -->
+    <rect x="-100" y="-260" width="200" height="280" rx="100" ry="100" fill="#1a1a1a" opacity="0.9"/>
+
+    <!-- Grill lines (horizontal) -->
+    <g stroke="url(#grillGradient)" stroke-width="4" stroke-linecap="round">
+      <line x1="-70" y1="-220" x2="70" y2="-220"/>
+      <line x1="-80" y1="-185" x2="80" y2="-185"/>
+      <line x1="-85" y1="-150" x2="85" y2="-150"/>
+      <line x1="-85" y1="-115" x2="85" y2="-115"/>
+      <line x1="-85" y1="-80" x2="85" y2="-80"/>
+      <line x1="-85" y1="-45" x2="85" y2="-45"/>
+      <line x1="-80" y1="-10" x2="80" y2="-10"/>
+      <line x1="-70" y1="25" x2="70" y2="25"/>
+    </g>
+
+    <!-- Mount ring -->
+    <ellipse cx="0" cy="80" rx="90" ry="20" fill="#b0b0b0"/>
+    <ellipse cx="0" cy="75" rx="90" ry="20" fill="url(#micGradient)"/>
+
+    <!-- Stand connector -->
+    <rect x="-25" y="90" width="50" height="60" fill="url(#micGradient)"/>
+
+    <!-- Stand pole -->
+    <rect x="-12" y="150" width="24" height="120" fill="#c0c0c0"/>
+
+    <!-- Base -->
+    <ellipse cx="0" cy="280" rx="100" ry="25" fill="#909090"/>
+    <ellipse cx="0" cy="270" rx="100" ry="25" fill="url(#micGradient)"/>
+  </g>
+</svg>
