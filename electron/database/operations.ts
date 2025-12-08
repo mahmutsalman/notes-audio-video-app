@@ -331,6 +331,10 @@ export const DurationsOperations = {
       fields.push('note = ?');
       values.push(updates.note);
     }
+    if (updates.color !== undefined) {
+      fields.push('color = ?');
+      values.push(updates.color);
+    }
 
     if (fields.length > 0) {
       values.push(id);

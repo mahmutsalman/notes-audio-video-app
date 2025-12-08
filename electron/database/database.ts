@@ -121,6 +121,13 @@ function runMigrations(db: Database.Database): void {
     console.log('Added importance_color column to recordings table');
   }
 
+  // Migration: Add color column to durations table if it doesn't exist
+  const hasColorColumn = durationsColumns.some(col => col.name === 'color');
+  if (!hasColorColumn) {
+    db.exec(`ALTER TABLE durations ADD COLUMN color TEXT`);
+    console.log('Added color column to durations table');
+  }
+
   // Create the stats view (drop and recreate to handle schema changes)
   db.exec(`
     DROP VIEW IF EXISTS topic_stats;

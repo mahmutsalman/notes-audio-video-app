@@ -8,7 +8,7 @@ import DurationList from '../components/recordings/DurationList';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import { formatDuration, formatDate } from '../utils/formatters';
-import type { Duration } from '../types';
+import type { Duration, DurationColor } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -166,6 +166,11 @@ export default function RecordingPage() {
     await updateDuration(durationId, { note });
   };
 
+  // Handle duration color change
+  const handleColorChange = async (durationId: number, color: DurationColor) => {
+    await updateDuration(durationId, { color });
+  };
+
   // Keyboard navigation for image lightbox
   const images = recording?.images ?? [];
   useEffect(() => {
@@ -312,6 +317,7 @@ export default function RecordingPage() {
         onDurationClick={handleDurationClick}
         onDeleteDuration={handleDeleteDuration}
         onUpdateNote={handleUpdateNote}
+        onColorChange={handleColorChange}
       />
 
       {/* Notes */}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import type { Duration } from '../../types';
+import type { Duration, DurationColor } from '../../types';
 import { formatDuration } from '../../utils/formatters';
+import { DURATION_COLORS, getNextDurationColor } from '../../utils/durationColors';
 
 interface DurationListProps {
   durations: Duration[];
@@ -8,6 +9,7 @@ interface DurationListProps {
   onDurationClick: (duration: Duration) => void;
   onDeleteDuration: (id: number) => void;
   onUpdateNote: (id: number, note: string | null) => void;
+  onColorChange?: (id: number, color: DurationColor) => void;
 }
 
 export default function DurationList({
@@ -16,6 +18,7 @@ export default function DurationList({
   onDurationClick,
   onDeleteDuration,
   onUpdateNote,
+  onColorChange,
 }: DurationListProps) {
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editNoteText, setEditNoteText] = useState('');
@@ -47,6 +50,14 @@ export default function DurationList({
     }
   };
 
+  const handleContextMenu = (e: React.MouseEvent, duration: Duration) => {
+    e.preventDefault();
+    if (onColorChange) {
+      const nextColor = getNextDurationColor(duration.color);
+      onColorChange(duration.id, nextColor);
+    }
+  };
+
   if (durations.length === 0) return null;
 
   const activeDuration = durations.find(d => d.id === activeDurationId);
@@ -60,6 +71,7 @@ export default function DurationList({
       <div className="flex flex-wrap gap-2">
         {durations.map((duration) => {
           const isActive = activeDurationId === duration.id;
+          const colorConfig = duration.color ? DURATION_COLORS[duration.color] : null;
           return (
             <div
               key={duration.id}
@@ -70,17 +82,32 @@ export default function DurationList({
                   e.stopPropagation();
                   onDurationClick(duration);
                 }}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all
+                onContextMenu={(e) => handleContextMenu(e, duration)}
+                className={`relative overflow-hidden px-3 py-2 rounded-lg text-sm font-medium transition-all
                            flex items-center gap-2
                            ${isActive
                              ? 'bg-primary-600 text-white shadow-md'
                              : 'bg-gray-100 dark:bg-dark-hover text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-dark-border'
                            }`}
               >
+                {/* Left color indicator */}
+                {colorConfig && (
+                  <div
+                    className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg"
+                    style={{ backgroundColor: colorConfig.borderColor }}
+                  />
+                )}
                 {isActive && <span className="animate-pulse">🔁</span>}
                 <span>{formatDuration(Math.floor(duration.start_time))}</span>
                 <span className="text-gray-400 dark:text-gray-500">→</span>
                 <span>{formatDuration(Math.floor(duration.end_time))}</span>
+                {/* Right color indicator */}
+                {colorConfig && (
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-1 rounded-r-lg"
+                    style={{ backgroundColor: colorConfig.borderColor }}
+                  />
+                )}
               </button>
               {/* Delete button */}
               <button

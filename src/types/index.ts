@@ -1,6 +1,7 @@
 // Database Models
 
 export type ImportanceColor = 'emerald' | 'amber' | 'rose' | null;
+export type DurationColor = 'emerald' | 'violet' | 'cyan' | null;
 
 export interface Topic {
   id: number;
@@ -54,10 +55,11 @@ export interface Duration {
   start_time: number;  // seconds
   end_time: number;    // seconds
   note: string | null; // optional note for this duration mark
+  color: DurationColor; // color indicator for categorizing duration marks
   created_at: string;
 }
 
-export type UpdateDuration = Partial<Pick<Duration, 'note'>>;
+export type UpdateDuration = Partial<Pick<Duration, 'note' | 'color'>>;
 
 // Create types (omit auto-generated fields)
 export type CreateTopic = Omit<Topic, 'id' | 'created_at' | 'updated_at' | 'total_recordings' | 'total_images' | 'total_videos'>;
@@ -68,7 +70,7 @@ export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
 export type CreateVideo = Omit<Video, 'id' | 'created_at'>;
-export type CreateDuration = Omit<Duration, 'id' | 'created_at'> & { note?: string | null };
+export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color'> & { note?: string | null; color?: DurationColor };
 
 // IPC Types
 export interface ElectronAPI {
