@@ -3,7 +3,8 @@ import type {
   Topic, CreateTopic, UpdateTopic,
   Recording, CreateRecording, UpdateRecording,
   Image, Video,
-  Duration, CreateDuration, UpdateDuration
+  Duration, CreateDuration, UpdateDuration,
+  DurationImage
 } from '../src/types';
 
 // Type-safe API exposed to renderer
@@ -89,6 +90,16 @@ const electronAPI = {
       ipcRenderer.invoke('durations:update', id, updates),
     delete: (id: number): Promise<void> =>
       ipcRenderer.invoke('durations:delete', id),
+  },
+
+  // Duration Images (images attached to duration marks)
+  durationImages: {
+    getByDuration: (durationId: number): Promise<DurationImage[]> =>
+      ipcRenderer.invoke('durationImages:getByDuration', durationId),
+    addFromClipboard: (durationId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<DurationImage> =>
+      ipcRenderer.invoke('durationImages:addFromClipboard', durationId, imageBuffer, extension),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('durationImages:delete', id),
   },
 };
 

@@ -9,10 +9,16 @@ export interface VoiceRecorderState {
   error: string | null;
 }
 
+export interface DurationMarkImage {
+  data: ArrayBuffer;
+  extension: string;
+}
+
 export interface DurationMark {
   start: number;  // seconds
   end: number;    // seconds
   note?: string;  // optional note for this mark
+  images?: DurationMarkImage[];  // images attached to this mark
 }
 
 export interface VoiceRecorderControls {
@@ -23,6 +29,7 @@ export interface VoiceRecorderControls {
   resetRecording: () => void;
   handleMarkToggle: () => void;
   setMarkNote: (note: string) => void;
+  addImageToLastMark: (image: DurationMarkImage) => boolean;  // returns true if image was added
 }
 
 export interface UseVoiceRecorderReturn extends VoiceRecorderState, VoiceRecorderControls {
@@ -334,6 +341,23 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     setPendingMarkNote(note);
   }, []);
 
+  // Add an image to the last completed mark
+  const addImageToLastMark = useCallback((image: DurationMarkImage): boolean => {
+    if (completedMarks.length === 0) return false;
+
+    setCompletedMarks(prev => {
+      const updated = [...prev];
+      const lastIndex = updated.length - 1;
+      const lastMark = updated[lastIndex];
+      updated[lastIndex] = {
+        ...lastMark,
+        images: [...(lastMark.images || []), image]
+      };
+      return updated;
+    });
+    return true;
+  }, [completedMarks.length]);
+
   return {
     ...state,
     analyserNode: analyserRef.current,
@@ -344,6 +368,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     resetRecording,
     handleMarkToggle,
     setMarkNote,
+    addImageToLastMark,
     pendingMarkStart,
     pendingMarkNote,
     completedMarks,

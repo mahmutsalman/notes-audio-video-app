@@ -18,7 +18,15 @@ export default function RecordingPage() {
   const { recording, loading, refetch } = useRecording(id);
   const { topic } = useTopic(recording?.topic_id ?? null);
   const { recordings: topicRecordings } = useRecordings(recording?.topic_id ?? null);
-  const { durations, deleteDuration, updateDuration } = useDurations(id);
+  const {
+    durations,
+    deleteDuration,
+    updateDuration,
+    durationImagesCache,
+    getDurationImages,
+    addDurationImageFromClipboard,
+    deleteDurationImage,
+  } = useDurations(id);
 
   // Calculate adjacent recording IDs for navigation
   const currentIndex = topicRecordings.findIndex(r => r.id === id);
@@ -36,6 +44,7 @@ export default function RecordingPage() {
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [isContentPressed, setIsContentPressed] = useState(false);
   const [activeDurationId, setActiveDurationId] = useState<number | null>(null);
+  const [selectedDurationImageIndex, setSelectedDurationImageIndex] = useState<number | null>(null);
 
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
 
@@ -139,7 +148,7 @@ export default function RecordingPage() {
   };
 
   // Handle duration click for loop playback
-  const handleDurationClick = (duration: Duration) => {
+  const handleDurationClick = async (duration: Duration) => {
     if (activeDurationId === duration.id) {
       // Already looping this one - stop
       audioPlayerRef.current?.clearLoopRegion();
@@ -148,7 +157,24 @@ export default function RecordingPage() {
       // Start looping this duration
       audioPlayerRef.current?.setLoopRegion(duration.start_time, duration.end_time);
       setActiveDurationId(duration.id);
+      // Fetch images for this duration if not cached
+      await getDurationImages(duration.id);
     }
+  };
+
+  // Handle adding image to active duration from clipboard
+  const handleAddDurationImage = async () => {
+    if (!activeDurationId) return;
+    const image = await addDurationImageFromClipboard(activeDurationId);
+    if (!image) {
+      alert('No image found in clipboard. Copy an image first, then click Paste.');
+    }
+  };
+
+  // Handle deleting a duration image
+  const handleDeleteDurationImage = async (imageId: number) => {
+    if (!activeDurationId) return;
+    await deleteDurationImage(imageId, activeDurationId);
   };
 
   // Handle duration delete
@@ -190,11 +216,33 @@ export default function RecordingPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedImageIndex, images.length]);
 
+  // Keyboard navigation for duration image lightbox
+  const activeDurationImages = activeDurationId ? durationImagesCache[activeDurationId] ?? [] : [];
+  useEffect(() => {
+    if (selectedDurationImageIndex === null) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        setSelectedDurationImageIndex(i => (i !== null && i > 0 ? i - 1 : i));
+      } else if (e.key === 'ArrowRight') {
+        setSelectedDurationImageIndex(i => (i !== null && i < activeDurationImages.length - 1 ? i + 1 : i));
+      } else if (e.key === 'Escape') {
+        setSelectedDurationImageIndex(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedDurationImageIndex, activeDurationImages.length]);
+
   // Keyboard navigation for recording navigation (between recordings in same topic)
   useEffect(() => {
     const handleRecordingNav = (e: KeyboardEvent) => {
       // Skip if image lightbox is open (image navigation takes priority)
       if (selectedImageIndex !== null) return;
+
+      // Skip if duration image lightbox is open
+      if (selectedDurationImageIndex !== null) return;
 
       // Skip if video lightbox is open
       if (selectedVideo !== null) return;
@@ -219,7 +267,7 @@ export default function RecordingPage() {
 
     window.addEventListener('keydown', handleRecordingNav);
     return () => window.removeEventListener('keydown', handleRecordingNav);
-  }, [selectedImageIndex, selectedVideo, isEditing, prevRecordingId, nextRecordingId, navigate, activeDurationId]);
+  }, [selectedImageIndex, selectedDurationImageIndex, selectedVideo, isEditing, prevRecordingId, nextRecordingId, navigate, activeDurationId]);
 
   if (loading) {
     return (
@@ -318,7 +366,64 @@ export default function RecordingPage() {
         onDeleteDuration={handleDeleteDuration}
         onUpdateNote={handleUpdateNote}
         onColorChange={handleColorChange}
+        durationImagesCache={durationImagesCache}
       />
+
+      {/* Duration Images - shown when a duration is active and has images */}
+      {activeDurationId && activeDurationImages.length > 0 && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              Images ({activeDurationImages.length})
+            </h3>
+            <button
+              onClick={handleAddDurationImage}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+            >
+              📋 Paste
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {activeDurationImages.map((img, index) => (
+              <div key={img.id} className="relative group">
+                <div
+                  className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
+                  onClick={() => setSelectedDurationImageIndex(index)}
+                >
+                  <img
+                    src={window.electronAPI.paths.getFileUrl(img.thumbnail_path || img.file_path)}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <button
+                  onClick={() => handleDeleteDurationImage(img.id)}
+                  className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full
+                             opacity-0 group-hover:opacity-100 transition-opacity
+                             flex items-center justify-center text-xs"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Add Image prompt when duration is active but has no images */}
+      {activeDurationId && activeDurationImages.length === 0 && (
+        <div className="mb-4 p-3 bg-gray-50 dark:bg-dark-hover border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <span>No images for this section</span>
+            <button
+              onClick={handleAddDurationImage}
+              className="px-2 py-1 text-xs bg-gray-200 dark:bg-dark-border rounded hover:bg-gray-300 dark:hover:bg-dark-surface transition-colors"
+            >
+              📋 Paste Image
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Notes */}
       <div className="mb-6">
@@ -547,6 +652,63 @@ export default function RecordingPage() {
             className="max-w-full max-h-full"
             onClick={(e) => e.stopPropagation()}
           />
+        </div>
+      )}
+
+      {/* Duration Image lightbox */}
+      {selectedDurationImageIndex !== null && activeDurationImages[selectedDurationImageIndex] && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setSelectedDurationImageIndex(null)}
+        >
+          {/* Close button */}
+          <button
+            className="absolute top-4 right-4 text-white text-2xl hover:text-gray-300 z-10"
+            onClick={() => setSelectedDurationImageIndex(null)}
+          >
+            ×
+          </button>
+
+          {/* Image counter */}
+          <div className="absolute top-4 left-4 text-white text-lg font-medium">
+            {selectedDurationImageIndex + 1} / {activeDurationImages.length}
+          </div>
+
+          {/* Previous button */}
+          {selectedDurationImageIndex > 0 && (
+            <button
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-5xl
+                         hover:text-gray-300 transition-colors px-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedDurationImageIndex(i => i! - 1);
+              }}
+            >
+              ‹
+            </button>
+          )}
+
+          {/* Image */}
+          <img
+            src={window.electronAPI.paths.getFileUrl(activeDurationImages[selectedDurationImageIndex].file_path)}
+            alt=""
+            className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+
+          {/* Next button */}
+          {selectedDurationImageIndex < activeDurationImages.length - 1 && (
+            <button
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-5xl
+                         hover:text-gray-300 transition-colors px-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedDurationImageIndex(i => i! + 1);
+              }}
+            >
+              ›
+            </button>
+          )}
         </div>
       )}
 

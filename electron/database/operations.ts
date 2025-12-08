@@ -4,7 +4,8 @@ import type {
   Recording, CreateRecording, UpdateRecording,
   Image, CreateImage,
   Video, CreateVideo,
-  Duration, CreateDuration, UpdateDuration
+  Duration, CreateDuration, UpdateDuration,
+  DurationImage, CreateDurationImage
 } from '../../src/types';
 
 // Helper to parse tags from JSON string
@@ -349,5 +350,49 @@ export const DurationsOperations = {
   delete(id: number): void {
     const db = getDatabase();
     db.prepare('DELETE FROM durations WHERE id = ?').run(id);
+  },
+};
+
+// Duration Images Operations (images attached to duration marks)
+export const DurationImagesOperations = {
+  getByDuration(durationId: number): DurationImage[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM duration_images
+      WHERE duration_id = ?
+      ORDER BY sort_order, created_at
+    `).all(durationId) as DurationImage[];
+  },
+
+  getById(id: number): DurationImage | null {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM duration_images WHERE id = ?').get(id) as DurationImage | undefined ?? null;
+  },
+
+  create(image: CreateDurationImage): DurationImage {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO duration_images (duration_id, file_path, thumbnail_path, sort_order)
+      VALUES (?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      image.duration_id,
+      image.file_path,
+      image.thumbnail_path ?? null,
+      image.sort_order ?? 0
+    );
+
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM duration_images WHERE id = ?').run(id);
+  },
+
+  deleteByDuration(durationId: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM duration_images WHERE duration_id = ?').run(durationId);
   },
 };

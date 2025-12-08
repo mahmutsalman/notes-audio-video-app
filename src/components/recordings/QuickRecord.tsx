@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useVoiceRecorder } from '../../hooks/useVoiceRecorder';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
@@ -81,6 +81,45 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
     }
   };
 
+  // Handle Cmd+V to add image to the last duration mark (works in both recording and review phases)
+  const handlePasteToMark = useCallback(async () => {
+    if (recorder.completedMarks.length === 0) return false;
+
+    try {
+      const result = await window.electronAPI.clipboard.readImage();
+      if (result.success && result.buffer) {
+        const added = recorder.addImageToLastMark({
+          data: result.buffer,
+          extension: result.extension || 'png'
+        });
+        return added;
+      }
+    } catch (error) {
+      console.error('Failed to read clipboard for mark:', error);
+    }
+    return false;
+  }, [recorder]);
+
+  // Keyboard listener for Cmd+V to add image to last mark (works in both recording and review phases)
+  useEffect(() => {
+    if (!isOpen) return;
+    if (recorder.completedMarks.length === 0) return;
+
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      // Check for Cmd+V (macOS) or Ctrl+V (Windows/Linux)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
+        const added = await handlePasteToMark();
+        if (added) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, recorder.completedMarks.length, handlePasteToMark]);
+
   const handleSave = async () => {
     if (!recorder.audioBlob) return;
 
@@ -113,14 +152,25 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
         await window.electronAPI.media.addVideo(recording.id, videoPath);
       }
 
-      // Save duration marks
+      // Save duration marks and their images
       for (const mark of recorder.completedMarks) {
-        await window.electronAPI.durations.create({
+        const duration = await window.electronAPI.durations.create({
           recording_id: recording.id,
           start_time: mark.start,
           end_time: mark.end,
           note: mark.note ?? null,
         });
+
+        // Save images attached to this mark
+        if (mark.images && mark.images.length > 0) {
+          for (const image of mark.images) {
+            await window.electronAPI.durationImages.addFromClipboard(
+              duration.id,
+              image.data,
+              image.extension
+            );
+          }
+        }
       }
 
       // Reset and close
@@ -156,10 +206,60 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
         size="lg"
       >
         {phase === 'recording' ? (
-          <AudioRecorder
-            recorder={recorder}
-            onStopRecording={handleStopRecording}
-          />
+          <div className="space-y-4">
+            <AudioRecorder
+              recorder={recorder}
+              onStopRecording={handleStopRecording}
+            />
+
+            {/* Show completed marks during recording */}
+            {recorder.completedMarks.length > 0 && (
+              <div className="p-3 bg-gray-50 dark:bg-dark-hover rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Marked Sections ({recorder.completedMarks.length})
+                  </span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    ⌘V adds image to last mark
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {recorder.completedMarks.map((mark, index) => {
+                    const imageCount = mark.images?.length || 0;
+                    const isLastMark = index === recorder.completedMarks.length - 1;
+                    return (
+                      <div key={index} className="flex items-center gap-2 text-sm">
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {formatDuration(mark.start)} → {formatDuration(mark.end)}
+                        </span>
+                        {imageCount > 0 ? (
+                          <span className="px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-xs font-medium">
+                            📷 {imageCount}
+                          </span>
+                        ) : isLastMark ? (
+                          <button
+                            onClick={() => handlePasteToMark()}
+                            className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-dark-border text-gray-600 dark:text-gray-400 hover:bg-primary-100 dark:hover:bg-primary-900/50 hover:text-primary-700 dark:hover:text-primary-300 rounded transition-colors"
+                          >
+                            📋 Paste Image
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-400 dark:text-gray-500 italic">
+                            No images
+                          </span>
+                        )}
+                        {mark.note && (
+                          <span className="text-gray-500 dark:text-gray-400 text-xs">
+                            ({mark.note})
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="space-y-4">
             {/* Playback */}
@@ -178,6 +278,45 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
             {/* Audio player */}
             {recorder.audioUrl && (
               <AudioPlayer src={recorder.audioUrl} duration={recorder.duration} />
+            )}
+
+            {/* Completed duration marks with image indicators */}
+            {recorder.completedMarks.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Marked Sections ({recorder.completedMarks.length})
+                  </span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    Press ⌘V to add image to last mark
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {recorder.completedMarks.map((mark, index) => {
+                    const imageCount = mark.images?.length || 0;
+                    return (
+                      <div
+                        key={index}
+                        className="relative px-3 py-1.5 bg-gray-100 dark:bg-dark-hover rounded-lg text-sm"
+                      >
+                        <span className="text-gray-700 dark:text-gray-300">
+                          {formatDuration(mark.start)} → {formatDuration(mark.end)}
+                        </span>
+                        {imageCount > 0 && (
+                          <span className="ml-2 px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-xs font-medium">
+                            📷 {imageCount}
+                          </span>
+                        )}
+                        {mark.note && (
+                          <span className="ml-2 text-gray-500 dark:text-gray-400 text-xs">
+                            ({mark.note})
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
             {/* Notes input */}

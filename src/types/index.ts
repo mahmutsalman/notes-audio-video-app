@@ -57,9 +57,21 @@ export interface Duration {
   note: string | null; // optional note for this duration mark
   color: DurationColor; // color indicator for categorizing duration marks
   created_at: string;
+  // Images loaded separately
+  images?: DurationImage[];
+}
+
+export interface DurationImage {
+  id: number;
+  duration_id: number;
+  file_path: string;
+  thumbnail_path: string | null;
+  sort_order: number;
+  created_at: string;
 }
 
 export type UpdateDuration = Partial<Pick<Duration, 'note' | 'color'>>;
+export type CreateDurationImage = Omit<DurationImage, 'id' | 'created_at'>;
 
 // Create types (omit auto-generated fields)
 export type CreateTopic = Omit<Topic, 'id' | 'created_at' | 'updated_at' | 'total_recordings' | 'total_images' | 'total_videos'>;
@@ -121,6 +133,11 @@ export interface ElectronAPI {
     getByRecording: (recordingId: number) => Promise<Duration[]>;
     create: (duration: CreateDuration) => Promise<Duration>;
     update: (id: number, updates: UpdateDuration) => Promise<Duration>;
+    delete: (id: number) => Promise<void>;
+  };
+  durationImages: {
+    getByDuration: (durationId: number) => Promise<DurationImage[]>;
+    addFromClipboard: (durationId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<DurationImage>;
     delete: (id: number) => Promise<void>;
   };
 }

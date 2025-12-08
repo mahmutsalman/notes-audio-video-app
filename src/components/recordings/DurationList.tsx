@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Duration, DurationColor } from '../../types';
+import type { Duration, DurationColor, DurationImage } from '../../types';
 import { formatDuration } from '../../utils/formatters';
 import { DURATION_COLORS, getNextDurationColor } from '../../utils/durationColors';
 
@@ -10,6 +10,8 @@ interface DurationListProps {
   onDeleteDuration: (id: number) => void;
   onUpdateNote: (id: number, note: string | null) => void;
   onColorChange?: (id: number, color: DurationColor) => void;
+  // Duration images support
+  durationImagesCache?: Record<number, DurationImage[]>;
 }
 
 export default function DurationList({
@@ -19,6 +21,7 @@ export default function DurationList({
   onDeleteDuration,
   onUpdateNote,
   onColorChange,
+  durationImagesCache,
 }: DurationListProps) {
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editNoteText, setEditNoteText] = useState('');
@@ -72,6 +75,7 @@ export default function DurationList({
         {durations.map((duration) => {
           const isActive = activeDurationId === duration.id;
           const colorConfig = duration.color ? DURATION_COLORS[duration.color] : null;
+          const imageCount = durationImagesCache?.[duration.id]?.length || 0;
           return (
             <div
               key={duration.id}
@@ -101,6 +105,12 @@ export default function DurationList({
                 <span>{formatDuration(Math.floor(duration.start_time))}</span>
                 <span className="text-gray-400 dark:text-gray-500">→</span>
                 <span>{formatDuration(Math.floor(duration.end_time))}</span>
+                {/* Image indicator */}
+                {imageCount > 0 && (
+                  <span className={`text-xs ${isActive ? 'text-white/80' : 'text-gray-500 dark:text-gray-400'}`}>
+                    📷{imageCount > 1 && imageCount}
+                  </span>
+                )}
                 {/* Right color indicator */}
                 {colorConfig && (
                   <div

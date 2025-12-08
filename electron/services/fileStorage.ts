@@ -16,6 +16,7 @@ export async function ensureMediaDirs(): Promise<void> {
     path.join(mediaDir, 'audio'),
     path.join(mediaDir, 'images'),
     path.join(mediaDir, 'videos'),
+    path.join(mediaDir, 'duration_images'),
   ];
 
   for (const dir of dirs) {
@@ -148,6 +149,38 @@ export async function saveVideoFromBuffer(
   const duration = null; // TODO: Get duration if needed
 
   return { filePath, thumbnailPath, duration };
+}
+
+export async function saveDurationImageFromBuffer(
+  durationId: number,
+  imageBuffer: ArrayBuffer,
+  extension: string = 'png'
+): Promise<{ filePath: string; thumbnailPath: string | null }> {
+  const dir = path.join(getMediaDir(), 'duration_images', String(durationId));
+  const thumbDir = path.join(dir, 'thumbnails');
+  await fs.mkdir(thumbDir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+
+  // Write buffer directly to file
+  await fs.writeFile(filePath, Buffer.from(imageBuffer));
+  console.log('Duration image saved from clipboard to:', filePath);
+
+  // Use original as thumbnail for now
+  const thumbnailPath = filePath;
+
+  return { filePath, thumbnailPath };
+}
+
+export async function deleteDurationImages(durationId: number): Promise<void> {
+  const dir = path.join(getMediaDir(), 'duration_images', String(durationId));
+  try {
+    await fs.rm(dir, { recursive: true, force: true });
+    console.log('Deleted duration images directory:', dir);
+  } catch {
+    // Directory may not exist, ignore
+  }
 }
 
 export async function deleteFile(filePath: string): Promise<void> {

@@ -5,6 +5,7 @@ import {
   ImagesOperations,
   VideosOperations,
   DurationsOperations,
+  DurationImagesOperations,
 } from '../database/operations';
 import {
   saveAudioFile,
@@ -13,6 +14,8 @@ import {
   saveImageFromBuffer,
   saveVideoFile,
   saveVideoFromBuffer,
+  saveDurationImageFromBuffer,
+  deleteDurationImages,
   deleteFile,
   deleteRecordingMedia,
   getMediaDir,
@@ -240,7 +243,35 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('durations:delete', async (_, id: number) => {
+    // Delete associated images first
+    await deleteDurationImages(id);
     DurationsOperations.delete(id);
+  });
+
+  // ============ Duration Images ============
+  ipcMain.handle('durationImages:getByDuration', async (_, durationId: number) => {
+    return DurationImagesOperations.getByDuration(durationId);
+  });
+
+  ipcMain.handle('durationImages:addFromClipboard', async (_, durationId: number, imageBuffer: ArrayBuffer, extension: string = 'png') => {
+    const { filePath, thumbnailPath } = await saveDurationImageFromBuffer(durationId, imageBuffer, extension);
+    return DurationImagesOperations.create({
+      duration_id: durationId,
+      file_path: filePath,
+      thumbnail_path: thumbnailPath,
+      sort_order: 0,
+    });
+  });
+
+  ipcMain.handle('durationImages:delete', async (_, id: number) => {
+    const image = DurationImagesOperations.getById(id);
+    if (image) {
+      await deleteFile(image.file_path);
+      if (image.thumbnail_path && image.thumbnail_path !== image.file_path) {
+        await deleteFile(image.thumbnail_path);
+      }
+    }
+    DurationImagesOperations.delete(id);
   });
 
   console.log('IPC handlers registered');
