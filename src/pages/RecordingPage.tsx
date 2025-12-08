@@ -256,7 +256,7 @@ export default function RecordingPage() {
     <div
       className="min-h-screen cursor-pointer"
       onClick={handlePageClick}
-      onMouseDown={() => setIsContentPressed(true)}
+      onMouseDown={(e) => e.button === 0 && setIsContentPressed(true)}
       onMouseUp={() => setIsContentPressed(false)}
       onMouseLeave={() => setIsContentPressed(false)}
     >
