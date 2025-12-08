@@ -11,6 +11,8 @@ export interface LoopRegion {
   end: number;
 }
 
+const SPEED_PRESETS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3] as const;
+
 export interface AudioPlayerHandle {
   toggle: () => void;
   setPressed: (pressed: boolean) => void;
@@ -27,6 +29,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   const [currentTime, setCurrentTime] = useState(0);
   const [metadataDuration, setMetadataDuration] = useState(0);
   const [loopRegion, setLoopRegionState] = useState<LoopRegion | null>(null);
+  const [playbackRate, setPlaybackRateState] = useState(1);
 
   // Use prop duration if provided (for blob URLs), otherwise use metadata
   const duration = propDuration ?? metadataDuration;
@@ -103,6 +106,17 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     }
   };
 
+  // Cycle through playback speeds
+  const cycleSpeed = () => {
+    const currentIndex = SPEED_PRESETS.indexOf(playbackRate as typeof SPEED_PRESETS[number]);
+    const nextIndex = (currentIndex + 1) % SPEED_PRESETS.length;
+    const newRate = SPEED_PRESETS[nextIndex];
+    setPlaybackRateState(newRate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = newRate;
+    }
+  };
+
   // Expose controls to parent via ref
   useImperativeHandle(ref, () => ({
     toggle: togglePlay,
@@ -169,6 +183,21 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
           <span>{formatDuration(Math.floor(duration))}</span>
         </div>
       </div>
+
+      {/* Speed control button */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          cycleSpeed();
+        }}
+        className="px-2 py-1 text-xs font-medium rounded-md
+                   bg-gray-200 dark:bg-dark-border
+                   text-gray-700 dark:text-gray-300
+                   hover:bg-gray-300 dark:hover:bg-gray-600
+                   transition-colors flex-shrink-0"
+      >
+        {playbackRate}x
+      </button>
     </div>
   );
 });
