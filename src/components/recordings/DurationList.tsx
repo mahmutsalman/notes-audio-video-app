@@ -12,6 +12,8 @@ interface DurationListProps {
   onColorChange?: (id: number, color: DurationColor) => void;
   // Duration images support
   durationImagesCache?: Record<number, DurationImage[]>;
+  // Disable duration buttons while audio is loading
+  disabled?: boolean;
 }
 
 export default function DurationList({
@@ -22,6 +24,7 @@ export default function DurationList({
   onUpdateNote,
   onColorChange,
   durationImagesCache,
+  disabled = false,
 }: DurationListProps) {
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editNoteText, setEditNoteText] = useState('');
@@ -84,15 +87,21 @@ export default function DurationList({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDurationClick(duration);
+                  if (!disabled) {
+                    onDurationClick(duration);
+                  }
                 }}
                 onContextMenu={(e) => handleContextMenu(e, duration)}
+                disabled={disabled}
                 className={`relative overflow-hidden px-3 py-2 rounded-lg text-sm font-medium transition-all
                            flex items-center gap-2
-                           ${isActive
-                             ? 'bg-primary-600 text-white shadow-md'
-                             : 'bg-gray-100 dark:bg-dark-hover text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-dark-border'
+                           ${disabled
+                             ? 'opacity-50 cursor-wait bg-gray-100 dark:bg-dark-hover text-gray-500 dark:text-gray-500'
+                             : isActive
+                               ? 'bg-primary-600 text-white shadow-md'
+                               : 'bg-gray-100 dark:bg-dark-hover text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-dark-border'
                            }`}
+                title={disabled ? 'Loading audio...' : undefined}
               >
                 {/* Left color indicator */}
                 {colorConfig && (
@@ -137,7 +146,14 @@ export default function DurationList({
         })}
       </div>
       <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-        Click to loop play • Press Escape to stop
+        {disabled ? (
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+            Loading audio...
+          </span>
+        ) : (
+          'Click to loop play • Press Escape to stop'
+        )}
       </p>
 
       {/* Note display for active duration */}

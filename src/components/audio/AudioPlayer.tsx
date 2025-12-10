@@ -5,6 +5,7 @@ import { formatDuration } from '../../utils/formatters';
 interface AudioPlayerProps {
   src: string;
   duration?: number;  // Optional: pass duration explicitly for blob URLs
+  onLoad?: () => void;  // Callback when audio is loaded and ready for seeking
 }
 
 export interface LoopRegion {
@@ -20,10 +21,11 @@ export interface AudioPlayerHandle {
   setLoopRegion: (start: number, end: number) => void;
   clearLoopRegion: () => void;
   isLooping: boolean;
+  isLoaded: boolean;
 }
 
 const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
-  function AudioPlayer({ src, duration: propDuration }, ref) {
+  function AudioPlayer({ src, duration: propDuration, onLoad }, ref) {
   const howlRef = useRef<Howl | null>(null);
   const loopRegionRef = useRef<LoopRegion | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -34,6 +36,15 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   const [duration, setDuration] = useState(propDuration ?? 0);
   const [loopRegion, setLoopRegionState] = useState<LoopRegion | null>(null);
   const [playbackRate, setPlaybackRateState] = useState(1);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // DEBUG: Track what was requested vs what's actually happening
+  const [debugInfo, setDebugInfo] = useState<{
+    requestedStart: number | null;
+    requestedEnd: number | null;
+    actualSeekPosition: number | null;
+    lastLoopBack: number | null;
+  }>({ requestedStart: null, requestedEnd: null, actualSeekPosition: null, lastLoopBack: null });
 
   // Keep loopRegionRef in sync with state (for use in interval callback)
   useEffect(() => {
@@ -50,15 +61,21 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
       clearInterval(intervalRef.current);
     }
 
+    // Reset loaded state when src changes
+    setIsLoaded(false);
+
     const howl = new Howl({
       src: [src],
-      html5: true, // Use HTML5 audio for large files (streaming)
+      html5: true, // Use HTML5 Audio for pitch preservation at different speeds
       preload: true,
       onload: () => {
         const dur = howl.duration();
         if (Number.isFinite(dur) && dur > 0) {
           setDuration(dur);
         }
+        setIsLoaded(true);  // Audio is now ready for seeking
+        onLoad?.();  // Notify parent that audio is ready
+        console.log('[AudioPlayer] Audio loaded and ready for seeking');
       },
       onplay: () => {
         setIsPlaying(true);
@@ -97,7 +114,10 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
           // Check loop boundary
           const region = loopRegionRef.current;
           if (region && time >= region.end) {
+            console.log('[DEBUG] Loop boundary reached! time:', time.toFixed(2), '>= end:', region.end);
+            console.log('[DEBUG] Looping back to start:', region.start);
             howl.seek(region.start);
+            setDebugInfo(prev => ({ ...prev, lastLoopBack: Date.now() }));
           }
         }
       }
@@ -140,14 +160,35 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     const howl = howlRef.current;
     if (!howl) return;
 
-    console.log('[AudioPlayer] setLoopRegion:', { start, end });
+    console.log('═══════════════════════════════════════════');
+    console.log('[DEBUG] setLoopRegion CALLED');
+    console.log('[DEBUG] Requested start:', start, 'seconds');
+    console.log('[DEBUG] Requested end:', end, 'seconds');
+    console.log('[DEBUG] Audio total duration:', howl.duration(), 'seconds');
 
     setLoopRegionState({ start, end });
 
     // Stop current playback, seek, then play - ensures clean state for rapid clicking
     howl.stop();
+
+    console.log('[DEBUG] Calling howl.seek(' + start + ')...');
     howl.seek(start);
+
+    // Check what position we actually got after seeking
+    setTimeout(() => {
+      const actualPos = howl.seek() as number;
+      console.log('[DEBUG] After seek, actual position:', actualPos, 'seconds');
+      console.log('[DEBUG] Seek accuracy:', (actualPos - start).toFixed(3), 'seconds off');
+      setDebugInfo(prev => ({
+        ...prev,
+        requestedStart: start,
+        requestedEnd: end,
+        actualSeekPosition: actualPos,
+      }));
+    }, 100);
+
     howl.play();
+    console.log('═══════════════════════════════════════════');
   }, []);
 
   const clearLoopRegion = useCallback(() => {
@@ -174,7 +215,8 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     setLoopRegion,
     clearLoopRegion,
     isLooping: loopRegion !== null,
-  }), [togglePlay, setLoopRegion, clearLoopRegion, loopRegion]);
+    isLoaded,
+  }), [togglePlay, setLoopRegion, clearLoopRegion, loopRegion, isLoaded]);
 
   const handleSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const howl = howlRef.current;
@@ -188,15 +230,55 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div
-      onClick={togglePlay}
-      className={`flex items-center gap-4 p-4 rounded-lg cursor-pointer select-none
-                 bg-gray-100 dark:bg-dark-hover
-                 shadow-[0_4px_0_0_rgba(0,0,0,0.15)] dark:shadow-[0_4px_0_0_rgba(0,0,0,0.4)]
-                 active:translate-y-1 active:shadow-none
-                 transition-all duration-75
-                 ${isPressed ? 'translate-y-1 shadow-none' : ''}`}
-    >
+    <div className="space-y-2">
+      {/* DEBUG OVERLAY - Remove after debugging */}
+      {loopRegion && (
+        <div className="bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 dark:border-yellow-600 rounded-lg p-3 text-xs font-mono">
+          <div className="font-bold text-yellow-800 dark:text-yellow-200 mb-2">🔍 DEBUG INFO</div>
+          <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-yellow-700 dark:text-yellow-300">
+            <div>Requested Start:</div>
+            <div className="font-bold">{debugInfo.requestedStart?.toFixed(2) ?? '-'} sec</div>
+            <div className="font-bold text-blue-600 dark:text-blue-400">{debugInfo.requestedStart !== null ? formatDuration(Math.floor(debugInfo.requestedStart)) : '-'}</div>
+
+            <div>Requested End:</div>
+            <div className="font-bold">{debugInfo.requestedEnd?.toFixed(2) ?? '-'} sec</div>
+            <div className="font-bold text-blue-600 dark:text-blue-400">{debugInfo.requestedEnd !== null ? formatDuration(Math.floor(debugInfo.requestedEnd)) : '-'}</div>
+
+            <div>Actual Seek Position:</div>
+            <div className={`font-bold ${debugInfo.actualSeekPosition !== null && debugInfo.requestedStart !== null && Math.abs(debugInfo.actualSeekPosition - debugInfo.requestedStart) > 0.5 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+              {debugInfo.actualSeekPosition?.toFixed(2) ?? '-'} sec
+            </div>
+            <div className={`font-bold ${debugInfo.actualSeekPosition !== null && debugInfo.requestedStart !== null && Math.abs(debugInfo.actualSeekPosition - debugInfo.requestedStart) > 0.5 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>
+              {debugInfo.actualSeekPosition !== null ? formatDuration(Math.floor(debugInfo.actualSeekPosition)) : '-'}
+            </div>
+
+            <div>Current Position:</div>
+            <div className="font-bold">{currentTime.toFixed(2)} sec</div>
+            <div className="font-bold text-blue-600 dark:text-blue-400">{formatDuration(Math.floor(currentTime))}</div>
+
+            <div>Audio Duration:</div>
+            <div className="font-bold">{duration.toFixed(2)} sec</div>
+            <div className="font-bold text-blue-600 dark:text-blue-400">{formatDuration(Math.floor(duration))}</div>
+
+            <div>Seek Error:</div>
+            <div className={`font-bold ${debugInfo.actualSeekPosition !== null && debugInfo.requestedStart !== null && Math.abs(debugInfo.actualSeekPosition - debugInfo.requestedStart) > 0.5 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`} style={{gridColumn: 'span 2'}}>
+              {debugInfo.actualSeekPosition !== null && debugInfo.requestedStart !== null
+                ? (debugInfo.actualSeekPosition - debugInfo.requestedStart).toFixed(3) + ' sec'
+                : '-'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div
+        onClick={togglePlay}
+        className={`flex items-center gap-4 p-4 rounded-lg cursor-pointer select-none
+                   bg-gray-100 dark:bg-dark-hover
+                   shadow-[0_4px_0_0_rgba(0,0,0,0.15)] dark:shadow-[0_4px_0_0_rgba(0,0,0,0.4)]
+                   active:translate-y-1 active:shadow-none
+                   transition-all duration-75
+                   ${isPressed ? 'translate-y-1 shadow-none' : ''}`}
+      >
       {/* Play/Pause button */}
       <div
         className={`w-12 h-12 text-white rounded-full
@@ -246,6 +328,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
       >
         {playbackRate}x
       </button>
+      </div>
     </div>
   );
 });

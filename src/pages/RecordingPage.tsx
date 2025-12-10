@@ -47,12 +47,14 @@ export default function RecordingPage() {
   const [isContentPressed, setIsContentPressed] = useState(false);
   const [activeDurationId, setActiveDurationId] = useState<number | null>(null);
   const [selectedDurationImageIndex, setSelectedDurationImageIndex] = useState<number | null>(null);
+  const [audioLoaded, setAudioLoaded] = useState(false);
 
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
 
-  // Reset loop state when changing recordings
+  // Reset loop state and audio loaded state when changing recordings
   useEffect(() => {
     setActiveDurationId(null);
+    setAudioLoaded(false);
   }, [id]);
 
   // Handle clicks on empty page areas to toggle audio playback
@@ -173,6 +175,12 @@ export default function RecordingPage() {
 
   // Handle duration click for loop playback
   const handleDurationClick = async (duration: Duration) => {
+    // Block clicks until audio is fully loaded
+    if (!audioPlayerRef.current?.isLoaded) {
+      console.log('[RecordingPage] Audio not loaded yet, ignoring duration click');
+      return;
+    }
+
     if (activeDurationId === duration.id) {
       // Already looping this one - stop
       audioPlayerRef.current?.clearLoopRegion();
@@ -393,7 +401,12 @@ export default function RecordingPage() {
           </span>
         </h2>
         {audioUrl ? (
-          <AudioPlayer ref={audioPlayerRef} src={audioUrl} duration={recording.audio_duration ?? undefined} />
+          <AudioPlayer
+            ref={audioPlayerRef}
+            src={audioUrl}
+            duration={recording.audio_duration ?? undefined}
+            onLoad={() => setAudioLoaded(true)}
+          />
         ) : (
           <p className="text-gray-500 dark:text-gray-400">No audio file available</p>
         )}
@@ -408,6 +421,7 @@ export default function RecordingPage() {
         onUpdateNote={handleUpdateNote}
         onColorChange={handleColorChange}
         durationImagesCache={durationImagesCache}
+        disabled={!audioLoaded}
       />
 
       {/* Duration Images - shown when a duration is active and has images */}
