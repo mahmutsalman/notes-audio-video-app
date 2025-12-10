@@ -135,12 +135,13 @@ export const RecordingsOperations = {
   create(recording: CreateRecording): Recording {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO recordings (topic_id, audio_path, audio_duration, notes_content)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO recordings (topic_id, name, audio_path, audio_duration, notes_content)
+      VALUES (?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       recording.topic_id,
+      recording.name ?? null,
       recording.audio_path,
       recording.audio_duration,
       recording.notes_content
@@ -159,6 +160,10 @@ export const RecordingsOperations = {
     const fields: string[] = [];
     const values: unknown[] = [];
 
+    if (updates.name !== undefined) {
+      fields.push('name = ?');
+      values.push(updates.name);
+    }
     if (updates.audio_path !== undefined) {
       fields.push('audio_path = ?');
       values.push(updates.audio_path);

@@ -7,7 +7,7 @@ import AudioPlayer, { AudioPlayerHandle } from '../components/audio/AudioPlayer'
 import DurationList from '../components/recordings/DurationList';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
-import { formatDuration, formatDate } from '../utils/formatters';
+import { formatDuration, formatDate, formatRelativeTime } from '../utils/formatters';
 import type { Duration, DurationColor } from '../types';
 
 export default function RecordingPage() {
@@ -38,6 +38,8 @@ export default function RecordingPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingName, setEditingName] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
@@ -60,7 +62,7 @@ export default function RecordingPage() {
     if (target.closest('button, a, input, textarea, [role="button"], video, img')) return;
 
     // Skip if modals open or editing
-    if (selectedImageIndex !== null || selectedVideo !== null || isEditing || showDeleteConfirm) return;
+    if (selectedImageIndex !== null || selectedVideo !== null || isEditing || isEditingName || showDeleteConfirm) return;
 
     // Toggle audio playback (depress effect is handled separately on Audio section)
     audioPlayerRef.current?.toggle();
@@ -80,6 +82,28 @@ export default function RecordingPage() {
       setIsEditing(false);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleEditName = () => {
+    setEditingName(recording?.name || '');
+    setIsEditingName(true);
+  };
+
+  const handleSaveName = async () => {
+    if (!id) return;
+    const trimmedName = editingName.trim();
+    await window.electronAPI.recordings.update(id, { name: trimmedName || null });
+    await refetch();
+    setIsEditingName(false);
+  };
+
+  const handleNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSaveName();
+    } else if (e.key === 'Escape') {
+      setIsEditingName(false);
     }
   };
 
@@ -320,9 +344,26 @@ export default function RecordingPage() {
               ← {topic.name}
             </button>
           )}
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            Recording
-          </h1>
+          {isEditingName ? (
+            <input
+              type="text"
+              value={editingName}
+              onChange={(e) => setEditingName(e.target.value)}
+              onBlur={handleSaveName}
+              onKeyDown={handleNameKeyDown}
+              autoFocus
+              className="text-2xl font-bold text-gray-900 dark:text-gray-100 bg-transparent border-b-2 border-primary-500 outline-none w-full"
+              placeholder="Recording name..."
+            />
+          ) : (
+            <h1
+              onClick={handleEditName}
+              className="text-2xl font-bold text-gray-900 dark:text-gray-100 cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+              title="Click to edit name"
+            >
+              {recording.name || formatRelativeTime(recording.created_at)}
+            </h1>
+          )}
           <p className="text-sm text-gray-500 dark:text-gray-400">
             {formatDate(recording.created_at)}
           </p>

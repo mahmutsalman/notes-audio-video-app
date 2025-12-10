@@ -33,6 +33,11 @@ export default function RecordingCard({ recording, onContextMenu }: RecordingCar
       className="p-4"
       style={importanceBorderStyle}
     >
+      {/* Recording name */}
+      <div className="font-medium text-gray-800 dark:text-gray-200 mb-1 truncate">
+        {recording.name || formatRelativeTime(recording.created_at)}
+      </div>
+
       {/* Audio indicator + duration */}
       <div className="flex items-center gap-2 mb-2">
         <span className="text-red-500">🎙️</span>

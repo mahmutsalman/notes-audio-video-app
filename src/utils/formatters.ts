@@ -114,3 +114,16 @@ export function formatImportance(level: number): string {
   const empty = 10 - level;
   return '★'.repeat(filled) + '☆'.repeat(empty);
 }
+
+/**
+ * Format current timestamp for use as a default recording name
+ * Example: "Dec 10, 8:45 PM"
+ */
+export function formatTimestampName(date: Date = new Date()): string {
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}

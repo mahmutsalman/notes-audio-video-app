@@ -4,7 +4,7 @@ import Modal from '../common/Modal';
 import Button from '../common/Button';
 import AudioRecorder from '../audio/AudioRecorder';
 import AudioPlayer from '../audio/AudioPlayer';
-import { formatDuration } from '../../utils/formatters';
+import { formatDuration, formatTimestampName } from '../../utils/formatters';
 
 interface QuickRecordProps {
   topicId: number;
@@ -126,9 +126,10 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
     setIsSaving(true);
 
     try {
-      // Create the recording
+      // Create the recording with a default timestamp name
       const recording = await window.electronAPI.recordings.create({
         topic_id: topicId,
+        name: formatTimestampName(),
         audio_path: null,
         audio_duration: recorder.duration,
         notes_content: notes || null,

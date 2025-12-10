@@ -19,6 +19,7 @@ export interface Topic {
 export interface Recording {
   id: number;
   topic_id: number;
+  name: string | null;
   audio_path: string | null;
   audio_duration: number | null;
   notes_content: string | null;
@@ -73,11 +74,24 @@ export interface DurationImage {
 export type UpdateDuration = Partial<Pick<Duration, 'note' | 'color'>>;
 export type CreateDurationImage = Omit<DurationImage, 'id' | 'created_at'>;
 
+// Backup types
+export interface BackupResult {
+  success: boolean;
+  path?: string;
+  timestamp?: string;
+  error?: string;
+  stats?: {
+    dbSize: number;
+    mediaFiles: number;
+    totalSize: number;
+  };
+}
+
 // Create types (omit auto-generated fields)
 export type CreateTopic = Omit<Topic, 'id' | 'created_at' | 'updated_at' | 'total_recordings' | 'total_images' | 'total_videos'>;
 export type UpdateTopic = Partial<CreateTopic>;
 
-export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color'> & { importance_color?: ImportanceColor };
+export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color' | 'name'> & { importance_color?: ImportanceColor; name?: string | null };
 export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
@@ -139,6 +153,11 @@ export interface ElectronAPI {
     getByDuration: (durationId: number) => Promise<DurationImage[]>;
     addFromClipboard: (durationId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<DurationImage>;
     delete: (id: number) => Promise<void>;
+  };
+  backup: {
+    create: () => Promise<BackupResult>;
+    getPath: () => Promise<string>;
+    openFolder: () => Promise<void>;
   };
 }
 

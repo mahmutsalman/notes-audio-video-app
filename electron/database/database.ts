@@ -141,6 +141,13 @@ function runMigrations(db: Database.Database): void {
     console.log('Added color column to durations table');
   }
 
+  // Migration: Add name column to recordings table if it doesn't exist
+  const hasNameColumn = recordingsColumns.some(col => col.name === 'name');
+  if (!hasNameColumn) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN name TEXT`);
+    console.log('Added name column to recordings table');
+  }
+
   // Create the stats view (drop and recreate to handle schema changes)
   db.exec(`
     DROP VIEW IF EXISTS topic_stats;
