@@ -54,6 +54,8 @@ export default function RecordingPage() {
     type: 'recording' | 'duration';
     imageId: number;
   } | null>(null);
+  const [videoToDelete, setVideoToDelete] = useState<number | null>(null);
+  const [durationToDelete, setDurationToDelete] = useState<number | null>(null);
 
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
 
@@ -174,9 +176,15 @@ export default function RecordingPage() {
     setImageToDelete({ type: 'recording', imageId });
   };
 
-  const handleDeleteVideo = async (videoId: number) => {
-    await window.electronAPI.media.deleteVideo(videoId);
+  const handleDeleteVideo = (videoId: number) => {
+    setVideoToDelete(videoId);
+  };
+
+  const confirmDeleteVideo = async () => {
+    if (!videoToDelete) return;
+    await window.electronAPI.media.deleteVideo(videoToDelete);
     await refetch();
+    setVideoToDelete(null);
   };
 
   // Handle duration click for loop playback
@@ -236,13 +244,19 @@ export default function RecordingPage() {
   };
 
   // Handle duration delete
-  const handleDeleteDuration = async (id: number) => {
+  const handleDeleteDuration = (id: number) => {
+    setDurationToDelete(id);
+  };
+
+  const confirmDeleteDuration = async () => {
+    if (!durationToDelete) return;
     // If deleting the active duration, clear the loop first
-    if (activeDurationId === id) {
+    if (activeDurationId === durationToDelete) {
       audioPlayerRef.current?.clearLoopRegion();
       setActiveDurationId(null);
     }
-    await deleteDuration(id);
+    await deleteDuration(durationToDelete);
+    setDurationToDelete(null);
   };
 
   // Handle duration note update
@@ -856,6 +870,62 @@ export default function RecordingPage() {
             <Button
               variant="danger"
               onClick={confirmDeleteImage}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Video delete confirmation modal */}
+      <Modal
+        isOpen={videoToDelete !== null}
+        onClose={() => setVideoToDelete(null)}
+        title="Delete Video"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            Are you sure you want to delete this video?
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => setVideoToDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={confirmDeleteVideo}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Duration delete confirmation modal */}
+      <Modal
+        isOpen={durationToDelete !== null}
+        onClose={() => setDurationToDelete(null)}
+        title="Delete Marked Section"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            Are you sure you want to delete this marked section?
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => setDurationToDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={confirmDeleteDuration}
             >
               Delete
             </Button>
