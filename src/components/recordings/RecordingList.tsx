@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Recording, ImportanceColor } from '../../types';
+import type { Recording, ImportanceColor, UpdateRecording } from '../../types';
 import RecordingCard from './RecordingCard';
 import ContextMenu, { type ContextMenuItemType } from '../common/ContextMenu';
 import Modal from '../common/Modal';
@@ -9,7 +9,7 @@ interface RecordingListProps {
   recordings: Recording[];
   loading?: boolean;
   onDeleteRecording?: (recordingId: number) => Promise<void>;
-  onUpdateRecording?: (recordingId: number, updates: { importance_color: ImportanceColor }) => Promise<void>;
+  onUpdateRecording?: (recordingId: number, updates: UpdateRecording) => Promise<void>;
 }
 
 export default function RecordingList({
@@ -39,6 +39,18 @@ export default function RecordingList({
   });
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Rename modal state
+  const [renameModal, setRenameModal] = useState<{
+    isOpen: boolean;
+    recording: Recording | null;
+    name: string;
+  }>({
+    isOpen: false,
+    recording: null,
+    name: '',
+  });
+  const [isRenaming, setIsRenaming] = useState(false);
+
   const handleContextMenu = (e: React.MouseEvent, recording: Recording) => {
     e.preventDefault();
     setContextMenu({
@@ -65,6 +77,45 @@ export default function RecordingList({
   const handleImportanceChange = async (color: ImportanceColor) => {
     if (contextMenu.recording && onUpdateRecording) {
       await onUpdateRecording(contextMenu.recording.id, { importance_color: color });
+    }
+  };
+
+  const handleRenameClick = () => {
+    if (contextMenu.recording) {
+      setRenameModal({
+        isOpen: true,
+        recording: contextMenu.recording,
+        name: contextMenu.recording.name || '',
+      });
+    }
+    closeContextMenu();
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!renameModal.recording || !onUpdateRecording) return;
+
+    setIsRenaming(true);
+    try {
+      const trimmedName = renameModal.name.trim();
+      await onUpdateRecording(renameModal.recording.id, { name: trimmedName || null });
+      setRenameModal({ isOpen: false, recording: null, name: '' });
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  const closeRenameModal = () => {
+    if (!isRenaming) {
+      setRenameModal({ isOpen: false, recording: null, name: '' });
+    }
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleRenameSubmit();
+    } else if (e.key === 'Escape') {
+      closeRenameModal();
     }
   };
 
@@ -141,6 +192,11 @@ export default function RecordingList({
             value: contextMenu.recording?.importance_color ?? null,
             onChange: handleImportanceChange,
           }] : []),
+          ...(onUpdateRecording ? [{
+            label: 'Rename',
+            icon: '✏️',
+            onClick: handleRenameClick,
+          }] : []),
           ...(onDeleteRecording ? [{
             label: 'Delete',
             icon: '🗑️',
@@ -179,6 +235,41 @@ export default function RecordingList({
               disabled={isDeleting}
             >
               {isDeleting ? 'Deleting...' : 'Delete Recording'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Rename Modal */}
+      <Modal
+        isOpen={renameModal.isOpen}
+        onClose={closeRenameModal}
+        title="Rename Recording"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <input
+            type="text"
+            value={renameModal.name}
+            onChange={(e) => setRenameModal(prev => ({ ...prev, name: e.target.value }))}
+            onKeyDown={handleRenameKeyDown}
+            autoFocus
+            className="input-field w-full"
+            placeholder="Recording name..."
+          />
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              onClick={closeRenameModal}
+              disabled={isRenaming}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRenameSubmit}
+              disabled={isRenaming}
+            >
+              {isRenaming ? 'Saving...' : 'Save'}
             </Button>
           </div>
         </div>
