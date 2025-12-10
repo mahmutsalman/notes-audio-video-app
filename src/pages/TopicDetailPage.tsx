@@ -8,7 +8,7 @@ import TopicForm from '../components/topics/TopicForm';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
-import { formatImportance, formatRelativeTime } from '../utils/formatters';
+import { formatRelativeTime } from '../utils/formatters';
 import type { CreateTopic } from '../types';
 
 export default function TopicDetailPage() {
@@ -116,11 +116,6 @@ export default function TopicDetailPage() {
               Delete
             </Button>
           </div>
-        </div>
-
-        {/* Importance */}
-        <div className="text-yellow-500 dark:text-yellow-400 text-sm tracking-wider mb-2">
-          {formatImportance(topic.importance_level)}
         </div>
 
         {/* Tags */}

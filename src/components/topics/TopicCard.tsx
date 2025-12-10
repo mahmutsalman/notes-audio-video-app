@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Topic } from '../../types';
 import Card from '../common/Card';
 import Badge from '../common/Badge';
-import { formatRelativeTime, formatImportance } from '../../utils/formatters';
+import { formatRelativeTime } from '../../utils/formatters';
 
 interface TopicCardProps {
   topic: Topic;
@@ -17,11 +17,6 @@ export default function TopicCard({ topic }: TopicCardProps) {
       hoverable
       className="p-4"
     >
-      {/* Importance stars */}
-      <div className="text-yellow-500 dark:text-yellow-400 text-sm tracking-wider mb-2">
-        {formatImportance(topic.importance_level)}
-      </div>
-
       {/* Topic name */}
       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
         {topic.name}
