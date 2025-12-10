@@ -7,6 +7,7 @@ interface AudioPlayerProps {
   duration?: number;  // Optional: pass duration explicitly for blob URLs
   onLoad?: () => void;  // Callback when audio is loaded and ready for seeking
   onPlay?: () => void;  // Callback when playback actually starts
+  showDebug?: boolean;  // Show debug overlay (secret feature)
 }
 
 export interface LoopRegion {
@@ -26,7 +27,7 @@ export interface AudioPlayerHandle {
 }
 
 const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
-  function AudioPlayer({ src, duration: propDuration, onLoad, onPlay }, ref) {
+  function AudioPlayer({ src, duration: propDuration, onLoad, onPlay, showDebug = false }, ref) {
   const howlRef = useRef<Howl | null>(null);
   const loopRegionRef = useRef<LoopRegion | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -233,8 +234,8 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
 
   return (
     <div className="space-y-2">
-      {/* DEBUG OVERLAY - Remove after debugging */}
-      {loopRegion && (
+      {/* DEBUG OVERLAY - Secret feature: right-click Audio header to toggle */}
+      {showDebug && (
         <div className="bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 dark:border-yellow-600 rounded-lg p-3 text-xs font-mono">
           <div className="font-bold text-yellow-800 dark:text-yellow-200 mb-2">🔍 DEBUG INFO</div>
           <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-yellow-700 dark:text-yellow-300">

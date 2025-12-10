@@ -49,6 +49,7 @@ export default function RecordingPage() {
   const [selectedDurationImageIndex, setSelectedDurationImageIndex] = useState<number | null>(null);
   const [audioLoaded, setAudioLoaded] = useState(false);
   const [isSeekingDuration, setIsSeekingDuration] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
 
@@ -402,7 +403,13 @@ export default function RecordingPage() {
                     transition-all duration-75
                     ${isContentPressed ? 'translate-y-1 shadow-none' : ''}`}
       >
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2">
+        <h2
+          className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2 select-none"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setShowDebug(prev => !prev);
+          }}
+        >
           <span>🎙️</span>
           Audio
           <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
@@ -416,6 +423,7 @@ export default function RecordingPage() {
             duration={recording.audio_duration ?? undefined}
             onLoad={() => setAudioLoaded(true)}
             onPlay={() => setIsSeekingDuration(false)}
+            showDebug={showDebug}
           />
         ) : (
           <p className="text-gray-500 dark:text-gray-400">No audio file available</p>
