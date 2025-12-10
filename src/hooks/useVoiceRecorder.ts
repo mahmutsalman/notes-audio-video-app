@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { fixWebmMetadata } from '../utils/webmFixer';
 
 export interface VoiceRecorderState {
   isRecording: boolean;
@@ -180,9 +181,23 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
         timerRef.current = null;
       }
 
-      mediaRecorder.onstop = () => {
+      mediaRecorder.onstop = async () => {
         // Create blob from chunks
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const rawBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+
+        // Calculate final duration in milliseconds
+        const durationMs = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+
+        // Fix WebM metadata for seekability (adds Duration)
+        let blob: Blob;
+        try {
+          blob = await fixWebmMetadata(rawBlob, durationMs);
+          console.log('[Recording] WebM metadata fixed for seekability');
+        } catch (error) {
+          console.warn('[Recording] Failed to fix WebM metadata, using raw blob:', error);
+          blob = rawBlob; // Fallback to raw blob if fixing fails
+        }
+
         const url = URL.createObjectURL(blob);
 
         setState(prev => ({
