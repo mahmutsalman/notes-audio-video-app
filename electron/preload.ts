@@ -4,7 +4,8 @@ import type {
   Recording, CreateRecording, UpdateRecording,
   Image, Video,
   Duration, CreateDuration, UpdateDuration,
-  DurationImage
+  DurationImage,
+  BackupResult
 } from '../src/types';
 
 // Type-safe API exposed to renderer
@@ -100,6 +101,13 @@ const electronAPI = {
       ipcRenderer.invoke('durationImages:addFromClipboard', durationId, imageBuffer, extension),
     delete: (id: number): Promise<void> =>
       ipcRenderer.invoke('durationImages:delete', id),
+  },
+
+  // Backup
+  backup: {
+    create: (): Promise<BackupResult> => ipcRenderer.invoke('backup:create'),
+    getPath: (): Promise<string> => ipcRenderer.invoke('backup:getPath'),
+    openFolder: (): Promise<void> => ipcRenderer.invoke('backup:openFolder'),
   },
 };
 

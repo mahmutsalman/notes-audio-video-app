@@ -69,3 +69,6 @@ scratch/
 
 # Local resources (scripts, screenshots, etc.)
 localResources/
+
+# Backup folder (created by app backup feature)
+backup/

@@ -21,6 +21,7 @@ import {
   getMediaDir,
   getFileUrl,
 } from '../services/fileStorage';
+import { createBackup, getBackupDir } from '../services/backupService';
 import type { CreateTopic, UpdateTopic, CreateRecording, UpdateRecording, CreateDuration, UpdateDuration } from '../../src/types';
 
 export function setupIpcHandlers(): void {
@@ -272,6 +273,27 @@ export function setupIpcHandlers(): void {
       }
     }
     DurationImagesOperations.delete(id);
+  });
+
+  // ============ Backup ============
+  ipcMain.handle('backup:create', async () => {
+    return createBackup();
+  });
+
+  ipcMain.handle('backup:getPath', async () => {
+    return getBackupDir();
+  });
+
+  ipcMain.handle('backup:openFolder', async () => {
+    const backupPath = getBackupDir();
+    // Ensure folder exists before opening
+    const fs = await import('fs/promises');
+    try {
+      await fs.mkdir(backupPath, { recursive: true });
+    } catch {
+      // Ignore if already exists
+    }
+    await shell.openPath(backupPath);
   });
 
   console.log('IPC handlers registered');
