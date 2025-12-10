@@ -1,4 +1,5 @@
-import { useRef, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useRef, useState, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react';
+import { Howl } from 'howler';
 import { formatDuration } from '../../utils/formatters';
 
 interface AudioPlayerProps {
@@ -23,99 +24,149 @@ export interface AudioPlayerHandle {
 
 const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   function AudioPlayer({ src, duration: propDuration }, ref) {
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const howlRef = useRef<Howl | null>(null);
+  const loopRegionRef = useRef<LoopRegion | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [metadataDuration, setMetadataDuration] = useState(0);
+  const [duration, setDuration] = useState(propDuration ?? 0);
   const [loopRegion, setLoopRegionState] = useState<LoopRegion | null>(null);
   const [playbackRate, setPlaybackRateState] = useState(1);
 
-  // Use prop duration if provided (for blob URLs), otherwise use metadata
-  const duration = propDuration ?? metadataDuration;
-
+  // Keep loopRegionRef in sync with state (for use in interval callback)
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const handleDurationChange = () => {
-      // Only use metadata duration if it's valid (not NaN, Infinity)
-      if (Number.isFinite(audio.duration)) {
-        setMetadataDuration(audio.duration);
-      }
-    };
-    const handleEnded = () => setIsPlaying(false);
-
-    audio.addEventListener('timeupdate', handleTimeUpdate);
-    audio.addEventListener('durationchange', handleDurationChange);
-    audio.addEventListener('ended', handleEnded);
-
-    return () => {
-      audio.removeEventListener('timeupdate', handleTimeUpdate);
-      audio.removeEventListener('durationchange', handleDurationChange);
-      audio.removeEventListener('ended', handleEnded);
-    };
-  }, []);
-
-  const togglePlay = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (isPlaying) {
-      audio.pause();
-    } else {
-      audio.play();
-    }
-    setIsPlaying(!isPlaying);
-  };
-
-  // Loop region boundary checking
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || !loopRegion) return;
-
-    const handleTimeUpdate = () => {
-      if (audio.currentTime >= loopRegion.end) {
-        audio.currentTime = loopRegion.start;
-      }
-    };
-
-    audio.addEventListener('timeupdate', handleTimeUpdate);
-    return () => audio.removeEventListener('timeupdate', handleTimeUpdate);
+    loopRegionRef.current = loopRegion;
   }, [loopRegion]);
 
-  // Set loop region and start playing from start
-  const setLoopRegion = (start: number, end: number) => {
-    const audio = audioRef.current;
-    setLoopRegionState({ start, end });
-    if (audio) {
-      audio.currentTime = start;
-      audio.play();
-      setIsPlaying(true);
+  // Initialize Howl when src changes
+  useEffect(() => {
+    // Clean up previous instance
+    if (howlRef.current) {
+      howlRef.current.unload();
     }
-  };
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
 
-  // Clear loop region and stop playing
-  const clearLoopRegion = () => {
-    const audio = audioRef.current;
+    const howl = new Howl({
+      src: [src],
+      html5: true, // Use HTML5 audio for large files (streaming)
+      preload: true,
+      onload: () => {
+        const dur = howl.duration();
+        if (Number.isFinite(dur) && dur > 0) {
+          setDuration(dur);
+        }
+      },
+      onplay: () => {
+        setIsPlaying(true);
+      },
+      onpause: () => {
+        setIsPlaying(false);
+      },
+      onstop: () => {
+        setIsPlaying(false);
+      },
+      onend: () => {
+        // If we have a loop region, this shouldn't fire (we handle looping manually)
+        // But just in case, restart if looping
+        const region = loopRegionRef.current;
+        if (region) {
+          howl.seek(region.start);
+          howl.play();
+        } else {
+          setIsPlaying(false);
+        }
+      },
+    });
+
+    howlRef.current = howl;
+
+    // Set initial playback rate
+    howl.rate(playbackRate);
+
+    // Update currentTime periodically and check loop boundary
+    intervalRef.current = setInterval(() => {
+      if (howl.playing()) {
+        const time = howl.seek() as number;
+        if (typeof time === 'number') {
+          setCurrentTime(time);
+
+          // Check loop boundary
+          const region = loopRegionRef.current;
+          if (region && time >= region.end) {
+            howl.seek(region.start);
+          }
+        }
+      }
+    }, 50); // 50ms for smoother updates
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      howl.unload();
+    };
+  }, [src]); // Only re-create when src changes
+
+  // Update playback rate when it changes
+  useEffect(() => {
+    if (howlRef.current) {
+      howlRef.current.rate(playbackRate);
+    }
+  }, [playbackRate]);
+
+  // Use prop duration if provided
+  useEffect(() => {
+    if (propDuration && propDuration > 0) {
+      setDuration(propDuration);
+    }
+  }, [propDuration]);
+
+  const togglePlay = useCallback(() => {
+    const howl = howlRef.current;
+    if (!howl) return;
+
+    if (isPlaying) {
+      howl.pause();
+    } else {
+      howl.play();
+    }
+  }, [isPlaying]);
+
+  const setLoopRegion = useCallback((start: number, end: number) => {
+    const howl = howlRef.current;
+    if (!howl) return;
+
+    console.log('[AudioPlayer] setLoopRegion:', { start, end });
+
+    setLoopRegionState({ start, end });
+
+    // Seek to start and play
+    howl.seek(start);
+    if (!howl.playing()) {
+      howl.play();
+    }
+  }, []);
+
+  const clearLoopRegion = useCallback(() => {
+    const howl = howlRef.current;
     setLoopRegionState(null);
-    if (audio) {
-      audio.pause();
+    if (howl) {
+      howl.pause();
       setIsPlaying(false);
     }
-  };
+  }, []);
 
   // Cycle through playback speeds
-  const cycleSpeed = () => {
+  const cycleSpeed = useCallback(() => {
     const currentIndex = SPEED_PRESETS.indexOf(playbackRate as typeof SPEED_PRESETS[number]);
     const nextIndex = (currentIndex + 1) % SPEED_PRESETS.length;
     const newRate = SPEED_PRESETS[nextIndex];
     setPlaybackRateState(newRate);
-    if (audioRef.current) {
-      audioRef.current.playbackRate = newRate;
-    }
-  };
+  }, [playbackRate]);
 
   // Expose controls to parent via ref
   useImperativeHandle(ref, () => ({
@@ -124,16 +175,16 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     setLoopRegion,
     clearLoopRegion,
     isLooping: loopRegion !== null,
-  }));
+  }), [togglePlay, setLoopRegion, clearLoopRegion, loopRegion]);
 
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const audio = audioRef.current;
-    if (!audio) return;
+  const handleSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const howl = howlRef.current;
+    if (!howl) return;
 
     const time = parseFloat(e.target.value);
-    audio.currentTime = time;
+    howl.seek(time);
     setCurrentTime(time);
-  };
+  }, []);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
@@ -147,8 +198,6 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
                  transition-all duration-75
                  ${isPressed ? 'translate-y-1 shadow-none' : ''}`}
     >
-      <audio ref={audioRef} src={src} preload="metadata" />
-
       {/* Play/Pause button */}
       <div
         className={`w-12 h-12 text-white rounded-full
