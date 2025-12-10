@@ -144,11 +144,10 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
 
     setLoopRegionState({ start, end });
 
-    // Seek to start and play
+    // Stop current playback, seek, then play - ensures clean state for rapid clicking
+    howl.stop();
     howl.seek(start);
-    if (!howl.playing()) {
-      howl.play();
-    }
+    howl.play();
   }, []);
 
   const clearLoopRegion = useCallback(() => {
