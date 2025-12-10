@@ -6,6 +6,7 @@ interface AudioPlayerProps {
   src: string;
   duration?: number;  // Optional: pass duration explicitly for blob URLs
   onLoad?: () => void;  // Callback when audio is loaded and ready for seeking
+  onPlay?: () => void;  // Callback when playback actually starts
 }
 
 export interface LoopRegion {
@@ -25,7 +26,7 @@ export interface AudioPlayerHandle {
 }
 
 const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
-  function AudioPlayer({ src, duration: propDuration, onLoad }, ref) {
+  function AudioPlayer({ src, duration: propDuration, onLoad, onPlay }, ref) {
   const howlRef = useRef<Howl | null>(null);
   const loopRegionRef = useRef<LoopRegion | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -79,6 +80,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
       },
       onplay: () => {
         setIsPlaying(true);
+        onPlay?.();  // Notify parent that playback started
       },
       onpause: () => {
         setIsPlaying(false);

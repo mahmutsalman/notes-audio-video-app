@@ -48,6 +48,7 @@ export default function RecordingPage() {
   const [activeDurationId, setActiveDurationId] = useState<number | null>(null);
   const [selectedDurationImageIndex, setSelectedDurationImageIndex] = useState<number | null>(null);
   const [audioLoaded, setAudioLoaded] = useState(false);
+  const [isSeekingDuration, setIsSeekingDuration] = useState(false);
 
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
 
@@ -55,6 +56,7 @@ export default function RecordingPage() {
   useEffect(() => {
     setActiveDurationId(null);
     setAudioLoaded(false);
+    setIsSeekingDuration(false);
   }, [id]);
 
   // Handle clicks on empty page areas to toggle audio playback
@@ -181,12 +183,19 @@ export default function RecordingPage() {
       return;
     }
 
+    // Block rapid clicks - wait for playback to start before allowing another click
+    if (isSeekingDuration) {
+      console.log('[RecordingPage] Already seeking to a duration, ignoring click');
+      return;
+    }
+
     if (activeDurationId === duration.id) {
       // Already looping this one - stop
       audioPlayerRef.current?.clearLoopRegion();
       setActiveDurationId(null);
     } else {
-      // Start looping this duration
+      // Start looping this duration - block further clicks until playback starts
+      setIsSeekingDuration(true);
       audioPlayerRef.current?.setLoopRegion(duration.start_time, duration.end_time);
       setActiveDurationId(duration.id);
       // Fetch images for this duration if not cached
@@ -406,6 +415,7 @@ export default function RecordingPage() {
             src={audioUrl}
             duration={recording.audio_duration ?? undefined}
             onLoad={() => setAudioLoaded(true)}
+            onPlay={() => setIsSeekingDuration(false)}
           />
         ) : (
           <p className="text-gray-500 dark:text-gray-400">No audio file available</p>
@@ -421,7 +431,7 @@ export default function RecordingPage() {
         onUpdateNote={handleUpdateNote}
         onColorChange={handleColorChange}
         durationImagesCache={durationImagesCache}
-        disabled={!audioLoaded}
+        disabled={!audioLoaded || isSeekingDuration}
       />
 
       {/* Duration Images - shown when a duration is active and has images */}
