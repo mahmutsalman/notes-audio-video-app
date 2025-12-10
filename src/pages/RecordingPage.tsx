@@ -50,6 +50,10 @@ export default function RecordingPage() {
   const [audioLoaded, setAudioLoaded] = useState(false);
   const [isSeekingDuration, setIsSeekingDuration] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const [imageToDelete, setImageToDelete] = useState<{
+    type: 'recording' | 'duration';
+    imageId: number;
+  } | null>(null);
 
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
 
@@ -166,9 +170,8 @@ export default function RecordingPage() {
     }
   };
 
-  const handleDeleteImage = async (imageId: number) => {
-    await window.electronAPI.media.deleteImage(imageId);
-    await refetch();
+  const handleDeleteImage = (imageId: number) => {
+    setImageToDelete({ type: 'recording', imageId });
   };
 
   const handleDeleteVideo = async (videoId: number) => {
@@ -214,9 +217,22 @@ export default function RecordingPage() {
   };
 
   // Handle deleting a duration image
-  const handleDeleteDurationImage = async (imageId: number) => {
-    if (!activeDurationId) return;
-    await deleteDurationImage(imageId, activeDurationId);
+  const handleDeleteDurationImage = (imageId: number) => {
+    setImageToDelete({ type: 'duration', imageId });
+  };
+
+  // Confirm and execute image deletion
+  const confirmDeleteImage = async () => {
+    if (!imageToDelete) return;
+
+    if (imageToDelete.type === 'recording') {
+      await window.electronAPI.media.deleteImage(imageToDelete.imageId);
+      await refetch();
+    } else if (imageToDelete.type === 'duration' && activeDurationId) {
+      await deleteDurationImage(imageToDelete.imageId, activeDurationId);
+    }
+
+    setImageToDelete(null);
   };
 
   // Handle duration delete
@@ -814,6 +830,34 @@ export default function RecordingPage() {
               disabled={isDeleting}
             >
               {isDeleting ? 'Deleting...' : 'Delete Recording'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Image delete confirmation modal */}
+      <Modal
+        isOpen={imageToDelete !== null}
+        onClose={() => setImageToDelete(null)}
+        title="Delete Image"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            Are you sure you want to delete this image?
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => setImageToDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={confirmDeleteImage}
+            >
+              Delete
             </Button>
           </div>
         </div>
