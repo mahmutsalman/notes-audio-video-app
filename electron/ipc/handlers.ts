@@ -10,6 +10,7 @@ import {
 import {
   saveAudioFile,
   getAudioPath,
+  getAudioBuffer,
   saveImageFile,
   saveImageFromBuffer,
   saveVideoFile,
@@ -22,6 +23,7 @@ import {
   getFileUrl,
 } from '../services/fileStorage';
 import { createBackup, getBackupDir } from '../services/backupService';
+import { mergeAudioFiles } from '../services/audioMerger';
 import type { CreateTopic, UpdateTopic, CreateRecording, UpdateRecording, CreateDuration, UpdateDuration } from '../../src/types';
 
 export function setupIpcHandlers(): void {
@@ -86,6 +88,32 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('audio:getPath', async (_, recordingId: number) => {
     return getAudioPath(recordingId);
+  });
+
+  ipcMain.handle('audio:getBuffer', async (_, recordingId: number) => {
+    return getAudioBuffer(recordingId);
+  });
+
+  ipcMain.handle('audio:mergeExtension', async (
+    _,
+    recordingId: number,
+    extensionBuffer: ArrayBuffer,
+    originalDurationMs: number,
+    extensionDurationMs: number
+  ) => {
+    const audioPath = await getAudioPath(recordingId);
+    if (!audioPath) {
+      return { success: false, totalDurationMs: 0, error: 'Original audio file not found' };
+    }
+
+    const result = await mergeAudioFiles(
+      audioPath,
+      extensionBuffer,
+      originalDurationMs,
+      extensionDurationMs
+    );
+
+    return result;
   });
 
   // ============ Media (Images & Videos) ============

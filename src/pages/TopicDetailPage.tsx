@@ -149,6 +149,7 @@ export default function TopicDetailPage() {
           loading={recordingsLoading}
           onDeleteRecording={handleDeleteRecording}
           onUpdateRecording={handleUpdateRecording}
+          onRecordingExtended={handleRecordingSaved}
         />
       </div>
 

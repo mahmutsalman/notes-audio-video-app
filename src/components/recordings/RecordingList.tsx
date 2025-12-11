@@ -4,12 +4,14 @@ import RecordingCard from './RecordingCard';
 import ContextMenu, { type ContextMenuItemType } from '../common/ContextMenu';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
+import ExtendRecordingModal from './ExtendRecordingModal';
 
 interface RecordingListProps {
   recordings: Recording[];
   loading?: boolean;
   onDeleteRecording?: (recordingId: number) => Promise<void>;
   onUpdateRecording?: (recordingId: number, updates: UpdateRecording) => Promise<void>;
+  onRecordingExtended?: () => void;
 }
 
 export default function RecordingList({
@@ -17,6 +19,7 @@ export default function RecordingList({
   loading,
   onDeleteRecording,
   onUpdateRecording,
+  onRecordingExtended,
 }: RecordingListProps) {
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -50,6 +53,15 @@ export default function RecordingList({
     name: '',
   });
   const [isRenaming, setIsRenaming] = useState(false);
+
+  // Extend modal state
+  const [extendModal, setExtendModal] = useState<{
+    isOpen: boolean;
+    recording: Recording | null;
+  }>({
+    isOpen: false,
+    recording: null,
+  });
 
   const handleContextMenu = (e: React.MouseEvent, recording: Recording) => {
     e.preventDefault();
@@ -89,6 +101,26 @@ export default function RecordingList({
       });
     }
     closeContextMenu();
+  };
+
+  const handleExtendClick = () => {
+    if (contextMenu.recording) {
+      setExtendModal({
+        isOpen: true,
+        recording: contextMenu.recording,
+      });
+    }
+    closeContextMenu();
+  };
+
+  const closeExtendModal = () => {
+    setExtendModal({ isOpen: false, recording: null });
+  };
+
+  const handleExtensionSaved = () => {
+    closeExtendModal();
+    // Notify parent to refresh the recordings list
+    onRecordingExtended?.();
   };
 
   const handleRenameSubmit = async () => {
@@ -197,6 +229,11 @@ export default function RecordingList({
             icon: '✏️',
             onClick: handleRenameClick,
           }] : []),
+          ...(onUpdateRecording ? [{
+            label: 'Extend',
+            icon: '➕',
+            onClick: handleExtendClick,
+          }] : []),
           ...(onDeleteRecording ? [{
             label: 'Delete',
             icon: '🗑️',
@@ -274,6 +311,16 @@ export default function RecordingList({
           </div>
         </div>
       </Modal>
+
+      {/* Extend Recording Modal */}
+      {extendModal.recording && (
+        <ExtendRecordingModal
+          isOpen={extendModal.isOpen}
+          onClose={closeExtendModal}
+          recording={extendModal.recording}
+          onExtensionSaved={handleExtensionSaved}
+        />
+      )}
     </>
   );
 }

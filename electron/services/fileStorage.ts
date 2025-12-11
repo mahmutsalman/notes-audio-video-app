@@ -56,6 +56,19 @@ export async function getAudioPath(recordingId: number): Promise<string | null> 
   }
 }
 
+export async function getAudioBuffer(recordingId: number): Promise<ArrayBuffer | null> {
+  const audioPath = await getAudioPath(recordingId);
+  if (!audioPath) return null;
+
+  try {
+    const buffer = await fs.readFile(audioPath);
+    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+  } catch (error) {
+    console.error('Failed to read audio file:', error);
+    return null;
+  }
+}
+
 export async function saveImageFile(
   recordingId: number,
   sourcePath: string

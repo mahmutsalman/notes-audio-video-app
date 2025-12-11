@@ -117,6 +117,13 @@ export interface ElectronAPI {
   audio: {
     save: (recordingId: number, audioBuffer: ArrayBuffer, filename: string) => Promise<string>;
     getPath: (recordingId: number) => Promise<string | null>;
+    getBuffer: (recordingId: number) => Promise<ArrayBuffer | null>;
+    mergeExtension: (
+      recordingId: number,
+      extensionBuffer: ArrayBuffer,
+      originalDurationMs: number,
+      extensionDurationMs: number
+    ) => Promise<{ success: boolean; totalDurationMs: number; error?: string }>;
   };
   media: {
     addImage: (recordingId: number, filePath: string) => Promise<Image>;

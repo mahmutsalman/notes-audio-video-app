@@ -33,6 +33,14 @@ const electronAPI = {
     save: (recordingId: number, audioBuffer: ArrayBuffer, filename: string): Promise<string> =>
       ipcRenderer.invoke('audio:save', recordingId, audioBuffer, filename),
     getPath: (recordingId: number): Promise<string | null> => ipcRenderer.invoke('audio:getPath', recordingId),
+    getBuffer: (recordingId: number): Promise<ArrayBuffer | null> => ipcRenderer.invoke('audio:getBuffer', recordingId),
+    mergeExtension: (
+      recordingId: number,
+      extensionBuffer: ArrayBuffer,
+      originalDurationMs: number,
+      extensionDurationMs: number
+    ): Promise<{ success: boolean; totalDurationMs: number; error?: string }> =>
+      ipcRenderer.invoke('audio:mergeExtension', recordingId, extensionBuffer, originalDurationMs, extensionDurationMs),
   },
 
   // Media (Images & Videos)

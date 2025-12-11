@@ -1,0 +1,456 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useVoiceRecorder } from '../../hooks/useVoiceRecorder';
+import Modal from '../common/Modal';
+import Button from '../common/Button';
+import AudioRecorder from '../audio/AudioRecorder';
+import AudioPlayer from '../audio/AudioPlayer';
+import { formatDuration } from '../../utils/formatters';
+import type { Recording } from '../../types';
+
+interface ExtendRecordingModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  recording: Recording;
+  onExtensionSaved: () => void;
+}
+
+type Phase = 'recording' | 'review' | 'merging';
+
+export default function ExtendRecordingModal({
+  isOpen,
+  onClose,
+  recording,
+  onExtensionSaved,
+}: ExtendRecordingModalProps) {
+  const [phase, setPhase] = useState<Phase>('recording');
+  const [isMerging, setIsMerging] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [selectedImages, setSelectedImages] = useState<{ data: ArrayBuffer; extension: string }[]>([]);
+  const [selectedVideos, setSelectedVideos] = useState<string[]>([]);
+
+  const recorder = useVoiceRecorder();
+
+  // Reset state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setPhase('recording');
+      setIsMerging(false);
+      setMergeError(null);
+      setSelectedImages([]);
+      setSelectedVideos([]);
+      recorder.resetRecording();
+    }
+  }, [isOpen]);
+
+  const handleClose = () => {
+    if (isMerging) return; // Prevent closing during merge
+
+    if (recorder.isRecording) {
+      recorder.stopRecording();
+    }
+    recorder.resetRecording();
+    onClose();
+  };
+
+  const handleStopRecording = async () => {
+    await recorder.stopRecording();
+    setPhase('review');
+  };
+
+  const handlePickImages = async () => {
+    try {
+      const result = await window.electronAPI.clipboard.readImage();
+      if (result.success && result.buffer) {
+        setSelectedImages(prev => [...prev, { data: result.buffer!, extension: result.extension || 'png' }]);
+      } else {
+        alert('No image found in clipboard. Copy an image first, then click Paste.');
+      }
+    } catch (error) {
+      console.error('Failed to read clipboard:', error);
+      alert('Could not read clipboard. Make sure you have copied an image.');
+    }
+  };
+
+  const handlePickVideos = async () => {
+    try {
+      const result = await window.electronAPI.clipboard.readFileUrl();
+      if (result.success && result.filePath) {
+        const videoExtensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v'];
+        const ext = result.filePath.toLowerCase().slice(result.filePath.lastIndexOf('.'));
+        if (videoExtensions.includes(ext)) {
+          setSelectedVideos(prev => [...prev, result.filePath!]);
+        } else {
+          alert(`The copied file is not a video (${ext}). Supported formats: MP4, MOV, WebM, AVI, MKV, M4V`);
+        }
+      } else {
+        alert('No file found in clipboard. Copy a video file first, then click Paste.');
+      }
+    } catch (error) {
+      console.error('Failed to read clipboard:', error);
+      alert('Could not read clipboard. Make sure you have copied a video file.');
+    }
+  };
+
+  // Handle Cmd+V to add image to the last duration mark
+  const handlePasteToMark = useCallback(async () => {
+    if (recorder.completedMarks.length === 0) return false;
+
+    try {
+      const result = await window.electronAPI.clipboard.readImage();
+      if (result.success && result.buffer) {
+        return recorder.addImageToLastMark({
+          data: result.buffer,
+          extension: result.extension || 'png'
+        });
+      }
+    } catch (error) {
+      console.error('Failed to read clipboard for mark:', error);
+    }
+    return false;
+  }, [recorder]);
+
+  // Keyboard listener for Cmd+V
+  useEffect(() => {
+    if (!isOpen) return;
+    if (recorder.completedMarks.length === 0) return;
+
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
+        const added = await handlePasteToMark();
+        if (added) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, recorder.completedMarks.length, handlePasteToMark]);
+
+  const handleSave = async () => {
+    if (!recorder.audioBlob) return;
+
+    setPhase('merging');
+    setIsMerging(true);
+    setMergeError(null);
+
+    try {
+      // 1. Calculate durations
+      const originalDurationMs = (recording.audio_duration ?? 0) * 1000;
+      const extensionDurationMs = recorder.duration * 1000;
+
+      // 2. Get extension as ArrayBuffer
+      const extensionBuffer = await recorder.audioBlob.arrayBuffer();
+
+      // 3. Merge audio files using native FFmpeg (fast!)
+      console.log('[Extend] Merging audio files with native FFmpeg...');
+      const result = await window.electronAPI.audio.mergeExtension(
+        recording.id,
+        extensionBuffer,
+        originalDurationMs,
+        extensionDurationMs
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Merge failed');
+      }
+      console.log('[Extend] Audio merged successfully');
+
+      // 4. Update recording duration in database
+      await window.electronAPI.recordings.update(recording.id, {
+        audio_duration: Math.floor(result.totalDurationMs / 1000)
+      });
+
+      // 5. Save duration marks with offset timestamps (adjusted for original duration)
+      const offsetSeconds = recording.audio_duration ?? 0;
+      for (const mark of recorder.completedMarks) {
+        const duration = await window.electronAPI.durations.create({
+          recording_id: recording.id,
+          start_time: mark.start + offsetSeconds,
+          end_time: mark.end + offsetSeconds,
+          note: mark.note ?? null,
+        });
+
+        // Save images attached to this mark
+        if (mark.images && mark.images.length > 0) {
+          for (const image of mark.images) {
+            await window.electronAPI.durationImages.addFromClipboard(
+              duration.id,
+              image.data,
+              image.extension
+            );
+          }
+        }
+      }
+
+      // 6. Add any recording-level images/videos
+      for (const image of selectedImages) {
+        await window.electronAPI.media.addImageFromClipboard(recording.id, image.data, image.extension);
+      }
+      for (const videoPath of selectedVideos) {
+        await window.electronAPI.media.addVideo(recording.id, videoPath);
+      }
+
+      // Success - reset and close
+      console.log('[Extend] Recording extended successfully');
+      recorder.resetRecording();
+      onExtensionSaved();
+      onClose();
+    } catch (error) {
+      console.error('[Extend] Failed to extend recording:', error);
+      setMergeError(error instanceof Error ? error.message : 'Failed to extend recording');
+      setPhase('review'); // Go back to review phase on error
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
+  const originalDuration = recording.audio_duration ?? 0;
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title={phase === 'merging' ? 'Extending Recording...' : 'Extend Recording'}
+      size="lg"
+    >
+      {/* Original recording info */}
+      <div className="mb-4 p-3 bg-gray-100 dark:bg-dark-hover rounded-lg">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600 dark:text-gray-400">
+            Original recording:
+          </span>
+          <span className="font-mono text-gray-900 dark:text-gray-100">
+            {formatDuration(originalDuration)}
+          </span>
+        </div>
+        {recording.name && (
+          <div className="text-sm text-gray-500 dark:text-gray-400 mt-1 truncate">
+            {recording.name}
+          </div>
+        )}
+      </div>
+
+      {phase === 'recording' && (
+        <div className="space-y-4">
+          <AudioRecorder
+            recorder={recorder}
+            onStopRecording={handleStopRecording}
+          />
+
+          {/* Show completed marks during recording */}
+          {recorder.completedMarks.length > 0 && (
+            <div className="p-3 bg-gray-50 dark:bg-dark-hover rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Marked Sections ({recorder.completedMarks.length})
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  Will be added at +{formatDuration(originalDuration)}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {recorder.completedMarks.map((mark, index) => {
+                  const imageCount = mark.images?.length || 0;
+                  const isLastMark = index === recorder.completedMarks.length - 1;
+                  return (
+                    <div key={index} className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">
+                        {formatDuration(mark.start)} → {formatDuration(mark.end)}
+                      </span>
+                      {imageCount > 0 ? (
+                        <span className="px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-xs font-medium">
+                          📷 {imageCount}
+                        </span>
+                      ) : isLastMark ? (
+                        <button
+                          onClick={() => handlePasteToMark()}
+                          className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-dark-border text-gray-600 dark:text-gray-400 hover:bg-primary-100 dark:hover:bg-primary-900/50 hover:text-primary-700 dark:hover:text-primary-300 rounded transition-colors"
+                        >
+                          📋 Paste Image
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-400 dark:text-gray-500 italic">
+                          No images
+                        </span>
+                      )}
+                      {mark.note && (
+                        <span className="text-gray-500 dark:text-gray-400 text-xs">
+                          ({mark.note})
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {phase === 'review' && (
+        <div className="space-y-4">
+          {/* Extension playback info */}
+          {recorder.audioUrl && (
+            <div className="flex items-center gap-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+              <span className="text-green-500 text-xl">✓</span>
+              <span className="font-medium text-gray-900 dark:text-gray-100">
+                Extension recorded
+              </span>
+              <span className="text-gray-500 dark:text-gray-400">
+                +{formatDuration(recorder.duration)}
+              </span>
+              <span className="text-gray-400 dark:text-gray-500">
+                → Total: {formatDuration(originalDuration + recorder.duration)}
+              </span>
+            </div>
+          )}
+
+          {/* Error message */}
+          {mergeError && (
+            <div className="p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg text-sm">
+              {mergeError}
+            </div>
+          )}
+
+          {/* Audio player for extension preview */}
+          {recorder.audioUrl && (
+            <AudioPlayer src={recorder.audioUrl} duration={recorder.duration} />
+          )}
+
+          {/* Duration marks from extension */}
+          {recorder.completedMarks.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  New Marked Sections ({recorder.completedMarks.length})
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  Will be offset by +{formatDuration(originalDuration)}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {recorder.completedMarks.map((mark, index) => {
+                  const imageCount = mark.images?.length || 0;
+                  return (
+                    <div
+                      key={index}
+                      className="relative px-3 py-1.5 bg-gray-100 dark:bg-dark-hover rounded-lg text-sm"
+                    >
+                      <span className="text-gray-700 dark:text-gray-300">
+                        {formatDuration(mark.start)} → {formatDuration(mark.end)}
+                      </span>
+                      {imageCount > 0 && (
+                        <span className="ml-2 px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-xs font-medium">
+                          📷 {imageCount}
+                        </span>
+                      )}
+                      {mark.note && (
+                        <span className="ml-2 text-gray-500 dark:text-gray-400 text-xs">
+                          ({mark.note})
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Media attachments */}
+          <div className="flex gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handlePickImages}
+              type="button"
+            >
+              📋 Paste Image {selectedImages.length > 0 && `(${selectedImages.length})`}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handlePickVideos}
+              type="button"
+            >
+              📋 Paste Video {selectedVideos.length > 0 && `(${selectedVideos.length})`}
+            </Button>
+          </div>
+
+          {/* Preview selected files */}
+          {(selectedImages.length > 0 || selectedVideos.length > 0) && (
+            <div className="flex flex-wrap gap-2">
+              {selectedImages.map((image, i) => {
+                const blob = new Blob([image.data], { type: `image/${image.extension}` });
+                const previewUrl = URL.createObjectURL(blob);
+                return (
+                  <div
+                    key={i}
+                    className="relative w-16 h-16 rounded overflow-hidden bg-gray-100 dark:bg-dark-border"
+                  >
+                    <img
+                      src={previewUrl}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      onLoad={() => URL.revokeObjectURL(previewUrl)}
+                    />
+                    <button
+                      onClick={() => setSelectedImages(prev => prev.filter((_, idx) => idx !== i))}
+                      className="absolute top-0 right-0 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+              {selectedVideos.map((videoPath, i) => (
+                <div
+                  key={i}
+                  className="relative w-16 h-16 rounded overflow-hidden bg-gray-100 dark:bg-dark-border flex items-center justify-center"
+                  title={videoPath.split('/').pop()}
+                >
+                  <span className="text-2xl">🎬</span>
+                  <button
+                    onClick={() => setSelectedVideos(prev => prev.filter((_, idx) => idx !== i))}
+                    className="absolute top-0 right-0 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="secondary" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave}>
+              Extend Recording
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {phase === 'merging' && (
+        <div className="py-12 flex flex-col items-center justify-center">
+          <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mb-4" />
+          <p className="text-gray-700 dark:text-gray-300 font-medium">
+            Merging audio files...
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+            This may take a moment for longer recordings
+          </p>
+          {originalDuration > 300 && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-3 text-center max-w-xs">
+              Note: For recordings over 5 minutes, merging can take a while as it needs to re-encode the entire audio.
+              Check the console (Cmd+Option+I) for progress.
+            </p>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
