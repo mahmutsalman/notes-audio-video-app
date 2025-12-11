@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { Howl } from 'howler';
 import { formatDuration } from '../../utils/formatters';
+import { SoundTouchPlayer } from '../../lib/SoundTouchPlayer';
 
 interface AudioPlayerProps {
   src: string;
@@ -29,6 +30,7 @@ export interface AudioPlayerHandle {
 const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   function AudioPlayer({ src, duration: propDuration, onLoad, onPlay, showDebug = false }, ref) {
   const howlRef = useRef<Howl | null>(null);
+  const soundTouchRef = useRef<SoundTouchPlayer | null>(null); // For WebM with pitch preservation
   const loopRegionRef = useRef<LoopRegion | null>(null);
   const activeSoundIdRef = useRef<number | null>(null); // Track specific Howl sound instance for seeking
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -55,13 +57,19 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   }, [loopRegion]);
 
   const isWebmSource = src.toLowerCase().includes('.webm') || src.startsWith('blob:');
-  const useHtml5Audio = !isWebmSource; // WebM blobs seek more reliably with Web Audio
+  const useSoundTouch = isWebmSource; // WebM → SoundTouchPlayer for pitch-preserved speed control
+  const useHtml5Audio = !isWebmSource; // Non-WebM files use Howler with HTML5 mode
 
-  // Initialize Howl when src changes
+  // Initialize audio player when src changes
   useEffect(() => {
-    // Clean up previous instance
+    // Clean up previous instances
     if (howlRef.current) {
       howlRef.current.unload();
+      howlRef.current = null;
+    }
+    if (soundTouchRef.current) {
+      soundTouchRef.current.dispose();
+      soundTouchRef.current = null;
     }
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -71,9 +79,65 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     // Reset loaded state when src changes
     setIsLoaded(false);
 
+    // Use SoundTouchPlayer for WebM/blob sources (pitch preservation)
+    if (useSoundTouch) {
+      const player = new SoundTouchPlayer({
+        onTimeUpdate: (time) => {
+          setCurrentTime(time);
+          // Check loop boundary
+          const region = loopRegionRef.current;
+          if (region && time >= region.end) {
+            console.log('[DEBUG] Loop boundary reached! time:', time.toFixed(2), '>= end:', region.end);
+            console.log('[DEBUG] Looping back to start:', region.start);
+            player.seek(region.start);
+            setCurrentTime(region.start);
+            setDebugInfo(prev => ({ ...prev, lastLoopBack: Date.now() }));
+          }
+        },
+        onEnd: () => {
+          const region = loopRegionRef.current;
+          if (region) {
+            player.seek(region.start);
+            player.play();
+          } else {
+            setIsPlaying(false);
+          }
+        },
+        onLoad: () => {
+          setIsLoaded(true);
+          onLoad?.();
+          console.log('[AudioPlayer] SoundTouchPlayer loaded and ready for seeking');
+        },
+        onPlay: () => {
+          setIsPlaying(true);
+          onPlay?.();
+        },
+        onPause: () => {
+          setIsPlaying(false);
+        },
+      });
+
+      soundTouchRef.current = player;
+
+      // Load the audio
+      player.load(src)
+        .then((dur) => {
+          setDuration(dur);
+          player.setTempo(playbackRate);
+        })
+        .catch((err) => {
+          console.error('[AudioPlayer] Failed to load audio with SoundTouchPlayer:', err);
+        });
+
+      return () => {
+        player.dispose();
+      };
+    }
+
+    // Use Howler for non-WebM sources (unchanged behavior)
     const howl = new Howl({
       src: [src],
-      html5: useHtml5Audio, // WebM → Web Audio for accurate seeking
+      html5: useHtml5Audio,
       format: isWebmSource ? ['webm'] : undefined,
       preload: true,
       onload: () => {
@@ -81,16 +145,16 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
         if (Number.isFinite(dur) && dur > 0) {
           setDuration(dur);
         }
-        setIsLoaded(true);  // Audio is now ready for seeking
-        onLoad?.();  // Notify parent that audio is ready
-        console.log('[AudioPlayer] Audio loaded and ready for seeking');
+        setIsLoaded(true);
+        onLoad?.();
+        console.log('[AudioPlayer] Howler loaded and ready for seeking');
       },
       onplay: (id) => {
         if (typeof id === 'number') {
           activeSoundIdRef.current = id;
         }
         setIsPlaying(true);
-        onPlay?.();  // Notify parent that playback started
+        onPlay?.();
       },
       onpause: () => {
         setIsPlaying(false);
@@ -100,8 +164,6 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
         activeSoundIdRef.current = null;
       },
       onend: () => {
-        // If we have a loop region, this shouldn't fire (we handle looping manually)
-        // But just in case, restart if looping
         const region = loopRegionRef.current;
         if (region) {
           const id = howl.play();
@@ -115,11 +177,9 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     });
 
     howlRef.current = howl;
-
-    // Set initial playback rate
     howl.rate(playbackRate);
 
-    // Update currentTime periodically and check loop boundary
+    // Update currentTime periodically for Howler (SoundTouchPlayer does this internally)
     intervalRef.current = setInterval(() => {
       if (howl.playing()) {
         const id = activeSoundIdRef.current ?? undefined;
@@ -138,7 +198,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
           }
         }
       }
-    }, 50); // 50ms for smoother updates
+    }, 50);
 
     return () => {
       if (intervalRef.current) {
@@ -147,11 +207,13 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
       howl.unload();
       activeSoundIdRef.current = null;
     };
-  }, [src, useHtml5Audio, isWebmSource]); // Only re-create when src or playback mode changes
+  }, [src, useSoundTouch, useHtml5Audio, isWebmSource]); // Only re-create when src or playback mode changes
 
   // Update playback rate when it changes
   useEffect(() => {
-    if (howlRef.current) {
+    if (soundTouchRef.current) {
+      soundTouchRef.current.setTempo(playbackRate);
+    } else if (howlRef.current) {
       howlRef.current.rate(playbackRate);
     }
   }, [playbackRate]);
@@ -164,6 +226,18 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   }, [propDuration]);
 
   const togglePlay = useCallback(() => {
+    // Handle SoundTouchPlayer
+    const soundTouch = soundTouchRef.current;
+    if (soundTouch) {
+      if (isPlaying) {
+        soundTouch.pause();
+      } else {
+        soundTouch.play();
+      }
+      return;
+    }
+
+    // Handle Howler
     const howl = howlRef.current;
     if (!howl) return;
 
@@ -176,6 +250,52 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   }, [isPlaying]);
 
   const setLoopRegion = useCallback((start: number, end: number) => {
+    // Handle SoundTouchPlayer
+    const soundTouch = soundTouchRef.current;
+    if (soundTouch) {
+      const audioDuration = soundTouch.getDuration();
+      const clampedStart = Math.max(0, Math.min(start, audioDuration));
+      const clampedEnd = Math.max(clampedStart, Math.min(end, audioDuration));
+
+      console.log('═══════════════════════════════════════════');
+      console.log('[DEBUG] setLoopRegion CALLED (SoundTouchPlayer)');
+      console.log('[DEBUG] Requested start:', start, 'seconds');
+      console.log('[DEBUG] Requested end:', end, 'seconds');
+      console.log('[DEBUG] Clamped start:', clampedStart, 'seconds');
+      console.log('[DEBUG] Clamped end:', clampedEnd, 'seconds');
+      console.log('[DEBUG] Audio total duration:', audioDuration, 'seconds');
+
+      setLoopRegionState({ start: clampedStart, end: clampedEnd });
+
+      // Stop, seek to start, then play
+      soundTouch.stop();
+      soundTouch.seek(clampedStart);
+      setCurrentTime(clampedStart);
+      setDebugInfo(prev => ({
+        ...prev,
+        requestedStart: clampedStart,
+        requestedEnd: clampedEnd,
+        actualSeekPosition: clampedStart,
+      }));
+
+      soundTouch.play();
+
+      // Verify seek position after settling
+      setTimeout(() => {
+        const actualPos = soundTouch.getCurrentTime();
+        console.log('[DEBUG] After seek, actual position:', actualPos, 'seconds');
+        console.log('[DEBUG] Seek accuracy:', (actualPos - clampedStart).toFixed(3), 'seconds off');
+        setDebugInfo(prev => ({
+          ...prev,
+          actualSeekPosition: actualPos,
+        }));
+      }, 180);
+
+      console.log('═══════════════════════════════════════════');
+      return;
+    }
+
+    // Handle Howler
     const howl = howlRef.current;
     if (!howl) return;
 
@@ -184,7 +304,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     const clampedEnd = Math.max(clampedStart, Math.min(end, audioDuration));
 
     console.log('═══════════════════════════════════════════');
-    console.log('[DEBUG] setLoopRegion CALLED');
+    console.log('[DEBUG] setLoopRegion CALLED (Howler)');
     console.log('[DEBUG] Requested start:', start, 'seconds');
     console.log('[DEBUG] Requested end:', end, 'seconds');
     console.log('[DEBUG] Clamped start:', clampedStart, 'seconds');
@@ -245,8 +365,18 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   }, []);
 
   const clearLoopRegion = useCallback(() => {
-    const howl = howlRef.current;
     setLoopRegionState(null);
+
+    // Handle SoundTouchPlayer
+    const soundTouch = soundTouchRef.current;
+    if (soundTouch) {
+      soundTouch.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    // Handle Howler
+    const howl = howlRef.current;
     if (howl) {
       howl.pause();
       setIsPlaying(false);
@@ -272,10 +402,20 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   }), [togglePlay, setLoopRegion, clearLoopRegion, loopRegion, isLoaded]);
 
   const handleSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+
+    // Handle SoundTouchPlayer
+    const soundTouch = soundTouchRef.current;
+    if (soundTouch) {
+      soundTouch.seek(time);
+      setCurrentTime(time);
+      return;
+    }
+
+    // Handle Howler
     const howl = howlRef.current;
     if (!howl) return;
 
-    const time = parseFloat(e.target.value);
     const id = activeSoundIdRef.current ?? undefined;
     howl.seek(time, id);
     setCurrentTime(time);
