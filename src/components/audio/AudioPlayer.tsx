@@ -16,13 +16,6 @@ export interface LoopRegion {
 }
 
 const SPEED_PRESETS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3] as const;
-const setPreservePitch = (node: HTMLAudioElement | null) => {
-  if (!node) return;
-  // Enable pitch preservation when changing playbackRate on HTML5 audio
-  (node as any).preservesPitch = true;
-  (node as any).mozPreservesPitch = true;
-  (node as any).webkitPreservesPitch = true;
-};
 
 export interface AudioPlayerHandle {
   toggle: () => void;
@@ -62,6 +55,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   }, [loopRegion]);
 
   const isWebmSource = src.toLowerCase().includes('.webm') || src.startsWith('blob:');
+  const useHtml5Audio = !isWebmSource; // WebM blobs seek more reliably with Web Audio
 
   // Initialize Howl when src changes
   useEffect(() => {
@@ -79,7 +73,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
 
     const howl = new Howl({
       src: [src],
-      html5: true, // HTML5 audio preserves pitch; we handle seeking accuracy manually
+      html5: useHtml5Audio, // WebM → Web Audio for accurate seeking
       format: isWebmSource ? ['webm'] : undefined,
       preload: true,
       onload: () => {
@@ -94,11 +88,6 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
       onplay: (id) => {
         if (typeof id === 'number') {
           activeSoundIdRef.current = id;
-          // Ensure pitch preservation on the underlying HTMLAudioElement
-          const sound = (howl as any)._sounds?.find((s: any) => s?._id === id);
-          if (sound?._node) {
-            setPreservePitch(sound._node);
-          }
         }
         setIsPlaying(true);
         onPlay?.();  // Notify parent that playback started
@@ -158,7 +147,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
       howl.unload();
       activeSoundIdRef.current = null;
     };
-  }, [src, isWebmSource]); // Only re-create when src changes
+  }, [src, useHtml5Audio, isWebmSource]); // Only re-create when src or playback mode changes
 
   // Update playback rate when it changes
   useEffect(() => {
