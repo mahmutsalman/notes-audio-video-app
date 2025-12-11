@@ -50,8 +50,28 @@ export class SoundTouchPlayer {
     try {
       // Fetch and decode the audio
       const response = await fetch(blobUrl);
+
+      // Check if disposed during fetch (e.g., component unmounted)
+      if (!this.audioContext) {
+        console.log('[SoundTouchPlayer] Aborted: context disposed during fetch');
+        return 0;
+      }
+
       const arrayBuffer = await response.arrayBuffer();
+
+      // Check again after arrayBuffer conversion
+      if (!this.audioContext) {
+        console.log('[SoundTouchPlayer] Aborted: context disposed during buffer read');
+        return 0;
+      }
+
       this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+
+      // Check again after decode
+      if (!this.audioContext) {
+        console.log('[SoundTouchPlayer] Aborted: context disposed during decode');
+        return 0;
+      }
 
       this._duration = this.audioBuffer.duration;
 
@@ -62,6 +82,11 @@ export class SoundTouchPlayer {
 
       return this._duration;
     } catch (error) {
+      // Ignore errors if we've been disposed (component unmounted)
+      if (!this.audioContext) {
+        console.log('[SoundTouchPlayer] Load cancelled: player was disposed');
+        return 0;
+      }
       console.error('[SoundTouchPlayer] Failed to load audio:', error);
       throw error;
     }
