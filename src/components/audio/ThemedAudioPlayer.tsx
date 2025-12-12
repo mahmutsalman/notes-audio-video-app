@@ -85,7 +85,7 @@ export default function ThemedAudioPlayer({
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className={`rounded-lg ${colors.bg} border ${colors.border} p-3 ${className}`}>
+    <div className={`rounded-md ${colors.bg} border ${colors.border} px-2.5 py-1.5 ${className}`}>
       <audio
         ref={audioRef}
         src={src}
@@ -97,23 +97,23 @@ export default function ThemedAudioPlayer({
         preload="metadata"
       />
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         {/* Play/Pause button */}
         <button
           onClick={togglePlay}
           disabled={!isLoaded}
-          className={`w-10 h-10 ${colors.buttonBg} text-white rounded-full
+          className={`w-7 h-7 ${colors.buttonBg} text-white rounded-full
                      flex items-center justify-center transition-all
                      disabled:opacity-50 disabled:cursor-not-allowed
-                     shadow-lg hover:scale-105 active:scale-95`}
+                     shadow hover:scale-105 active:scale-95`}
         >
           {isPlaying ? (
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
               <rect x="6" y="4" width="4" height="16" rx="1" />
               <rect x="14" y="4" width="4" height="16" rx="1" />
             </svg>
           ) : (
-            <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z" />
             </svg>
           )}
@@ -121,7 +121,7 @@ export default function ThemedAudioPlayer({
 
         {/* Progress bar */}
         <div
-          className={`flex-1 h-2 ${colors.progressBg} rounded-full cursor-pointer overflow-hidden`}
+          className={`flex-1 h-1.5 ${colors.progressBg} rounded-full cursor-pointer overflow-hidden`}
           onClick={handleSeek}
         >
           <div
@@ -131,7 +131,7 @@ export default function ThemedAudioPlayer({
         </div>
 
         {/* Time display */}
-        <div className={`text-xs font-mono ${colors.text} whitespace-nowrap min-w-[70px] text-right`}>
+        <div className={`text-[10px] font-mono ${colors.text} whitespace-nowrap min-w-[60px] text-right`}>
           {formatDuration(Math.floor(currentTime))} / {formatDuration(Math.floor(duration))}
         </div>
       </div>
