@@ -486,11 +486,11 @@ export default function RecordingPage() {
               📋 Paste
             </button>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
             {activeDurationImages.map((img, index) => (
               <div key={img.id} className="relative group">
                 <div
-                  className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
+                  className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
                   onClick={() => setSelectedDurationImageIndex(index)}
                 >
                   <img
@@ -501,9 +501,9 @@ export default function RecordingPage() {
                 </div>
                 <button
                   onClick={() => handleDeleteDurationImage(img.id)}
-                  className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full
+                  className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
                              opacity-0 group-hover:opacity-100 transition-opacity
-                             flex items-center justify-center text-xs"
+                             flex items-center justify-center text-sm"
                 >
                   ×
                 </button>
