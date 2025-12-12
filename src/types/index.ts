@@ -36,6 +36,7 @@ export interface Image {
   recording_id: number;
   file_path: string;
   thumbnail_path: string | null;
+  caption: string | null;
   sort_order: number;
   created_at: string;
 }
@@ -45,6 +46,7 @@ export interface Video {
   recording_id: number;
   file_path: string;
   thumbnail_path: string | null;
+  caption: string | null;
   duration: number | null;
   sort_order: number;
   created_at: string;
@@ -67,12 +69,16 @@ export interface DurationImage {
   duration_id: number;
   file_path: string;
   thumbnail_path: string | null;
+  caption: string | null;
   sort_order: number;
   created_at: string;
 }
 
 export type UpdateDuration = Partial<Pick<Duration, 'note' | 'color'>>;
 export type CreateDurationImage = Omit<DurationImage, 'id' | 'created_at'>;
+export type UpdateImage = { caption?: string | null };
+export type UpdateVideo = { caption?: string | null };
+export type UpdateDurationImage = { caption?: string | null };
 
 // Backup types
 export interface BackupResult {
@@ -134,6 +140,8 @@ export interface ElectronAPI {
     getVideos: (recordingId: number) => Promise<Video[]>;
     deleteImage: (id: number) => Promise<void>;
     deleteVideo: (id: number) => Promise<void>;
+    updateImageCaption: (id: number, caption: string | null) => Promise<Image>;
+    updateVideoCaption: (id: number, caption: string | null) => Promise<Video>;
     pickFiles: (type: 'image' | 'video' | 'both') => Promise<string[]>;
   };
   paths: {
@@ -160,6 +168,7 @@ export interface ElectronAPI {
     getByDuration: (durationId: number) => Promise<DurationImage[]>;
     addFromClipboard: (durationId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<DurationImage>;
     delete: (id: number) => Promise<void>;
+    updateCaption: (id: number, caption: string | null) => Promise<DurationImage>;
   };
   backup: {
     create: () => Promise<BackupResult>;

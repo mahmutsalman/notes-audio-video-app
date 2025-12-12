@@ -190,6 +190,14 @@ export function setupIpcHandlers(): void {
     });
   });
 
+  ipcMain.handle('media:updateImageCaption', async (_, id: number, caption: string | null) => {
+    return ImagesOperations.updateCaption(id, caption);
+  });
+
+  ipcMain.handle('media:updateVideoCaption', async (_, id: number, caption: string | null) => {
+    return VideosOperations.updateCaption(id, caption);
+  });
+
   ipcMain.handle('media:pickFiles', async (_, type: 'image' | 'video' | 'both') => {
     const filters = type === 'image'
       ? [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }]
@@ -301,6 +309,10 @@ export function setupIpcHandlers(): void {
       }
     }
     DurationImagesOperations.delete(id);
+  });
+
+  ipcMain.handle('durationImages:updateCaption', async (_, id: number, caption: string | null) => {
+    return DurationImagesOperations.updateCaption(id, caption);
   });
 
   // ============ Backup ============

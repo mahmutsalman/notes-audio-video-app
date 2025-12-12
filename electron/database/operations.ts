@@ -253,6 +253,12 @@ export const ImagesOperations = {
     const db = getDatabase();
     db.prepare('DELETE FROM images WHERE id = ?').run(id);
   },
+
+  updateCaption(id: number, caption: string | null): Image {
+    const db = getDatabase();
+    db.prepare('UPDATE images SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
 };
 
 // Videos Operations
@@ -292,6 +298,12 @@ export const VideosOperations = {
   delete(id: number): void {
     const db = getDatabase();
     db.prepare('DELETE FROM videos WHERE id = ?').run(id);
+  },
+
+  updateCaption(id: number, caption: string | null): Video {
+    const db = getDatabase();
+    db.prepare('UPDATE videos SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
   },
 };
 
@@ -399,5 +411,11 @@ export const DurationImagesOperations = {
   deleteByDuration(durationId: number): void {
     const db = getDatabase();
     db.prepare('DELETE FROM duration_images WHERE duration_id = ?').run(durationId);
+  },
+
+  updateCaption(id: number, caption: string | null): DurationImage {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_images SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
   },
 };

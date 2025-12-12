@@ -7,8 +7,9 @@ import AudioPlayer, { AudioPlayerHandle } from '../components/audio/AudioPlayer'
 import DurationList from '../components/recordings/DurationList';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
+import NotesEditor from '../components/common/NotesEditor';
 import { formatDuration, formatDate, formatRelativeTime } from '../utils/formatters';
-import type { Duration, DurationColor } from '../types';
+import type { Duration, DurationColor, Image, Video, DurationImage } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -56,8 +57,29 @@ export default function RecordingPage() {
   } | null>(null);
   const [videoToDelete, setVideoToDelete] = useState<number | null>(null);
   const [durationToDelete, setDurationToDelete] = useState<number | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    type: 'image' | 'video' | 'durationImage';
+    item: Image | Video | DurationImage;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [captionModal, setCaptionModal] = useState<{
+    type: 'image' | 'video' | 'durationImage';
+    id: number;
+    currentCaption: string;
+  } | null>(null);
+  const [captionText, setCaptionText] = useState('');
 
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
+
+  // Helper to preserve scroll position across refetch
+  const preserveScrollPosition = async (operation: () => Promise<void>) => {
+    const scrollY = window.scrollY;
+    await operation();
+    requestAnimationFrame(() => {
+      window.scrollTo(0, scrollY);
+    });
+  };
 
   // Reset loop state and audio loaded state when changing recordings
   useEffect(() => {
@@ -89,7 +111,7 @@ export default function RecordingPage() {
     setIsSaving(true);
     try {
       await window.electronAPI.recordings.update(id, { notes_content: notes || null });
-      await refetch();
+      await preserveScrollPosition(refetch);
       setIsEditing(false);
     } finally {
       setIsSaving(false);
@@ -105,7 +127,7 @@ export default function RecordingPage() {
     if (!id) return;
     const trimmedName = editingName.trim();
     await window.electronAPI.recordings.update(id, { name: trimmedName || null });
-    await refetch();
+    await preserveScrollPosition(refetch);
     setIsEditingName(false);
   };
 
@@ -136,7 +158,7 @@ export default function RecordingPage() {
 
       if (result.success && result.buffer) {
         await window.electronAPI.media.addImageFromClipboard(id, result.buffer, result.extension || 'png');
-        await refetch();
+        await preserveScrollPosition(refetch);
       } else {
         alert('No image found in clipboard. Copy an image first, then click Paste.');
       }
@@ -159,7 +181,7 @@ export default function RecordingPage() {
 
         if (videoExtensions.includes(ext)) {
           await window.electronAPI.media.addVideo(id, result.filePath);
-          await refetch();
+          await preserveScrollPosition(refetch);
         } else {
           alert(`The copied file is not a video (${ext}). Supported formats: MP4, MOV, WebM, AVI, MKV, M4V`);
         }
@@ -183,7 +205,7 @@ export default function RecordingPage() {
   const confirmDeleteVideo = async () => {
     if (!videoToDelete) return;
     await window.electronAPI.media.deleteVideo(videoToDelete);
-    await refetch();
+    await preserveScrollPosition(refetch);
     setVideoToDelete(null);
   };
 
@@ -229,13 +251,64 @@ export default function RecordingPage() {
     setImageToDelete({ type: 'duration', imageId });
   };
 
+  // Handle context menu for images/videos
+  const handleContextMenu = (
+    e: React.MouseEvent,
+    type: 'image' | 'video' | 'durationImage',
+    item: Image | Video | DurationImage
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ type, item, x: e.clientX, y: e.clientY });
+  };
+
+  // Open caption modal
+  const openCaptionModal = (type: 'image' | 'video' | 'durationImage', id: number, currentCaption: string | null) => {
+    setCaptionModal({ type, id, currentCaption: currentCaption || '' });
+    setCaptionText(currentCaption || '');
+    setContextMenu(null);
+  };
+
+  // Save caption
+  const handleSaveCaption = async () => {
+    if (!captionModal) return;
+    const trimmedCaption = captionText.trim() || null;
+
+    try {
+      if (captionModal.type === 'image') {
+        await window.electronAPI.media.updateImageCaption(captionModal.id, trimmedCaption);
+        await preserveScrollPosition(refetch);
+      } else if (captionModal.type === 'video') {
+        await window.electronAPI.media.updateVideoCaption(captionModal.id, trimmedCaption);
+        await preserveScrollPosition(refetch);
+      } else if (captionModal.type === 'durationImage' && activeDurationId) {
+        await window.electronAPI.durationImages.updateCaption(captionModal.id, trimmedCaption);
+        await getDurationImages(activeDurationId);
+      }
+    } catch (error) {
+      console.error('Failed to save caption:', error);
+    }
+
+    setCaptionModal(null);
+    setCaptionText('');
+  };
+
+  // Close context menu when clicking elsewhere
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    if (contextMenu) {
+      window.addEventListener('click', handleClick);
+      return () => window.removeEventListener('click', handleClick);
+    }
+  }, [contextMenu]);
+
   // Confirm and execute image deletion
   const confirmDeleteImage = async () => {
     if (!imageToDelete) return;
 
     if (imageToDelete.type === 'recording') {
       await window.electronAPI.media.deleteImage(imageToDelete.imageId);
-      await refetch();
+      await preserveScrollPosition(refetch);
     } else if (imageToDelete.type === 'duration' && activeDurationId) {
       await deleteDurationImage(imageToDelete.imageId, activeDurationId);
     }
@@ -488,25 +561,34 @@ export default function RecordingPage() {
           </div>
           <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
             {activeDurationImages.map((img, index) => (
-              <div key={img.id} className="relative group">
-                <div
-                  className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
-                  onClick={() => setSelectedDurationImageIndex(index)}
-                >
-                  <img
-                    src={window.electronAPI.paths.getFileUrl(img.thumbnail_path || img.file_path)}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
+              <div key={img.id} className="group">
+                <div className="relative">
+                  <div
+                    className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
+                    onClick={() => setSelectedDurationImageIndex(index)}
+                    onContextMenu={(e) => handleContextMenu(e, 'durationImage', img)}
+                  >
+                    <img
+                      src={window.electronAPI.paths.getFileUrl(img.thumbnail_path || img.file_path)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleDeleteDurationImage(img.id)}
+                    className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
+                               opacity-0 group-hover:opacity-100 transition-opacity
+                               flex items-center justify-center text-sm"
+                  >
+                    ×
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleDeleteDurationImage(img.id)}
-                  className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
-                             opacity-0 group-hover:opacity-100 transition-opacity
-                             flex items-center justify-center text-sm"
-                >
-                  ×
-                </button>
+                {/* Caption */}
+                {img.caption && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 line-clamp-2 italic font-light leading-tight">
+                    {img.caption}
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -542,11 +624,9 @@ export default function RecordingPage() {
         </div>
         {isEditing ? (
           <div className="space-y-3">
-            <textarea
+            <NotesEditor
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="input-field resize-none"
-              rows={6}
+              onChange={setNotes}
               placeholder="Add notes..."
             />
             <div className="flex justify-end gap-2">
@@ -561,9 +641,10 @@ export default function RecordingPage() {
         ) : (
           <div className="p-4 bg-gray-50 dark:bg-dark-hover rounded-lg">
             {recording.notes_content ? (
-              <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                {recording.notes_content}
-              </p>
+              <div
+                className="notes-content text-gray-700 dark:text-gray-300"
+                dangerouslySetInnerHTML={{ __html: recording.notes_content }}
+              />
             ) : (
               <p className="text-gray-400 dark:text-gray-500 italic">
                 No notes added
@@ -586,30 +667,39 @@ export default function RecordingPage() {
         {images.length > 0 ? (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {images.map((img, index) => (
-              <div key={img.id} className="relative group">
-                {/* Number badge */}
-                <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
-                                rounded-full flex items-center justify-center text-xs font-bold z-10">
-                  {index + 1}
+              <div key={img.id} className="group">
+                <div className="relative">
+                  {/* Number badge */}
+                  <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
+                                  rounded-full flex items-center justify-center text-xs font-bold z-10">
+                    {index + 1}
+                  </div>
+                  <div
+                    className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
+                    onClick={() => setSelectedImageIndex(index)}
+                    onContextMenu={(e) => handleContextMenu(e, 'image', img)}
+                  >
+                    <img
+                      src={window.electronAPI.paths.getFileUrl(img.thumbnail_path || img.file_path)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleDeleteImage(img.id)}
+                    className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full
+                               opacity-0 group-hover:opacity-100 transition-opacity
+                               flex items-center justify-center text-sm"
+                  >
+                    ×
+                  </button>
                 </div>
-                <div
-                  className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
-                  onClick={() => setSelectedImageIndex(index)}
-                >
-                  <img
-                    src={window.electronAPI.paths.getFileUrl(img.thumbnail_path || img.file_path)}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <button
-                  onClick={() => handleDeleteImage(img.id)}
-                  className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full
-                             opacity-0 group-hover:opacity-100 transition-opacity
-                             flex items-center justify-center text-sm"
-                >
-                  ×
-                </button>
+                {/* Caption */}
+                {img.caption && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 italic font-light leading-tight">
+                    {img.caption}
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -631,36 +721,45 @@ export default function RecordingPage() {
         {videos.length > 0 ? (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {videos.map((video, index) => (
-              <div key={video.id} className="relative group">
-                {/* Number badge */}
-                <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
-                                rounded-full flex items-center justify-center text-xs font-bold z-10">
-                  {index + 1}
+              <div key={video.id} className="group">
+                <div className="relative">
+                  {/* Number badge */}
+                  <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
+                                  rounded-full flex items-center justify-center text-xs font-bold z-10">
+                    {index + 1}
+                  </div>
+                  <div
+                    className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
+                    onClick={() => setSelectedVideo(video.file_path)}
+                    onContextMenu={(e) => handleContextMenu(e, 'video', video)}
+                  >
+                    {video.thumbnail_path ? (
+                      <img
+                        src={window.electronAPI.paths.getFileUrl(video.thumbnail_path)}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-4xl">
+                        🎬
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleDeleteVideo(video.id)}
+                    className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full
+                               opacity-0 group-hover:opacity-100 transition-opacity
+                               flex items-center justify-center text-sm"
+                  >
+                    ×
+                  </button>
                 </div>
-                <div
-                  className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
-                  onClick={() => setSelectedVideo(video.file_path)}
-                >
-                  {video.thumbnail_path ? (
-                    <img
-                      src={window.electronAPI.paths.getFileUrl(video.thumbnail_path)}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-4xl">
-                      🎬
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => handleDeleteVideo(video.id)}
-                  className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full
-                             opacity-0 group-hover:opacity-100 transition-opacity
-                             flex items-center justify-center text-sm"
-                >
-                  ×
-                </button>
+                {/* Caption */}
+                {video.caption && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 italic font-light leading-tight">
+                    {video.caption}
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -918,6 +1017,86 @@ export default function RecordingPage() {
               onClick={confirmDeleteDuration}
             >
               Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-lg shadow-lg py-1 min-w-[140px]"
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 160),
+            top: Math.min(contextMenu.y, window.innerHeight - 100),
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+            onClick={() => openCaptionModal(contextMenu.type, contextMenu.item.id, contextMenu.item.caption)}
+          >
+            <span>✏️</span>
+            {contextMenu.item.caption ? 'Edit Caption' : 'Add Caption'}
+          </button>
+          <button
+            className="w-full px-3 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+            onClick={() => {
+              if (contextMenu.type === 'image') {
+                handleDeleteImage(contextMenu.item.id);
+              } else if (contextMenu.type === 'video') {
+                handleDeleteVideo(contextMenu.item.id);
+              } else if (contextMenu.type === 'durationImage') {
+                handleDeleteDurationImage(contextMenu.item.id);
+              }
+              setContextMenu(null);
+            }}
+          >
+            <span>🗑️</span>
+            Delete
+          </button>
+        </div>
+      )}
+
+      {/* Caption Edit Modal */}
+      <Modal
+        isOpen={captionModal !== null}
+        onClose={() => {
+          setCaptionModal(null);
+          setCaptionText('');
+        }}
+        title={captionModal?.currentCaption ? 'Edit Caption' : 'Add Caption'}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div>
+            <textarea
+              value={captionText}
+              onChange={(e) => setCaptionText(e.target.value.slice(0, 150))}
+              placeholder="Add a short caption..."
+              className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg
+                         bg-white dark:bg-dark-surface text-gray-900 dark:text-gray-100
+                         focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+              rows={3}
+              autoFocus
+              maxLength={150}
+            />
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 text-right">
+              {captionText.length}/150
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setCaptionModal(null);
+                setCaptionText('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveCaption}>
+              Save
             </Button>
           </div>
         </div>

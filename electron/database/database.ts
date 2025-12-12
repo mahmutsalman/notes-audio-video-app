@@ -148,6 +148,30 @@ function runMigrations(db: Database.Database): void {
     console.log('Added name column to recordings table');
   }
 
+  // Migration: Add caption column to images table if it doesn't exist
+  const imagesColumns = db.prepare("PRAGMA table_info(images)").all() as { name: string }[];
+  const hasImageCaptionColumn = imagesColumns.some(col => col.name === 'caption');
+  if (!hasImageCaptionColumn) {
+    db.exec(`ALTER TABLE images ADD COLUMN caption TEXT`);
+    console.log('Added caption column to images table');
+  }
+
+  // Migration: Add caption column to videos table if it doesn't exist
+  const videosColumns = db.prepare("PRAGMA table_info(videos)").all() as { name: string }[];
+  const hasVideoCaptionColumn = videosColumns.some(col => col.name === 'caption');
+  if (!hasVideoCaptionColumn) {
+    db.exec(`ALTER TABLE videos ADD COLUMN caption TEXT`);
+    console.log('Added caption column to videos table');
+  }
+
+  // Migration: Add caption column to duration_images table if it doesn't exist
+  const durationImagesColumns = db.prepare("PRAGMA table_info(duration_images)").all() as { name: string }[];
+  const hasDurationImageCaptionColumn = durationImagesColumns.some(col => col.name === 'caption');
+  if (!hasDurationImageCaptionColumn) {
+    db.exec(`ALTER TABLE duration_images ADD COLUMN caption TEXT`);
+    console.log('Added caption column to duration_images table');
+  }
+
   // Create the stats view (drop and recreate to handle schema changes)
   db.exec(`
     DROP VIEW IF EXISTS topic_stats;

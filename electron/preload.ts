@@ -57,6 +57,10 @@ const electronAPI = {
     getVideos: (recordingId: number): Promise<Video[]> => ipcRenderer.invoke('media:getVideos', recordingId),
     deleteImage: (id: number): Promise<void> => ipcRenderer.invoke('media:deleteImage', id),
     deleteVideo: (id: number): Promise<void> => ipcRenderer.invoke('media:deleteVideo', id),
+    updateImageCaption: (id: number, caption: string | null): Promise<Image> =>
+      ipcRenderer.invoke('media:updateImageCaption', id, caption),
+    updateVideoCaption: (id: number, caption: string | null): Promise<Video> =>
+      ipcRenderer.invoke('media:updateVideoCaption', id, caption),
     pickFiles: (type: 'image' | 'video' | 'both'): Promise<string[]> => ipcRenderer.invoke('media:pickFiles', type),
   },
 
@@ -109,6 +113,8 @@ const electronAPI = {
       ipcRenderer.invoke('durationImages:addFromClipboard', durationId, imageBuffer, extension),
     delete: (id: number): Promise<void> =>
       ipcRenderer.invoke('durationImages:delete', id),
+    updateCaption: (id: number, caption: string | null): Promise<DurationImage> =>
+      ipcRenderer.invoke('durationImages:updateCaption', id, caption),
   },
 
   // Backup
