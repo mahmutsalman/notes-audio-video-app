@@ -198,3 +198,33 @@
 .notes-content s {
   @apply line-through;
 }
+
+/* Duration note editor - amber themed */
+.duration-note-editor .notes-editor .ql-toolbar {
+  @apply border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30 rounded-t-lg;
+}
+
+.duration-note-editor .notes-editor .ql-container {
+  @apply border-amber-300 dark:border-amber-700 bg-white dark:bg-dark-bg rounded-b-lg;
+}
+
+/* Duration note content - amber text colors */
+.duration-note-content {
+  @apply text-amber-700 dark:text-amber-300;
+}
+
+.duration-note-content a {
+  @apply text-amber-600 dark:text-amber-400 underline;
+}
+
+.duration-note-content blockquote {
+  @apply border-amber-400 dark:border-amber-600 text-amber-600 dark:text-amber-400;
+}
+
+.duration-note-content code {
+  @apply bg-amber-100 dark:bg-amber-900/50;
+}
+
+.duration-note-content pre {
+  @apply bg-amber-100 dark:bg-amber-900/50;
+}

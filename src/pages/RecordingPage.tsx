@@ -99,9 +99,9 @@ export default function RecordingPage() {
 
   // Handle clicks on empty page areas to toggle audio playback
   const handlePageClick = (e: React.MouseEvent) => {
-    // Skip if clicking on interactive elements
+    // Skip if clicking on interactive elements (including Quill editor)
     const target = e.target as HTMLElement;
-    if (target.closest('button, a, input, textarea, [role="button"], video, img')) return;
+    if (target.closest('button, a, input, textarea, [role="button"], video, img, .ql-editor, .ql-toolbar, .notes-editor')) return;
 
     // Skip if modals open or editing
     if (selectedImageIndex !== null || selectedVideo !== null || isEditing || isEditingName || showDeleteConfirm) return;

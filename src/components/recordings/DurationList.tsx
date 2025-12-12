@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Duration, DurationColor, DurationImage, DurationVideo } from '../../types';
 import { formatDuration } from '../../utils/formatters';
 import { DURATION_COLORS, getNextDurationColor } from '../../utils/durationColors';
+import NotesEditor from '../common/NotesEditor';
 
 interface DurationListProps {
   durations: Duration[];
@@ -48,15 +49,6 @@ export default function DurationList({
   const handleCancelEdit = () => {
     setEditingNoteId(null);
     setEditNoteText('');
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleSaveNote();
-    } else if (e.key === 'Escape') {
-      handleCancelEdit();
-    }
   };
 
   const handleContextMenu = (e: React.MouseEvent, duration: Duration) => {
@@ -170,43 +162,44 @@ export default function DurationList({
       {activeDuration && (
         <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-lg">
           {editingNoteId === activeDuration.id ? (
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={editNoteText}
-                onChange={(e) => setEditNoteText(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Add a note..."
-                autoFocus
-                className="flex-1 px-2 py-1 text-sm rounded border border-amber-300 dark:border-amber-700
-                           bg-white dark:bg-dark-bg text-gray-900 dark:text-gray-100
-                           focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <button
-                onClick={handleSaveNote}
-                className="px-2 py-1 text-sm bg-amber-500 text-white rounded hover:bg-amber-600"
-              >
-                Save
-              </button>
-              <button
-                onClick={handleCancelEdit}
-                className="px-2 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
-              >
-                Cancel
-              </button>
+            <div className="space-y-3">
+              <div className="duration-note-editor">
+                <NotesEditor
+                  value={editNoteText}
+                  onChange={setEditNoteText}
+                  placeholder="Add a note..."
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveNote}
+                  className="px-3 py-1.5 text-sm bg-amber-500 text-white rounded hover:bg-amber-600"
+                >
+                  Save
+                </button>
+              </div>
             </div>
           ) : (
             <div className="flex items-start gap-2">
-              <span className="text-sm text-amber-700 dark:text-amber-300">
+              <div className="flex-1 text-sm text-amber-700 dark:text-amber-300">
                 {activeDuration.note ? (
-                  <span>{activeDuration.note}</span>
+                  <div
+                    className="notes-content duration-note-content"
+                    dangerouslySetInnerHTML={{ __html: activeDuration.note }}
+                  />
                 ) : (
                   <span className="italic text-amber-500 dark:text-amber-400/70">No note</span>
                 )}
-              </span>
+              </div>
               <button
                 onClick={() => handleStartEditNote(activeDuration)}
-                className="ml-auto text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300"
+                className="flex-shrink-0 text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300"
               >
                 ✏️ {activeDuration.note ? 'Edit' : 'Add note'}
               </button>
