@@ -6,6 +6,7 @@ import {
   VideosOperations,
   DurationsOperations,
   DurationImagesOperations,
+  DurationVideosOperations,
 } from '../database/operations';
 import {
   saveAudioFile,
@@ -16,7 +17,10 @@ import {
   saveVideoFile,
   saveVideoFromBuffer,
   saveDurationImageFromBuffer,
+  saveDurationVideoFromBuffer,
+  saveDurationVideoFromFile,
   deleteDurationImages,
+  deleteDurationVideos,
   deleteFile,
   deleteRecordingMedia,
   getMediaDir,
@@ -280,8 +284,9 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('durations:delete', async (_, id: number) => {
-    // Delete associated images first
+    // Delete associated images and videos first
     await deleteDurationImages(id);
+    await deleteDurationVideos(id);
     DurationsOperations.delete(id);
   });
 
@@ -313,6 +318,50 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationImages:updateCaption', async (_, id: number, caption: string | null) => {
     return DurationImagesOperations.updateCaption(id, caption);
+  });
+
+  // ============ Duration Videos ============
+  ipcMain.handle('durationVideos:getByDuration', async (_, durationId: number) => {
+    return DurationVideosOperations.getByDuration(durationId);
+  });
+
+  ipcMain.handle('durationVideos:addFromClipboard', async (_, durationId: number, videoBuffer: ArrayBuffer, extension: string = 'mp4') => {
+    const { filePath, thumbnailPath, duration } = await saveDurationVideoFromBuffer(durationId, videoBuffer, extension);
+    return DurationVideosOperations.create({
+      duration_id: durationId,
+      file_path: filePath,
+      thumbnail_path: thumbnailPath,
+      caption: null,
+      duration: duration,
+      sort_order: 0,
+    });
+  });
+
+  ipcMain.handle('durationVideos:addFromFile', async (_, durationId: number, sourcePath: string) => {
+    const { filePath, thumbnailPath, duration } = await saveDurationVideoFromFile(durationId, sourcePath);
+    return DurationVideosOperations.create({
+      duration_id: durationId,
+      file_path: filePath,
+      thumbnail_path: thumbnailPath,
+      caption: null,
+      duration: duration,
+      sort_order: 0,
+    });
+  });
+
+  ipcMain.handle('durationVideos:delete', async (_, id: number) => {
+    const video = DurationVideosOperations.getById(id);
+    if (video) {
+      await deleteFile(video.file_path);
+      if (video.thumbnail_path) {
+        await deleteFile(video.thumbnail_path);
+      }
+    }
+    DurationVideosOperations.delete(id);
+  });
+
+  ipcMain.handle('durationVideos:updateCaption', async (_, id: number, caption: string | null) => {
+    return DurationVideosOperations.updateCaption(id, caption);
   });
 
   // ============ Backup ============

@@ -17,6 +17,7 @@ export async function ensureMediaDirs(): Promise<void> {
     path.join(mediaDir, 'images'),
     path.join(mediaDir, 'videos'),
     path.join(mediaDir, 'duration_images'),
+    path.join(mediaDir, 'duration_videos'),
   ];
 
   for (const dir of dirs) {
@@ -191,6 +192,66 @@ export async function deleteDurationImages(durationId: number): Promise<void> {
   try {
     await fs.rm(dir, { recursive: true, force: true });
     console.log('Deleted duration images directory:', dir);
+  } catch {
+    // Directory may not exist, ignore
+  }
+}
+
+export async function saveDurationVideoFromBuffer(
+  durationId: number,
+  videoBuffer: ArrayBuffer,
+  extension: string = 'mp4'
+): Promise<{ filePath: string; thumbnailPath: string | null; duration: number | null }> {
+  const dir = path.join(getMediaDir(), 'duration_videos', String(durationId));
+  const thumbDir = path.join(dir, 'thumbnails');
+  await fs.mkdir(thumbDir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+
+  // Write buffer directly to file
+  await fs.writeFile(filePath, Buffer.from(videoBuffer));
+  console.log('Duration video saved from clipboard to:', filePath);
+
+  // Generate thumbnail using canvas-based approach
+  const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
+  const thumbnailPath = await generateVideoThumbnail(filePath, thumbPath);
+
+  const duration = null; // TODO: Get duration if needed
+
+  return { filePath, thumbnailPath, duration };
+}
+
+export async function saveDurationVideoFromFile(
+  durationId: number,
+  sourcePath: string
+): Promise<{ filePath: string; thumbnailPath: string | null; duration: number | null }> {
+  const dir = path.join(getMediaDir(), 'duration_videos', String(durationId));
+  const thumbDir = path.join(dir, 'thumbnails');
+  await fs.mkdir(thumbDir, { recursive: true });
+
+  const ext = path.extname(sourcePath);
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}${ext}`);
+
+  // Copy file
+  await fs.copyFile(sourcePath, filePath);
+  console.log('Duration video saved from file to:', filePath);
+
+  // Generate thumbnail using canvas-based approach
+  const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
+  const thumbnailPath = await generateVideoThumbnail(filePath, thumbPath);
+
+  const duration = null; // TODO: Get duration if needed
+
+  return { filePath, thumbnailPath, duration };
+}
+
+export async function deleteDurationVideos(durationId: number): Promise<void> {
+  const dir = path.join(getMediaDir(), 'duration_videos', String(durationId));
+  try {
+    await fs.rm(dir, { recursive: true, force: true });
+    console.log('Deleted duration videos directory:', dir);
   } catch {
     // Directory may not exist, ignore
   }

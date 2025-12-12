@@ -5,6 +5,7 @@ import type {
   Image, Video,
   Duration, CreateDuration, UpdateDuration,
   DurationImage,
+  DurationVideo,
   BackupResult
 } from '../src/types';
 
@@ -115,6 +116,20 @@ const electronAPI = {
       ipcRenderer.invoke('durationImages:delete', id),
     updateCaption: (id: number, caption: string | null): Promise<DurationImage> =>
       ipcRenderer.invoke('durationImages:updateCaption', id, caption),
+  },
+
+  // Duration Videos (videos attached to duration marks)
+  durationVideos: {
+    getByDuration: (durationId: number): Promise<DurationVideo[]> =>
+      ipcRenderer.invoke('durationVideos:getByDuration', durationId),
+    addFromClipboard: (durationId: number, videoBuffer: ArrayBuffer, extension?: string): Promise<DurationVideo> =>
+      ipcRenderer.invoke('durationVideos:addFromClipboard', durationId, videoBuffer, extension),
+    addFromFile: (durationId: number, filePath: string): Promise<DurationVideo> =>
+      ipcRenderer.invoke('durationVideos:addFromFile', durationId, filePath),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('durationVideos:delete', id),
+    updateCaption: (id: number, caption: string | null): Promise<DurationVideo> =>
+      ipcRenderer.invoke('durationVideos:updateCaption', id, caption),
   },
 
   // Backup

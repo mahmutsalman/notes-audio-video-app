@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Duration, CreateDuration, UpdateDuration, DurationImage } from '../types';
+import type { Duration, CreateDuration, UpdateDuration, DurationImage, DurationVideo } from '../types';
 
 export function useDurations(recordingId: number | null) {
   const [durations, setDurations] = useState<Duration[]>([]);
@@ -7,6 +7,8 @@ export function useDurations(recordingId: number | null) {
   const [error, setError] = useState<string | null>(null);
   // Cache of duration images, keyed by duration ID
   const [durationImagesCache, setDurationImagesCache] = useState<Record<number, DurationImage[]>>({});
+  // Cache of duration videos, keyed by duration ID
+  const [durationVideosCache, setDurationVideosCache] = useState<Record<number, DurationVideo[]>>({});
 
   const fetchDurations = useCallback(async () => {
     if (recordingId === null) {
@@ -49,6 +51,11 @@ export function useDurations(recordingId: number | null) {
     setDurations(prev => prev.filter(d => d.id !== id));
     // Clear from cache
     setDurationImagesCache(prev => {
+      const updated = { ...prev };
+      delete updated[id];
+      return updated;
+    });
+    setDurationVideosCache(prev => {
       const updated = { ...prev };
       delete updated[id];
       return updated;
@@ -104,15 +111,79 @@ export function useDurations(recordingId: number | null) {
     }));
   };
 
+  // Fetch videos for a specific duration
+  const getDurationVideos = useCallback(async (durationId: number): Promise<DurationVideo[]> => {
+    // Return cached if available
+    if (durationVideosCache[durationId]) {
+      return durationVideosCache[durationId];
+    }
+
+    const videos = await window.electronAPI.durationVideos.getByDuration(durationId);
+    setDurationVideosCache(prev => ({ ...prev, [durationId]: videos }));
+    return videos;
+  }, [durationVideosCache]);
+
+  // Add video from clipboard to a duration (reads file path from clipboard)
+  const addDurationVideoFromClipboard = async (durationId: number): Promise<DurationVideo | null> => {
+    try {
+      // Try to read file URL from clipboard (works with CleanShot, Finder, etc.)
+      const fileResult = await window.electronAPI.clipboard.readFileUrl();
+
+      if (fileResult.success && fileResult.filePath) {
+        // Check if the file is a video by extension
+        const videoExtensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v'];
+        const ext = fileResult.filePath.toLowerCase().slice(fileResult.filePath.lastIndexOf('.'));
+
+        if (!videoExtensions.includes(ext)) {
+          return null; // Not a video file
+        }
+
+        // Add the video using file path (main process will handle file reading)
+        const newVideo = await window.electronAPI.durationVideos.addFromFile(
+          durationId,
+          fileResult.filePath
+        );
+
+        // Update cache
+        setDurationVideosCache(prev => ({
+          ...prev,
+          [durationId]: [...(prev[durationId] || []), newVideo]
+        }));
+
+        return newVideo;
+      }
+
+      return null;
+    } catch (err) {
+      console.error('Failed to add duration video:', err);
+      return null;
+    }
+  };
+
+  // Delete a duration video
+  const deleteDurationVideo = async (videoId: number, durationId: number): Promise<void> => {
+    await window.electronAPI.durationVideos.delete(videoId);
+    // Update cache
+    setDurationVideosCache(prev => ({
+      ...prev,
+      [durationId]: (prev[durationId] || []).filter(vid => vid.id !== videoId)
+    }));
+  };
+
   // Clear cache for a duration (useful when switching recordings)
   const clearDurationImagesCache = useCallback(() => {
     setDurationImagesCache({});
   }, []);
 
+  const clearDurationVideosCache = useCallback(() => {
+    setDurationVideosCache({});
+  }, []);
+
   // Clear cache when recording changes
   useEffect(() => {
     clearDurationImagesCache();
-  }, [recordingId, clearDurationImagesCache]);
+    clearDurationVideosCache();
+  }, [recordingId, clearDurationImagesCache, clearDurationVideosCache]);
 
   return {
     durations,
@@ -128,5 +199,11 @@ export function useDurations(recordingId: number | null) {
     addDurationImageFromClipboard,
     deleteDurationImage,
     clearDurationImagesCache,
+    // Duration video functions
+    durationVideosCache,
+    getDurationVideos,
+    addDurationVideoFromClipboard,
+    deleteDurationVideo,
+    clearDurationVideosCache,
   };
 }

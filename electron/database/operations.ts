@@ -5,7 +5,8 @@ import type {
   Image, CreateImage,
   Video, CreateVideo,
   Duration, CreateDuration, UpdateDuration,
-  DurationImage, CreateDurationImage
+  DurationImage, CreateDurationImage,
+  DurationVideo, CreateDurationVideo
 } from '../../src/types';
 
 // Helper to parse tags from JSON string
@@ -416,6 +417,58 @@ export const DurationImagesOperations = {
   updateCaption(id: number, caption: string | null): DurationImage {
     const db = getDatabase();
     db.prepare('UPDATE duration_images SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+};
+
+// Duration Videos Operations (videos attached to duration marks)
+export const DurationVideosOperations = {
+  getByDuration(durationId: number): DurationVideo[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM duration_videos
+      WHERE duration_id = ?
+      ORDER BY sort_order, created_at
+    `).all(durationId) as DurationVideo[];
+  },
+
+  getById(id: number): DurationVideo | null {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM duration_videos WHERE id = ?').get(id) as DurationVideo | undefined ?? null;
+  },
+
+  create(video: CreateDurationVideo): DurationVideo {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO duration_videos (duration_id, file_path, thumbnail_path, caption, duration, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      video.duration_id,
+      video.file_path,
+      video.thumbnail_path ?? null,
+      video.caption ?? null,
+      video.duration ?? null,
+      video.sort_order ?? 0
+    );
+
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM duration_videos WHERE id = ?').run(id);
+  },
+
+  deleteByDuration(durationId: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM duration_videos WHERE duration_id = ?').run(durationId);
+  },
+
+  updateCaption(id: number, caption: string | null): DurationVideo {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_videos SET caption = ? WHERE id = ?').run(caption, id);
     return this.getById(id)!;
   },
 };

@@ -9,7 +9,7 @@ import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import NotesEditor from '../components/common/NotesEditor';
 import { formatDuration, formatDate, formatRelativeTime } from '../utils/formatters';
-import type { Duration, DurationColor, Image, Video, DurationImage } from '../types';
+import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -27,6 +27,10 @@ export default function RecordingPage() {
     getDurationImages,
     addDurationImageFromClipboard,
     deleteDurationImage,
+    durationVideosCache,
+    getDurationVideos,
+    addDurationVideoFromClipboard,
+    deleteDurationVideo,
   } = useDurations(id);
 
   // Calculate adjacent recording IDs for navigation
@@ -57,14 +61,19 @@ export default function RecordingPage() {
   } | null>(null);
   const [videoToDelete, setVideoToDelete] = useState<number | null>(null);
   const [durationToDelete, setDurationToDelete] = useState<number | null>(null);
+  const [durationVideoToDelete, setDurationVideoToDelete] = useState<{
+    videoId: number;
+    durationId: number;
+  } | null>(null);
+  const [selectedDurationVideoPath, setSelectedDurationVideoPath] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
-    type: 'image' | 'video' | 'durationImage';
-    item: Image | Video | DurationImage;
+    type: 'image' | 'video' | 'durationImage' | 'durationVideo';
+    item: Image | Video | DurationImage | DurationVideo;
     x: number;
     y: number;
   } | null>(null);
   const [captionModal, setCaptionModal] = useState<{
-    type: 'image' | 'video' | 'durationImage';
+    type: 'image' | 'video' | 'durationImage' | 'durationVideo';
     id: number;
     currentCaption: string;
   } | null>(null);
@@ -232,8 +241,11 @@ export default function RecordingPage() {
       setIsSeekingDuration(true);
       audioPlayerRef.current?.setLoopRegion(duration.start_time, duration.end_time);
       setActiveDurationId(duration.id);
-      // Fetch images for this duration if not cached
-      await getDurationImages(duration.id);
+      // Fetch images and videos for this duration if not cached
+      await Promise.all([
+        getDurationImages(duration.id),
+        getDurationVideos(duration.id),
+      ]);
     }
   };
 
@@ -251,11 +263,33 @@ export default function RecordingPage() {
     setImageToDelete({ type: 'duration', imageId });
   };
 
+  // Handle adding video to active duration from clipboard
+  const handleAddDurationVideo = async () => {
+    if (!activeDurationId) return;
+    const video = await addDurationVideoFromClipboard(activeDurationId);
+    if (!video) {
+      alert('No video file found in clipboard. Copy a video file first (e.g., from CleanShot or Finder), then click Paste.');
+    }
+  };
+
+  // Handle deleting a duration video
+  const handleDeleteDurationVideo = (videoId: number) => {
+    if (!activeDurationId) return;
+    setDurationVideoToDelete({ videoId, durationId: activeDurationId });
+  };
+
+  // Confirm and execute duration video deletion
+  const confirmDeleteDurationVideo = async () => {
+    if (!durationVideoToDelete) return;
+    await deleteDurationVideo(durationVideoToDelete.videoId, durationVideoToDelete.durationId);
+    setDurationVideoToDelete(null);
+  };
+
   // Handle context menu for images/videos
   const handleContextMenu = (
     e: React.MouseEvent,
-    type: 'image' | 'video' | 'durationImage',
-    item: Image | Video | DurationImage
+    type: 'image' | 'video' | 'durationImage' | 'durationVideo',
+    item: Image | Video | DurationImage | DurationVideo
   ) => {
     e.preventDefault();
     e.stopPropagation();
@@ -263,7 +297,7 @@ export default function RecordingPage() {
   };
 
   // Open caption modal
-  const openCaptionModal = (type: 'image' | 'video' | 'durationImage', id: number, currentCaption: string | null) => {
+  const openCaptionModal = (type: 'image' | 'video' | 'durationImage' | 'durationVideo', id: number, currentCaption: string | null) => {
     setCaptionModal({ type, id, currentCaption: currentCaption || '' });
     setCaptionText(currentCaption || '');
     setContextMenu(null);
@@ -284,6 +318,9 @@ export default function RecordingPage() {
       } else if (captionModal.type === 'durationImage' && activeDurationId) {
         await window.electronAPI.durationImages.updateCaption(captionModal.id, trimmedCaption);
         await getDurationImages(activeDurationId);
+      } else if (captionModal.type === 'durationVideo' && activeDurationId) {
+        await window.electronAPI.durationVideos.updateCaption(captionModal.id, trimmedCaption);
+        await getDurationVideos(activeDurationId);
       }
     } catch (error) {
       console.error('Failed to save caption:', error);
@@ -363,6 +400,7 @@ export default function RecordingPage() {
 
   // Keyboard navigation for duration image lightbox
   const activeDurationImages = activeDurationId ? durationImagesCache[activeDurationId] ?? [] : [];
+  const activeDurationVideos = activeDurationId ? durationVideosCache[activeDurationId] ?? [] : [];
   useEffect(() => {
     if (selectedDurationImageIndex === null) return;
 
@@ -542,6 +580,7 @@ export default function RecordingPage() {
         onUpdateNote={handleUpdateNote}
         onColorChange={handleColorChange}
         durationImagesCache={durationImagesCache}
+        durationVideosCache={durationVideosCache}
         disabled={!audioLoaded || isSeekingDuration}
       />
 
@@ -605,6 +644,82 @@ export default function RecordingPage() {
               className="px-2 py-1 text-xs bg-gray-200 dark:bg-dark-border rounded hover:bg-gray-300 dark:hover:bg-dark-surface transition-colors"
             >
               📋 Paste Image
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Duration Videos - shown when a duration is active and has videos */}
+      {activeDurationId && activeDurationVideos.length > 0 && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              Videos ({activeDurationVideos.length})
+            </h3>
+            <button
+              onClick={handleAddDurationVideo}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+            >
+              📋 Paste
+            </button>
+          </div>
+          <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+            {activeDurationVideos.map((video, index) => (
+              <div key={video.id} className="group">
+                <div className="relative">
+                  {/* Number badge */}
+                  <div className="absolute top-1 left-1 w-5 h-5 bg-black/70 text-white
+                                  rounded-full flex items-center justify-center text-xs font-bold z-10">
+                    {index + 1}
+                  </div>
+                  <div
+                    className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
+                    onClick={() => setSelectedDurationVideoPath(video.file_path)}
+                    onContextMenu={(e) => handleContextMenu(e, 'durationVideo', video)}
+                  >
+                    {video.thumbnail_path ? (
+                      <img
+                        src={window.electronAPI.paths.getFileUrl(video.thumbnail_path)}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-2xl">
+                        🎬
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleDeleteDurationVideo(video.id)}
+                    className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
+                               opacity-0 group-hover:opacity-100 transition-opacity
+                               flex items-center justify-center text-sm"
+                  >
+                    ×
+                  </button>
+                </div>
+                {/* Caption */}
+                {video.caption && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 line-clamp-2 italic font-light leading-tight">
+                    {video.caption}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Add Video prompt when duration is active but has no videos */}
+      {activeDurationId && activeDurationVideos.length === 0 && (
+        <div className="mb-4 p-3 bg-gray-50 dark:bg-dark-hover border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <span>No videos for this section</span>
+            <button
+              onClick={handleAddDurationVideo}
+              className="px-2 py-1 text-xs bg-gray-200 dark:bg-dark-border rounded hover:bg-gray-300 dark:hover:bg-dark-surface transition-colors"
+            >
+              📋 Paste Video
             </button>
           </div>
         </div>
@@ -904,6 +1019,28 @@ export default function RecordingPage() {
         </div>
       )}
 
+      {/* Duration Video lightbox */}
+      {selectedDurationVideoPath && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setSelectedDurationVideoPath(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white text-2xl z-10"
+            onClick={() => setSelectedDurationVideoPath(null)}
+          >
+            ×
+          </button>
+          <video
+            src={window.electronAPI.paths.getFileUrl(selectedDurationVideoPath)}
+            controls
+            autoPlay
+            className="max-w-full max-h-full"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
       {/* Delete confirmation modal */}
       <Modal
         isOpen={showDeleteConfirm}
@@ -1022,6 +1159,34 @@ export default function RecordingPage() {
         </div>
       </Modal>
 
+      {/* Duration Video delete confirmation modal */}
+      <Modal
+        isOpen={durationVideoToDelete !== null}
+        onClose={() => setDurationVideoToDelete(null)}
+        title="Delete Video"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            Are you sure you want to delete this video?
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => setDurationVideoToDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={confirmDeleteDurationVideo}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Context Menu */}
       {contextMenu && (
         <div
@@ -1048,6 +1213,8 @@ export default function RecordingPage() {
                 handleDeleteVideo(contextMenu.item.id);
               } else if (contextMenu.type === 'durationImage') {
                 handleDeleteDurationImage(contextMenu.item.id);
+              } else if (contextMenu.type === 'durationVideo') {
+                handleDeleteDurationVideo(contextMenu.item.id);
               }
               setContextMenu(null);
             }}

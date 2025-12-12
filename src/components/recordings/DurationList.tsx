@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Duration, DurationColor, DurationImage } from '../../types';
+import type { Duration, DurationColor, DurationImage, DurationVideo } from '../../types';
 import { formatDuration } from '../../utils/formatters';
 import { DURATION_COLORS, getNextDurationColor } from '../../utils/durationColors';
 
@@ -12,6 +12,8 @@ interface DurationListProps {
   onColorChange?: (id: number, color: DurationColor) => void;
   // Duration images support
   durationImagesCache?: Record<number, DurationImage[]>;
+  // Duration videos support
+  durationVideosCache?: Record<number, DurationVideo[]>;
   // Disable duration buttons while audio is loading
   disabled?: boolean;
 }
@@ -24,6 +26,7 @@ export default function DurationList({
   onUpdateNote,
   onColorChange,
   durationImagesCache,
+  durationVideosCache,
   disabled = false,
 }: DurationListProps) {
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
@@ -79,6 +82,7 @@ export default function DurationList({
           const isActive = activeDurationId === duration.id;
           const colorConfig = duration.color ? DURATION_COLORS[duration.color] : null;
           const imageCount = durationImagesCache?.[duration.id]?.length || 0;
+          const videoCount = durationVideosCache?.[duration.id]?.length || 0;
           return (
             <div
               key={duration.id}
@@ -118,6 +122,12 @@ export default function DurationList({
                 {imageCount > 0 && (
                   <span className={`text-xs ${isActive ? 'text-white/80' : 'text-gray-500 dark:text-gray-400'}`}>
                     📷{imageCount > 1 && imageCount}
+                  </span>
+                )}
+                {/* Video indicator */}
+                {videoCount > 0 && (
+                  <span className={`text-xs ${isActive ? 'text-white/80' : 'text-gray-500 dark:text-gray-400'}`}>
+                    🎬{videoCount > 1 && videoCount}
                   </span>
                 )}
                 {/* Right color indicator */}
