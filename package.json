@@ -56,7 +56,7 @@
   },
   "build": {
     "appId": "com.noteswithaudioandvideo.app",
-    "productName": "NotesWithAudioAndVideo",
+    "productName": "Notes With Audio And Video",
     "directories": {
       "output": "release"
     },
