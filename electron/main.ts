@@ -93,21 +93,26 @@ protocol.registerSchemesAsPrivileged([
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
-  // Register the media:// protocol handler
+  // Register the media:// protocol handler with Range request support for video seeking
   protocol.handle('media', async (request) => {
     const url = request.url.replace('media://', '');
     const filePath = decodeURIComponent(url);
 
     try {
-      const data = fs.readFileSync(filePath);
+      const stat = fs.statSync(filePath);
+      const fileSize = stat.size;
       const ext = path.extname(filePath).toLowerCase();
 
       const mimeTypes: Record<string, string> = {
-        '.webm': 'audio/webm',
+        '.webm': 'video/webm',
         '.mp3': 'audio/mpeg',
         '.wav': 'audio/wav',
         '.ogg': 'audio/ogg',
         '.mp4': 'video/mp4',
+        '.mov': 'video/quicktime',
+        '.mkv': 'video/x-matroska',
+        '.m4v': 'video/mp4',
+        '.avi': 'video/x-msvideo',
         '.jpg': 'image/jpeg',
         '.jpeg': 'image/jpeg',
         '.png': 'image/png',
@@ -115,9 +120,45 @@ app.whenReady().then(() => {
         '.webp': 'image/webp',
       };
 
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+      // Parse Range header for seeking support
+      const rangeHeader = request.headers.get('range');
+
+      if (rangeHeader) {
+        // Handle Range request (for video/audio seeking)
+        const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
+        if (match) {
+          const start = match[1] ? parseInt(match[1], 10) : 0;
+          const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+          const chunkSize = end - start + 1;
+
+          const stream = fs.createReadStream(filePath, { start, end });
+          const chunks: Buffer[] = [];
+          for await (const chunk of stream) {
+            chunks.push(chunk as Buffer);
+          }
+          const data = Buffer.concat(chunks);
+
+          return new Response(data, {
+            status: 206,
+            headers: {
+              'Content-Type': contentType,
+              'Content-Length': chunkSize.toString(),
+              'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+              'Accept-Ranges': 'bytes',
+            },
+          });
+        }
+      }
+
+      // Full file request (no Range header)
+      const data = fs.readFileSync(filePath);
       return new Response(data, {
         headers: {
-          'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+          'Content-Type': contentType,
+          'Content-Length': fileSize.toString(),
+          'Accept-Ranges': 'bytes',
         },
       });
     } catch (error) {

@@ -629,13 +629,18 @@ export default function RecordingPage() {
           </Button>
         </div>
         {videos.length > 0 ? (
-          <div className="space-y-3">
-            {videos.map((video) => (
-              <div
-                key={video.id}
-                className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-dark-hover rounded-lg group"
-              >
-                <div className="w-16 h-16 rounded bg-gray-200 dark:bg-dark-border flex items-center justify-center overflow-hidden">
+          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            {videos.map((video, index) => (
+              <div key={video.id} className="relative group">
+                {/* Number badge */}
+                <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
+                                rounded-full flex items-center justify-center text-xs font-bold z-10">
+                  {index + 1}
+                </div>
+                <div
+                  className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
+                  onClick={() => setSelectedVideo(video.file_path)}
+                >
                   {video.thumbnail_path ? (
                     <img
                       src={window.electronAPI.paths.getFileUrl(video.thumbnail_path)}
@@ -643,31 +648,16 @@ export default function RecordingPage() {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <span className="text-2xl">🎬</span>
+                    <div className="w-full h-full flex items-center justify-center text-4xl">
+                      🎬
+                    </div>
                   )}
                 </div>
-                <div className="flex-1">
-                  <p className="text-gray-900 dark:text-gray-100 font-medium">
-                    Video
-                  </p>
-                  {video.duration && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {formatDuration(video.duration)}
-                    </p>
-                  )}
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setSelectedVideo(video.file_path)}
-                >
-                  Play
-                </Button>
                 <button
                   onClick={() => handleDeleteVideo(video.id)}
-                  className="w-8 h-8 bg-red-500 text-white rounded-lg
+                  className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full
                              opacity-0 group-hover:opacity-100 transition-opacity
-                             flex items-center justify-center"
+                             flex items-center justify-center text-sm"
                 >
                   ×
                 </button>
