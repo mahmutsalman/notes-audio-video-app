@@ -770,14 +770,17 @@ export default function RecordingPage() {
       </div>
 
       {/* Images */}
-      <div className="mb-6">
+      <div className="mb-6 p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <h2 className="text-sm font-medium text-violet-700 dark:text-violet-300">
             Images ({images.length})
           </h2>
-          <Button variant="ghost" size="sm" onClick={handleAddImages}>
+          <button
+            onClick={handleAddImages}
+            className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300"
+          >
             📋 Paste
-          </Button>
+          </button>
         </div>
         {images.length > 0 ? (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -811,7 +814,7 @@ export default function RecordingPage() {
                 </div>
                 {/* Caption */}
                 {img.caption && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 italic font-light leading-tight">
+                  <p className="text-xs text-violet-600 dark:text-violet-400 mt-1 line-clamp-2 italic font-light leading-tight">
                     {img.caption}
                   </p>
                 )}
@@ -819,19 +822,22 @@ export default function RecordingPage() {
             ))}
           </div>
         ) : (
-          <p className="text-gray-400 dark:text-gray-500 italic">No images attached</p>
+          <p className="text-violet-400 dark:text-violet-500 italic text-sm">No images attached</p>
         )}
       </div>
 
       {/* Videos */}
-      <div className="mb-6">
+      <div className="mb-6 p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <h2 className="text-sm font-medium text-violet-700 dark:text-violet-300">
             Videos ({videos.length})
           </h2>
-          <Button variant="ghost" size="sm" onClick={handleAddVideos}>
+          <button
+            onClick={handleAddVideos}
+            className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300"
+          >
             📋 Paste
-          </Button>
+          </button>
         </div>
         {videos.length > 0 ? (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -871,7 +877,7 @@ export default function RecordingPage() {
                 </div>
                 {/* Caption */}
                 {video.caption && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 italic font-light leading-tight">
+                  <p className="text-xs text-violet-600 dark:text-violet-400 mt-1 line-clamp-2 italic font-light leading-tight">
                     {video.caption}
                   </p>
                 )}
@@ -879,7 +885,7 @@ export default function RecordingPage() {
             ))}
           </div>
         ) : (
-          <p className="text-gray-400 dark:text-gray-500 italic">No videos attached</p>
+          <p className="text-violet-400 dark:text-violet-500 italic text-sm">No videos attached</p>
         )}
       </div>
 
