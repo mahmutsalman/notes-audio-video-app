@@ -4,9 +4,11 @@ import type {
   Recording, CreateRecording, UpdateRecording,
   Image, CreateImage,
   Video, CreateVideo,
+  Audio, CreateAudio,
   Duration, CreateDuration, UpdateDuration,
   DurationImage, CreateDurationImage,
-  DurationVideo, CreateDurationVideo
+  DurationVideo, CreateDurationVideo,
+  DurationAudio, CreateDurationAudio
 } from '../../src/types';
 
 // Helper to parse tags from JSON string
@@ -469,6 +471,103 @@ export const DurationVideosOperations = {
   updateCaption(id: number, caption: string | null): DurationVideo {
     const db = getDatabase();
     db.prepare('UPDATE duration_videos SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+};
+
+// Audios Operations (audio clips attached to recordings)
+export const AudiosOperations = {
+  getByRecording(recordingId: number): Audio[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM audios
+      WHERE recording_id = ?
+      ORDER BY sort_order, created_at
+    `).all(recordingId) as Audio[];
+  },
+
+  getById(id: number): Audio | null {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM audios WHERE id = ?').get(id) as Audio | undefined ?? null;
+  },
+
+  create(audio: CreateAudio): Audio {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO audios (recording_id, file_path, caption, duration, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      audio.recording_id,
+      audio.file_path,
+      audio.caption ?? null,
+      audio.duration ?? null,
+      audio.sort_order ?? 0
+    );
+
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM audios WHERE id = ?').run(id);
+  },
+
+  updateCaption(id: number, caption: string | null): Audio {
+    const db = getDatabase();
+    db.prepare('UPDATE audios SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+};
+
+// Duration Audios Operations (audio clips attached to duration marks)
+export const DurationAudiosOperations = {
+  getByDuration(durationId: number): DurationAudio[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM duration_audios
+      WHERE duration_id = ?
+      ORDER BY sort_order, created_at
+    `).all(durationId) as DurationAudio[];
+  },
+
+  getById(id: number): DurationAudio | null {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM duration_audios WHERE id = ?').get(id) as DurationAudio | undefined ?? null;
+  },
+
+  create(audio: CreateDurationAudio): DurationAudio {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO duration_audios (duration_id, file_path, caption, duration, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      audio.duration_id,
+      audio.file_path,
+      audio.caption ?? null,
+      audio.duration ?? null,
+      audio.sort_order ?? 0
+    );
+
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM duration_audios WHERE id = ?').run(id);
+  },
+
+  deleteByDuration(durationId: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM duration_audios WHERE duration_id = ?').run(durationId);
+  },
+
+  updateCaption(id: number, caption: string | null): DurationAudio {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_audios SET caption = ? WHERE id = ?').run(caption, id);
     return this.getById(id)!;
   },
 };

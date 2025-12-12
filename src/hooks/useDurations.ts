@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Duration, CreateDuration, UpdateDuration, DurationImage, DurationVideo } from '../types';
+import type { Duration, CreateDuration, UpdateDuration, DurationImage, DurationVideo, DurationAudio } from '../types';
 
 export function useDurations(recordingId: number | null) {
   const [durations, setDurations] = useState<Duration[]>([]);
@@ -9,6 +9,8 @@ export function useDurations(recordingId: number | null) {
   const [durationImagesCache, setDurationImagesCache] = useState<Record<number, DurationImage[]>>({});
   // Cache of duration videos, keyed by duration ID
   const [durationVideosCache, setDurationVideosCache] = useState<Record<number, DurationVideo[]>>({});
+  // Cache of duration audios, keyed by duration ID
+  const [durationAudiosCache, setDurationAudiosCache] = useState<Record<number, DurationAudio[]>>({});
 
   const fetchDurations = useCallback(async () => {
     if (recordingId === null) {
@@ -56,6 +58,11 @@ export function useDurations(recordingId: number | null) {
       return updated;
     });
     setDurationVideosCache(prev => {
+      const updated = { ...prev };
+      delete updated[id];
+      return updated;
+    });
+    setDurationAudiosCache(prev => {
       const updated = { ...prev };
       delete updated[id];
       return updated;
@@ -170,6 +177,45 @@ export function useDurations(recordingId: number | null) {
     }));
   };
 
+  // Fetch audios for a specific duration
+  const getDurationAudios = useCallback(async (durationId: number, force?: boolean): Promise<DurationAudio[]> => {
+    // Return cached if available AND not forcing refresh
+    if (!force && durationAudiosCache[durationId]) {
+      return durationAudiosCache[durationId];
+    }
+
+    const audios = await window.electronAPI.durationAudios.getByDuration(durationId);
+    setDurationAudiosCache(prev => ({ ...prev, [durationId]: audios }));
+    return audios;
+  }, [durationAudiosCache]);
+
+  // Add audio from buffer to a duration
+  const addDurationAudioFromBuffer = async (durationId: number, audioBuffer: ArrayBuffer, extension: string = 'webm'): Promise<DurationAudio> => {
+    const newAudio = await window.electronAPI.durationAudios.addFromBuffer(
+      durationId,
+      audioBuffer,
+      extension
+    );
+
+    // Update cache
+    setDurationAudiosCache(prev => ({
+      ...prev,
+      [durationId]: [...(prev[durationId] || []), newAudio]
+    }));
+
+    return newAudio;
+  };
+
+  // Delete a duration audio
+  const deleteDurationAudio = async (audioId: number, durationId: number): Promise<void> => {
+    await window.electronAPI.durationAudios.delete(audioId);
+    // Update cache
+    setDurationAudiosCache(prev => ({
+      ...prev,
+      [durationId]: (prev[durationId] || []).filter(aud => aud.id !== audioId)
+    }));
+  };
+
   // Clear cache for a duration (useful when switching recordings)
   const clearDurationImagesCache = useCallback(() => {
     setDurationImagesCache({});
@@ -179,11 +225,16 @@ export function useDurations(recordingId: number | null) {
     setDurationVideosCache({});
   }, []);
 
+  const clearDurationAudiosCache = useCallback(() => {
+    setDurationAudiosCache({});
+  }, []);
+
   // Clear cache when recording changes
   useEffect(() => {
     clearDurationImagesCache();
     clearDurationVideosCache();
-  }, [recordingId, clearDurationImagesCache, clearDurationVideosCache]);
+    clearDurationAudiosCache();
+  }, [recordingId, clearDurationImagesCache, clearDurationVideosCache, clearDurationAudiosCache]);
 
   return {
     durations,
@@ -205,5 +256,11 @@ export function useDurations(recordingId: number | null) {
     addDurationVideoFromClipboard,
     deleteDurationVideo,
     clearDurationVideosCache,
+    // Duration audio functions
+    durationAudiosCache,
+    getDurationAudios,
+    addDurationAudioFromBuffer,
+    deleteDurationAudio,
+    clearDurationAudiosCache,
   };
 }

@@ -3,13 +3,16 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useRecording, useRecordings } from '../hooks/useRecordings';
 import { useTopic } from '../hooks/useTopics';
 import { useDurations } from '../hooks/useDurations';
+import { useAudios } from '../hooks/useAudios';
 import AudioPlayer, { AudioPlayerHandle } from '../components/audio/AudioPlayer';
+import SimpleAudioRecordModal from '../components/audio/SimpleAudioRecordModal';
+import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
 import DurationList from '../components/recordings/DurationList';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import NotesEditor from '../components/common/NotesEditor';
 import { formatDuration, formatDate, formatRelativeTime } from '../utils/formatters';
-import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo } from '../types';
+import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -31,7 +34,18 @@ export default function RecordingPage() {
     getDurationVideos,
     addDurationVideoFromClipboard,
     deleteDurationVideo,
+    durationAudiosCache,
+    getDurationAudios,
+    addDurationAudioFromBuffer,
+    deleteDurationAudio,
   } = useDurations(id);
+
+  const {
+    audios: recordingAudios,
+    addAudioFromBuffer,
+    deleteAudio: deleteRecordingAudio,
+    updateCaption: updateAudioCaption,
+  } = useAudios(id);
 
   // Calculate adjacent recording IDs for navigation
   const currentIndex = topicRecordings.findIndex(r => r.id === id);
@@ -66,14 +80,21 @@ export default function RecordingPage() {
     durationId: number;
   } | null>(null);
   const [selectedDurationVideoPath, setSelectedDurationVideoPath] = useState<string | null>(null);
+  const [isRecordingDurationAudio, setIsRecordingDurationAudio] = useState(false);
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [durationAudioToDelete, setDurationAudioToDelete] = useState<{
+    audioId: number;
+    durationId: number;
+  } | null>(null);
+  const [recordingAudioToDelete, setRecordingAudioToDelete] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{
-    type: 'image' | 'video' | 'durationImage' | 'durationVideo';
-    item: Image | Video | DurationImage | DurationVideo;
+    type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio';
+    item: Image | Video | DurationImage | DurationVideo | DurationAudio | Audio;
     x: number;
     y: number;
   } | null>(null);
   const [captionModal, setCaptionModal] = useState<{
-    type: 'image' | 'video' | 'durationImage' | 'durationVideo';
+    type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio';
     id: number;
     currentCaption: string;
   } | null>(null);
@@ -241,10 +262,11 @@ export default function RecordingPage() {
       setIsSeekingDuration(true);
       audioPlayerRef.current?.setLoopRegion(duration.start_time, duration.end_time);
       setActiveDurationId(duration.id);
-      // Fetch images and videos for this duration if not cached
+      // Fetch images, videos, and audios for this duration if not cached
       await Promise.all([
         getDurationImages(duration.id),
         getDurationVideos(duration.id),
+        getDurationAudios(duration.id),
       ]);
     }
   };
@@ -285,11 +307,49 @@ export default function RecordingPage() {
     setDurationVideoToDelete(null);
   };
 
-  // Handle context menu for images/videos
+  // Handle saving duration audio from recording modal
+  const handleSaveDurationAudio = async (audioBlob: Blob) => {
+    if (!activeDurationId) return;
+    const buffer = await audioBlob.arrayBuffer();
+    await addDurationAudioFromBuffer(activeDurationId, buffer, 'webm');
+  };
+
+  // Handle deleting a duration audio
+  const handleDeleteDurationAudio = (audioId: number) => {
+    if (!activeDurationId) return;
+    setDurationAudioToDelete({ audioId, durationId: activeDurationId });
+  };
+
+  // Confirm and execute duration audio deletion
+  const confirmDeleteDurationAudio = async () => {
+    if (!durationAudioToDelete) return;
+    await deleteDurationAudio(durationAudioToDelete.audioId, durationAudioToDelete.durationId);
+    setDurationAudioToDelete(null);
+  };
+
+  // Handle saving recording audio from recording modal
+  const handleSaveRecordingAudio = async (audioBlob: Blob) => {
+    const buffer = await audioBlob.arrayBuffer();
+    await addAudioFromBuffer(buffer, 'webm');
+  };
+
+  // Handle deleting a recording audio
+  const handleDeleteRecordingAudio = (audioId: number) => {
+    setRecordingAudioToDelete(audioId);
+  };
+
+  // Confirm and execute recording audio deletion
+  const confirmDeleteRecordingAudio = async () => {
+    if (!recordingAudioToDelete) return;
+    await deleteRecordingAudio(recordingAudioToDelete);
+    setRecordingAudioToDelete(null);
+  };
+
+  // Handle context menu for images/videos/audios
   const handleContextMenu = (
     e: React.MouseEvent,
-    type: 'image' | 'video' | 'durationImage' | 'durationVideo',
-    item: Image | Video | DurationImage | DurationVideo
+    type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio',
+    item: Image | Video | DurationImage | DurationVideo | DurationAudio | Audio
   ) => {
     e.preventDefault();
     e.stopPropagation();
@@ -297,7 +357,7 @@ export default function RecordingPage() {
   };
 
   // Open caption modal
-  const openCaptionModal = (type: 'image' | 'video' | 'durationImage' | 'durationVideo', id: number, currentCaption: string | null) => {
+  const openCaptionModal = (type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio', id: number, currentCaption: string | null) => {
     setCaptionModal({ type, id, currentCaption: currentCaption || '' });
     setCaptionText(currentCaption || '');
     setContextMenu(null);
@@ -321,6 +381,11 @@ export default function RecordingPage() {
       } else if (captionModal.type === 'durationVideo' && activeDurationId) {
         await window.electronAPI.durationVideos.updateCaption(captionModal.id, trimmedCaption);
         await getDurationVideos(activeDurationId, true);
+      } else if (captionModal.type === 'durationAudio' && activeDurationId) {
+        await window.electronAPI.durationAudios.updateCaption(captionModal.id, trimmedCaption);
+        await getDurationAudios(activeDurationId, true);
+      } else if (captionModal.type === 'audio') {
+        await updateAudioCaption(captionModal.id, trimmedCaption);
       }
     } catch (error) {
       console.error('Failed to save caption:', error);
@@ -401,6 +466,7 @@ export default function RecordingPage() {
   // Keyboard navigation for duration image lightbox
   const activeDurationImages = activeDurationId ? durationImagesCache[activeDurationId] ?? [] : [];
   const activeDurationVideos = activeDurationId ? durationVideosCache[activeDurationId] ?? [] : [];
+  const activeDurationAudios = activeDurationId ? durationAudiosCache[activeDurationId] ?? [] : [];
   useEffect(() => {
     if (selectedDurationImageIndex === null) return;
 
@@ -725,6 +791,72 @@ export default function RecordingPage() {
         </div>
       )}
 
+      {/* Duration Audios - shown when a duration is active and has audios */}
+      {activeDurationId && activeDurationAudios.length > 0 && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              Audio Recordings ({activeDurationAudios.length})
+            </h3>
+            <button
+              onClick={() => setIsRecordingDurationAudio(true)}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+            >
+              🎙️ Record
+            </button>
+          </div>
+          <div className="space-y-3">
+            {activeDurationAudios.map((audio, index) => (
+              <div
+                key={audio.id}
+                className="group relative"
+                onContextMenu={(e) => handleContextMenu(e, 'durationAudio', audio)}
+              >
+                <div className="flex items-start gap-2">
+                  <span className="w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold mt-3">
+                    {index + 1}
+                  </span>
+                  <div className="flex-1">
+                    <ThemedAudioPlayer
+                      src={window.electronAPI.paths.getFileUrl(audio.file_path)}
+                      theme="blue"
+                    />
+                    {audio.caption && (
+                      <p className="text-xs text-blue-400 mt-1 italic font-light leading-tight">
+                        {audio.caption}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleDeleteDurationAudio(audio.id)}
+                    className="w-6 h-6 bg-red-500 text-white rounded-full
+                               opacity-0 group-hover:opacity-100 transition-opacity
+                               flex items-center justify-center text-sm mt-3"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Add Audio prompt when duration is active but has no audios */}
+      {activeDurationId && activeDurationAudios.length === 0 && (
+        <div className="mb-4 p-3 bg-gray-50 dark:bg-dark-hover border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <span>No audio recordings for this section</span>
+            <button
+              onClick={() => setIsRecordingDurationAudio(true)}
+              className="px-2 py-1 text-xs bg-gray-200 dark:bg-dark-border rounded hover:bg-gray-300 dark:hover:bg-dark-surface transition-colors"
+            >
+              🎙️ Record Audio
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Notes */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
@@ -886,6 +1018,59 @@ export default function RecordingPage() {
           </div>
         ) : (
           <p className="text-violet-400 dark:text-violet-500 italic text-sm">No videos attached</p>
+        )}
+      </div>
+
+      {/* Recording Audios */}
+      <div className="mb-6 p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-medium text-violet-700 dark:text-violet-300">
+            Audio Recordings ({recordingAudios.length})
+          </h2>
+          <button
+            onClick={() => setIsRecordingAudio(true)}
+            className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300"
+          >
+            🎙️ Record
+          </button>
+        </div>
+        {recordingAudios.length > 0 ? (
+          <div className="space-y-3">
+            {recordingAudios.map((audio, index) => (
+              <div
+                key={audio.id}
+                className="group relative"
+                onContextMenu={(e) => handleContextMenu(e, 'audio', audio)}
+              >
+                <div className="flex items-start gap-2">
+                  <span className="w-5 h-5 bg-violet-500 text-white rounded-full flex items-center justify-center text-xs font-bold mt-3">
+                    {index + 1}
+                  </span>
+                  <div className="flex-1">
+                    <ThemedAudioPlayer
+                      src={window.electronAPI.paths.getFileUrl(audio.file_path)}
+                      theme="violet"
+                    />
+                    {audio.caption && (
+                      <p className="text-xs text-violet-400 mt-1 italic font-light leading-tight">
+                        {audio.caption}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleDeleteRecordingAudio(audio.id)}
+                    className="w-6 h-6 bg-red-500 text-white rounded-full
+                               opacity-0 group-hover:opacity-100 transition-opacity
+                               flex items-center justify-center text-sm mt-3"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-violet-400 dark:text-violet-500 italic text-sm">No audio recordings attached</p>
         )}
       </div>
 
@@ -1193,6 +1378,62 @@ export default function RecordingPage() {
         </div>
       </Modal>
 
+      {/* Duration Audio delete confirmation modal */}
+      <Modal
+        isOpen={durationAudioToDelete !== null}
+        onClose={() => setDurationAudioToDelete(null)}
+        title="Delete Audio"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            Are you sure you want to delete this audio recording?
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => setDurationAudioToDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={confirmDeleteDurationAudio}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Recording Audio delete confirmation modal */}
+      <Modal
+        isOpen={recordingAudioToDelete !== null}
+        onClose={() => setRecordingAudioToDelete(null)}
+        title="Delete Audio"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            Are you sure you want to delete this audio recording?
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => setRecordingAudioToDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={confirmDeleteRecordingAudio}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Context Menu */}
       {contextMenu && (
         <div
@@ -1221,6 +1462,10 @@ export default function RecordingPage() {
                 handleDeleteDurationImage(contextMenu.item.id);
               } else if (contextMenu.type === 'durationVideo') {
                 handleDeleteDurationVideo(contextMenu.item.id);
+              } else if (contextMenu.type === 'durationAudio') {
+                handleDeleteDurationAudio(contextMenu.item.id);
+              } else if (contextMenu.type === 'audio') {
+                handleDeleteRecordingAudio(contextMenu.item.id);
               }
               setContextMenu(null);
             }}
@@ -1274,6 +1519,22 @@ export default function RecordingPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Duration Audio Record Modal */}
+      <SimpleAudioRecordModal
+        isOpen={isRecordingDurationAudio}
+        onClose={() => setIsRecordingDurationAudio(false)}
+        onSave={handleSaveDurationAudio}
+        title="Record Audio for Section"
+      />
+
+      {/* Recording Audio Record Modal */}
+      <SimpleAudioRecordModal
+        isOpen={isRecordingAudio}
+        onClose={() => setIsRecordingAudio(false)}
+        onSave={handleSaveRecordingAudio}
+        title="Record Audio"
+      />
       </div>
     </div>
   );

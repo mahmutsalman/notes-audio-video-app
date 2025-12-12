@@ -29,6 +29,7 @@ export interface Recording {
   // Relations (loaded separately)
   images?: Image[];
   videos?: Video[];
+  audios?: Audio[];
 }
 
 export interface Image {
@@ -52,6 +53,16 @@ export interface Video {
   created_at: string;
 }
 
+export interface Audio {
+  id: number;
+  recording_id: number;
+  file_path: string;
+  caption: string | null;
+  duration: number | null;
+  sort_order: number;
+  created_at: string;
+}
+
 export interface Duration {
   id: number;
   recording_id: number;
@@ -63,6 +74,7 @@ export interface Duration {
   // Media loaded separately
   images?: DurationImage[];
   videos?: DurationVideo[];
+  audios?: DurationAudio[];
 }
 
 export interface DurationImage {
@@ -86,13 +98,27 @@ export interface DurationVideo {
   created_at: string;
 }
 
+export interface DurationAudio {
+  id: number;
+  duration_id: number;
+  file_path: string;
+  caption: string | null;
+  duration: number | null;
+  sort_order: number;
+  created_at: string;
+}
+
 export type UpdateDuration = Partial<Pick<Duration, 'note' | 'color'>>;
 export type CreateDurationImage = Omit<DurationImage, 'id' | 'created_at'>;
 export type CreateDurationVideo = Omit<DurationVideo, 'id' | 'created_at'>;
+export type CreateDurationAudio = Omit<DurationAudio, 'id' | 'created_at'>;
+export type CreateAudio = Omit<Audio, 'id' | 'created_at'>;
 export type UpdateImage = { caption?: string | null };
 export type UpdateVideo = { caption?: string | null };
+export type UpdateAudio = { caption?: string | null };
 export type UpdateDurationImage = { caption?: string | null };
 export type UpdateDurationVideo = { caption?: string | null };
+export type UpdateDurationAudio = { caption?: string | null };
 
 // Backup types
 export interface BackupResult {
@@ -190,6 +216,18 @@ export interface ElectronAPI {
     addFromFile: (durationId: number, filePath: string) => Promise<DurationVideo>;
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<DurationVideo>;
+  };
+  durationAudios: {
+    getByDuration: (durationId: number) => Promise<DurationAudio[]>;
+    addFromBuffer: (durationId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<DurationAudio>;
+    delete: (id: number) => Promise<void>;
+    updateCaption: (id: number, caption: string | null) => Promise<DurationAudio>;
+  };
+  audios: {
+    getByRecording: (recordingId: number) => Promise<Audio[]>;
+    addFromBuffer: (recordingId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<Audio>;
+    delete: (id: number) => Promise<void>;
+    updateCaption: (id: number, caption: string | null) => Promise<Audio>;
   };
   backup: {
     create: () => Promise<BackupResult>;

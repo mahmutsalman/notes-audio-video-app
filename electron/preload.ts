@@ -2,10 +2,11 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   Topic, CreateTopic, UpdateTopic,
   Recording, CreateRecording, UpdateRecording,
-  Image, Video,
+  Image, Video, Audio,
   Duration, CreateDuration, UpdateDuration,
   DurationImage,
   DurationVideo,
+  DurationAudio,
   BackupResult
 } from '../src/types';
 
@@ -130,6 +131,30 @@ const electronAPI = {
       ipcRenderer.invoke('durationVideos:delete', id),
     updateCaption: (id: number, caption: string | null): Promise<DurationVideo> =>
       ipcRenderer.invoke('durationVideos:updateCaption', id, caption),
+  },
+
+  // Duration Audios (audio clips attached to duration marks)
+  durationAudios: {
+    getByDuration: (durationId: number): Promise<DurationAudio[]> =>
+      ipcRenderer.invoke('durationAudios:getByDuration', durationId),
+    addFromBuffer: (durationId: number, audioBuffer: ArrayBuffer, extension?: string): Promise<DurationAudio> =>
+      ipcRenderer.invoke('durationAudios:addFromBuffer', durationId, audioBuffer, extension),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('durationAudios:delete', id),
+    updateCaption: (id: number, caption: string | null): Promise<DurationAudio> =>
+      ipcRenderer.invoke('durationAudios:updateCaption', id, caption),
+  },
+
+  // Audios (audio clips attached to recordings)
+  audios: {
+    getByRecording: (recordingId: number): Promise<Audio[]> =>
+      ipcRenderer.invoke('audios:getByRecording', recordingId),
+    addFromBuffer: (recordingId: number, audioBuffer: ArrayBuffer, extension?: string): Promise<Audio> =>
+      ipcRenderer.invoke('audios:addFromBuffer', recordingId, audioBuffer, extension),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('audios:delete', id),
+    updateCaption: (id: number, caption: string | null): Promise<Audio> =>
+      ipcRenderer.invoke('audios:updateCaption', id, caption),
   },
 
   // Backup

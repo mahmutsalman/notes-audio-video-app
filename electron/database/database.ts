@@ -131,6 +131,34 @@ function runMigrations(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_duration_videos_duration ON duration_videos(duration_id);
+
+    -- Duration audios table (audio clips attached to duration marks)
+    CREATE TABLE IF NOT EXISTS duration_audios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      duration_id INTEGER NOT NULL,
+      file_path TEXT NOT NULL,
+      caption TEXT,
+      duration REAL,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (duration_id) REFERENCES durations(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_duration_audios_duration ON duration_audios(duration_id);
+
+    -- Audios table (audio clips attached to recordings)
+    CREATE TABLE IF NOT EXISTS audios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recording_id INTEGER NOT NULL,
+      file_path TEXT NOT NULL,
+      caption TEXT,
+      duration REAL,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (recording_id) REFERENCES recordings(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audios_recording ON audios(recording_id);
   `);
 
   // Migration: Add note column to durations table if it doesn't exist

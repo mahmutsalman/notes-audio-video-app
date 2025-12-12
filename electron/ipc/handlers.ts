@@ -4,9 +4,11 @@ import {
   RecordingsOperations,
   ImagesOperations,
   VideosOperations,
+  AudiosOperations,
   DurationsOperations,
   DurationImagesOperations,
   DurationVideosOperations,
+  DurationAudiosOperations,
 } from '../database/operations';
 import {
   saveAudioFile,
@@ -19,8 +21,11 @@ import {
   saveDurationImageFromBuffer,
   saveDurationVideoFromBuffer,
   saveDurationVideoFromFile,
+  saveDurationAudioFromBuffer,
+  saveAudioAttachmentFromBuffer,
   deleteDurationImages,
   deleteDurationVideos,
+  deleteDurationAudios,
   deleteFile,
   deleteRecordingMedia,
   getMediaDir,
@@ -284,9 +289,10 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('durations:delete', async (_, id: number) => {
-    // Delete associated images and videos first
+    // Delete associated images, videos, and audios first
     await deleteDurationImages(id);
     await deleteDurationVideos(id);
+    await deleteDurationAudios(id);
     DurationsOperations.delete(id);
   });
 
@@ -362,6 +368,62 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationVideos:updateCaption', async (_, id: number, caption: string | null) => {
     return DurationVideosOperations.updateCaption(id, caption);
+  });
+
+  // ============ Duration Audios ============
+  ipcMain.handle('durationAudios:getByDuration', async (_, durationId: number) => {
+    return DurationAudiosOperations.getByDuration(durationId);
+  });
+
+  ipcMain.handle('durationAudios:addFromBuffer', async (_, durationId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
+    const { filePath, duration } = await saveDurationAudioFromBuffer(durationId, audioBuffer, extension);
+    return DurationAudiosOperations.create({
+      duration_id: durationId,
+      file_path: filePath,
+      caption: null,
+      duration: duration,
+      sort_order: 0,
+    });
+  });
+
+  ipcMain.handle('durationAudios:delete', async (_, id: number) => {
+    const audio = DurationAudiosOperations.getById(id);
+    if (audio) {
+      await deleteFile(audio.file_path);
+    }
+    DurationAudiosOperations.delete(id);
+  });
+
+  ipcMain.handle('durationAudios:updateCaption', async (_, id: number, caption: string | null) => {
+    return DurationAudiosOperations.updateCaption(id, caption);
+  });
+
+  // ============ Audios (recording-level audio attachments) ============
+  ipcMain.handle('audios:getByRecording', async (_, recordingId: number) => {
+    return AudiosOperations.getByRecording(recordingId);
+  });
+
+  ipcMain.handle('audios:addFromBuffer', async (_, recordingId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
+    const { filePath, duration } = await saveAudioAttachmentFromBuffer(recordingId, audioBuffer, extension);
+    return AudiosOperations.create({
+      recording_id: recordingId,
+      file_path: filePath,
+      caption: null,
+      duration: duration,
+      sort_order: 0,
+    });
+  });
+
+  ipcMain.handle('audios:delete', async (_, id: number) => {
+    const audio = AudiosOperations.getById(id);
+    if (audio) {
+      await deleteFile(audio.file_path);
+    }
+    AudiosOperations.delete(id);
+  });
+
+  ipcMain.handle('audios:updateCaption', async (_, id: number, caption: string | null) => {
+    return AudiosOperations.updateCaption(id, caption);
   });
 
   // ============ Backup ============

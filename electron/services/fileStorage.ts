@@ -16,8 +16,10 @@ export async function ensureMediaDirs(): Promise<void> {
     path.join(mediaDir, 'audio'),
     path.join(mediaDir, 'images'),
     path.join(mediaDir, 'videos'),
+    path.join(mediaDir, 'audios'),           // recording-level audio attachments
     path.join(mediaDir, 'duration_images'),
     path.join(mediaDir, 'duration_videos'),
+    path.join(mediaDir, 'duration_audios'),  // duration-level audio attachments
   ];
 
   for (const dir of dirs) {
@@ -257,6 +259,62 @@ export async function deleteDurationVideos(durationId: number): Promise<void> {
   }
 }
 
+// Duration Audio functions
+export async function saveDurationAudioFromBuffer(
+  durationId: number,
+  audioBuffer: ArrayBuffer,
+  extension: string = 'webm'
+): Promise<{ filePath: string; duration: number | null }> {
+  const dir = path.join(getMediaDir(), 'duration_audios', String(durationId));
+  await fs.mkdir(dir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+
+  await fs.writeFile(filePath, Buffer.from(audioBuffer));
+  console.log('Duration audio saved to:', filePath);
+
+  return { filePath, duration: null };
+}
+
+export async function deleteDurationAudios(durationId: number): Promise<void> {
+  const dir = path.join(getMediaDir(), 'duration_audios', String(durationId));
+  try {
+    await fs.rm(dir, { recursive: true, force: true });
+    console.log('Deleted duration audios directory:', dir);
+  } catch {
+    // Directory may not exist, ignore
+  }
+}
+
+// Recording-level Audio Attachment functions
+export async function saveAudioAttachmentFromBuffer(
+  recordingId: number,
+  audioBuffer: ArrayBuffer,
+  extension: string = 'webm'
+): Promise<{ filePath: string; duration: number | null }> {
+  const dir = path.join(getMediaDir(), 'audios', String(recordingId));
+  await fs.mkdir(dir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+
+  await fs.writeFile(filePath, Buffer.from(audioBuffer));
+  console.log('Audio attachment saved to:', filePath);
+
+  return { filePath, duration: null };
+}
+
+export async function deleteRecordingAudios(recordingId: number): Promise<void> {
+  const dir = path.join(getMediaDir(), 'audios', String(recordingId));
+  try {
+    await fs.rm(dir, { recursive: true, force: true });
+    console.log('Deleted recording audios directory:', dir);
+  } catch {
+    // Directory may not exist, ignore
+  }
+}
+
 export async function deleteFile(filePath: string): Promise<void> {
   try {
     await fs.unlink(filePath);
@@ -271,8 +329,9 @@ export async function deleteRecordingMedia(recordingId: number): Promise<void> {
   const audiDir = path.join(mediaDir, 'audio', String(recordingId));
   const imagesDir = path.join(mediaDir, 'images', String(recordingId));
   const videosDir = path.join(mediaDir, 'videos', String(recordingId));
+  const audiosDir = path.join(mediaDir, 'audios', String(recordingId)); // audio attachments
 
-  for (const dir of [audiDir, imagesDir, videosDir]) {
+  for (const dir of [audiDir, imagesDir, videosDir, audiosDir]) {
     try {
       await fs.rm(dir, { recursive: true, force: true });
       console.log('Deleted directory:', dir);
