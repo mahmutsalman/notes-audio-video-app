@@ -64,16 +64,40 @@ export function formatDate(dateString: string): string {
 }
 
 /**
+ * Strip HTML tags from string, returning plain text
+ */
+export function stripHtmlTags(html: string | null | undefined): string {
+  if (!html) return '';
+  // Remove HTML tags and decode common entities
+  return html
+    .replace(/<[^>]*>/g, '')    // Remove all HTML tags
+    .replace(/&nbsp;/g, ' ')    // Replace non-breaking spaces
+    .replace(/&amp;/g, '&')     // Decode ampersand
+    .replace(/&lt;/g, '<')      // Decode less than
+    .replace(/&gt;/g, '>')      // Decode greater than
+    .replace(/&quot;/g, '"')    // Decode quotes
+    .replace(/&#39;/g, "'")     // Decode apostrophe
+    .replace(/\s+/g, ' ')       // Normalize whitespace
+    .trim();
+}
+
+/**
  * Truncate text to first 1-2 sentences or max characters
+ * Handles HTML content by stripping tags first
  */
 export function truncateNotes(text: string | null | undefined, maxLength = 150): string {
   if (!text) return '';
 
+  // Strip HTML tags first (for Quill.js rich text content)
+  const plainText = stripHtmlTags(text);
+
+  if (!plainText) return '';
+
   // If text is short enough, return as is
-  if (text.length <= maxLength) return text;
+  if (plainText.length <= maxLength) return plainText;
 
   // Try to find sentence boundary within maxLength
-  const truncated = text.slice(0, maxLength);
+  const truncated = plainText.slice(0, maxLength);
   const lastPeriod = truncated.lastIndexOf('.');
   const lastQuestion = truncated.lastIndexOf('?');
   const lastExclaim = truncated.lastIndexOf('!');
@@ -81,13 +105,13 @@ export function truncateNotes(text: string | null | undefined, maxLength = 150):
 
   // If we found a sentence boundary and it's not too early
   if (boundary > maxLength * 0.4) {
-    return text.slice(0, boundary + 1);
+    return plainText.slice(0, boundary + 1);
   }
 
   // Otherwise, truncate at word boundary
   const lastSpace = truncated.lastIndexOf(' ');
   if (lastSpace > maxLength * 0.6) {
-    return text.slice(0, lastSpace) + '...';
+    return plainText.slice(0, lastSpace) + '...';
   }
 
   return truncated + '...';
