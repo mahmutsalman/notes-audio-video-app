@@ -63,9 +63,9 @@ export function useDurations(recordingId: number | null) {
   };
 
   // Fetch images for a specific duration
-  const getDurationImages = useCallback(async (durationId: number): Promise<DurationImage[]> => {
-    // Return cached if available
-    if (durationImagesCache[durationId]) {
+  const getDurationImages = useCallback(async (durationId: number, force?: boolean): Promise<DurationImage[]> => {
+    // Return cached if available AND not forcing refresh
+    if (!force && durationImagesCache[durationId]) {
       return durationImagesCache[durationId];
     }
 
@@ -112,9 +112,9 @@ export function useDurations(recordingId: number | null) {
   };
 
   // Fetch videos for a specific duration
-  const getDurationVideos = useCallback(async (durationId: number): Promise<DurationVideo[]> => {
-    // Return cached if available
-    if (durationVideosCache[durationId]) {
+  const getDurationVideos = useCallback(async (durationId: number, force?: boolean): Promise<DurationVideo[]> => {
+    // Return cached if available AND not forcing refresh
+    if (!force && durationVideosCache[durationId]) {
       return durationVideosCache[durationId];
     }
 

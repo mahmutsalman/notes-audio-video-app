@@ -317,10 +317,10 @@ export default function RecordingPage() {
         await preserveScrollPosition(refetch);
       } else if (captionModal.type === 'durationImage' && activeDurationId) {
         await window.electronAPI.durationImages.updateCaption(captionModal.id, trimmedCaption);
-        await getDurationImages(activeDurationId);
+        await getDurationImages(activeDurationId, true);
       } else if (captionModal.type === 'durationVideo' && activeDurationId) {
         await window.electronAPI.durationVideos.updateCaption(captionModal.id, trimmedCaption);
-        await getDurationVideos(activeDurationId);
+        await getDurationVideos(activeDurationId, true);
       }
     } catch (error) {
       console.error('Failed to save caption:', error);
