@@ -813,7 +813,7 @@ export default function RecordingPage() {
                 onContextMenu={(e) => handleContextMenu(e, 'durationAudio', audio)}
               >
                 <div className="flex items-center gap-2">
-                  <span className="w-4 h-4 bg-blue-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
+                  <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold">
                     {index + 1}
                   </span>
                   <div className="flex-1">
@@ -1043,7 +1043,7 @@ export default function RecordingPage() {
                 onContextMenu={(e) => handleContextMenu(e, 'audio', audio)}
               >
                 <div className="flex items-center gap-2">
-                  <span className="w-4 h-4 bg-violet-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
+                  <span className="w-4 h-4 bg-violet-500/30 border border-violet-400/50 text-violet-300 rounded-full flex items-center justify-center text-[10px] font-bold">
                     {index + 1}
                   </span>
                   <div className="flex-1">

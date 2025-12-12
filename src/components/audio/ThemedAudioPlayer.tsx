@@ -26,7 +26,7 @@ export default function ThemedAudioPlayer({
         border: 'border-violet-700/50',
         progressBg: 'bg-violet-800/50',
         progressFill: 'bg-violet-400',
-        buttonBg: 'bg-violet-500 hover:bg-violet-600',
+        buttonBg: 'bg-violet-500/30 hover:bg-violet-500/50 border border-violet-400/50',
         text: 'text-violet-200',
       }
     : {
@@ -34,7 +34,7 @@ export default function ThemedAudioPlayer({
         border: 'border-blue-700/50',
         progressBg: 'bg-blue-800/50',
         progressFill: 'bg-blue-400',
-        buttonBg: 'bg-blue-500 hover:bg-blue-600',
+        buttonBg: 'bg-blue-500/30 hover:bg-blue-500/50 border border-blue-400/50',
         text: 'text-blue-200',
       };
 
