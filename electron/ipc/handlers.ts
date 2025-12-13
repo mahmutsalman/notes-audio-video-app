@@ -9,6 +9,8 @@ import {
   DurationImagesOperations,
   DurationVideosOperations,
   DurationAudiosOperations,
+  CodeSnippetsOperations,
+  DurationCodeSnippetsOperations,
 } from '../database/operations';
 import {
   saveAudioFile,
@@ -33,7 +35,10 @@ import {
 } from '../services/fileStorage';
 import { createBackup, getBackupDir } from '../services/backupService';
 import { mergeAudioFiles } from '../services/audioMerger';
-import type { CreateTopic, UpdateTopic, CreateRecording, UpdateRecording, CreateDuration, UpdateDuration } from '../../src/types';
+import type {
+  CreateTopic, UpdateTopic, CreateRecording, UpdateRecording, CreateDuration, UpdateDuration,
+  CreateCodeSnippet, UpdateCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet
+} from '../../src/types';
 
 export function setupIpcHandlers(): void {
   // ============ Topics ============
@@ -424,6 +429,40 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('audios:updateCaption', async (_, id: number, caption: string | null) => {
     return AudiosOperations.updateCaption(id, caption);
+  });
+
+  // ============ Code Snippets ============
+  ipcMain.handle('codeSnippets:getByRecording', async (_, recordingId: number) => {
+    return CodeSnippetsOperations.getByRecording(recordingId);
+  });
+
+  ipcMain.handle('codeSnippets:create', async (_, snippet: CreateCodeSnippet) => {
+    return CodeSnippetsOperations.create(snippet);
+  });
+
+  ipcMain.handle('codeSnippets:update', async (_, id: number, updates: UpdateCodeSnippet) => {
+    return CodeSnippetsOperations.update(id, updates);
+  });
+
+  ipcMain.handle('codeSnippets:delete', async (_, id: number) => {
+    CodeSnippetsOperations.delete(id);
+  });
+
+  // ============ Duration Code Snippets ============
+  ipcMain.handle('durationCodeSnippets:getByDuration', async (_, durationId: number) => {
+    return DurationCodeSnippetsOperations.getByDuration(durationId);
+  });
+
+  ipcMain.handle('durationCodeSnippets:create', async (_, snippet: CreateDurationCodeSnippet) => {
+    return DurationCodeSnippetsOperations.create(snippet);
+  });
+
+  ipcMain.handle('durationCodeSnippets:update', async (_, id: number, updates: UpdateDurationCodeSnippet) => {
+    return DurationCodeSnippetsOperations.update(id, updates);
+  });
+
+  ipcMain.handle('durationCodeSnippets:delete', async (_, id: number) => {
+    DurationCodeSnippetsOperations.delete(id);
   });
 
   // ============ Backup ============

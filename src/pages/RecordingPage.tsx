@@ -4,6 +4,7 @@ import { useRecording, useRecordings } from '../hooks/useRecordings';
 import { useTopic } from '../hooks/useTopics';
 import { useDurations } from '../hooks/useDurations';
 import { useAudios } from '../hooks/useAudios';
+import { useCodeSnippets } from '../hooks/useCodeSnippets';
 import AudioPlayer, { AudioPlayerHandle } from '../components/audio/AudioPlayer';
 import SimpleAudioRecordModal from '../components/audio/SimpleAudioRecordModal';
 import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
@@ -11,8 +12,10 @@ import DurationList from '../components/recordings/DurationList';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import NotesEditor from '../components/common/NotesEditor';
+import CodeSnippetCard from '../components/code/CodeSnippetCard';
+import CodeSnippetModal from '../components/code/CodeSnippetModal';
 import { formatDuration, formatDate, formatRelativeTime } from '../utils/formatters';
-import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio } from '../types';
+import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio, CodeSnippet, DurationCodeSnippet } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -38,6 +41,10 @@ export default function RecordingPage() {
     getDurationAudios,
     addDurationAudioFromBuffer,
     deleteDurationAudio,
+    getDurationCodeSnippets,
+    addDurationCodeSnippet,
+    updateDurationCodeSnippet,
+    deleteDurationCodeSnippet,
   } = useDurations(id);
 
   const {
@@ -46,6 +53,13 @@ export default function RecordingPage() {
     deleteAudio: deleteRecordingAudio,
     updateCaption: updateAudioCaption,
   } = useAudios(id);
+
+  const {
+    codeSnippets,
+    addCodeSnippet,
+    updateCodeSnippet,
+    deleteCodeSnippet,
+  } = useCodeSnippets(id);
 
   // Calculate adjacent recording IDs for navigation
   const currentIndex = topicRecordings.findIndex(r => r.id === id);
@@ -87,6 +101,13 @@ export default function RecordingPage() {
     durationId: number;
   } | null>(null);
   const [recordingAudioToDelete, setRecordingAudioToDelete] = useState<number | null>(null);
+  const [showCodeSnippetModal, setShowCodeSnippetModal] = useState(false);
+  const [editingCodeSnippet, setEditingCodeSnippet] = useState<CodeSnippet | null>(null);
+  const [codeSnippetToDelete, setCodeSnippetToDelete] = useState<number | null>(null);
+  const [showDurationCodeSnippetModal, setShowDurationCodeSnippetModal] = useState(false);
+  const [editingDurationCodeSnippet, setEditingDurationCodeSnippet] = useState<{snippet: DurationCodeSnippet | null, durationId: number} | null>(null);
+  const [durationCodeSnippetToDelete, setDurationCodeSnippetToDelete] = useState<{snippetId: number, durationId: number} | null>(null);
+  const [activeDurationCodeSnippets, setActiveDurationCodeSnippets] = useState<DurationCodeSnippet[]>([]);
   const [contextMenu, setContextMenu] = useState<{
     type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio';
     item: Image | Video | DurationImage | DurationVideo | DurationAudio | Audio;
@@ -117,6 +138,17 @@ export default function RecordingPage() {
     setAudioLoaded(false);
     setIsSeekingDuration(false);
   }, [id]);
+
+  // Load duration code snippets when active duration changes
+  useEffect(() => {
+    if (activeDurationId !== null) {
+      getDurationCodeSnippets(activeDurationId).then(snippets => {
+        setActiveDurationCodeSnippets(snippets);
+      });
+    } else {
+      setActiveDurationCodeSnippets([]);
+    }
+  }, [activeDurationId, getDurationCodeSnippets]);
 
   // Handle clicks on empty page areas to toggle audio playback
   const handlePageClick = (e: React.MouseEvent) => {
@@ -343,6 +375,79 @@ export default function RecordingPage() {
     if (!recordingAudioToDelete) return;
     await deleteRecordingAudio(recordingAudioToDelete);
     setRecordingAudioToDelete(null);
+  };
+
+  // ============ Code Snippet Handlers ============
+  // Recording-level code snippet handlers
+  const handleAddCodeSnippet = () => {
+    setEditingCodeSnippet(null);
+    setShowCodeSnippetModal(true);
+  };
+
+  const handleEditCodeSnippet = (snippet: CodeSnippet) => {
+    setEditingCodeSnippet(snippet);
+    setShowCodeSnippetModal(true);
+  };
+
+  const handleSaveCodeSnippet = async (data: { title: string | null; language: string; code: string; caption: string | null }) => {
+    if (editingCodeSnippet) {
+      await updateCodeSnippet(editingCodeSnippet.id, data);
+    } else {
+      await addCodeSnippet(data);
+    }
+    setShowCodeSnippetModal(false);
+    setEditingCodeSnippet(null);
+  };
+
+  const handleDeleteCodeSnippet = (snippetId: number) => {
+    setCodeSnippetToDelete(snippetId);
+  };
+
+  const confirmDeleteCodeSnippet = async () => {
+    if (!codeSnippetToDelete) return;
+    await deleteCodeSnippet(codeSnippetToDelete);
+    setCodeSnippetToDelete(null);
+  };
+
+  // Duration-level code snippet handlers
+  const handleAddDurationCodeSnippet = (durationId: number) => {
+    setEditingDurationCodeSnippet({ snippet: null, durationId });
+    setShowDurationCodeSnippetModal(true);
+  };
+
+  const handleEditDurationCodeSnippet = (snippet: DurationCodeSnippet, durationId: number) => {
+    setEditingDurationCodeSnippet({ snippet, durationId });
+    setShowDurationCodeSnippetModal(true);
+  };
+
+  const handleSaveDurationCodeSnippet = async (data: { title: string | null; language: string; code: string; caption: string | null }) => {
+    if (!editingDurationCodeSnippet) return;
+
+    if (editingDurationCodeSnippet.snippet) {
+      const updatedSnippet = await updateDurationCodeSnippet(
+        editingDurationCodeSnippet.snippet.id,
+        editingDurationCodeSnippet.durationId,
+        data
+      );
+      setActiveDurationCodeSnippets(prev => prev.map(s => s.id === updatedSnippet.id ? updatedSnippet : s));
+    } else {
+      const newSnippet = await addDurationCodeSnippet(editingDurationCodeSnippet.durationId, data);
+      setActiveDurationCodeSnippets(prev => [...prev, newSnippet]);
+    }
+
+    setShowDurationCodeSnippetModal(false);
+    setEditingDurationCodeSnippet(null);
+  };
+
+  const handleDeleteDurationCodeSnippet = (snippetId: number, durationId: number) => {
+    setDurationCodeSnippetToDelete({ snippetId, durationId });
+  };
+
+  const confirmDeleteDurationCodeSnippet = async () => {
+    if (!durationCodeSnippetToDelete) return;
+    await deleteDurationCodeSnippet(durationCodeSnippetToDelete.snippetId, durationCodeSnippetToDelete.durationId);
+    setActiveDurationCodeSnippets(prev => prev.filter(s => s.id !== durationCodeSnippetToDelete.snippetId));
+    setDurationCodeSnippetToDelete(null);
   };
 
   // Handle context menu for images/videos/audios
@@ -885,6 +990,37 @@ export default function RecordingPage() {
         </div>
       )}
 
+      {/* Duration Code Snippets - shown when a duration is active */}
+      {activeDurationId && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              Code Snippets ({activeDurationCodeSnippets.length})
+            </h3>
+            <button
+              onClick={() => handleAddDurationCodeSnippet(activeDurationId)}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+            >
+              + Add
+            </button>
+          </div>
+          {activeDurationCodeSnippets.length > 0 ? (
+            <div className="space-y-2">
+              {activeDurationCodeSnippets.map((snippet) => (
+                <CodeSnippetCard
+                  key={snippet.id}
+                  snippet={snippet}
+                  onEdit={() => handleEditDurationCodeSnippet(snippet, activeDurationId)}
+                  onDelete={() => handleDeleteDurationCodeSnippet(snippet.id, activeDurationId)}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-blue-400 dark:text-blue-500 italic text-sm">No code snippets for this section</p>
+          )}
+        </div>
+      )}
+
       {/* Notes */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
@@ -1099,6 +1235,35 @@ export default function RecordingPage() {
           </div>
         ) : (
           <p className="text-violet-400 dark:text-violet-500 italic text-sm">No audio recordings attached</p>
+        )}
+      </div>
+
+      {/* Code Snippets */}
+      <div className="mb-6 p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-medium text-violet-700 dark:text-violet-300">
+            Code Snippets ({codeSnippets.length})
+          </h2>
+          <button
+            onClick={handleAddCodeSnippet}
+            className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300"
+          >
+            + Add
+          </button>
+        </div>
+        {codeSnippets.length > 0 ? (
+          <div className="space-y-2">
+            {codeSnippets.map((snippet) => (
+              <CodeSnippetCard
+                key={snippet.id}
+                snippet={snippet}
+                onEdit={() => handleEditCodeSnippet(snippet)}
+                onDelete={() => handleDeleteCodeSnippet(snippet.id)}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="text-violet-400 dark:text-violet-500 italic text-sm">No code snippets for this section</p>
         )}
       </div>
 
@@ -1597,6 +1762,74 @@ export default function RecordingPage() {
         onSave={handleSaveRecordingAudio}
         title="Record Audio"
       />
+
+      {/* Code Snippet Modal */}
+      {showCodeSnippetModal && (
+        <CodeSnippetModal
+          snippet={editingCodeSnippet}
+          onSave={handleSaveCodeSnippet}
+          onCancel={() => {
+            setShowCodeSnippetModal(false);
+            setEditingCodeSnippet(null);
+          }}
+        />
+      )}
+
+      {/* Duration Code Snippet Modal */}
+      {showDurationCodeSnippetModal && editingDurationCodeSnippet && (
+        <CodeSnippetModal
+          snippet={editingDurationCodeSnippet.snippet}
+          onSave={handleSaveDurationCodeSnippet}
+          onCancel={() => {
+            setShowDurationCodeSnippetModal(false);
+            setEditingDurationCodeSnippet(null);
+          }}
+        />
+      )}
+
+      {/* Code Snippet Delete Confirmation */}
+      <Modal
+        isOpen={codeSnippetToDelete !== null}
+        onClose={() => setCodeSnippetToDelete(null)}
+        title="Delete Code Snippet"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            Are you sure you want to delete this code snippet? This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setCodeSnippetToDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={confirmDeleteCodeSnippet}>
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Duration Code Snippet Delete Confirmation */}
+      <Modal
+        isOpen={durationCodeSnippetToDelete !== null}
+        onClose={() => setDurationCodeSnippetToDelete(null)}
+        title="Delete Code Snippet"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            Are you sure you want to delete this code snippet? This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setDurationCodeSnippetToDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={confirmDeleteDurationCodeSnippet}>
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
       </div>
     </div>
   );

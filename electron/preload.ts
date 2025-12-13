@@ -7,6 +7,8 @@ import type {
   DurationImage,
   DurationVideo,
   DurationAudio,
+  CodeSnippet, CreateCodeSnippet, UpdateCodeSnippet,
+  DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
   BackupResult
 } from '../src/types';
 
@@ -155,6 +157,30 @@ const electronAPI = {
       ipcRenderer.invoke('audios:delete', id),
     updateCaption: (id: number, caption: string | null): Promise<Audio> =>
       ipcRenderer.invoke('audios:updateCaption', id, caption),
+  },
+
+  // Code Snippets (code snippets attached to recordings)
+  codeSnippets: {
+    getByRecording: (recordingId: number): Promise<CodeSnippet[]> =>
+      ipcRenderer.invoke('codeSnippets:getByRecording', recordingId),
+    create: (snippet: CreateCodeSnippet): Promise<CodeSnippet> =>
+      ipcRenderer.invoke('codeSnippets:create', snippet),
+    update: (id: number, updates: UpdateCodeSnippet): Promise<CodeSnippet> =>
+      ipcRenderer.invoke('codeSnippets:update', id, updates),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('codeSnippets:delete', id),
+  },
+
+  // Duration Code Snippets (code snippets attached to duration marks)
+  durationCodeSnippets: {
+    getByDuration: (durationId: number): Promise<DurationCodeSnippet[]> =>
+      ipcRenderer.invoke('durationCodeSnippets:getByDuration', durationId),
+    create: (snippet: CreateDurationCodeSnippet): Promise<DurationCodeSnippet> =>
+      ipcRenderer.invoke('durationCodeSnippets:create', snippet),
+    update: (id: number, updates: UpdateDurationCodeSnippet): Promise<DurationCodeSnippet> =>
+      ipcRenderer.invoke('durationCodeSnippets:update', id, updates),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('durationCodeSnippets:delete', id),
   },
 
   // Backup

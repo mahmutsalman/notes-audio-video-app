@@ -30,6 +30,7 @@ export interface Recording {
   images?: Image[];
   videos?: Video[];
   audios?: Audio[];
+  codeSnippets?: CodeSnippet[];
 }
 
 export interface Image {
@@ -75,6 +76,7 @@ export interface Duration {
   images?: DurationImage[];
   videos?: DurationVideo[];
   audios?: DurationAudio[];
+  codeSnippets?: DurationCodeSnippet[];
 }
 
 export interface DurationImage {
@@ -108,16 +110,42 @@ export interface DurationAudio {
   created_at: string;
 }
 
+export interface CodeSnippet {
+  id: number;
+  recording_id: number;
+  title: string | null;
+  language: string;
+  code: string;
+  caption: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface DurationCodeSnippet {
+  id: number;
+  duration_id: number;
+  title: string | null;
+  language: string;
+  code: string;
+  caption: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
 export type UpdateDuration = Partial<Pick<Duration, 'note' | 'color'>>;
 export type CreateDurationImage = Omit<DurationImage, 'id' | 'created_at'>;
 export type CreateDurationVideo = Omit<DurationVideo, 'id' | 'created_at'>;
 export type CreateDurationAudio = Omit<DurationAudio, 'id' | 'created_at'>;
 export type CreateAudio = Omit<Audio, 'id' | 'created_at'>;
+export type CreateCodeSnippet = Omit<CodeSnippet, 'id' | 'created_at'>;
+export type CreateDurationCodeSnippet = Omit<DurationCodeSnippet, 'id' | 'created_at'>;
 export type UpdateImage = { caption?: string | null };
 export type UpdateVideo = { caption?: string | null };
 export type UpdateAudio = { caption?: string | null };
 export type UpdateDurationImage = { caption?: string | null };
 export type UpdateDurationVideo = { caption?: string | null };
+export type UpdateCodeSnippet = { title?: string | null; language?: string; code?: string; caption?: string | null };
+export type UpdateDurationCodeSnippet = { title?: string | null; language?: string; code?: string; caption?: string | null };
 export type UpdateDurationAudio = { caption?: string | null };
 
 // Backup types
@@ -228,6 +256,18 @@ export interface ElectronAPI {
     addFromBuffer: (recordingId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<Audio>;
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<Audio>;
+  };
+  codeSnippets: {
+    getByRecording: (recordingId: number) => Promise<CodeSnippet[]>;
+    create: (snippet: CreateCodeSnippet) => Promise<CodeSnippet>;
+    update: (id: number, updates: UpdateCodeSnippet) => Promise<CodeSnippet>;
+    delete: (id: number) => Promise<void>;
+  };
+  durationCodeSnippets: {
+    getByDuration: (durationId: number) => Promise<DurationCodeSnippet[]>;
+    create: (snippet: CreateDurationCodeSnippet) => Promise<DurationCodeSnippet>;
+    update: (id: number, updates: UpdateDurationCodeSnippet) => Promise<DurationCodeSnippet>;
+    delete: (id: number) => Promise<void>;
   };
   backup: {
     create: () => Promise<BackupResult>;

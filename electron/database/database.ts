@@ -215,6 +215,54 @@ function runMigrations(db: Database.Database): void {
     console.log('Added caption column to duration_images table');
   }
 
+  // Migration: Create code_snippets table
+  const codeSnippetsTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='code_snippets'"
+  ).get();
+
+  if (!codeSnippetsTableExists) {
+    db.exec(`
+      CREATE TABLE code_snippets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recording_id INTEGER NOT NULL,
+        title TEXT,
+        language TEXT NOT NULL DEFAULT 'plaintext',
+        code TEXT NOT NULL,
+        caption TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (recording_id) REFERENCES recordings(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_code_snippets_recording ON code_snippets(recording_id);
+    `);
+    console.log('Created code_snippets table');
+  }
+
+  // Migration: Create duration_code_snippets table
+  const durationCodeSnippetsTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='duration_code_snippets'"
+  ).get();
+
+  if (!durationCodeSnippetsTableExists) {
+    db.exec(`
+      CREATE TABLE duration_code_snippets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        duration_id INTEGER NOT NULL,
+        title TEXT,
+        language TEXT NOT NULL DEFAULT 'plaintext',
+        code TEXT NOT NULL,
+        caption TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (duration_id) REFERENCES durations(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_duration_code_snippets_duration ON duration_code_snippets(duration_id);
+    `);
+    console.log('Created duration_code_snippets table');
+  }
+
   // Create the stats view (drop and recreate to handle schema changes)
   db.exec(`
     DROP VIEW IF EXISTS topic_stats;

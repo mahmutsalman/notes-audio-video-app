@@ -8,7 +8,9 @@ import type {
   Duration, CreateDuration, UpdateDuration,
   DurationImage, CreateDurationImage,
   DurationVideo, CreateDurationVideo,
-  DurationAudio, CreateDurationAudio
+  DurationAudio, CreateDurationAudio,
+  CodeSnippet, CreateCodeSnippet, UpdateCodeSnippet,
+  DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet
 } from '../../src/types';
 
 // Helper to parse tags from JSON string
@@ -569,5 +571,152 @@ export const DurationAudiosOperations = {
     const db = getDatabase();
     db.prepare('UPDATE duration_audios SET caption = ? WHERE id = ?').run(caption, id);
     return this.getById(id)!;
+  },
+};
+
+// Code Snippets Operations (code snippets attached to recordings)
+export const CodeSnippetsOperations = {
+  getByRecording(recordingId: number): CodeSnippet[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM code_snippets
+      WHERE recording_id = ?
+      ORDER BY sort_order, created_at
+    `).all(recordingId) as CodeSnippet[];
+  },
+
+  getById(id: number): CodeSnippet | null {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM code_snippets WHERE id = ?').get(id) as CodeSnippet | undefined ?? null;
+  },
+
+  create(snippet: CreateCodeSnippet): CodeSnippet {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO code_snippets (recording_id, title, language, code, caption, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      snippet.recording_id,
+      snippet.title ?? null,
+      snippet.language,
+      snippet.code,
+      snippet.caption ?? null,
+      snippet.sort_order ?? 0
+    );
+
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  update(id: number, updates: UpdateCodeSnippet): CodeSnippet {
+    const db = getDatabase();
+    const updateFields: string[] = [];
+    const values: any[] = [];
+
+    if (updates.title !== undefined) {
+      updateFields.push('title = ?');
+      values.push(updates.title);
+    }
+    if (updates.language !== undefined) {
+      updateFields.push('language = ?');
+      values.push(updates.language);
+    }
+    if (updates.code !== undefined) {
+      updateFields.push('code = ?');
+      values.push(updates.code);
+    }
+    if (updates.caption !== undefined) {
+      updateFields.push('caption = ?');
+      values.push(updates.caption);
+    }
+
+    if (updateFields.length > 0) {
+      values.push(id);
+      db.prepare(`UPDATE code_snippets SET ${updateFields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    return this.getById(id)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM code_snippets WHERE id = ?').run(id);
+  },
+};
+
+// Duration Code Snippets Operations (code snippets attached to duration marks)
+export const DurationCodeSnippetsOperations = {
+  getByDuration(durationId: number): DurationCodeSnippet[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM duration_code_snippets
+      WHERE duration_id = ?
+      ORDER BY sort_order, created_at
+    `).all(durationId) as DurationCodeSnippet[];
+  },
+
+  getById(id: number): DurationCodeSnippet | null {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM duration_code_snippets WHERE id = ?').get(id) as DurationCodeSnippet | undefined ?? null;
+  },
+
+  create(snippet: CreateDurationCodeSnippet): DurationCodeSnippet {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO duration_code_snippets (duration_id, title, language, code, caption, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      snippet.duration_id,
+      snippet.title ?? null,
+      snippet.language,
+      snippet.code,
+      snippet.caption ?? null,
+      snippet.sort_order ?? 0
+    );
+
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  update(id: number, updates: UpdateDurationCodeSnippet): DurationCodeSnippet {
+    const db = getDatabase();
+    const updateFields: string[] = [];
+    const values: any[] = [];
+
+    if (updates.title !== undefined) {
+      updateFields.push('title = ?');
+      values.push(updates.title);
+    }
+    if (updates.language !== undefined) {
+      updateFields.push('language = ?');
+      values.push(updates.language);
+    }
+    if (updates.code !== undefined) {
+      updateFields.push('code = ?');
+      values.push(updates.code);
+    }
+    if (updates.caption !== undefined) {
+      updateFields.push('caption = ?');
+      values.push(updates.caption);
+    }
+
+    if (updateFields.length > 0) {
+      values.push(id);
+      db.prepare(`UPDATE duration_code_snippets SET ${updateFields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    return this.getById(id)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM duration_code_snippets WHERE id = ?').run(id);
+  },
+
+  deleteByDuration(durationId: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM duration_code_snippets WHERE duration_id = ?').run(durationId);
   },
 };

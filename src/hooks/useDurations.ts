@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Duration, CreateDuration, UpdateDuration, DurationImage, DurationVideo, DurationAudio } from '../types';
+import type { Duration, CreateDuration, UpdateDuration, DurationImage, DurationVideo, DurationAudio, DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet } from '../types';
 
 export function useDurations(recordingId: number | null) {
   const [durations, setDurations] = useState<Duration[]>([]);
@@ -11,6 +11,8 @@ export function useDurations(recordingId: number | null) {
   const [durationVideosCache, setDurationVideosCache] = useState<Record<number, DurationVideo[]>>({});
   // Cache of duration audios, keyed by duration ID
   const [durationAudiosCache, setDurationAudiosCache] = useState<Record<number, DurationAudio[]>>({});
+  // Cache of duration code snippets, keyed by duration ID
+  const [durationCodeSnippetsCache, setDurationCodeSnippetsCache] = useState<Record<number, DurationCodeSnippet[]>>({});
 
   const fetchDurations = useCallback(async () => {
     if (recordingId === null) {
@@ -63,6 +65,11 @@ export function useDurations(recordingId: number | null) {
       return updated;
     });
     setDurationAudiosCache(prev => {
+      const updated = { ...prev };
+      delete updated[id];
+      return updated;
+    });
+    setDurationCodeSnippetsCache(prev => {
       const updated = { ...prev };
       delete updated[id];
       return updated;
@@ -229,12 +236,74 @@ export function useDurations(recordingId: number | null) {
     setDurationAudiosCache({});
   }, []);
 
+  // Fetch code snippets for a specific duration
+  const getDurationCodeSnippets = useCallback(async (durationId: number, force?: boolean): Promise<DurationCodeSnippet[]> => {
+    // Return cached if available AND not forcing refresh
+    if (!force && durationCodeSnippetsCache[durationId]) {
+      return durationCodeSnippetsCache[durationId];
+    }
+
+    const snippets = await window.electronAPI.durationCodeSnippets.getByDuration(durationId);
+    setDurationCodeSnippetsCache(prev => ({ ...prev, [durationId]: snippets }));
+    return snippets;
+  }, [durationCodeSnippetsCache]);
+
+  // Add code snippet to a duration
+  const addDurationCodeSnippet = async (durationId: number, data: Omit<CreateDurationCodeSnippet, 'duration_id' | 'sort_order'>): Promise<DurationCodeSnippet> => {
+    const currentSnippets = durationCodeSnippetsCache[durationId] || [];
+    const newSnippet = await window.electronAPI.durationCodeSnippets.create({
+      duration_id: durationId,
+      title: data.title,
+      language: data.language,
+      code: data.code,
+      caption: data.caption,
+      sort_order: currentSnippets.length,
+    });
+
+    // Update cache
+    setDurationCodeSnippetsCache(prev => ({
+      ...prev,
+      [durationId]: [...(prev[durationId] || []), newSnippet]
+    }));
+
+    return newSnippet;
+  };
+
+  // Update code snippet
+  const updateDurationCodeSnippet = async (snippetId: number, durationId: number, updates: UpdateDurationCodeSnippet): Promise<DurationCodeSnippet> => {
+    const updatedSnippet = await window.electronAPI.durationCodeSnippets.update(snippetId, updates);
+
+    // Update cache
+    setDurationCodeSnippetsCache(prev => ({
+      ...prev,
+      [durationId]: (prev[durationId] || []).map(snippet => snippet.id === snippetId ? updatedSnippet : snippet)
+    }));
+
+    return updatedSnippet;
+  };
+
+  // Delete code snippet
+  const deleteDurationCodeSnippet = async (snippetId: number, durationId: number): Promise<void> => {
+    await window.electronAPI.durationCodeSnippets.delete(snippetId);
+
+    // Update cache
+    setDurationCodeSnippetsCache(prev => ({
+      ...prev,
+      [durationId]: (prev[durationId] || []).filter(snippet => snippet.id !== snippetId)
+    }));
+  };
+
+  const clearDurationCodeSnippetsCache = useCallback(() => {
+    setDurationCodeSnippetsCache({});
+  }, []);
+
   // Clear cache when recording changes
   useEffect(() => {
     clearDurationImagesCache();
     clearDurationVideosCache();
     clearDurationAudiosCache();
-  }, [recordingId, clearDurationImagesCache, clearDurationVideosCache, clearDurationAudiosCache]);
+    clearDurationCodeSnippetsCache();
+  }, [recordingId, clearDurationImagesCache, clearDurationVideosCache, clearDurationAudiosCache, clearDurationCodeSnippetsCache]);
 
   return {
     durations,
@@ -262,5 +331,12 @@ export function useDurations(recordingId: number | null) {
     addDurationAudioFromBuffer,
     deleteDurationAudio,
     clearDurationAudiosCache,
+    // Duration code snippet functions
+    durationCodeSnippetsCache,
+    getDurationCodeSnippets,
+    addDurationCodeSnippet,
+    updateDurationCodeSnippet,
+    deleteDurationCodeSnippet,
+    clearDurationCodeSnippetsCache,
   };
 }
