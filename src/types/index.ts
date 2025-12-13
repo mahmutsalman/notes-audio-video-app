@@ -1,7 +1,7 @@
 // Database Models
 
 export type ImportanceColor = 'emerald' | 'amber' | 'rose' | null;
-export type DurationColor = 'emerald' | 'violet' | 'cyan' | null;
+export type DurationColor = 'red' | 'amber' | 'sky' | null;
 
 export interface Topic {
   id: number;
