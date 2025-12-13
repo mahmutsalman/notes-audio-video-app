@@ -484,6 +484,34 @@ export default function RecordingPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedDurationImageIndex, activeDurationImages.length]);
 
+  // ESC key handler for recording video lightbox
+  useEffect(() => {
+    if (!selectedVideo) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedVideo(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedVideo]);
+
+  // ESC key handler for duration video lightbox
+  useEffect(() => {
+    if (!selectedDurationVideoPath) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedDurationVideoPath(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedDurationVideoPath]);
+
   // Keyboard navigation for recording navigation (between recordings in same topic)
   useEffect(() => {
     const handleRecordingNav = (e: KeyboardEvent) => {
