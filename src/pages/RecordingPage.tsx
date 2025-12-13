@@ -632,9 +632,14 @@ export default function RecordingPage() {
       // Skip if editing notes
       if (isEditing) return;
 
-      // Skip if user is focused on any input field
+      // Skip if user is focused on any input field or contenteditable element
       const activeEl = document.activeElement;
-      if (activeEl?.tagName === 'INPUT' || activeEl?.tagName === 'TEXTAREA') return;
+      if (
+        activeEl?.tagName === 'INPUT' ||
+        activeEl?.tagName === 'TEXTAREA' ||
+        activeEl?.getAttribute('contenteditable') === 'true' ||
+        activeEl?.closest('[contenteditable="true"]')
+      ) return;
 
       if (e.key === 'ArrowLeft' && prevRecordingId) {
         navigate(`/recording/${prevRecordingId}`);
