@@ -108,7 +108,7 @@ export class SoundTouchPlayer {
     this.shifter = new PitchShifter(
       this.audioContext,
       this.audioBuffer,
-      1024, // Buffer size
+      4096, // Buffer size (increased from 1024 to reduce artifacts)
       () => this.handleEnd()
     );
 
