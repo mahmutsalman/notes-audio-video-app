@@ -57,11 +57,20 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   }, [loopRegion]);
 
   const isWebmSource = src.toLowerCase().includes('.webm') || src.startsWith('blob:');
-  const useSoundTouch = isWebmSource; // WebM → SoundTouchPlayer for pitch-preserved speed control
-  const useHtml5Audio = !isWebmSource; // Non-WebM files use Howler with HTML5 mode
+  // Only use SoundTouch when speed ≠ 1x (for pitch preservation)
+  // At 1x speed, use native Howler for perfect quality
+  const useSoundTouch = isWebmSource && playbackRate !== 1;
+  const useHtml5Audio = !isWebmSource || playbackRate === 1; // Use HTML5 for non-WebM OR WebM at 1x speed
 
-  // Initialize audio player when src changes
+  // Initialize audio player when src or playback mode changes
   useEffect(() => {
+    // Save current state before switching players (for smooth transitions when speed changes)
+    // Use currentTime state as it's more reliable than asking the player
+    let savedPosition = currentTime;
+    let savedWasPlaying = isPlaying;
+
+    console.log(`[AudioPlayer] Saving state from React: position=${savedPosition.toFixed(2)}s, playing=${savedWasPlaying}`);
+
     // Clean up previous instances
     if (howlRef.current) {
       howlRef.current.unload();
@@ -78,6 +87,8 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
 
     // Reset loaded state when src changes
     setIsLoaded(false);
+
+    console.log(`[AudioPlayer] Initializing player: ${useSoundTouch ? 'SoundTouchPlayer' : 'Howler'} | Speed: ${playbackRate}x | WebM: ${isWebmSource}`);
 
     // Use SoundTouchPlayer for WebM/blob sources (pitch preservation)
     if (useSoundTouch) {
@@ -124,6 +135,18 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
         .then((dur) => {
           setDuration(dur);
           player.setTempo(playbackRate);
+
+          // Restore saved position if switching from another player
+          if (savedPosition > 0) {
+            console.log(`[AudioPlayer] Restoring to SoundTouch: position=${savedPosition.toFixed(2)}s, willPlay=${savedWasPlaying}`);
+            player.seek(savedPosition);
+            setCurrentTime(savedPosition);
+            if (savedWasPlaying) {
+              player.play();
+            }
+          } else {
+            console.log(`[AudioPlayer] No position to restore (savedPosition=${savedPosition})`);
+          }
         })
         .catch((err) => {
           console.error('[AudioPlayer] Failed to load audio with SoundTouchPlayer:', err);
@@ -148,6 +171,19 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
         setIsLoaded(true);
         onLoad?.();
         console.log('[AudioPlayer] Howler loaded and ready for seeking');
+
+        // Restore saved position if switching from another player
+        if (savedPosition > 0) {
+          console.log(`[AudioPlayer] Restoring to Howler: position=${savedPosition.toFixed(2)}s, willPlay=${savedWasPlaying}`);
+          howl.seek(savedPosition);
+          setCurrentTime(savedPosition);
+          if (savedWasPlaying) {
+            const id = howl.play();
+            activeSoundIdRef.current = typeof id === 'number' ? id : null;
+          }
+        } else {
+          console.log(`[AudioPlayer] No position to restore (savedPosition=${savedPosition})`);
+        }
       },
       onplay: (id) => {
         if (typeof id === 'number') {
@@ -207,7 +243,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
       howl.unload();
       activeSoundIdRef.current = null;
     };
-  }, [src, useSoundTouch, useHtml5Audio, isWebmSource]); // Only re-create when src or playback mode changes
+  }, [src, useSoundTouch, useHtml5Audio, isWebmSource, playbackRate]); // Re-create when src, playback mode, or speed changes
 
   // Update playback rate when it changes
   useEffect(() => {
