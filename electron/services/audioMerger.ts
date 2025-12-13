@@ -24,8 +24,8 @@ function getFFmpegPath(): string {
     return devPath;
   }
 
-  // In production, the binary should be in resources
-  const prodPath = path.join(process.resourcesPath, 'ffmpeg');
+  // In production, the binary is in app.asar.unpacked/node_modules/ffmpeg-static/
+  const prodPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg');
   console.log('[AudioMerger] Prod FFmpeg path:', prodPath);
   return prodPath;
 }

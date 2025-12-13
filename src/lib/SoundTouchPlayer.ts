@@ -42,8 +42,8 @@ export class SoundTouchPlayer {
     // Clean up previous instance
     this.dispose();
 
-    // Create audio context (must be after user gesture)
-    this.audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    // Create audio context with explicit 44100 Hz sample rate to match recordings
+    this.audioContext = new AudioContext({ sampleRate: 44100 });
     this.gainNode = this.audioContext.createGain();
     this.gainNode.connect(this.audioContext.destination);
 
