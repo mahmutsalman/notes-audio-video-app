@@ -1143,6 +1143,13 @@ export default function RecordingPage() {
             onClick={(e) => e.stopPropagation()}
           />
 
+          {/* Caption */}
+          {images[selectedImageIndex].caption && (
+            <p className="absolute bottom-4 left-0 right-0 text-sm text-white/90 dark:text-white/80 text-center italic font-light max-w-2xl mx-auto px-4">
+              {images[selectedImageIndex].caption}
+            </p>
+          )}
+
           {/* Next button */}
           {selectedImageIndex < images.length - 1 && (
             <button
@@ -1178,6 +1185,16 @@ export default function RecordingPage() {
             className="max-w-full max-h-full"
             onClick={(e) => e.stopPropagation()}
           />
+
+          {/* Caption */}
+          {(() => {
+            const video = videos.find(v => v.file_path === selectedVideo);
+            return video?.caption ? (
+              <p className="absolute bottom-16 left-0 right-0 text-sm text-white/90 dark:text-white/80 text-center italic font-light max-w-2xl mx-auto px-4">
+                {video.caption}
+              </p>
+            ) : null;
+          })()}
         </div>
       )}
 
@@ -1222,6 +1239,13 @@ export default function RecordingPage() {
             onClick={(e) => e.stopPropagation()}
           />
 
+          {/* Caption */}
+          {activeDurationImages[selectedDurationImageIndex].caption && (
+            <p className="absolute bottom-4 left-0 right-0 text-sm text-white/90 dark:text-white/80 text-center italic font-light max-w-2xl mx-auto px-4">
+              {activeDurationImages[selectedDurationImageIndex].caption}
+            </p>
+          )}
+
           {/* Next button */}
           {selectedDurationImageIndex < activeDurationImages.length - 1 && (
             <button
@@ -1257,6 +1281,16 @@ export default function RecordingPage() {
             className="max-w-full max-h-full"
             onClick={(e) => e.stopPropagation()}
           />
+
+          {/* Caption */}
+          {(() => {
+            const video = activeDurationVideos.find(v => v.file_path === selectedDurationVideoPath);
+            return video?.caption ? (
+              <p className="absolute bottom-16 left-0 right-0 text-sm text-white/90 dark:text-white/80 text-center italic font-light max-w-2xl mx-auto px-4">
+                {video.caption}
+              </p>
+            ) : null;
+          })()}
         </div>
       )}
 
