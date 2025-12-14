@@ -34,6 +34,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   const loopRegionRef = useRef<LoopRegion | null>(null);
   const activeSoundIdRef = useRef<number | null>(null); // Track specific Howl sound instance for seeking
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const progressBarRef = useRef<HTMLDivElement | null>(null); // For click-to-seek calculations
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
@@ -42,6 +43,10 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   const [loopRegion, setLoopRegionState] = useState<LoopRegion | null>(null);
   const [playbackRate, setPlaybackRateState] = useState(1);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [hoverTime, setHoverTime] = useState<number | null>(null); // For hover preview
+  const [isDragging, setIsDragging] = useState(false); // For drag-to-seek
+  const [dragTime, setDragTime] = useState<number | null>(null); // For drag-to-seek preview
+  const [isHovering, setIsHovering] = useState(false); // For hover visual feedback
 
   // DEBUG: Track what was requested vs what's actually happening
   const [debugInfo, setDebugInfo] = useState<{
@@ -437,14 +442,26 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     isLoaded,
   }), [togglePlay, setLoopRegion, clearLoopRegion, loopRegion, isLoaded]);
 
-  const handleSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const time = parseFloat(e.target.value);
+  const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!progressBarRef.current || duration === 0 || !isLoaded || isDragging) return;
+
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, x / rect.width));
+    const targetTime = percentage * duration;
+
+    // CRITICAL: Pause before seeking to prevent dual audio
+    const wasPlaying = isPlaying;
 
     // Handle SoundTouchPlayer
     const soundTouch = soundTouchRef.current;
     if (soundTouch) {
-      soundTouch.seek(time);
-      setCurrentTime(time);
+      if (wasPlaying) soundTouch.pause();
+      soundTouch.seek(targetTime);
+      setCurrentTime(targetTime);
+      if (wasPlaying) {
+        setTimeout(() => soundTouch.play(), 50);
+      }
       return;
     }
 
@@ -453,9 +470,227 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     if (!howl) return;
 
     const id = activeSoundIdRef.current ?? undefined;
-    howl.seek(time, id);
-    setCurrentTime(time);
+    if (wasPlaying) howl.pause();
+    howl.seek(targetTime, id);
+    setCurrentTime(targetTime);
+    if (wasPlaying) {
+      setTimeout(() => {
+        const newId = howl.play();
+        activeSoundIdRef.current = typeof newId === 'number' ? newId : null;
+      }, 50);
+    }
+  }, [duration, isPlaying, isLoaded, isDragging]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!progressBarRef.current || duration === 0 || !isLoaded) return;
+
+    setIsDragging(true);
+
+    // Calculate initial position
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, x / rect.width));
+    setDragTime(percentage * duration);
+
+    // Pause during drag to prevent audio overlap
+    if (soundTouchRef.current && isPlaying) {
+      soundTouchRef.current.pause();
+    }
+    if (howlRef.current && isPlaying) {
+      howlRef.current.pause();
+    }
+  }, [duration, isPlaying, isLoaded]);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging || !progressBarRef.current || duration === 0) return;
+
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, x / rect.width));
+    const targetTime = percentage * duration;
+    setDragTime(targetTime);
+    setCurrentTime(targetTime); // Live preview during drag
+  }, [isDragging, duration]);
+
+  const handleMouseUp = useCallback(() => {
+    if (!isDragging || dragTime === null) return;
+
+    setIsDragging(false);
+
+    // Seek to final position
+    const soundTouch = soundTouchRef.current;
+    if (soundTouch) {
+      soundTouch.seek(dragTime);
+      if (isPlaying) {
+        setTimeout(() => soundTouch.play(), 50);
+      }
+    }
+
+    const howl = howlRef.current;
+    if (howl) {
+      const id = activeSoundIdRef.current ?? undefined;
+      howl.seek(dragTime, id);
+      if (isPlaying) {
+        setTimeout(() => {
+          const newId = howl.play();
+          activeSoundIdRef.current = typeof newId === 'number' ? newId : null;
+        }, 50);
+      }
+    }
+
+    setDragTime(null);
+  }, [isDragging, dragTime, isPlaying]);
+
+  // Hover handlers for visual feedback
+  const handleMouseEnter = useCallback(() => {
+    setIsHovering(true);
   }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsHovering(false);
+    setHoverTime(null);
+  }, []);
+
+  const handleMouseMoveHover = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!progressBarRef.current || duration === 0) return;
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, x / rect.width));
+    setHoverTime(percentage * duration);
+  }, [duration]);
+
+  // Touch handlers for mobile devices
+  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (!progressBarRef.current || duration === 0 || !isLoaded) return;
+    e.preventDefault(); // Prevent scroll
+
+    const touch = e.touches[0];
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, x / rect.width));
+
+    setIsDragging(true);
+    setDragTime(percentage * duration);
+
+    // Pause during drag to prevent audio overlap
+    if (soundTouchRef.current && isPlaying) {
+      soundTouchRef.current.pause();
+    }
+    if (howlRef.current && isPlaying) {
+      howlRef.current.pause();
+    }
+  }, [duration, isPlaying, isLoaded]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isDragging || !progressBarRef.current || duration === 0) return;
+
+    const touch = e.touches[0];
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, x / rect.width));
+    const targetTime = percentage * duration;
+
+    setDragTime(targetTime);
+    setCurrentTime(targetTime); // Live preview
+  }, [isDragging, duration]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (!isDragging || dragTime === null) return;
+
+    setIsDragging(false);
+
+    // Seek to final position
+    const soundTouch = soundTouchRef.current;
+    if (soundTouch) {
+      soundTouch.seek(dragTime);
+      if (isPlaying) {
+        setTimeout(() => soundTouch.play(), 50);
+      }
+    }
+
+    const howl = howlRef.current;
+    if (howl) {
+      const id = activeSoundIdRef.current ?? undefined;
+      howl.seek(dragTime, id);
+      if (isPlaying) {
+        setTimeout(() => {
+          const newId = howl.play();
+          activeSoundIdRef.current = typeof newId === 'number' ? newId : null;
+        }, 50);
+      }
+    }
+
+    setDragTime(null);
+  }, [isDragging, dragTime, isPlaying]);
+
+  // Keyboard navigation handler
+  const handleProgressKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!duration || !isLoaded) return;
+
+    let seekDelta = 0;
+    switch (e.key) {
+      case 'ArrowLeft':
+        seekDelta = -5; // 5 seconds back
+        break;
+      case 'ArrowRight':
+        seekDelta = 5; // 5 seconds forward
+        break;
+      case 'Home':
+        seekDelta = -currentTime; // Jump to start
+        break;
+      case 'End':
+        seekDelta = duration - currentTime; // Jump to end
+        break;
+      default:
+        return; // Don't prevent default for other keys
+    }
+
+    e.preventDefault();
+
+    const targetTime = Math.max(0, Math.min(duration, currentTime + seekDelta));
+
+    // Same pause-seek-resume pattern
+    const wasPlaying = isPlaying;
+
+    // Handle SoundTouchPlayer
+    const soundTouch = soundTouchRef.current;
+    if (soundTouch) {
+      if (wasPlaying) soundTouch.pause();
+      soundTouch.seek(targetTime);
+      setCurrentTime(targetTime);
+      if (wasPlaying) {
+        setTimeout(() => soundTouch.play(), 50);
+      }
+      return;
+    }
+
+    // Handle Howler
+    const howl = howlRef.current;
+    if (!howl) return;
+
+    const id = activeSoundIdRef.current ?? undefined;
+    if (wasPlaying) howl.pause();
+    howl.seek(targetTime, id);
+    setCurrentTime(targetTime);
+    if (wasPlaying) {
+      setTimeout(() => {
+        const newId = howl.play();
+        activeSoundIdRef.current = typeof newId === 'number' ? newId : null;
+      }, 50);
+    }
+  }, [duration, currentTime, isPlaying, isLoaded]);
+
+  // Attach global event listeners for drag
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, handleMouseMove, handleMouseUp]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
@@ -501,8 +736,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
       )}
 
       <div
-        onClick={togglePlay}
-        className={`flex items-center gap-4 p-4 rounded-lg cursor-pointer select-none
+        className={`flex items-center gap-4 p-4 rounded-lg select-none
                    bg-gray-100 dark:bg-dark-hover
                    shadow-[0_4px_0_0_rgba(0,0,0,0.15)] dark:shadow-[0_4px_0_0_rgba(0,0,0,0.4)]
                    active:translate-y-1 active:shadow-none
@@ -510,31 +744,78 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
                    ${isPressed ? 'translate-y-1 shadow-none' : ''}`}
       >
       {/* Play/Pause button */}
-      <div
+      <button
+        type="button"
+        onClick={togglePlay}
+        aria-label={isPlaying ? 'Pause' : 'Play'}
+        aria-pressed={isPlaying}
         className={`w-12 h-12 text-white rounded-full
                    flex items-center justify-center text-xl
-                   flex-shrink-0 ${loopRegion ? 'bg-primary-500 ring-2 ring-primary-300' : 'bg-primary-600'}`}
+                   flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+                   ${loopRegion ? 'bg-primary-500 ring-2 ring-primary-300' : 'bg-primary-600'}`}
       >
         {loopRegion ? '🔁' : isPlaying ? '⏸️' : '▶️'}
-      </div>
+      </button>
 
       {/* Progress and time */}
       <div className="flex-1 min-w-0">
         {/* Progress bar */}
-        <div className="relative h-2 bg-gray-200 dark:bg-dark-border rounded-full overflow-hidden mb-1">
+        <div
+          ref={progressBarRef}
+          role="slider"
+          aria-label="Seek audio position"
+          aria-valuemin={0}
+          aria-valuemax={Math.floor(duration)}
+          aria-valuenow={Math.floor(currentTime)}
+          aria-valuetext={`${formatDuration(Math.floor(currentTime))} of ${formatDuration(Math.floor(duration))}`}
+          tabIndex={0}
+          onClick={handleProgressClick}
+          onMouseDown={handleMouseDown}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          onMouseMove={handleMouseMoveHover}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+          onKeyDown={handleProgressKeyDown}
+          className={`relative bg-gray-200 dark:bg-dark-border rounded-full cursor-pointer group transition-all mb-1 touch-none
+                      focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+                      ${isHovering || isDragging ? 'h-3' : 'h-2'}`}
+        >
+          {/* Progress fill */}
           <div
             className="absolute h-full bg-primary-600 rounded-full transition-all"
             style={{ width: `${progress}%` }}
           />
-          <input
-            type="range"
-            min="0"
-            max={duration || 0}
-            value={currentTime}
-            onChange={handleSeek}
-            onClick={(e) => e.stopPropagation()}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          />
+
+          {/* Hover preview indicator */}
+          {isHovering && hoverTime !== null && !isDragging && (
+            <div
+              className="absolute top-0 w-0.5 h-full bg-primary-400/50"
+              style={{ left: `${(hoverTime / duration) * 100}%` }}
+            />
+          )}
+
+          {/* Scrubber handle - appears on hover or drag */}
+          {(isHovering || isDragging) && (
+            <div
+              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white dark:bg-gray-200
+                         rounded-full shadow-md ring-2 ring-primary-600 transition-all"
+              style={{ left: `${progress}%`, marginLeft: '-6px' }}
+            />
+          )}
+
+          {/* Time tooltip */}
+          {isHovering && hoverTime !== null && !isDragging && (
+            <div
+              className="absolute -top-8 -translate-x-1/2 bg-gray-900 dark:bg-gray-700
+                         text-white text-xs px-2 py-1 rounded pointer-events-none whitespace-nowrap"
+              style={{ left: `${(hoverTime / duration) * 100}%` }}
+            >
+              {formatDuration(Math.floor(hoverTime))}
+            </div>
+          )}
         </div>
 
         {/* Time display */}
