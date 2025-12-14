@@ -181,6 +181,23 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
         timerRef.current = null;
       }
 
+      // Auto-complete pending mark if recording is stopped while marking
+      if (pendingMarkStart !== null) {
+        // Calculate final elapsed time in seconds
+        const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+        const endTime = Math.floor(elapsed / 1000);
+
+        if (endTime > pendingMarkStart) {
+          setCompletedMarks(prev => [...prev, {
+            start: pendingMarkStart,
+            end: endTime,
+            note: pendingMarkNote.trim() || undefined
+          }]);
+        }
+        setPendingMarkStart(null);
+        setPendingMarkNote('');
+      }
+
       mediaRecorder.onstop = async () => {
         // Create blob from chunks
         const rawBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
@@ -226,7 +243,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
 
       mediaRecorder.stop();
     });
-  }, []);
+  }, [pendingMarkStart, pendingMarkNote]);
 
   const pauseRecording = useCallback(() => {
     const mediaRecorder = mediaRecorderRef.current;
