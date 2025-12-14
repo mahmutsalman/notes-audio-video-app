@@ -94,9 +94,12 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     // Reset loaded state when src changes
     setIsLoaded(false);
 
-    console.log(`[AudioPlayer] Initializing player: ${useSoundTouch ? 'SoundTouchPlayer' : 'Howler'} | Speed: ${playbackRate}x | WebM: ${isWebmSource}`);
+    console.log(`[AudioPlayer] Initializing player: ${useSoundTouch ? 'SoundTouchPlayer (ScriptProcessorNode)' : 'Howler'} | Speed: ${playbackRate}x | WebM: ${isWebmSource}`);
 
     // Use SoundTouchPlayer for WebM/blob sources (pitch preservation)
+    // NOTE: Uses deprecated ScriptProcessorNode API which may cause periodic crackling
+    // due to main-thread audio processing. Modern AudioWorklet alternatives have
+    // compatibility issues with buffered audio playback (see investigation doc).
     if (useSoundTouch) {
       const player = new SoundTouchPlayer({
         onTimeUpdate: (time) => {
