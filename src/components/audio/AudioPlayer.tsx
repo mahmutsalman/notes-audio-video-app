@@ -769,7 +769,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
 
       {/* Progress and time */}
       <div className="flex-1 min-w-0">
-        {/* Progress bar */}
+        {/* Progress bar with expanded clickable area */}
         <div
           ref={progressBarRef}
           role="slider"
@@ -789,43 +789,46 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
           onTouchEnd={handleTouchEnd}
           onTouchCancel={handleTouchEnd}
           onKeyDown={handleProgressKeyDown}
-          className={`relative bg-gray-200 dark:bg-dark-border rounded-full cursor-pointer group transition-all mb-1 touch-none
-                      focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
-                      ${isHovering || isDragging ? 'h-3' : 'h-2'}`}
+          className="relative py-2 -my-2 mb-1 cursor-pointer group touch-none
+                     focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
         >
-          {/* Progress fill */}
-          <div
-            className="absolute h-full bg-primary-600 rounded-full transition-all"
-            style={{ width: `${progress}%` }}
-          />
-
-          {/* Hover preview indicator */}
-          {isHovering && hoverTime !== null && !isDragging && (
+          {/* Visual progress bar */}
+          <div className={`relative bg-gray-200 dark:bg-dark-border rounded-full transition-all
+                          ${isHovering || isDragging ? 'h-3' : 'h-2'}`}>
+            {/* Progress fill */}
             <div
-              className="absolute top-0 w-0.5 h-full bg-primary-400/50"
-              style={{ left: `${(hoverTime / duration) * 100}%` }}
+              className="absolute h-full bg-primary-600 rounded-full transition-all"
+              style={{ width: `${progress}%` }}
             />
-          )}
 
-          {/* Scrubber handle - appears on hover or drag */}
-          {(isHovering || isDragging) && (
-            <div
-              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white dark:bg-gray-200
-                         rounded-full shadow-md ring-2 ring-primary-600 transition-all"
-              style={{ left: `${progress}%`, marginLeft: '-6px' }}
-            />
-          )}
+            {/* Hover preview indicator */}
+            {isHovering && hoverTime !== null && !isDragging && (
+              <div
+                className="absolute top-0 w-0.5 h-full bg-primary-400/50"
+                style={{ left: `${(hoverTime / duration) * 100}%` }}
+              />
+            )}
 
-          {/* Time tooltip */}
-          {isHovering && hoverTime !== null && !isDragging && (
-            <div
-              className="absolute -top-8 -translate-x-1/2 bg-gray-900 dark:bg-gray-700
-                         text-white text-xs px-2 py-1 rounded pointer-events-none whitespace-nowrap"
-              style={{ left: `${(hoverTime / duration) * 100}%` }}
-            >
-              {formatDuration(Math.floor(hoverTime))}
-            </div>
-          )}
+            {/* Scrubber handle - appears on hover or drag */}
+            {(isHovering || isDragging) && (
+              <div
+                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white dark:bg-gray-200
+                           rounded-full shadow-md ring-2 ring-primary-600 transition-all"
+                style={{ left: `${progress}%`, marginLeft: '-6px' }}
+              />
+            )}
+
+            {/* Time tooltip */}
+            {isHovering && hoverTime !== null && !isDragging && (
+              <div
+                className="absolute -top-8 -translate-x-1/2 bg-gray-900 dark:bg-gray-700
+                           text-white text-xs px-2 py-1 rounded pointer-events-none whitespace-nowrap"
+                style={{ left: `${(hoverTime / duration) * 100}%` }}
+              >
+                {formatDuration(Math.floor(hoverTime))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Time display */}
