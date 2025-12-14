@@ -35,6 +35,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   const activeSoundIdRef = useRef<number | null>(null); // Track specific Howl sound instance for seeking
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const progressBarRef = useRef<HTMLDivElement | null>(null); // For click-to-seek calculations
+  const wasPlayingBeforeDragRef = useRef<boolean>(false); // Track play state before drag starts
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
@@ -445,6 +446,8 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressBarRef.current || duration === 0 || !isLoaded || isDragging) return;
 
+    e.stopPropagation(); // Prevent event bubbling to parent
+
     const rect = progressBarRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const percentage = Math.max(0, Math.min(1, x / rect.width));
@@ -470,19 +473,34 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     if (!howl) return;
 
     const id = activeSoundIdRef.current ?? undefined;
-    if (wasPlaying) howl.pause();
+    if (wasPlaying && id !== undefined) {
+      howl.pause(id);
+    }
+
+    // Seek on current instance
     howl.seek(targetTime, id);
     setCurrentTime(targetTime);
+
+    // If was playing, resume with proper seeking
     if (wasPlaying) {
-      setTimeout(() => {
-        const newId = howl.play();
-        activeSoundIdRef.current = typeof newId === 'number' ? newId : null;
-      }, 50);
+      const newId = howl.play();
+      const finalId = typeof newId === 'number' ? newId : null;
+      activeSoundIdRef.current = finalId;
+
+      // Ensure seek is applied to the new instance
+      if (finalId !== null) {
+        requestAnimationFrame(() => {
+          howl.seek(targetTime, finalId);
+          setCurrentTime(targetTime);
+        });
+      }
     }
   }, [duration, isPlaying, isLoaded, isDragging]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressBarRef.current || duration === 0 || !isLoaded) return;
+
+    e.stopPropagation(); // Prevent event bubbling to parent
 
     // Don't set isDragging yet - wait for actual mouse movement
     // This allows click-to-seek to work without pausing
@@ -500,13 +518,18 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
 
     // First time moving - start dragging and pause audio
     if (!isDragging) {
+      // Capture play state BEFORE any changes
+      wasPlayingBeforeDragRef.current = isPlaying;
+
       setIsDragging(true);
+
       // Pause audio when drag actually starts (not on mousedown)
       if (soundTouchRef.current && isPlaying) {
         soundTouchRef.current.pause();
       }
       if (howlRef.current && isPlaying) {
-        howlRef.current.pause();
+        const id = activeSoundIdRef.current ?? undefined;
+        howlRef.current.pause(id);
       }
     }
 
@@ -530,7 +553,8 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
       const soundTouch = soundTouchRef.current;
       if (soundTouch) {
         soundTouch.seek(dragTime);
-        if (isPlaying) {
+        setCurrentTime(dragTime);
+        if (wasPlayingBeforeDragRef.current) {
           setTimeout(() => soundTouch.play(), 50);
         }
       }
@@ -538,31 +562,49 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
       const howl = howlRef.current;
       if (howl) {
         const id = activeSoundIdRef.current ?? undefined;
+
+        // Seek on current instance
         howl.seek(dragTime, id);
-        if (isPlaying) {
-          setTimeout(() => {
-            const newId = howl.play();
-            activeSoundIdRef.current = typeof newId === 'number' ? newId : null;
-          }, 50);
+        setCurrentTime(dragTime);
+
+        // If was playing BEFORE drag, resume with proper seeking
+        if (wasPlayingBeforeDragRef.current) {
+          const newId = howl.play();
+          const finalId = typeof newId === 'number' ? newId : null;
+          activeSoundIdRef.current = finalId;
+
+          // Ensure seek is applied to the new instance
+          if (finalId !== null) {
+            requestAnimationFrame(() => {
+              howl.seek(dragTime, finalId);
+              setCurrentTime(dragTime);
+            });
+          }
         }
       }
     }
 
     setDragTime(null);
+    wasPlayingBeforeDragRef.current = false; // Reset for next drag
   }, [isDragging, dragTime, isPlaying]);
 
   // Hover handlers for visual feedback
-  const handleMouseEnter = useCallback(() => {
+  const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation(); // Prevent event bubbling
     setIsHovering(true);
   }, []);
 
-  const handleMouseLeave = useCallback(() => {
+  const handleMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation(); // Prevent event bubbling
     setIsHovering(false);
     setHoverTime(null);
   }, []);
 
   const handleMouseMoveHover = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressBarRef.current || duration === 0) return;
+
+    e.stopPropagation(); // Prevent event bubbling
+
     const rect = progressBarRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const percentage = Math.max(0, Math.min(1, x / rect.width));
@@ -679,14 +721,27 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     if (!howl) return;
 
     const id = activeSoundIdRef.current ?? undefined;
-    if (wasPlaying) howl.pause();
+    if (wasPlaying && id !== undefined) {
+      howl.pause(id);
+    }
+
+    // Seek on current instance
     howl.seek(targetTime, id);
     setCurrentTime(targetTime);
+
+    // If was playing, resume with proper seeking
     if (wasPlaying) {
-      setTimeout(() => {
-        const newId = howl.play();
-        activeSoundIdRef.current = typeof newId === 'number' ? newId : null;
-      }, 50);
+      const newId = howl.play();
+      const finalId = typeof newId === 'number' ? newId : null;
+      activeSoundIdRef.current = finalId;
+
+      // Ensure seek is applied to the new instance
+      if (finalId !== null) {
+        requestAnimationFrame(() => {
+          howl.seek(targetTime, finalId);
+          setCurrentTime(targetTime);
+        });
+      }
     }
   }, [duration, currentTime, isPlaying, isLoaded]);
 
