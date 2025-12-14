@@ -16,10 +16,20 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
   const [phase, setPhase] = useState<'recording' | 'review'>('recording');
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isPasting, setIsPasting] = useState(false);
+  const [pasteSuccess, setPasteSuccess] = useState(false);
   const [selectedImages, setSelectedImages] = useState<{ data: ArrayBuffer; extension: string }[]>([]);
   const [selectedVideos, setSelectedVideos] = useState<string[]>([]); // File paths from clipboard
 
   const recorder = useVoiceRecorder();
+
+  // Auto-hide success indicator after 1.5 seconds
+  useEffect(() => {
+    if (pasteSuccess) {
+      const timer = setTimeout(() => setPasteSuccess(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [pasteSuccess]);
 
   const handleOpen = () => {
     setIsOpen(true);
@@ -81,44 +91,96 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
     }
   };
 
-  // Handle Cmd+V to add image to the last duration mark (works in both recording and review phases)
+  // Handle Cmd+V to add image to the current mark (priority: pending > last completed)
   const handlePasteToMark = useCallback(async () => {
-    if (recorder.completedMarks.length === 0) return false;
-
-    try {
-      const result = await window.electronAPI.clipboard.readImage();
-      if (result.success && result.buffer) {
-        const added = recorder.addImageToLastMark({
-          data: result.buffer,
-          extension: result.extension || 'png'
-        });
-        return added;
+    // Priority 1: If marking (pending mark exists), add to pending mark
+    if (recorder.isMarking) {
+      try {
+        const result = await window.electronAPI.clipboard.readImage();
+        if (result.success && result.buffer) {
+          const added = recorder.addImageToPendingMark({
+            data: result.buffer,
+            extension: result.extension || 'png'
+          });
+          return added;
+        }
+      } catch (error) {
+        console.error('Failed to read clipboard for pending mark:', error);
       }
-    } catch (error) {
-      console.error('Failed to read clipboard for mark:', error);
+      return false;
     }
+
+    // Priority 2: If no pending mark but completed marks exist, add to last completed mark
+    if (recorder.completedMarks.length > 0) {
+      try {
+        const result = await window.electronAPI.clipboard.readImage();
+        if (result.success && result.buffer) {
+          const added = recorder.addImageToLastMark({
+            data: result.buffer,
+            extension: result.extension || 'png'
+          });
+          return added;
+        }
+      } catch (error) {
+        console.error('Failed to read clipboard for mark:', error);
+      }
+      return false;
+    }
+
+    // No marks to paste to
     return false;
   }, [recorder]);
 
-  // Keyboard listener for Cmd+V to add image to last mark (works in both recording and review phases)
+  // Keyboard listener for Cmd+V to add image to current mark (works in both recording and review phases)
   useEffect(() => {
     if (!isOpen) return;
-    if (recorder.completedMarks.length === 0) return;
+    // Only activate if there's a pending mark or completed marks
+    if (!recorder.isMarking && recorder.completedMarks.length === 0) return;
 
     const handleKeyDown = async (e: KeyboardEvent) => {
       // Check for Cmd+V (macOS) or Ctrl+V (Windows/Linux)
-      if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
-        const added = await handlePasteToMark();
-        if (added) {
-          e.preventDefault();
-          e.stopPropagation();
+      if ((e.metaKey || e.ctrlKey) && e.key === 'v' && !isPasting) {
+        setIsPasting(true);
+        try {
+          const added = await handlePasteToMark();
+          if (added) {
+            e.preventDefault();
+            e.stopPropagation();
+            setPasteSuccess(true);
+          }
+        } finally {
+          setIsPasting(false);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, recorder.completedMarks.length, handlePasteToMark]);
+  }, [isOpen, recorder.isMarking, recorder.completedMarks.length, isPasting, handlePasteToMark]);
+
+  // Handle paste to a specific mark by start time
+  const handlePasteToSpecificMark = useCallback(async (startTime: number) => {
+    if (isPasting) return false;
+    setIsPasting(true);
+    try {
+      const result = await window.electronAPI.clipboard.readImage();
+      if (result.success && result.buffer) {
+        const added = recorder.addImageToMarkByStart(startTime, {
+          data: result.buffer,
+          extension: result.extension || 'png'
+        });
+        if (added) {
+          setPasteSuccess(true);
+        }
+        return added;
+      }
+    } catch (error) {
+      console.error('Failed to read clipboard for mark:', error);
+    } finally {
+      setIsPasting(false);
+    }
+    return false;
+  }, [recorder, isPasting]);
 
   const handleSave = async () => {
     if (!recorder.audioBlob) return;
@@ -134,6 +196,8 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
         audio_duration: recorder.duration,
         notes_content: notes || null,
       });
+
+      console.log('[QuickRecord] Recording created with ID:', recording.id);
 
       // Save the audio file
       const arrayBuffer = await recorder.audioBlob.arrayBuffer();
@@ -154,7 +218,18 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
       }
 
       // Save duration marks and their images
+      console.log('[QuickRecord] Saving duration marks. Total marks:', recorder.completedMarks.length);
+      console.log('[QuickRecord] Completed marks data:', recorder.completedMarks);
+
       for (const mark of recorder.completedMarks) {
+        console.log('[QuickRecord] Processing mark:', {
+          start: mark.start,
+          end: mark.end,
+          note: mark.note,
+          imageCount: mark.images?.length || 0,
+          hasImages: !!(mark.images && mark.images.length > 0)
+        });
+
         const duration = await window.electronAPI.durations.create({
           recording_id: recording.id,
           start_time: mark.start,
@@ -162,15 +237,31 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
           note: mark.note ?? null,
         });
 
+        console.log('[QuickRecord] Duration created with ID:', duration.id);
+
         // Save images attached to this mark
         if (mark.images && mark.images.length > 0) {
-          for (const image of mark.images) {
-            await window.electronAPI.durationImages.addFromClipboard(
-              duration.id,
-              image.data,
-              image.extension
-            );
+          console.log(`[QuickRecord] Saving ${mark.images.length} images for duration ${duration.id}`);
+          for (let i = 0; i < mark.images.length; i++) {
+            const image = mark.images[i];
+            console.log(`[QuickRecord] Saving image ${i + 1}/${mark.images.length}:`, {
+              size: image.data.byteLength,
+              extension: image.extension
+            });
+
+            try {
+              const savedImage = await window.electronAPI.durationImages.addFromClipboard(
+                duration.id,
+                image.data,
+                image.extension
+              );
+              console.log(`[QuickRecord] Image ${i + 1} saved successfully:`, savedImage);
+            } catch (err) {
+              console.error(`[QuickRecord] Failed to save image ${i + 1}:`, err);
+            }
           }
+        } else {
+          console.log('[QuickRecord] No images to save for this mark');
         }
       }
 
@@ -220,16 +311,26 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                     Marked Sections ({recorder.completedMarks.length})
                   </span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    ⌘V adds image to last mark
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {pasteSuccess && (
+                      <span className="text-xs text-green-600 dark:text-green-400 font-medium animate-pulse">
+                        ✓ Image added
+                      </span>
+                    )}
+                    {(recorder.isMarking || recorder.completedMarks.length > 0) && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {recorder.isMarking
+                          ? "⌘V adds image to current mark"
+                          : "⌘V adds image to last mark"}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   {recorder.completedMarks.map((mark, index) => {
                     const imageCount = mark.images?.length || 0;
-                    const isLastMark = index === recorder.completedMarks.length - 1;
                     return (
-                      <div key={index} className="flex items-center gap-2 text-sm">
+                      <div key={index} className="group flex items-center gap-2 text-sm">
                         <span className="text-gray-600 dark:text-gray-400">
                           {formatDuration(mark.start)} → {formatDuration(mark.end)}
                         </span>
@@ -237,17 +338,17 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                           <span className="px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-xs font-medium">
                             📷 {imageCount}
                           </span>
-                        ) : isLastMark ? (
-                          <button
-                            onClick={() => handlePasteToMark()}
-                            className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-dark-border text-gray-600 dark:text-gray-400 hover:bg-primary-100 dark:hover:bg-primary-900/50 hover:text-primary-700 dark:hover:text-primary-300 rounded transition-colors"
-                          >
-                            📋 Paste Image
-                          </button>
                         ) : (
-                          <span className="text-xs text-gray-400 dark:text-gray-500 italic">
-                            No images
-                          </span>
+                          <button
+                            onClick={() => handlePasteToSpecificMark(mark.start)}
+                            disabled={isPasting}
+                            className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-dark-border text-gray-600 dark:text-gray-400
+                                       opacity-0 group-hover:opacity-100 transition-opacity
+                                       hover:bg-primary-100 dark:hover:bg-primary-900/50 hover:text-primary-700 dark:hover:text-primary-300
+                                       rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            📋 Paste
+                          </button>
                         )}
                         {mark.note && (
                           <span className="text-gray-500 dark:text-gray-400 text-xs">
@@ -288,9 +389,18 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                     Marked Sections ({recorder.completedMarks.length})
                   </span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    Press ⌘V to add image to last mark
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {pasteSuccess && (
+                      <span className="text-xs text-green-600 dark:text-green-400 font-medium animate-pulse">
+                        ✓ Image added
+                      </span>
+                    )}
+                    {recorder.completedMarks.length > 0 && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        Press ⌘V or hover to paste images
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {recorder.completedMarks.map((mark, index) => {
@@ -298,15 +408,26 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                     return (
                       <div
                         key={index}
-                        className="relative px-3 py-1.5 bg-gray-100 dark:bg-dark-hover rounded-lg text-sm"
+                        className="group relative px-3 py-1.5 bg-gray-100 dark:bg-dark-hover rounded-lg text-sm"
                       >
                         <span className="text-gray-700 dark:text-gray-300">
                           {formatDuration(mark.start)} → {formatDuration(mark.end)}
                         </span>
-                        {imageCount > 0 && (
+                        {imageCount > 0 ? (
                           <span className="ml-2 px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-xs font-medium">
                             📷 {imageCount}
                           </span>
+                        ) : (
+                          <button
+                            onClick={() => handlePasteToSpecificMark(mark.start)}
+                            disabled={isPasting}
+                            className="ml-2 px-1.5 py-0.5 text-xs bg-gray-200 dark:bg-dark-border text-gray-600 dark:text-gray-400
+                                       opacity-0 group-hover:opacity-100 transition-opacity
+                                       hover:bg-primary-100 dark:hover:bg-primary-900/50 hover:text-primary-700 dark:hover:text-primary-300
+                                       rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            📋 Paste
+                          </button>
                         )}
                         {mark.note && (
                           <span className="ml-2 text-gray-500 dark:text-gray-400 text-xs">

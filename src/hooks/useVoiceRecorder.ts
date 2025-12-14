@@ -31,12 +31,15 @@ export interface VoiceRecorderControls {
   handleMarkToggle: () => void;
   setMarkNote: (note: string) => void;
   addImageToLastMark: (image: DurationMarkImage) => boolean;  // returns true if image was added
+  addImageToPendingMark: (image: DurationMarkImage) => boolean;  // returns true if image was added to pending mark
+  addImageToMarkByStart: (startTime: number, image: DurationMarkImage) => boolean;  // returns true if mark found and image added
 }
 
 export interface UseVoiceRecorderReturn extends VoiceRecorderState, VoiceRecorderControls {
   analyserNode: AnalyserNode | null;
   pendingMarkStart: number | null;
   pendingMarkNote: string;
+  pendingMarkImages: DurationMarkImage[];
   completedMarks: DurationMark[];
   isMarking: boolean;
 }
@@ -63,6 +66,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
   // Duration marking state
   const [pendingMarkStart, setPendingMarkStart] = useState<number | null>(null);
   const [pendingMarkNote, setPendingMarkNote] = useState<string>('');
+  const [pendingMarkImages, setPendingMarkImages] = useState<DurationMarkImage[]>([]);
   const [completedMarks, setCompletedMarks] = useState<DurationMark[]>([]);
 
   // Cleanup on unmount
@@ -191,11 +195,13 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
           setCompletedMarks(prev => [...prev, {
             start: pendingMarkStart,
             end: endTime,
-            note: pendingMarkNote.trim() || undefined
+            note: pendingMarkNote.trim() || undefined,
+            images: pendingMarkImages.length > 0 ? pendingMarkImages : undefined
           }]);
         }
         setPendingMarkStart(null);
         setPendingMarkNote('');
+        setPendingMarkImages([]);
       }
 
       mediaRecorder.onstop = async () => {
@@ -243,7 +249,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
 
       mediaRecorder.stop();
     });
-  }, [pendingMarkStart, pendingMarkNote]);
+  }, [pendingMarkStart, pendingMarkNote, pendingMarkImages]);
 
   const pauseRecording = useCallback(() => {
     const mediaRecorder = mediaRecorderRef.current;
@@ -331,6 +337,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     // Reset marking state
     setPendingMarkStart(null);
     setPendingMarkNote('');
+    setPendingMarkImages([]);
     setCompletedMarks([]);
   }, [state.audioUrl]);
 
@@ -360,13 +367,15 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
         setCompletedMarks(prev => [...prev, {
           start: pendingMarkStart,
           end: currentTime,
-          note: pendingMarkNote.trim() || undefined
+          note: pendingMarkNote.trim() || undefined,
+          images: pendingMarkImages.length > 0 ? pendingMarkImages : undefined
         }]);
       }
       setPendingMarkStart(null);
       setPendingMarkNote('');
+      setPendingMarkImages([]);
     }
-  }, [state.isRecording, pendingMarkStart, pendingMarkNote, getCurrentElapsedTime]);
+  }, [state.isRecording, pendingMarkStart, pendingMarkNote, pendingMarkImages, getCurrentElapsedTime]);
 
   // Set note for the current pending mark
   const setMarkNote = useCallback((note: string) => {
@@ -390,6 +399,30 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     return true;
   }, [completedMarks.length]);
 
+  // Add an image to the pending mark (current active duration)
+  const addImageToPendingMark = useCallback((image: DurationMarkImage): boolean => {
+    if (pendingMarkStart === null) return false;
+
+    setPendingMarkImages(prev => [...prev, image]);
+    return true;
+  }, [pendingMarkStart]);
+
+  // Add an image to a specific mark identified by its start time
+  const addImageToMarkByStart = useCallback((startTime: number, image: DurationMarkImage): boolean => {
+    const markIndex = completedMarks.findIndex(mark => mark.start === startTime);
+    if (markIndex === -1) return false;
+
+    setCompletedMarks(prev => {
+      const updated = [...prev];
+      updated[markIndex] = {
+        ...updated[markIndex],
+        images: [...(updated[markIndex].images || []), image]
+      };
+      return updated;
+    });
+    return true;
+  }, [completedMarks]);
+
   return {
     ...state,
     analyserNode: analyserRef.current,
@@ -401,8 +434,11 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     handleMarkToggle,
     setMarkNote,
     addImageToLastMark,
+    addImageToPendingMark,
+    addImageToMarkByStart,
     pendingMarkStart,
     pendingMarkNote,
+    pendingMarkImages,
     completedMarks,
     isMarking: pendingMarkStart !== null,
   };

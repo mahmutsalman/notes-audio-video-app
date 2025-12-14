@@ -294,12 +294,14 @@ export default function RecordingPage() {
       setIsSeekingDuration(true);
       audioPlayerRef.current?.setLoopRegion(duration.start_time, duration.end_time);
       setActiveDurationId(duration.id);
+      console.log(`[RecordingPage] Activated duration ${duration.id}, fetching media...`);
       // Fetch images, videos, and audios for this duration if not cached
-      await Promise.all([
+      const [images, videos, audios] = await Promise.all([
         getDurationImages(duration.id),
         getDurationVideos(duration.id),
         getDurationAudios(duration.id),
       ]);
+      console.log(`[RecordingPage] Duration ${duration.id} media fetched - Images: ${images.length}, Videos: ${videos.length}, Audios: ${audios.length}`);
     }
   };
 
@@ -572,6 +574,18 @@ export default function RecordingPage() {
   const activeDurationImages = activeDurationId ? durationImagesCache[activeDurationId] ?? [] : [];
   const activeDurationVideos = activeDurationId ? durationVideosCache[activeDurationId] ?? [] : [];
   const activeDurationAudios = activeDurationId ? durationAudiosCache[activeDurationId] ?? [] : [];
+
+  // Debug: Log cache updates
+  useEffect(() => {
+    if (activeDurationId !== null) {
+      console.log(`[RecordingPage] Cache updated for duration ${activeDurationId}:`, {
+        images: activeDurationImages.length,
+        videos: activeDurationVideos.length,
+        audios: activeDurationAudios.length,
+        imagesCache: durationImagesCache[activeDurationId],
+      });
+    }
+  }, [activeDurationId, activeDurationImages.length, activeDurationVideos.length, activeDurationAudios.length, durationImagesCache]);
   useEffect(() => {
     if (selectedDurationImageIndex === null) return;
 

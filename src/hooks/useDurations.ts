@@ -78,15 +78,24 @@ export function useDurations(recordingId: number | null) {
 
   // Fetch images for a specific duration
   const getDurationImages = useCallback(async (durationId: number, force?: boolean): Promise<DurationImage[]> => {
+    // Check cache using functional update to avoid stale closure
+    let cached: DurationImage[] | undefined;
+    setDurationImagesCache(prev => {
+      cached = prev[durationId];
+      return prev; // No update needed
+    });
+
     // Return cached if available AND not forcing refresh
-    if (!force && durationImagesCache[durationId]) {
-      return durationImagesCache[durationId];
+    if (!force && cached) {
+      return cached;
     }
 
+    console.log(`[useDurations] Fetching images for duration ${durationId}`);
     const images = await window.electronAPI.durationImages.getByDuration(durationId);
+    console.log(`[useDurations] Fetched ${images.length} images for duration ${durationId}:`, images);
     setDurationImagesCache(prev => ({ ...prev, [durationId]: images }));
     return images;
-  }, [durationImagesCache]);
+  }, []); // Remove durationImagesCache from dependencies
 
   // Add image from clipboard to a duration
   const addDurationImageFromClipboard = async (durationId: number): Promise<DurationImage | null> => {
@@ -127,15 +136,24 @@ export function useDurations(recordingId: number | null) {
 
   // Fetch videos for a specific duration
   const getDurationVideos = useCallback(async (durationId: number, force?: boolean): Promise<DurationVideo[]> => {
+    // Check cache using functional update to avoid stale closure
+    let cached: DurationVideo[] | undefined;
+    setDurationVideosCache(prev => {
+      cached = prev[durationId];
+      return prev; // No update needed
+    });
+
     // Return cached if available AND not forcing refresh
-    if (!force && durationVideosCache[durationId]) {
-      return durationVideosCache[durationId];
+    if (!force && cached) {
+      return cached;
     }
 
+    console.log(`[useDurations] Fetching videos for duration ${durationId}`);
     const videos = await window.electronAPI.durationVideos.getByDuration(durationId);
+    console.log(`[useDurations] Fetched ${videos.length} videos for duration ${durationId}`);
     setDurationVideosCache(prev => ({ ...prev, [durationId]: videos }));
     return videos;
-  }, [durationVideosCache]);
+  }, []); // Remove durationVideosCache from dependencies
 
   // Add video from clipboard to a duration (reads file path from clipboard)
   const addDurationVideoFromClipboard = async (durationId: number): Promise<DurationVideo | null> => {
@@ -186,15 +204,24 @@ export function useDurations(recordingId: number | null) {
 
   // Fetch audios for a specific duration
   const getDurationAudios = useCallback(async (durationId: number, force?: boolean): Promise<DurationAudio[]> => {
+    // Check cache using functional update to avoid stale closure
+    let cached: DurationAudio[] | undefined;
+    setDurationAudiosCache(prev => {
+      cached = prev[durationId];
+      return prev; // No update needed
+    });
+
     // Return cached if available AND not forcing refresh
-    if (!force && durationAudiosCache[durationId]) {
-      return durationAudiosCache[durationId];
+    if (!force && cached) {
+      return cached;
     }
 
+    console.log(`[useDurations] Fetching audios for duration ${durationId}`);
     const audios = await window.electronAPI.durationAudios.getByDuration(durationId);
+    console.log(`[useDurations] Fetched ${audios.length} audios for duration ${durationId}`);
     setDurationAudiosCache(prev => ({ ...prev, [durationId]: audios }));
     return audios;
-  }, [durationAudiosCache]);
+  }, []); // Remove durationAudiosCache from dependencies
 
   // Add audio from buffer to a duration
   const addDurationAudioFromBuffer = async (durationId: number, audioBuffer: ArrayBuffer, extension: string = 'webm'): Promise<DurationAudio> => {
@@ -238,26 +265,41 @@ export function useDurations(recordingId: number | null) {
 
   // Fetch code snippets for a specific duration
   const getDurationCodeSnippets = useCallback(async (durationId: number, force?: boolean): Promise<DurationCodeSnippet[]> => {
+    // Check cache using functional update to avoid stale closure
+    let cached: DurationCodeSnippet[] | undefined;
+    setDurationCodeSnippetsCache(prev => {
+      cached = prev[durationId];
+      return prev; // No update needed
+    });
+
     // Return cached if available AND not forcing refresh
-    if (!force && durationCodeSnippetsCache[durationId]) {
-      return durationCodeSnippetsCache[durationId];
+    if (!force && cached) {
+      return cached;
     }
 
+    console.log(`[useDurations] Fetching code snippets for duration ${durationId}`);
     const snippets = await window.electronAPI.durationCodeSnippets.getByDuration(durationId);
+    console.log(`[useDurations] Fetched ${snippets.length} code snippets for duration ${durationId}`);
     setDurationCodeSnippetsCache(prev => ({ ...prev, [durationId]: snippets }));
     return snippets;
-  }, [durationCodeSnippetsCache]);
+  }, []); // Remove durationCodeSnippetsCache from dependencies
 
   // Add code snippet to a duration
   const addDurationCodeSnippet = async (durationId: number, data: Omit<CreateDurationCodeSnippet, 'duration_id' | 'sort_order'>): Promise<DurationCodeSnippet> => {
-    const currentSnippets = durationCodeSnippetsCache[durationId] || [];
+    // Get current snippets count for sort_order using functional update
+    let currentCount = 0;
+    setDurationCodeSnippetsCache(prev => {
+      currentCount = (prev[durationId] || []).length;
+      return prev; // No update needed
+    });
+
     const newSnippet = await window.electronAPI.durationCodeSnippets.create({
       duration_id: durationId,
       title: data.title,
       language: data.language,
       code: data.code,
       caption: data.caption,
-      sort_order: currentSnippets.length,
+      sort_order: currentCount,
     });
 
     // Update cache
