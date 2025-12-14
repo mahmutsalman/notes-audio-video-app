@@ -38,6 +38,9 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    port: parseInt(process.env.VITE_DEV_PORT || '5174', 10),
+  },
   build: {
     outDir: 'dist',
   },

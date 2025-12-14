@@ -62,7 +62,8 @@ async function createWindow(): Promise<void> {
   // Load the app
   if (isDev) {
     // In development, load from Vite dev server
-    mainWindow.loadURL('http://localhost:5173');
+    const devPort = process.env.VITE_DEV_PORT || '5174';
+    mainWindow.loadURL(`http://localhost:${devPort}`);
     mainWindow.webContents.openDevTools();
   } else {
     // In production, load the built files
