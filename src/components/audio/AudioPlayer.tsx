@@ -484,25 +484,31 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressBarRef.current || duration === 0 || !isLoaded) return;
 
-    setIsDragging(true);
-
-    // Calculate initial position
+    // Don't set isDragging yet - wait for actual mouse movement
+    // This allows click-to-seek to work without pausing
     const rect = progressBarRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const percentage = Math.max(0, Math.min(1, x / rect.width));
     setDragTime(percentage * duration);
-
-    // Pause during drag to prevent audio overlap
-    if (soundTouchRef.current && isPlaying) {
-      soundTouchRef.current.pause();
-    }
-    if (howlRef.current && isPlaying) {
-      howlRef.current.pause();
-    }
-  }, [duration, isPlaying, isLoaded]);
+  }, [duration, isLoaded]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging || !progressBarRef.current || duration === 0) return;
+    if (!progressBarRef.current || duration === 0) return;
+
+    // Only drag if dragTime was set (mouse was pressed on progress bar)
+    if (dragTime === null) return;
+
+    // First time moving - start dragging and pause audio
+    if (!isDragging) {
+      setIsDragging(true);
+      // Pause audio when drag actually starts (not on mousedown)
+      if (soundTouchRef.current && isPlaying) {
+        soundTouchRef.current.pause();
+      }
+      if (howlRef.current && isPlaying) {
+        howlRef.current.pause();
+      }
+    }
 
     const rect = progressBarRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -510,31 +516,35 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     const targetTime = percentage * duration;
     setDragTime(targetTime);
     setCurrentTime(targetTime); // Live preview during drag
-  }, [isDragging, duration]);
+  }, [isDragging, dragTime, duration, isPlaying]);
 
   const handleMouseUp = useCallback(() => {
-    if (!isDragging || dragTime === null) return;
+    // Reset drag state even if we didn't actually drag (just clicked)
+    if (dragTime === null) return;
 
-    setIsDragging(false);
+    // Only seek if we actually dragged (not just clicked)
+    if (isDragging) {
+      setIsDragging(false);
 
-    // Seek to final position
-    const soundTouch = soundTouchRef.current;
-    if (soundTouch) {
-      soundTouch.seek(dragTime);
-      if (isPlaying) {
-        setTimeout(() => soundTouch.play(), 50);
+      // Seek to final position
+      const soundTouch = soundTouchRef.current;
+      if (soundTouch) {
+        soundTouch.seek(dragTime);
+        if (isPlaying) {
+          setTimeout(() => soundTouch.play(), 50);
+        }
       }
-    }
 
-    const howl = howlRef.current;
-    if (howl) {
-      const id = activeSoundIdRef.current ?? undefined;
-      howl.seek(dragTime, id);
-      if (isPlaying) {
-        setTimeout(() => {
-          const newId = howl.play();
-          activeSoundIdRef.current = typeof newId === 'number' ? newId : null;
-        }, 50);
+      const howl = howlRef.current;
+      if (howl) {
+        const id = activeSoundIdRef.current ?? undefined;
+        howl.seek(dragTime, id);
+        if (isPlaying) {
+          setTimeout(() => {
+            const newId = howl.play();
+            activeSoundIdRef.current = typeof newId === 'number' ? newId : null;
+          }, 50);
+        }
       }
     }
 
@@ -680,9 +690,9 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     }
   }, [duration, currentTime, isPlaying, isLoaded]);
 
-  // Attach global event listeners for drag
+  // Attach global event listeners when mouse is pressed on progress bar
   useEffect(() => {
-    if (isDragging) {
+    if (dragTime !== null) {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
       return () => {
@@ -690,7 +700,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
         window.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [isDragging, handleMouseMove, handleMouseUp]);
+  }, [dragTime, handleMouseMove, handleMouseUp]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
