@@ -15,6 +15,7 @@ import NotesEditor from '../components/common/NotesEditor';
 import CodeSnippetCard from '../components/code/CodeSnippetCard';
 import CodeSnippetModal from '../components/code/CodeSnippetModal';
 import { formatDuration, formatDate, formatRelativeTime } from '../utils/formatters';
+import { getNextDurationColor, DURATION_COLORS } from '../utils/durationColors';
 import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio, CodeSnippet, DurationCodeSnippet } from '../types';
 
 export default function RecordingPage() {
@@ -96,6 +97,8 @@ export default function RecordingPage() {
   const [selectedDurationVideoPath, setSelectedDurationVideoPath] = useState<string | null>(null);
   const [isRecordingDurationAudio, setIsRecordingDurationAudio] = useState(false);
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  // Local state to track media color changes for instant visual feedback
+  const [mediaColorOverrides, setMediaColorOverrides] = useState<Record<string, DurationColor>>({});
   const [durationAudioToDelete, setDurationAudioToDelete] = useState<{
     audioId: number;
     durationId: number;
@@ -458,9 +461,60 @@ export default function RecordingPage() {
     type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio',
     item: Image | Video | DurationImage | DurationVideo | DurationAudio | Audio
   ) => {
+    // Check shift key from both React synthetic event and native event
+    const isShiftPressed = e.shiftKey || e.nativeEvent.shiftKey;
+
     e.preventDefault();
     e.stopPropagation();
+
+    // If shift key is pressed, cycle color instead of showing context menu
+    if (isShiftPressed) {
+      handleColorCycle(type, item);
+      return;
+    }
+
     setContextMenu({ type, item, x: e.clientX, y: e.clientY });
+  };
+
+  // Handle color cycling for images/videos
+  const handleColorCycle = async (
+    type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio',
+    item: Image | Video | DurationImage | DurationVideo | DurationAudio | Audio
+  ) => {
+    // Get current color from override state or original item
+    const overrideKey = `${type}-${item.id}`;
+    const currentColor = mediaColorOverrides[overrideKey] ?? ('color' in item ? item.color : null);
+    const nextColor = getNextDurationColor(currentColor);
+
+    try {
+      if (type === 'image') {
+        // Update local state immediately for instant visual feedback (no scroll jump)
+        setMediaColorOverrides(prev => ({ ...prev, [overrideKey]: nextColor }));
+        // Update database in background
+        await window.electronAPI.media.updateImageColor(item.id, nextColor);
+      } else if (type === 'video') {
+        // Update local state immediately for instant visual feedback (no scroll jump)
+        setMediaColorOverrides(prev => ({ ...prev, [overrideKey]: nextColor }));
+        // Update database in background
+        await window.electronAPI.media.updateVideoColor(item.id, nextColor);
+      } else if (type === 'durationImage' && activeDurationId) {
+        await window.electronAPI.durationImages.updateColor(item.id, nextColor);
+        await getDurationImages(activeDurationId, true);
+      } else if (type === 'durationVideo' && activeDurationId) {
+        await window.electronAPI.durationVideos.updateColor(item.id, nextColor);
+        await getDurationVideos(activeDurationId, true);
+      }
+    } catch (error) {
+      console.error('Failed to update color:', error);
+      // Revert local state on error
+      if (type === 'image' || type === 'video') {
+        setMediaColorOverrides(prev => {
+          const updated = { ...prev };
+          delete updated[overrideKey];
+          return updated;
+        });
+      }
+    }
   };
 
   // Open caption modal
@@ -817,9 +871,19 @@ export default function RecordingPage() {
             </button>
           </div>
           <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
-            {activeDurationImages.map((img, index) => (
+            {activeDurationImages.map((img, index) => {
+              const effectiveColor = mediaColorOverrides[`durationImage-${img.id}`] ?? img.color;
+              const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
+              return (
               <div key={img.id} className="group">
                 <div className="relative">
+                  {/* Left color indicator */}
+                  {colorConfig && (
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg z-10"
+                      style={{ backgroundColor: colorConfig.borderColor }}
+                    />
+                  )}
                   <div
                     className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
                     onClick={() => setSelectedDurationImageIndex(index)}
@@ -831,11 +895,18 @@ export default function RecordingPage() {
                       className="w-full h-full object-cover"
                     />
                   </div>
+                  {/* Right color indicator */}
+                  {colorConfig && (
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-1 rounded-r-lg z-10"
+                      style={{ backgroundColor: colorConfig.borderColor }}
+                    />
+                  )}
                   <button
                     onClick={() => handleDeleteDurationImage(img.id)}
                     className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
                                opacity-0 group-hover:opacity-100 transition-opacity
-                               flex items-center justify-center text-sm"
+                               flex items-center justify-center text-sm z-20"
                   >
                     ×
                   </button>
@@ -847,7 +918,8 @@ export default function RecordingPage() {
                   </p>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -882,7 +954,10 @@ export default function RecordingPage() {
             </button>
           </div>
           <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
-            {activeDurationVideos.map((video, index) => (
+            {activeDurationVideos.map((video, index) => {
+              const effectiveColor = mediaColorOverrides[`durationVideo-${video.id}`] ?? video.color;
+              const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
+              return (
               <div key={video.id} className="group">
                 <div className="relative">
                   {/* Number badge */}
@@ -890,6 +965,13 @@ export default function RecordingPage() {
                                   rounded-full flex items-center justify-center text-xs font-bold z-10">
                     {index + 1}
                   </div>
+                  {/* Left color indicator */}
+                  {colorConfig && (
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg z-10"
+                      style={{ backgroundColor: colorConfig.borderColor }}
+                    />
+                  )}
                   <div
                     className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
                     onClick={() => setSelectedDurationVideoPath(video.file_path)}
@@ -907,11 +989,18 @@ export default function RecordingPage() {
                       </div>
                     )}
                   </div>
+                  {/* Right color indicator */}
+                  {colorConfig && (
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-1 rounded-r-lg z-10"
+                      style={{ backgroundColor: colorConfig.borderColor }}
+                    />
+                  )}
                   <button
                     onClick={() => handleDeleteDurationVideo(video.id)}
                     className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
                                opacity-0 group-hover:opacity-100 transition-opacity
-                               flex items-center justify-center text-sm"
+                               flex items-center justify-center text-sm z-20"
                   >
                     ×
                   </button>
@@ -923,7 +1012,8 @@ export default function RecordingPage() {
                   </p>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1099,18 +1189,31 @@ export default function RecordingPage() {
         </div>
         {images.length > 0 ? (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {images.map((img, index) => (
+            {images.map((img, index) => {
+              // Use color override if exists, otherwise use original color
+              const effectiveColor = mediaColorOverrides[`image-${img.id}`] ?? img.color;
+              const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
+              return (
               <div key={img.id} className="group">
-                <div className="relative">
+                <div
+                  className="relative"
+                  onContextMenu={(e) => handleContextMenu(e, 'image', img)}
+                >
                   {/* Number badge */}
                   <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
                                   rounded-full flex items-center justify-center text-xs font-bold z-10">
                     {index + 1}
                   </div>
+                  {/* Left color indicator */}
+                  {colorConfig && (
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg z-10"
+                      style={{ backgroundColor: colorConfig.borderColor }}
+                    />
+                  )}
                   <div
                     className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
                     onClick={() => setSelectedImageIndex(index)}
-                    onContextMenu={(e) => handleContextMenu(e, 'image', img)}
                   >
                     <img
                       src={window.electronAPI.paths.getFileUrl(img.thumbnail_path || img.file_path)}
@@ -1118,11 +1221,18 @@ export default function RecordingPage() {
                       className="w-full h-full object-cover"
                     />
                   </div>
+                  {/* Right color indicator */}
+                  {colorConfig && (
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-1 rounded-r-lg z-10"
+                      style={{ backgroundColor: colorConfig.borderColor }}
+                    />
+                  )}
                   <button
                     onClick={() => handleDeleteImage(img.id)}
                     className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full
                                opacity-0 group-hover:opacity-100 transition-opacity
-                               flex items-center justify-center text-sm"
+                               flex items-center justify-center text-sm z-20"
                   >
                     ×
                   </button>
@@ -1134,7 +1244,8 @@ export default function RecordingPage() {
                   </p>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p className="text-violet-400 dark:text-violet-500 italic text-sm">No images attached</p>
@@ -1156,18 +1267,30 @@ export default function RecordingPage() {
         </div>
         {videos.length > 0 ? (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {videos.map((video, index) => (
+            {videos.map((video, index) => {
+              const effectiveColor = mediaColorOverrides[`video-${video.id}`] ?? video.color;
+              const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
+              return (
               <div key={video.id} className="group">
-                <div className="relative">
+                <div
+                  className="relative"
+                  onContextMenu={(e) => handleContextMenu(e, 'video', video)}
+                >
                   {/* Number badge */}
                   <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
                                   rounded-full flex items-center justify-center text-xs font-bold z-10">
                     {index + 1}
                   </div>
+                  {/* Left color indicator */}
+                  {colorConfig && (
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg z-10"
+                      style={{ backgroundColor: colorConfig.borderColor }}
+                    />
+                  )}
                   <div
                     className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
                     onClick={() => setSelectedVideo(video.file_path)}
-                    onContextMenu={(e) => handleContextMenu(e, 'video', video)}
                   >
                     {video.thumbnail_path ? (
                       <img
@@ -1181,11 +1304,18 @@ export default function RecordingPage() {
                       </div>
                     )}
                   </div>
+                  {/* Right color indicator */}
+                  {colorConfig && (
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-1 rounded-r-lg z-10"
+                      style={{ backgroundColor: colorConfig.borderColor }}
+                    />
+                  )}
                   <button
                     onClick={() => handleDeleteVideo(video.id)}
                     className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full
                                opacity-0 group-hover:opacity-100 transition-opacity
-                               flex items-center justify-center text-sm"
+                               flex items-center justify-center text-sm z-20"
                   >
                     ×
                   </button>
@@ -1197,7 +1327,8 @@ export default function RecordingPage() {
                   </p>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p className="text-violet-400 dark:text-violet-500 italic text-sm">No videos attached</p>

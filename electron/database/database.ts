@@ -215,6 +215,35 @@ function runMigrations(db: Database.Database): void {
     console.log('Added caption column to duration_images table');
   }
 
+  // Migration: Add color column to images table if it doesn't exist
+  const hasImageColorColumn = imagesColumns.some(col => col.name === 'color');
+  if (!hasImageColorColumn) {
+    db.exec(`ALTER TABLE images ADD COLUMN color TEXT`);
+    console.log('Added color column to images table');
+  }
+
+  // Migration: Add color column to videos table if it doesn't exist
+  const hasVideoColorColumn = videosColumns.some(col => col.name === 'color');
+  if (!hasVideoColorColumn) {
+    db.exec(`ALTER TABLE videos ADD COLUMN color TEXT`);
+    console.log('Added color column to videos table');
+  }
+
+  // Migration: Add color column to duration_images table if it doesn't exist
+  const hasDurationImageColorColumn = durationImagesColumns.some(col => col.name === 'color');
+  if (!hasDurationImageColorColumn) {
+    db.exec(`ALTER TABLE duration_images ADD COLUMN color TEXT`);
+    console.log('Added color column to duration_images table');
+  }
+
+  // Migration: Add color column to duration_videos table if it doesn't exist
+  const durationVideosColumns = db.prepare("PRAGMA table_info(duration_videos)").all() as { name: string }[];
+  const hasDurationVideoColorColumn = durationVideosColumns.some(col => col.name === 'color');
+  if (!hasDurationVideoColorColumn) {
+    db.exec(`ALTER TABLE duration_videos ADD COLUMN color TEXT`);
+    console.log('Added color column to duration_videos table');
+  }
+
   // Migration: Create code_snippets table
   const codeSnippetsTableExists = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='code_snippets'"

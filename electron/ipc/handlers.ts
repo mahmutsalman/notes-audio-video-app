@@ -208,8 +208,16 @@ export function setupIpcHandlers(): void {
     return ImagesOperations.updateCaption(id, caption);
   });
 
+  ipcMain.handle('media:updateImageColor', async (_, id: number, color: DurationColor) => {
+    return ImagesOperations.updateColor(id, color);
+  });
+
   ipcMain.handle('media:updateVideoCaption', async (_, id: number, caption: string | null) => {
     return VideosOperations.updateCaption(id, caption);
+  });
+
+  ipcMain.handle('media:updateVideoColor', async (_, id: number, color: DurationColor) => {
+    return VideosOperations.updateColor(id, color);
   });
 
   ipcMain.handle('media:pickFiles', async (_, type: 'image' | 'video' | 'both') => {
@@ -349,6 +357,10 @@ export function setupIpcHandlers(): void {
     return DurationImagesOperations.updateCaption(id, caption);
   });
 
+  ipcMain.handle('durationImages:updateColor', async (_, id: number, color: DurationColor) => {
+    return DurationImagesOperations.updateColor(id, color);
+  });
+
   // ============ Duration Videos ============
   ipcMain.handle('durationVideos:getByDuration', async (_, durationId: number) => {
     return DurationVideosOperations.getByDuration(durationId);
@@ -391,6 +403,10 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationVideos:updateCaption', async (_, id: number, caption: string | null) => {
     return DurationVideosOperations.updateCaption(id, caption);
+  });
+
+  ipcMain.handle('durationVideos:updateColor', async (_, id: number, color: DurationColor) => {
+    return DurationVideosOperations.updateColor(id, color);
   });
 
   // ============ Duration Audios ============

@@ -54,6 +54,12 @@ async function createWindow(): Promise<void> {
     show: false, // Don't show until ready
   });
 
+  // Disable default context menu to allow custom context menu handling
+  // This is critical for shift+right-click color cycling to work in production
+  mainWindow.webContents.on('context-menu', (e) => {
+    e.preventDefault();
+  });
+
   // Show window when ready to avoid flash
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();

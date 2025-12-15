@@ -264,6 +264,12 @@ export const ImagesOperations = {
     db.prepare('UPDATE images SET caption = ? WHERE id = ?').run(caption, id);
     return this.getById(id)!;
   },
+
+  updateColor(id: number, color: DurationColor): Image {
+    const db = getDatabase();
+    db.prepare('UPDATE images SET color = ? WHERE id = ?').run(color, id);
+    return this.getById(id)!;
+  },
 };
 
 // Videos Operations
@@ -308,6 +314,12 @@ export const VideosOperations = {
   updateCaption(id: number, caption: string | null): Video {
     const db = getDatabase();
     db.prepare('UPDATE videos SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+
+  updateColor(id: number, color: DurationColor): Video {
+    const db = getDatabase();
+    db.prepare('UPDATE videos SET color = ? WHERE id = ?').run(color, id);
     return this.getById(id)!;
   },
 };
@@ -423,6 +435,12 @@ export const DurationImagesOperations = {
     db.prepare('UPDATE duration_images SET caption = ? WHERE id = ?').run(caption, id);
     return this.getById(id)!;
   },
+
+  updateColor(id: number, color: DurationColor): DurationImage {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_images SET color = ? WHERE id = ?').run(color, id);
+    return this.getById(id)!;
+  },
 };
 
 // Duration Videos Operations (videos attached to duration marks)
@@ -473,6 +491,12 @@ export const DurationVideosOperations = {
   updateCaption(id: number, caption: string | null): DurationVideo {
     const db = getDatabase();
     db.prepare('UPDATE duration_videos SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+
+  updateColor(id: number, color: DurationColor): DurationVideo {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_videos SET color = ? WHERE id = ?').run(color, id);
     return this.getById(id)!;
   },
 };

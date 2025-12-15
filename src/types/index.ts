@@ -39,6 +39,7 @@ export interface Image {
   file_path: string;
   thumbnail_path: string | null;
   caption: string | null;
+  color: DurationColor;
   sort_order: number;
   created_at: string;
 }
@@ -49,6 +50,7 @@ export interface Video {
   file_path: string;
   thumbnail_path: string | null;
   caption: string | null;
+  color: DurationColor;
   duration: number | null;
   sort_order: number;
   created_at: string;
@@ -85,6 +87,7 @@ export interface DurationImage {
   file_path: string;
   thumbnail_path: string | null;
   caption: string | null;
+  color: DurationColor;
   sort_order: number;
   created_at: string;
 }
@@ -95,6 +98,7 @@ export interface DurationVideo {
   file_path: string;
   thumbnail_path: string | null;
   caption: string | null;
+  color: DurationColor;
   duration: number | null;
   sort_order: number;
   created_at: string;
@@ -217,7 +221,9 @@ export interface ElectronAPI {
     deleteImage: (id: number) => Promise<void>;
     deleteVideo: (id: number) => Promise<void>;
     updateImageCaption: (id: number, caption: string | null) => Promise<Image>;
+    updateImageColor: (id: number, color: DurationColor) => Promise<Image>;
     updateVideoCaption: (id: number, caption: string | null) => Promise<Video>;
+    updateVideoColor: (id: number, color: DurationColor) => Promise<Video>;
     pickFiles: (type: 'image' | 'video' | 'both') => Promise<string[]>;
   };
   paths: {
@@ -245,6 +251,7 @@ export interface ElectronAPI {
     addFromClipboard: (durationId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<DurationImage>;
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<DurationImage>;
+    updateColor: (id: number, color: DurationColor) => Promise<DurationImage>;
   };
   durationVideos: {
     getByDuration: (durationId: number) => Promise<DurationVideo[]>;
@@ -252,6 +259,7 @@ export interface ElectronAPI {
     addFromFile: (durationId: number, filePath: string) => Promise<DurationVideo>;
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<DurationVideo>;
+    updateColor: (id: number, color: DurationColor) => Promise<DurationVideo>;
   };
   durationAudios: {
     getByDuration: (durationId: number) => Promise<DurationAudio[]>;
