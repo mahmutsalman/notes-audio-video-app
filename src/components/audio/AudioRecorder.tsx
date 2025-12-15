@@ -64,6 +64,11 @@ export default function AudioRecorder({ recorder, onStopRecording }: AudioRecord
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isRecording, isPaused, pauseRecording, resumeRecording, handleMarkToggle]);
 
+  // Calculate elapsed time since duration mark started
+  const durationElapsed = pendingMarkStart !== null
+    ? duration - pendingMarkStart
+    : 0;
+
   return (
     <div className="flex flex-col items-center py-8">
       {error && (
@@ -129,6 +134,13 @@ export default function AudioRecorder({ recorder, onStopRecording }: AudioRecord
               {completedMarks.length} mark{completedMarks.length !== 1 ? 's' : ''} saved
             </div>
           ) : null}
+        </div>
+      )}
+
+      {/* Live Duration Timer - shows elapsed time since marking started */}
+      {pendingMarkStart !== null && (
+        <div className="text-lg font-mono font-bold text-red-500 dark:text-red-500 mb-2" style={{ textShadow: '0 0 8px rgba(239, 68, 68, 0.5)' }}>
+          {formatDuration(durationElapsed)}
         </div>
       )}
 
