@@ -17,7 +17,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isPasting, setIsPasting] = useState(false);
-  const [pasteSuccess, setPasteSuccess] = useState(false);
+  const [pasteSuccess, setPasteSuccess] = useState<'image' | 'video' | null>(null);
   const [selectedImages, setSelectedImages] = useState<{ data: ArrayBuffer; extension: string }[]>([]);
   const [selectedVideos, setSelectedVideos] = useState<string[]>([]); // File paths from clipboard
 
@@ -26,7 +26,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
   // Auto-hide success indicator after 1.5 seconds
   useEffect(() => {
     if (pasteSuccess) {
-      const timer = setTimeout(() => setPasteSuccess(false), 1500);
+      const timer = setTimeout(() => setPasteSuccess(null), 1500);
       return () => clearTimeout(timer);
     }
   }, [pasteSuccess]);
@@ -131,7 +131,47 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
     return false;
   }, [recorder]);
 
-  // Keyboard listener for Cmd+V to add image to current mark (works in both recording and review phases)
+  // Handle Cmd+V to add video to the current mark (priority: pending > last completed)
+  const handlePasteVideoToMark = useCallback(async () => {
+    const isVideoFile = (filePath: string): boolean => {
+      const videoExtensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v'];
+      const ext = filePath.toLowerCase().slice(filePath.lastIndexOf('.'));
+      return videoExtensions.includes(ext);
+    };
+
+    // Priority 1: If marking (pending mark exists), add to pending mark
+    if (recorder.isMarking) {
+      try {
+        const result = await window.electronAPI.clipboard.readFileUrl();
+        if (result.success && result.filePath && isVideoFile(result.filePath)) {
+          const added = recorder.addVideoToPendingMark({ filePath: result.filePath });
+          return added;
+        }
+      } catch (error) {
+        console.error('Failed to read clipboard for pending mark video:', error);
+      }
+      return false;
+    }
+
+    // Priority 2: If no pending mark but completed marks exist, add to last completed mark
+    if (recorder.completedMarks.length > 0) {
+      try {
+        const result = await window.electronAPI.clipboard.readFileUrl();
+        if (result.success && result.filePath && isVideoFile(result.filePath)) {
+          const added = recorder.addVideoToLastMark({ filePath: result.filePath });
+          return added;
+        }
+      } catch (error) {
+        console.error('Failed to read clipboard for mark video:', error);
+      }
+      return false;
+    }
+
+    // No marks to paste to
+    return false;
+  }, [recorder]);
+
+  // Keyboard listener for Cmd+V to add image/video to current mark (works in both recording and review phases)
   useEffect(() => {
     if (!isOpen) return;
     // Only activate if there's a pending mark or completed marks
@@ -142,11 +182,21 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
       if ((e.metaKey || e.ctrlKey) && e.key === 'v' && !isPasting) {
         setIsPasting(true);
         try {
-          const added = await handlePasteToMark();
-          if (added) {
+          // Try image first (most common)
+          const imageAdded = await handlePasteToMark();
+          if (imageAdded) {
             e.preventDefault();
             e.stopPropagation();
-            setPasteSuccess(true);
+            setPasteSuccess('image');
+            return;
+          }
+
+          // Try video second
+          const videoAdded = await handlePasteVideoToMark();
+          if (videoAdded) {
+            e.preventDefault();
+            e.stopPropagation();
+            setPasteSuccess('video');
           }
         } finally {
           setIsPasting(false);
@@ -156,7 +206,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, recorder.isMarking, recorder.completedMarks.length, isPasting, handlePasteToMark]);
+  }, [isOpen, recorder.isMarking, recorder.completedMarks.length, isPasting, handlePasteToMark, handlePasteVideoToMark]);
 
   // Handle paste to a specific mark by start time
   const handlePasteToSpecificMark = useCallback(async (startTime: number) => {
@@ -170,7 +220,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
           extension: result.extension || 'png'
         });
         if (added) {
-          setPasteSuccess(true);
+          setPasteSuccess('image');
         }
         return added;
       }
@@ -263,6 +313,29 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
         } else {
           console.log('[QuickRecord] No images to save for this mark');
         }
+
+        // Save videos attached to this mark
+        if (mark.videos && mark.videos.length > 0) {
+          console.log(`[QuickRecord] Saving ${mark.videos.length} videos for duration ${duration.id}`);
+          for (let i = 0; i < mark.videos.length; i++) {
+            const video = mark.videos[i];
+            console.log(`[QuickRecord] Saving video ${i + 1}/${mark.videos.length}:`, {
+              filePath: video.filePath
+            });
+
+            try {
+              const savedVideo = await window.electronAPI.durationVideos.addFromFile(
+                duration.id,
+                video.filePath
+              );
+              console.log(`[QuickRecord] Video ${i + 1} saved successfully:`, savedVideo);
+            } catch (err) {
+              console.error(`[QuickRecord] Failed to save video ${i + 1}:`, err);
+            }
+          }
+        } else {
+          console.log('[QuickRecord] No videos to save for this mark');
+        }
       }
 
       // Reset and close
@@ -314,14 +387,14 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                   <div className="flex items-center gap-2">
                     {pasteSuccess && (
                       <span className="text-xs text-green-600 dark:text-green-400 font-medium animate-pulse">
-                        ✓ Image added
+                        ✓ {pasteSuccess === 'image' ? 'Image' : 'Video'} added
                       </span>
                     )}
                     {(recorder.isMarking || recorder.completedMarks.length > 0) && (
                       <span className="text-xs text-gray-500 dark:text-gray-400">
                         {recorder.isMarking
-                          ? "⌘V adds image to current mark"
-                          : "⌘V adds image to last mark"}
+                          ? "⌘V adds media to current mark"
+                          : "⌘V adds media to last mark"}
                       </span>
                     )}
                   </div>
@@ -329,16 +402,23 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                 <div className="space-y-2">
                   {recorder.completedMarks.map((mark, index) => {
                     const imageCount = mark.images?.length || 0;
+                    const videoCount = mark.videos?.length || 0;
                     return (
                       <div key={index} className="group flex items-center gap-2 text-sm">
                         <span className="text-gray-600 dark:text-gray-400">
                           {formatDuration(mark.start)} → {formatDuration(mark.end)}
                         </span>
-                        {imageCount > 0 ? (
+                        {imageCount > 0 && (
                           <span className="px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-xs font-medium">
                             📷 {imageCount}
                           </span>
-                        ) : (
+                        )}
+                        {videoCount > 0 && (
+                          <span className="px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-xs font-medium">
+                            🎬 {videoCount}
+                          </span>
+                        )}
+                        {imageCount === 0 && videoCount === 0 && (
                           <button
                             onClick={() => handlePasteToSpecificMark(mark.start)}
                             disabled={isPasting}
@@ -392,12 +472,12 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                   <div className="flex items-center gap-2">
                     {pasteSuccess && (
                       <span className="text-xs text-green-600 dark:text-green-400 font-medium animate-pulse">
-                        ✓ Image added
+                        ✓ {pasteSuccess === 'image' ? 'Image' : 'Video'} added
                       </span>
                     )}
                     {recorder.completedMarks.length > 0 && (
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        Press ⌘V or hover to paste images
+                        Press ⌘V or hover to paste media
                       </span>
                     )}
                   </div>
@@ -405,6 +485,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                 <div className="flex flex-wrap gap-2">
                   {recorder.completedMarks.map((mark, index) => {
                     const imageCount = mark.images?.length || 0;
+                    const videoCount = mark.videos?.length || 0;
                     return (
                       <div
                         key={index}
@@ -413,11 +494,17 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                         <span className="text-gray-700 dark:text-gray-300">
                           {formatDuration(mark.start)} → {formatDuration(mark.end)}
                         </span>
-                        {imageCount > 0 ? (
+                        {imageCount > 0 && (
                           <span className="ml-2 px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-xs font-medium">
                             📷 {imageCount}
                           </span>
-                        ) : (
+                        )}
+                        {videoCount > 0 && (
+                          <span className="ml-2 px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-xs font-medium">
+                            🎬 {videoCount}
+                          </span>
+                        )}
+                        {imageCount === 0 && videoCount === 0 && (
                           <button
                             onClick={() => handlePasteToSpecificMark(mark.start)}
                             disabled={isPasting}

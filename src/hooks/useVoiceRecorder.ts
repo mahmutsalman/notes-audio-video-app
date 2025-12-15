@@ -15,11 +15,16 @@ export interface DurationMarkImage {
   extension: string;
 }
 
+export interface DurationMarkVideo {
+  filePath: string;  // full path to video file
+}
+
 export interface DurationMark {
   start: number;  // seconds
   end: number;    // seconds
   note?: string;  // optional note for this mark
   images?: DurationMarkImage[];  // images attached to this mark
+  videos?: DurationMarkVideo[];  // videos attached to this mark
 }
 
 export interface VoiceRecorderControls {
@@ -34,6 +39,10 @@ export interface VoiceRecorderControls {
   addImageToPendingMark: (image: DurationMarkImage) => boolean;  // returns true if image was added to pending mark
   addImageToMarkByStart: (startTime: number, image: DurationMarkImage) => boolean;  // returns true if mark found and image added
   removeImageFromMark: (startTime: number, imageIndex: number) => boolean;  // returns true if mark found and image removed
+  addVideoToLastMark: (video: DurationMarkVideo) => boolean;  // returns true if video was added
+  addVideoToPendingMark: (video: DurationMarkVideo) => boolean;  // returns true if video was added to pending mark
+  addVideoToMarkByStart: (startTime: number, video: DurationMarkVideo) => boolean;  // returns true if mark found and video added
+  removeVideoFromMark: (startTime: number, videoIndex: number) => boolean;  // returns true if mark found and video removed
 }
 
 export interface UseVoiceRecorderReturn extends VoiceRecorderState, VoiceRecorderControls {
@@ -41,6 +50,7 @@ export interface UseVoiceRecorderReturn extends VoiceRecorderState, VoiceRecorde
   pendingMarkStart: number | null;
   pendingMarkNote: string;
   pendingMarkImages: DurationMarkImage[];
+  pendingMarkVideos: DurationMarkVideo[];
   completedMarks: DurationMark[];
   isMarking: boolean;
 }
@@ -68,6 +78,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
   const [pendingMarkStart, setPendingMarkStart] = useState<number | null>(null);
   const [pendingMarkNote, setPendingMarkNote] = useState<string>('');
   const [pendingMarkImages, setPendingMarkImages] = useState<DurationMarkImage[]>([]);
+  const [pendingMarkVideos, setPendingMarkVideos] = useState<DurationMarkVideo[]>([]);
   const [completedMarks, setCompletedMarks] = useState<DurationMark[]>([]);
 
   // Cleanup on unmount
@@ -197,12 +208,14 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
             start: pendingMarkStart,
             end: endTime,
             note: pendingMarkNote.trim() || undefined,
-            images: pendingMarkImages.length > 0 ? pendingMarkImages : undefined
+            images: pendingMarkImages.length > 0 ? pendingMarkImages : undefined,
+            videos: pendingMarkVideos.length > 0 ? pendingMarkVideos : undefined
           }]);
         }
         setPendingMarkStart(null);
         setPendingMarkNote('');
         setPendingMarkImages([]);
+        setPendingMarkVideos([]);
       }
 
       mediaRecorder.onstop = async () => {
@@ -250,7 +263,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
 
       mediaRecorder.stop();
     });
-  }, [pendingMarkStart, pendingMarkNote, pendingMarkImages]);
+  }, [pendingMarkStart, pendingMarkNote, pendingMarkImages, pendingMarkVideos]);
 
   const pauseRecording = useCallback(() => {
     const mediaRecorder = mediaRecorderRef.current;
@@ -339,6 +352,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     setPendingMarkStart(null);
     setPendingMarkNote('');
     setPendingMarkImages([]);
+    setPendingMarkVideos([]);
     setCompletedMarks([]);
   }, [state.audioUrl]);
 
@@ -369,14 +383,16 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
           start: pendingMarkStart,
           end: currentTime,
           note: pendingMarkNote.trim() || undefined,
-          images: pendingMarkImages.length > 0 ? pendingMarkImages : undefined
+          images: pendingMarkImages.length > 0 ? pendingMarkImages : undefined,
+          videos: pendingMarkVideos.length > 0 ? pendingMarkVideos : undefined
         }]);
       }
       setPendingMarkStart(null);
       setPendingMarkNote('');
       setPendingMarkImages([]);
+      setPendingMarkVideos([]);
     }
-  }, [state.isRecording, pendingMarkStart, pendingMarkNote, pendingMarkImages, getCurrentElapsedTime]);
+  }, [state.isRecording, pendingMarkStart, pendingMarkNote, pendingMarkImages, pendingMarkVideos, getCurrentElapsedTime]);
 
   // Set note for the current pending mark
   const setMarkNote = useCallback((note: string) => {
@@ -442,6 +458,65 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     return true;
   }, [completedMarks]);
 
+  // Add a video to the last completed mark
+  const addVideoToLastMark = useCallback((video: DurationMarkVideo): boolean => {
+    if (completedMarks.length === 0) return false;
+
+    setCompletedMarks(prev => {
+      const updated = [...prev];
+      const lastIndex = updated.length - 1;
+      const lastMark = updated[lastIndex];
+      updated[lastIndex] = {
+        ...lastMark,
+        videos: [...(lastMark.videos || []), video]
+      };
+      return updated;
+    });
+    return true;
+  }, [completedMarks.length]);
+
+  // Add a video to the pending mark (current active duration)
+  const addVideoToPendingMark = useCallback((video: DurationMarkVideo): boolean => {
+    if (pendingMarkStart === null) return false;
+
+    setPendingMarkVideos(prev => [...prev, video]);
+    return true;
+  }, [pendingMarkStart]);
+
+  // Add a video to a specific mark identified by its start time
+  const addVideoToMarkByStart = useCallback((startTime: number, video: DurationMarkVideo): boolean => {
+    const markIndex = completedMarks.findIndex(mark => mark.start === startTime);
+    if (markIndex === -1) return false;
+
+    setCompletedMarks(prev => {
+      const updated = [...prev];
+      updated[markIndex] = {
+        ...updated[markIndex],
+        videos: [...(updated[markIndex].videos || []), video]
+      };
+      return updated;
+    });
+    return true;
+  }, [completedMarks]);
+
+  // Remove a video from a specific mark identified by its start time
+  const removeVideoFromMark = useCallback((startTime: number, videoIndex: number): boolean => {
+    const markIndex = completedMarks.findIndex(mark => mark.start === startTime);
+    if (markIndex === -1) return false;
+
+    setCompletedMarks(prev => {
+      const updated = [...prev];
+      const mark = updated[markIndex];
+      const videos = mark.videos || [];
+      updated[markIndex] = {
+        ...mark,
+        videos: videos.filter((_, i) => i !== videoIndex)
+      };
+      return updated;
+    });
+    return true;
+  }, [completedMarks]);
+
   return {
     ...state,
     analyserNode: analyserRef.current,
@@ -456,9 +531,14 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     addImageToPendingMark,
     addImageToMarkByStart,
     removeImageFromMark,
+    addVideoToLastMark,
+    addVideoToPendingMark,
+    addVideoToMarkByStart,
+    removeVideoFromMark,
     pendingMarkStart,
     pendingMarkNote,
     pendingMarkImages,
+    pendingMarkVideos,
     completedMarks,
     isMarking: pendingMarkStart !== null,
   };

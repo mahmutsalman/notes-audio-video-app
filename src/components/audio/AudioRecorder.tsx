@@ -24,6 +24,7 @@ export default function AudioRecorder({ recorder, onStopRecording }: AudioRecord
     pendingMarkStart,
     pendingMarkNote,
     pendingMarkImages,
+    pendingMarkVideos,
     completedMarks,
   } = recorder;
 
@@ -103,6 +104,11 @@ export default function AudioRecorder({ recorder, onStopRecording }: AudioRecord
                 {pendingMarkImages.length > 0 && (
                   <span className="px-2 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-sm font-medium">
                     📷 {pendingMarkImages.length}
+                  </span>
+                )}
+                {pendingMarkVideos.length > 0 && (
+                  <span className="px-2 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-sm font-medium">
+                    🎬 {pendingMarkVideos.length}
                   </span>
                 )}
               </div>
