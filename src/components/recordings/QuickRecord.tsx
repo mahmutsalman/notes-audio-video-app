@@ -20,6 +20,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
   const [pasteSuccess, setPasteSuccess] = useState<'image' | 'video' | null>(null);
   const [selectedImages, setSelectedImages] = useState<{ data: ArrayBuffer; extension: string }[]>([]);
   const [selectedVideos, setSelectedVideos] = useState<string[]>([]); // File paths from clipboard
+  const [selectedMarkIndex, setSelectedMarkIndex] = useState<number | null>(null);
 
   const recorder = useVoiceRecorder();
 
@@ -37,6 +38,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
     setNotes('');
     setSelectedImages([]);
     setSelectedVideos([]);
+    setSelectedMarkIndex(null);
   };
 
   const handleClose = () => {
@@ -91,7 +93,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
     }
   };
 
-  // Handle Cmd+V to add image to the current mark (priority: pending > last completed)
+  // Handle Cmd+V to add image to the current mark (priority: pending > selected > last completed)
   const handlePasteToMark = useCallback(async () => {
     // Priority 1: If marking (pending mark exists), add to pending mark
     if (recorder.isMarking) {
@@ -110,7 +112,25 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
       return false;
     }
 
-    // Priority 2: If no pending mark but completed marks exist, add to last completed mark
+    // Priority 2: If a completed mark is selected, add to that mark
+    if (selectedMarkIndex !== null && recorder.completedMarks[selectedMarkIndex]) {
+      const mark = recorder.completedMarks[selectedMarkIndex];
+      try {
+        const result = await window.electronAPI.clipboard.readImage();
+        if (result.success && result.buffer) {
+          const added = recorder.addImageToMarkByStart(mark.start, {
+            data: result.buffer,
+            extension: result.extension || 'png'
+          });
+          return added;
+        }
+      } catch (error) {
+        console.error('Failed to read clipboard for selected mark:', error);
+      }
+      return false;
+    }
+
+    // Priority 3: If no pending mark or selection but completed marks exist, add to last completed mark
     if (recorder.completedMarks.length > 0) {
       try {
         const result = await window.electronAPI.clipboard.readImage();
@@ -129,9 +149,9 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
 
     // No marks to paste to
     return false;
-  }, [recorder]);
+  }, [recorder, selectedMarkIndex]);
 
-  // Handle Cmd+V to add video to the current mark (priority: pending > last completed)
+  // Handle Cmd+V to add video to the current mark (priority: pending > selected > last completed)
   const handlePasteVideoToMark = useCallback(async () => {
     const isVideoFile = (filePath: string): boolean => {
       const videoExtensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v'];
@@ -153,7 +173,22 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
       return false;
     }
 
-    // Priority 2: If no pending mark but completed marks exist, add to last completed mark
+    // Priority 2: If a completed mark is selected, add to that mark
+    if (selectedMarkIndex !== null && recorder.completedMarks[selectedMarkIndex]) {
+      const mark = recorder.completedMarks[selectedMarkIndex];
+      try {
+        const result = await window.electronAPI.clipboard.readFileUrl();
+        if (result.success && result.filePath && isVideoFile(result.filePath)) {
+          const added = recorder.addVideoToMarkByStart(mark.start, { filePath: result.filePath });
+          return added;
+        }
+      } catch (error) {
+        console.error('Failed to read clipboard for selected mark video:', error);
+      }
+      return false;
+    }
+
+    // Priority 3: If no pending mark or selection but completed marks exist, add to last completed mark
     if (recorder.completedMarks.length > 0) {
       try {
         const result = await window.electronAPI.clipboard.readFileUrl();
@@ -169,7 +204,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
 
     // No marks to paste to
     return false;
-  }, [recorder]);
+  }, [recorder, selectedMarkIndex]);
 
   // Keyboard listener for Cmd+V to add image/video to current mark (works in both recording and review phases)
   useEffect(() => {
@@ -394,6 +429,8 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                       <span className="text-xs text-gray-500 dark:text-gray-400">
                         {recorder.isMarking
                           ? "⌘V adds media to current mark"
+                          : selectedMarkIndex !== null
+                          ? "⌘V adds media to selected mark"
                           : "⌘V adds media to last mark"}
                       </span>
                     )}
@@ -403,8 +440,18 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                   {recorder.completedMarks.map((mark, index) => {
                     const imageCount = mark.images?.length || 0;
                     const videoCount = mark.videos?.length || 0;
+                    const isSelected = selectedMarkIndex === index;
+
                     return (
-                      <div key={index} className="group flex items-center gap-2 text-sm">
+                      <div
+                        key={index}
+                        onClick={() => setSelectedMarkIndex(isSelected ? null : index)}
+                        className={`flex items-center gap-2 text-sm p-2 rounded cursor-pointer transition-colors
+                          ${isSelected
+                            ? 'bg-primary-100 dark:bg-primary-900/50 border-2 border-primary-500'
+                            : 'hover:bg-gray-100 dark:hover:bg-dark-surface'
+                          }`}
+                      >
                         <span className="text-gray-600 dark:text-gray-400">
                           {formatDuration(mark.start)} → {formatDuration(mark.end)}
                         </span>
@@ -418,18 +465,6 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                             🎬 {videoCount}
                           </span>
                         )}
-                        {imageCount === 0 && videoCount === 0 && (
-                          <button
-                            onClick={() => handlePasteToSpecificMark(mark.start)}
-                            disabled={isPasting}
-                            className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-dark-border text-gray-600 dark:text-gray-400
-                                       opacity-0 group-hover:opacity-100 transition-opacity
-                                       hover:bg-primary-100 dark:hover:bg-primary-900/50 hover:text-primary-700 dark:hover:text-primary-300
-                                       rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            📋 Paste
-                          </button>
-                        )}
                         {mark.note && (
                           <span className="text-gray-500 dark:text-gray-400 text-xs">
                             ({mark.note})
@@ -441,6 +476,97 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                 </div>
               </div>
             )}
+
+            {/* Selected Mark Media Display - During Recording */}
+            {selectedMarkIndex !== null && recorder.completedMarks[selectedMarkIndex] && (() => {
+              const mark = recorder.completedMarks[selectedMarkIndex];
+              const images = mark.images || [];
+              const videos = mark.videos || [];
+
+              return (
+                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                      Media for Selected Section ({images.length} images, {videos.length} videos)
+                    </h4>
+                    <button
+                      onClick={() => setSelectedMarkIndex(null)}
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200"
+                    >
+                      Deselect
+                    </button>
+                  </div>
+                  {images.length > 0 || videos.length > 0 ? (
+                    <div className="space-y-3">
+                      {images.length > 0 && (
+                        <div>
+                          <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">Images</div>
+                          <div className="grid grid-cols-4 gap-2">
+                            {images.map((img, imgIndex) => {
+                              const blob = new Blob([img.data], { type: `image/${img.extension}` });
+                              const previewUrl = URL.createObjectURL(blob);
+                              return (
+                                <div key={imgIndex} className="group relative">
+                                  <div className="aspect-square rounded overflow-hidden bg-gray-100 dark:bg-dark-border">
+                                    <img
+                                      src={previewUrl}
+                                      alt=""
+                                      className="w-full h-full object-cover"
+                                      onLoad={() => URL.revokeObjectURL(previewUrl)}
+                                    />
+                                  </div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      recorder.removeImageFromMark(mark.start, imgIndex);
+                                    }}
+                                    className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
+                                               opacity-0 group-hover:opacity-100 transition-opacity
+                                               flex items-center justify-center text-sm"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {videos.length > 0 && (
+                        <div>
+                          <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">Videos</div>
+                          <div className="space-y-1">
+                            {videos.map((video, videoIndex) => (
+                              <div key={videoIndex} className="group flex items-center gap-2 p-2 bg-white dark:bg-dark-surface rounded">
+                                <span className="text-lg">🎬</span>
+                                <span className="text-xs text-gray-600 dark:text-gray-400 flex-1 truncate">
+                                  {video.filePath.split('/').pop()}
+                                </span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    recorder.removeVideoFromMark(mark.start, videoIndex);
+                                  }}
+                                  className="w-5 h-5 bg-red-500 text-white rounded-full
+                                             opacity-0 group-hover:opacity-100 transition-opacity
+                                             flex items-center justify-center text-sm"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-blue-600 dark:text-blue-400 italic">
+                      No media yet. Press ⌘V to add images or videos.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         ) : (
           <div className="space-y-4">
@@ -477,7 +603,9 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                     )}
                     {recorder.completedMarks.length > 0 && (
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        Press ⌘V or hover to paste media
+                        {selectedMarkIndex !== null
+                          ? "⌘V adds media to selected mark"
+                          : "⌘V adds media to last mark"}
                       </span>
                     )}
                   </div>
@@ -486,10 +614,17 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                   {recorder.completedMarks.map((mark, index) => {
                     const imageCount = mark.images?.length || 0;
                     const videoCount = mark.videos?.length || 0;
+                    const isSelected = selectedMarkIndex === index;
+
                     return (
                       <div
                         key={index}
-                        className="group relative px-3 py-1.5 bg-gray-100 dark:bg-dark-hover rounded-lg text-sm"
+                        onClick={() => setSelectedMarkIndex(isSelected ? null : index)}
+                        className={`relative px-3 py-1.5 rounded-lg text-sm cursor-pointer transition-colors
+                          ${isSelected
+                            ? 'bg-primary-100 dark:bg-primary-900/50 border-2 border-primary-500'
+                            : 'bg-gray-100 dark:bg-dark-hover hover:bg-gray-200 dark:hover:bg-dark-surface'
+                          }`}
                       >
                         <span className="text-gray-700 dark:text-gray-300">
                           {formatDuration(mark.start)} → {formatDuration(mark.end)}
@@ -504,18 +639,6 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                             🎬 {videoCount}
                           </span>
                         )}
-                        {imageCount === 0 && videoCount === 0 && (
-                          <button
-                            onClick={() => handlePasteToSpecificMark(mark.start)}
-                            disabled={isPasting}
-                            className="ml-2 px-1.5 py-0.5 text-xs bg-gray-200 dark:bg-dark-border text-gray-600 dark:text-gray-400
-                                       opacity-0 group-hover:opacity-100 transition-opacity
-                                       hover:bg-primary-100 dark:hover:bg-primary-900/50 hover:text-primary-700 dark:hover:text-primary-300
-                                       rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            📋 Paste
-                          </button>
-                        )}
                         {mark.note && (
                           <span className="ml-2 text-gray-500 dark:text-gray-400 text-xs">
                             ({mark.note})
@@ -527,6 +650,97 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
                 </div>
               </div>
             )}
+
+            {/* Selected Mark Media Display - During Review */}
+            {selectedMarkIndex !== null && recorder.completedMarks[selectedMarkIndex] && (() => {
+              const mark = recorder.completedMarks[selectedMarkIndex];
+              const images = mark.images || [];
+              const videos = mark.videos || [];
+
+              return (
+                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                      Media for Selected Section ({images.length} images, {videos.length} videos)
+                    </h4>
+                    <button
+                      onClick={() => setSelectedMarkIndex(null)}
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200"
+                    >
+                      Deselect
+                    </button>
+                  </div>
+                  {images.length > 0 || videos.length > 0 ? (
+                    <div className="space-y-3">
+                      {images.length > 0 && (
+                        <div>
+                          <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">Images</div>
+                          <div className="grid grid-cols-4 gap-2">
+                            {images.map((img, imgIndex) => {
+                              const blob = new Blob([img.data], { type: `image/${img.extension}` });
+                              const previewUrl = URL.createObjectURL(blob);
+                              return (
+                                <div key={imgIndex} className="group relative">
+                                  <div className="aspect-square rounded overflow-hidden bg-gray-100 dark:bg-dark-border">
+                                    <img
+                                      src={previewUrl}
+                                      alt=""
+                                      className="w-full h-full object-cover"
+                                      onLoad={() => URL.revokeObjectURL(previewUrl)}
+                                    />
+                                  </div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      recorder.removeImageFromMark(mark.start, imgIndex);
+                                    }}
+                                    className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
+                                               opacity-0 group-hover:opacity-100 transition-opacity
+                                               flex items-center justify-center text-sm"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {videos.length > 0 && (
+                        <div>
+                          <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">Videos</div>
+                          <div className="space-y-1">
+                            {videos.map((video, videoIndex) => (
+                              <div key={videoIndex} className="group flex items-center gap-2 p-2 bg-white dark:bg-dark-surface rounded">
+                                <span className="text-lg">🎬</span>
+                                <span className="text-xs text-gray-600 dark:text-gray-400 flex-1 truncate">
+                                  {video.filePath.split('/').pop()}
+                                </span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    recorder.removeVideoFromMark(mark.start, videoIndex);
+                                  }}
+                                  className="w-5 h-5 bg-red-500 text-white rounded-full
+                                             opacity-0 group-hover:opacity-100 transition-opacity
+                                             flex items-center justify-center text-sm"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-blue-600 dark:text-blue-400 italic">
+                      No media yet. Press ⌘V to add images or videos.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Notes input */}
             <div>
