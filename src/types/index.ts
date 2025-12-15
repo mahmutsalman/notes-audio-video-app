@@ -110,6 +110,14 @@ export interface DurationAudio {
   created_at: string;
 }
 
+// Component-specific types
+
+export interface VideoWithThumbnail {
+  filePath: string;
+  thumbnailPath: string | null;
+  isGenerating?: boolean;
+}
+
 export interface CodeSnippet {
   id: number;
   recording_id: number;

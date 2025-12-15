@@ -5,7 +5,7 @@ import Button from '../common/Button';
 import AudioRecorder from '../audio/AudioRecorder';
 import AudioPlayer from '../audio/AudioPlayer';
 import { formatDuration } from '../../utils/formatters';
-import type { Recording } from '../../types';
+import type { Recording, VideoWithThumbnail } from '../../types';
 
 interface ExtendRecordingModalProps {
   isOpen: boolean;
@@ -26,7 +26,7 @@ export default function ExtendRecordingModal({
   const [isMerging, setIsMerging] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [selectedImages, setSelectedImages] = useState<{ data: ArrayBuffer; extension: string }[]>([]);
-  const [selectedVideos, setSelectedVideos] = useState<string[]>([]);
+  const [selectedVideos, setSelectedVideos] = useState<VideoWithThumbnail[]>([]);
   const [selectedMarkIndex, setSelectedMarkIndex] = useState<number | null>(null);
 
   const recorder = useVoiceRecorder();
@@ -80,7 +80,36 @@ export default function ExtendRecordingModal({
         const videoExtensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v'];
         const ext = result.filePath.toLowerCase().slice(result.filePath.lastIndexOf('.'));
         if (videoExtensions.includes(ext)) {
-          setSelectedVideos(prev => [...prev, result.filePath!]);
+          const videoPath = result.filePath;
+
+          // Add video with null thumbnail initially
+          const tempVideo: VideoWithThumbnail = {
+            filePath: videoPath,
+            thumbnailPath: null,
+            isGenerating: true
+          };
+          setSelectedVideos(prev => [...prev, tempVideo]);
+
+          // Generate thumbnail asynchronously
+          try {
+            const { success, thumbnailPath } = await window.electronAPI.video.generateThumbnail(videoPath);
+            setSelectedVideos(prev =>
+              prev.map(v =>
+                v.filePath === videoPath
+                  ? { ...v, thumbnailPath, isGenerating: false }
+                  : v
+              )
+            );
+          } catch (error) {
+            console.error('Thumbnail generation failed:', error);
+            setSelectedVideos(prev =>
+              prev.map(v =>
+                v.filePath === videoPath
+                  ? { ...v, isGenerating: false }
+                  : v
+              )
+            );
+          }
         } else {
           alert(`The copied file is not a video (${ext}). Supported formats: MP4, MOV, WebM, AVI, MKV, M4V`);
         }
@@ -158,7 +187,17 @@ export default function ExtendRecordingModal({
       try {
         const result = await window.electronAPI.clipboard.readFileUrl();
         if (result.success && result.filePath && isVideoFile(result.filePath)) {
-          return recorder.addVideoToPendingMark({ filePath: result.filePath });
+          // Generate thumbnail for the video
+          let thumbnailPath: string | null = null;
+          try {
+            const thumbResult = await window.electronAPI.video.generateThumbnail(result.filePath);
+            if (thumbResult.success) {
+              thumbnailPath = thumbResult.thumbnailPath;
+            }
+          } catch (err) {
+            console.error('Failed to generate thumbnail:', err);
+          }
+          return recorder.addVideoToPendingMark({ filePath: result.filePath, thumbnailPath });
         }
       } catch (error) {
         console.error('Failed to read clipboard for pending mark video:', error);
@@ -172,7 +211,17 @@ export default function ExtendRecordingModal({
       try {
         const result = await window.electronAPI.clipboard.readFileUrl();
         if (result.success && result.filePath && isVideoFile(result.filePath)) {
-          return recorder.addVideoToMarkByStart(mark.start, { filePath: result.filePath });
+          // Generate thumbnail for the video
+          let thumbnailPath: string | null = null;
+          try {
+            const thumbResult = await window.electronAPI.video.generateThumbnail(result.filePath);
+            if (thumbResult.success) {
+              thumbnailPath = thumbResult.thumbnailPath;
+            }
+          } catch (err) {
+            console.error('Failed to generate thumbnail:', err);
+          }
+          return recorder.addVideoToMarkByStart(mark.start, { filePath: result.filePath, thumbnailPath });
         }
       } catch (error) {
         console.error('Failed to read clipboard for selected mark video:', error);
@@ -186,7 +235,17 @@ export default function ExtendRecordingModal({
     try {
       const result = await window.electronAPI.clipboard.readFileUrl();
       if (result.success && result.filePath && isVideoFile(result.filePath)) {
-        return recorder.addVideoToLastMark({ filePath: result.filePath });
+        // Generate thumbnail for the video
+        let thumbnailPath: string | null = null;
+        try {
+          const thumbResult = await window.electronAPI.video.generateThumbnail(result.filePath);
+          if (thumbResult.success) {
+            thumbnailPath = thumbResult.thumbnailPath;
+          }
+        } catch (err) {
+          console.error('Failed to generate thumbnail:', err);
+        }
+        return recorder.addVideoToLastMark({ filePath: result.filePath, thumbnailPath });
       }
     } catch (error) {
       console.error('Failed to read clipboard for last mark video:', error);
@@ -291,8 +350,8 @@ export default function ExtendRecordingModal({
       for (const image of selectedImages) {
         await window.electronAPI.media.addImageFromClipboard(recording.id, image.data, image.extension);
       }
-      for (const videoPath of selectedVideos) {
-        await window.electronAPI.media.addVideo(recording.id, videoPath);
+      for (const video of selectedVideos) {
+        await window.electronAPI.media.addVideo(recording.id, video.filePath);
       }
 
       // Success - reset and close
@@ -462,13 +521,20 @@ export default function ExtendRecordingModal({
                       {videos.length > 0 && (
                         <div>
                           <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">Videos</div>
-                          <div className="space-y-1">
+                          <div className="grid grid-cols-4 gap-2">
                             {videos.map((video, videoIndex) => (
-                              <div key={videoIndex} className="group flex items-center gap-2 p-2 bg-white dark:bg-dark-surface rounded">
-                                <span className="text-lg">🎬</span>
-                                <span className="text-xs text-gray-600 dark:text-gray-400 flex-1 truncate">
-                                  {video.filePath.split('/').pop()}
-                                </span>
+                              <div key={videoIndex} className="group relative">
+                                <div className="aspect-square rounded overflow-hidden bg-gray-100 dark:bg-dark-border">
+                                  {video.thumbnailPath ? (
+                                    <img
+                                      src={window.electronAPI.paths.getFileUrl(video.thumbnailPath)}
+                                      alt=""
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-2xl">🎬</div>
+                                  )}
+                                </div>
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -476,12 +542,10 @@ export default function ExtendRecordingModal({
                                       recorder.removeVideoFromMark(mark.start, videoIndex);
                                     }
                                   }}
-                                  className="w-5 h-5 bg-red-500 text-white rounded-full
+                                  className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
                                              opacity-0 group-hover:opacity-100 transition-opacity
                                              flex items-center justify-center text-sm"
-                                >
-                                  ×
-                                </button>
+                                >×</button>
                               </div>
                             ))}
                           </div>
@@ -683,19 +747,25 @@ export default function ExtendRecordingModal({
                   </div>
                 );
               })}
-              {selectedVideos.map((videoPath, i) => (
-                <div
-                  key={i}
-                  className="relative w-16 h-16 rounded overflow-hidden bg-gray-100 dark:bg-dark-border flex items-center justify-center"
-                  title={videoPath.split('/').pop()}
-                >
-                  <span className="text-2xl">🎬</span>
+              {selectedVideos.map((video, i) => (
+                <div key={i} className="relative w-16 h-16 rounded overflow-hidden bg-gray-100 dark:bg-dark-border">
+                  {video.isGenerating ? (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : video.thumbnailPath ? (
+                    <img
+                      src={window.electronAPI.paths.getFileUrl(video.thumbnailPath)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-2xl">🎬</div>
+                  )}
                   <button
                     onClick={() => setSelectedVideos(prev => prev.filter((_, idx) => idx !== i))}
-                    className="absolute top-0 right-0 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center"
-                  >
-                    ×
-                  </button>
+                    className="absolute top-0 right-0 bg-red-500 text-white text-xs w-5 h-5"
+                  >×</button>
                 </div>
               ))}
             </div>

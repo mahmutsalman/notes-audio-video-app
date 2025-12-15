@@ -280,6 +280,24 @@ export function setupIpcHandlers(): void {
     return { success: false };
   });
 
+  // ============ Video Thumbnail Generation ============
+  ipcMain.handle('video:generateThumbnail', async (_, videoPath: string) => {
+    try {
+      const { generateVideoThumbnail } = await import('../services/videoThumbnail');
+      const { randomUUID } = await import('crypto');
+      const uuid = randomUUID();
+      const thumbDir = path.join(getMediaDir(), 'temp_thumbnails');
+      await fs.mkdir(thumbDir, { recursive: true });
+      const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
+
+      const thumbnailPath = await generateVideoThumbnail(videoPath, thumbPath);
+      return { success: true, thumbnailPath };
+    } catch (error) {
+      console.error('Failed to generate thumbnail:', error);
+      return { success: false, thumbnailPath: null };
+    }
+  });
+
   // ============ Durations (marked time segments) ============
   ipcMain.handle('durations:getByRecording', async (_, recordingId: number) => {
     return DurationsOperations.getByRecording(recordingId);

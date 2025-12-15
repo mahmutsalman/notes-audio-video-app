@@ -17,6 +17,7 @@ export interface DurationMarkImage {
 
 export interface DurationMarkVideo {
   filePath: string;  // full path to video file
+  thumbnailPath: string | null;  // path to generated thumbnail
 }
 
 export interface DurationMark {

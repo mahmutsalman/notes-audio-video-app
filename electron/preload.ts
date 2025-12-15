@@ -97,6 +97,12 @@ const electronAPI = {
       ipcRenderer.invoke('clipboard:readFileUrl'),
   },
 
+  // Video
+  video: {
+    generateThumbnail: (videoPath: string): Promise<{ success: boolean; thumbnailPath: string | null }> =>
+      ipcRenderer.invoke('video:generateThumbnail', videoPath),
+  },
+
   // Durations (marked time segments within recordings)
   durations: {
     getByRecording: (recordingId: number): Promise<Duration[]> =>
