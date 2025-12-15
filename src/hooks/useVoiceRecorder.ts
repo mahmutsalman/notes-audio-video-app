@@ -33,6 +33,7 @@ export interface VoiceRecorderControls {
   addImageToLastMark: (image: DurationMarkImage) => boolean;  // returns true if image was added
   addImageToPendingMark: (image: DurationMarkImage) => boolean;  // returns true if image was added to pending mark
   addImageToMarkByStart: (startTime: number, image: DurationMarkImage) => boolean;  // returns true if mark found and image added
+  removeImageFromMark: (startTime: number, imageIndex: number) => boolean;  // returns true if mark found and image removed
 }
 
 export interface UseVoiceRecorderReturn extends VoiceRecorderState, VoiceRecorderControls {
@@ -423,6 +424,24 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     return true;
   }, [completedMarks]);
 
+  // Remove an image from a specific mark identified by its start time
+  const removeImageFromMark = useCallback((startTime: number, imageIndex: number): boolean => {
+    const markIndex = completedMarks.findIndex(mark => mark.start === startTime);
+    if (markIndex === -1) return false;
+
+    setCompletedMarks(prev => {
+      const updated = [...prev];
+      const mark = updated[markIndex];
+      const images = mark.images || [];
+      updated[markIndex] = {
+        ...mark,
+        images: images.filter((_, i) => i !== imageIndex)
+      };
+      return updated;
+    });
+    return true;
+  }, [completedMarks]);
+
   return {
     ...state,
     analyserNode: analyserRef.current,
@@ -436,6 +455,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     addImageToLastMark,
     addImageToPendingMark,
     addImageToMarkByStart,
+    removeImageFromMark,
     pendingMarkStart,
     pendingMarkNote,
     pendingMarkImages,

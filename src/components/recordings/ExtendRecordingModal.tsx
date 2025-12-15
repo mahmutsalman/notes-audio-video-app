@@ -27,6 +27,7 @@ export default function ExtendRecordingModal({
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [selectedImages, setSelectedImages] = useState<{ data: ArrayBuffer; extension: string }[]>([]);
   const [selectedVideos, setSelectedVideos] = useState<string[]>([]);
+  const [selectedMarkIndex, setSelectedMarkIndex] = useState<number | null>(null);
 
   const recorder = useVoiceRecorder();
 
@@ -38,6 +39,7 @@ export default function ExtendRecordingModal({
       setMergeError(null);
       setSelectedImages([]);
       setSelectedVideos([]);
+      setSelectedMarkIndex(null);
       recorder.resetRecording();
     }
   }, [isOpen]);
@@ -91,8 +93,42 @@ export default function ExtendRecordingModal({
     }
   };
 
-  // Handle Cmd+V to add image to the last duration mark
+  // Handle Cmd+V to add image with priority: pending mark > selected mark > last mark
   const handlePasteToMark = useCallback(async () => {
+    // PRIORITY 1: If there's a pending mark (currently being created), add to it
+    if (recorder.isMarking || recorder.pendingMarkStart !== null) {
+      try {
+        const result = await window.electronAPI.clipboard.readImage();
+        if (result.success && result.buffer) {
+          return recorder.addImageToPendingMark({
+            data: result.buffer,
+            extension: result.extension || 'png'
+          });
+        }
+      } catch (error) {
+        console.error('Failed to read clipboard for pending mark:', error);
+      }
+      return false;
+    }
+
+    // PRIORITY 2: If a completed mark is selected, add to that mark
+    if (selectedMarkIndex !== null && recorder.completedMarks[selectedMarkIndex]) {
+      const mark = recorder.completedMarks[selectedMarkIndex];
+      try {
+        const result = await window.electronAPI.clipboard.readImage();
+        if (result.success && result.buffer) {
+          return recorder.addImageToMarkByStart(mark.start, {
+            data: result.buffer,
+            extension: result.extension || 'png'
+          });
+        }
+      } catch (error) {
+        console.error('Failed to read clipboard for selected mark:', error);
+      }
+      return false;
+    }
+
+    // PRIORITY 3: Fall back to last completed mark
     if (recorder.completedMarks.length === 0) return false;
 
     try {
@@ -104,15 +140,14 @@ export default function ExtendRecordingModal({
         });
       }
     } catch (error) {
-      console.error('Failed to read clipboard for mark:', error);
+      console.error('Failed to read clipboard for last mark:', error);
     }
     return false;
-  }, [recorder]);
+  }, [recorder, selectedMarkIndex]);
 
   // Keyboard listener for Cmd+V
   useEffect(() => {
     if (!isOpen) return;
-    if (recorder.completedMarks.length === 0) return;
 
     const handleKeyDown = async (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
@@ -126,7 +161,7 @@ export default function ExtendRecordingModal({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, recorder.completedMarks.length, handlePasteToMark]);
+  }, [isOpen, handlePasteToMark]);
 
   const handleSave = async () => {
     if (!recorder.audioBlob) return;
@@ -253,26 +288,23 @@ export default function ExtendRecordingModal({
               <div className="space-y-2">
                 {recorder.completedMarks.map((mark, index) => {
                   const imageCount = mark.images?.length || 0;
-                  const isLastMark = index === recorder.completedMarks.length - 1;
+                  const isSelected = selectedMarkIndex === index;
                   return (
-                    <div key={index} className="flex items-center gap-2 text-sm">
+                    <div
+                      key={index}
+                      onClick={() => setSelectedMarkIndex(index)}
+                      className={`flex items-center gap-2 text-sm p-2 rounded cursor-pointer transition-colors
+                        ${isSelected
+                          ? 'bg-primary-100 dark:bg-primary-900/50 border-2 border-primary-500'
+                          : 'hover:bg-gray-100 dark:hover:bg-dark-surface'
+                        }`}
+                    >
                       <span className="text-gray-600 dark:text-gray-400">
                         {formatDuration(mark.start)} → {formatDuration(mark.end)}
                       </span>
-                      {imageCount > 0 ? (
+                      {imageCount > 0 && (
                         <span className="px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded text-xs font-medium">
                           📷 {imageCount}
-                        </span>
-                      ) : isLastMark ? (
-                        <button
-                          onClick={() => handlePasteToMark()}
-                          className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-dark-border text-gray-600 dark:text-gray-400 hover:bg-primary-100 dark:hover:bg-primary-900/50 hover:text-primary-700 dark:hover:text-primary-300 rounded transition-colors"
-                        >
-                          📋 Paste Image
-                        </button>
-                      ) : (
-                        <span className="text-xs text-gray-400 dark:text-gray-500 italic">
-                          No images
                         </span>
                       )}
                       {mark.note && (
@@ -285,6 +317,68 @@ export default function ExtendRecordingModal({
                 })}
               </div>
             </div>
+          )}
+
+          {/* Selected Mark Images - During Recording */}
+          {selectedMarkIndex !== null && recorder.completedMarks[selectedMarkIndex] && (
+            (() => {
+              const mark = recorder.completedMarks[selectedMarkIndex];
+              const images = mark.images || [];
+
+              return (
+                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                      Images for Selected Section ({images.length})
+                    </h4>
+                    <button
+                      onClick={() => handlePasteToMark()}
+                      className="px-3 py-1.5 text-xs bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition-colors"
+                    >
+                      📋 Paste Image
+                    </button>
+                  </div>
+                  {images.length > 0 ? (
+                    <div className="grid grid-cols-4 gap-2">
+                      {images.map((img, imgIndex) => {
+                        const blob = new Blob([img.data], { type: `image/${img.extension}` });
+                        const previewUrl = URL.createObjectURL(blob);
+                        return (
+                          <div key={imgIndex} className="group relative">
+                            <div className="aspect-square rounded overflow-hidden bg-gray-100 dark:bg-dark-border">
+                              <img
+                                src={previewUrl}
+                                alt=""
+                                className="w-full h-full object-cover"
+                                onLoad={() => URL.revokeObjectURL(previewUrl)}
+                              />
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                // Will be implemented with removeImageFromMark from useVoiceRecorder
+                                if (recorder.removeImageFromMark) {
+                                  recorder.removeImageFromMark(mark.start, imgIndex);
+                                }
+                              }}
+                              className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
+                                         opacity-0 group-hover:opacity-100 transition-opacity
+                                         flex items-center justify-center text-sm"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-blue-400 dark:text-blue-500 italic text-sm">
+                      No images yet. Click "Paste Image" or press Cmd+V to add.
+                    </p>
+                  )}
+                </div>
+              );
+            })()
           )}
         </div>
       )}
@@ -333,10 +427,16 @@ export default function ExtendRecordingModal({
               <div className="flex flex-wrap gap-2">
                 {recorder.completedMarks.map((mark, index) => {
                   const imageCount = mark.images?.length || 0;
+                  const isSelected = selectedMarkIndex === index;
                   return (
                     <div
                       key={index}
-                      className="relative px-3 py-1.5 bg-gray-100 dark:bg-dark-hover rounded-lg text-sm"
+                      onClick={() => setSelectedMarkIndex(index)}
+                      className={`relative px-3 py-1.5 rounded-lg text-sm cursor-pointer transition-colors
+                        ${isSelected
+                          ? 'bg-primary-100 dark:bg-primary-900/50 border-2 border-primary-500'
+                          : 'bg-gray-100 dark:bg-dark-hover hover:bg-gray-200 dark:hover:bg-dark-surface'
+                        }`}
                     >
                       <span className="text-gray-700 dark:text-gray-300">
                         {formatDuration(mark.start)} → {formatDuration(mark.end)}
@@ -356,6 +456,68 @@ export default function ExtendRecordingModal({
                 })}
               </div>
             </div>
+          )}
+
+          {/* Selected Mark Images - During Review */}
+          {selectedMarkIndex !== null && recorder.completedMarks[selectedMarkIndex] && (
+            (() => {
+              const mark = recorder.completedMarks[selectedMarkIndex];
+              const images = mark.images || [];
+
+              return (
+                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                      Images for Selected Section ({images.length})
+                    </h4>
+                    <button
+                      onClick={() => handlePasteToMark()}
+                      className="px-3 py-1.5 text-xs bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition-colors"
+                    >
+                      📋 Paste Image
+                    </button>
+                  </div>
+                  {images.length > 0 ? (
+                    <div className="grid grid-cols-4 gap-2">
+                      {images.map((img, imgIndex) => {
+                        const blob = new Blob([img.data], { type: `image/${img.extension}` });
+                        const previewUrl = URL.createObjectURL(blob);
+                        return (
+                          <div key={imgIndex} className="group relative">
+                            <div className="aspect-square rounded overflow-hidden bg-gray-100 dark:bg-dark-border">
+                              <img
+                                src={previewUrl}
+                                alt=""
+                                className="w-full h-full object-cover"
+                                onLoad={() => URL.revokeObjectURL(previewUrl)}
+                              />
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                // Will be implemented with removeImageFromMark from useVoiceRecorder
+                                if (recorder.removeImageFromMark) {
+                                  recorder.removeImageFromMark(mark.start, imgIndex);
+                                }
+                              }}
+                              className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
+                                         opacity-0 group-hover:opacity-100 transition-opacity
+                                         flex items-center justify-center text-sm"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-blue-400 dark:text-blue-500 italic text-sm">
+                      No images yet. Click "Paste Image" or press Cmd+V to add.
+                    </p>
+                  )}
+                </div>
+              );
+            })()
           )}
 
           {/* Media attachments */}
