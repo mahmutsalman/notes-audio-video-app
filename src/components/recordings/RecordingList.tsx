@@ -5,6 +5,8 @@ import ContextMenu, { type ContextMenuItemType } from '../common/ContextMenu';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
 import ExtendRecordingModal from './ExtendRecordingModal';
+import { SearchBar } from './SearchBar';
+import { useRecordingSearch } from '../../hooks/useRecordingSearch';
 
 interface RecordingListProps {
   recordings: Recording[];
@@ -21,6 +23,9 @@ export default function RecordingList({
   onUpdateRecording,
   onRecordingExtended,
 }: RecordingListProps) {
+  // Search functionality
+  const { query, setQuery, filteredRecordings, matchMetadataMap, hasQuery } = useRecordingSearch(recordings);
+
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean;
@@ -202,15 +207,42 @@ export default function RecordingList({
 
   return (
     <>
-      <div className="space-y-4">
-        {recordings.map((recording) => (
-          <RecordingCard
-            key={recording.id}
-            recording={recording}
-            onContextMenu={(onDeleteRecording || onUpdateRecording) ? handleContextMenu : undefined}
-          />
-        ))}
+      {/* Search Bar */}
+      <div className="mb-6">
+        <SearchBar
+          value={query}
+          onChange={setQuery}
+          resultCount={filteredRecordings.length}
+          totalCount={recordings.length}
+        />
       </div>
+
+      {/* Empty Search Results State */}
+      {hasQuery && filteredRecordings.length === 0 && (
+        <div className="text-center py-12">
+          <div className="text-6xl mb-4">🔍</div>
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+            No recordings match "{query}"
+          </h3>
+          <p className="text-gray-500 dark:text-gray-400">
+            Try different keywords or clear search
+          </p>
+        </div>
+      )}
+
+      {/* Recording Cards */}
+      {filteredRecordings.length > 0 && (
+        <div className="space-y-4">
+          {filteredRecordings.map((recording) => (
+            <RecordingCard
+              key={recording.id}
+              recording={recording}
+              onContextMenu={(onDeleteRecording || onUpdateRecording) ? handleContextMenu : undefined}
+              matchMetadata={matchMetadataMap.get(recording.id)}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Context Menu */}
       <ContextMenu

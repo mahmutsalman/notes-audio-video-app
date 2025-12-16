@@ -3,13 +3,16 @@ import type { Recording } from '../../types';
 import Card from '../common/Card';
 import { formatDuration, formatRelativeTime, truncateNotes } from '../../utils/formatters';
 import { getImportanceBorderStyle } from '../../utils/importance';
+import { HighlightedText } from '../common/HighlightedText';
+import type { SearchMatch } from '../../utils/searchUtils';
 
 interface RecordingCardProps {
   recording: Recording;
   onContextMenu?: (e: React.MouseEvent, recording: Recording) => void;
+  matchMetadata?: SearchMatch['matchedFields'];
 }
 
-export default function RecordingCard({ recording, onContextMenu }: RecordingCardProps) {
+export default function RecordingCard({ recording, onContextMenu, matchMetadata }: RecordingCardProps) {
   const navigate = useNavigate();
 
   const images = recording.images ?? [];
@@ -35,7 +38,10 @@ export default function RecordingCard({ recording, onContextMenu }: RecordingCar
     >
       {/* Recording name */}
       <div className="font-medium text-gray-800 dark:text-gray-200 mb-1 truncate">
-        {recording.name || formatRelativeTime(recording.created_at)}
+        <HighlightedText
+          text={recording.name || formatRelativeTime(recording.created_at)}
+          positions={matchMetadata?.name?.positions}
+        />
       </div>
 
       {/* Audio indicator + duration */}
@@ -49,7 +55,10 @@ export default function RecordingCard({ recording, onContextMenu }: RecordingCar
       {/* Truncated notes */}
       {truncatedNotes && (
         <p className="text-gray-700 dark:text-gray-300 text-sm mb-3 line-clamp-2">
-          "{truncatedNotes}"
+          "<HighlightedText
+            text={truncatedNotes}
+            positions={matchMetadata?.notes?.positions}
+          />"
         </p>
       )}
 
