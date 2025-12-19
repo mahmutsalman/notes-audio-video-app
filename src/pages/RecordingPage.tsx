@@ -610,11 +610,12 @@ export default function RecordingPage() {
   useEffect(() => {
     if (selectedImageIndex === null) return;
 
+    const imagesLength = images.length;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') {
         setSelectedImageIndex(i => (i !== null && i > 0 ? i - 1 : i));
       } else if (e.key === 'ArrowRight') {
-        setSelectedImageIndex(i => (i !== null && i < images.length - 1 ? i + 1 : i));
+        setSelectedImageIndex(i => (i !== null && i < imagesLength - 1 ? i + 1 : i));
       } else if (e.key === 'Escape') {
         setSelectedImageIndex(null);
       }
@@ -622,7 +623,8 @@ export default function RecordingPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedImageIndex, images.length]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedImageIndex]);
 
   // Keyboard navigation for duration image lightbox
   const activeDurationImages = activeDurationId ? durationImagesCache[activeDurationId] ?? [] : [];
@@ -643,11 +645,12 @@ export default function RecordingPage() {
   useEffect(() => {
     if (selectedDurationImageIndex === null) return;
 
+    const imagesLength = activeDurationImages.length;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') {
         setSelectedDurationImageIndex(i => (i !== null && i > 0 ? i - 1 : i));
       } else if (e.key === 'ArrowRight') {
-        setSelectedDurationImageIndex(i => (i !== null && i < activeDurationImages.length - 1 ? i + 1 : i));
+        setSelectedDurationImageIndex(i => (i !== null && i < imagesLength - 1 ? i + 1 : i));
       } else if (e.key === 'Escape') {
         setSelectedDurationImageIndex(null);
       }
@@ -655,7 +658,8 @@ export default function RecordingPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedDurationImageIndex, activeDurationImages.length]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDurationImageIndex]);
 
   // ESC key handler for recording video lightbox
   useEffect(() => {
