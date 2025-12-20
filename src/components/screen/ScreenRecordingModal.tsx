@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import ScreenSourceSelector from './ScreenSourceSelector';
 import { useScreenRecorder } from '../../hooks/useScreenRecorder';
 import { useScreenRecordingSettings } from '../../context/ScreenRecordingSettingsContext';
-import type { ScreenSource } from '../../types';
+import type { ScreenSource, CaptureArea } from '../../types';
 
 interface ScreenRecordingModalProps {
   isOpen: boolean;
@@ -38,6 +38,11 @@ export default function ScreenRecordingModal({
       noteInputRef.current.focus();
     }
   }, [recorder.isMarking]);
+
+  // Log step changes for debugging
+  useEffect(() => {
+    console.log('[ScreenRecordingModal] step changed to:', step);
+  }, [step]);
 
   // Keyboard shortcuts during recording
   useEffect(() => {
@@ -76,6 +81,25 @@ export default function ScreenRecordingModal({
       dimensions,
       settings.fps
     );
+  };
+
+  const handleRegionSelect = async (region: CaptureArea) => {
+    console.log('[ScreenRecordingModal] handleRegionSelect called with region:', region);
+    console.log('[ScreenRecordingModal] Current step:', step);
+    console.log('[ScreenRecordingModal] Setting step to recording');
+    setStep('recording');
+    console.log('[ScreenRecordingModal] Step set to recording');
+
+    console.log('[ScreenRecordingModal] Calling startRecordingWithRegion');
+    try {
+      await recorder.startRecordingWithRegion(
+        region,
+        settings.fps
+      );
+      console.log('[ScreenRecordingModal] startRecordingWithRegion completed successfully');
+    } catch (error) {
+      console.error('[ScreenRecordingModal] startRecordingWithRegion failed:', error);
+    }
   };
 
   const handleStopRecording = async () => {
@@ -133,6 +157,7 @@ export default function ScreenRecordingModal({
           {step === 'source-selection' && (
             <ScreenSourceSelector
               onSourceSelect={handleSourceSelect}
+              onRegionSelect={handleRegionSelect}
               onCancel={handleClose}
             />
           )}

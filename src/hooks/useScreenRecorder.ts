@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { fixWebmMetadata } from '../utils/webmFixer';
+import { createCroppedStream, getDisplaySourceId, calculateBitrate } from '../utils/regionCapture';
 import type { CaptureArea } from '../types';
 
 // Reuse DurationMark types from useVoiceRecorder
@@ -27,6 +28,10 @@ export interface ScreenRecorderControls {
     resolution: { width: number; height: number },
     fps: number,
     area?: CaptureArea
+  ) => Promise<void>;
+  startRecordingWithRegion: (
+    region: CaptureArea,
+    fps: number
   ) => Promise<void>;
   stopRecording: () => Promise<Blob | null>;
   pauseRecording: () => void;
@@ -61,6 +66,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(0);
   const accumulatedTimeRef = useRef<number>(0);
+  const regionCleanupRef = useRef<(() => void) | null>(null);
 
   // Duration marking state (same pattern as audio)
   const [pendingMarkStart, setPendingMarkStart] = useState<number | null>(null);
@@ -174,6 +180,105 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     }
   }, []);
 
+  const startRecordingWithRegion = useCallback(async (
+    region: CaptureArea,
+    fps: number
+  ) => {
+    console.log('[useScreenRecorder] startRecordingWithRegion called');
+    console.log('[useScreenRecorder] region:', region);
+    console.log('[useScreenRecorder] fps:', fps);
+
+    try {
+      console.log('[useScreenRecorder] Setting initial state');
+      setState(prev => ({
+        ...prev,
+        isRecording: false,
+        isPaused: false,
+        duration: 0,
+        videoBlob: null,
+        videoUrl: prev.videoUrl ? (URL.revokeObjectURL(prev.videoUrl), null) : null,
+        error: null,
+        selectedSource: { id: 'region', name: `Region (${region.width}×${region.height})` },
+        captureArea: region,
+      }));
+
+      videoChunksRef.current = [];
+      setPendingMarkStart(null);
+      setPendingMarkNote('');
+      setCompletedMarks([]);
+      console.log('[useScreenRecorder] Initial state set');
+
+      // Get display source ID for the region's display
+      console.log('[useScreenRecorder] Getting display source ID for:', region.displayId);
+      const sourceId = await getDisplaySourceId(region.displayId);
+      console.log('[useScreenRecorder] Display source ID:', sourceId);
+      if (!sourceId) {
+        throw new Error('Failed to find display source for region');
+      }
+
+      // Create cropped stream using canvas
+      console.log('[useScreenRecorder] Creating cropped stream');
+      const { stream, cleanup } = await createCroppedStream(sourceId, region, fps);
+      console.log('[useScreenRecorder] Cropped stream created');
+      streamRef.current = stream;
+      regionCleanupRef.current = cleanup;
+
+      // Create MediaRecorder with VP9 codec
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9'
+        : 'video/webm';
+      console.log('[useScreenRecorder] Using mimeType:', mimeType);
+
+      // Calculate bitrate based on region size and FPS
+      const videoBitsPerSecond = calculateBitrate(region.width, region.height, fps);
+      console.log('[useScreenRecorder] Calculated bitrate:', videoBitsPerSecond);
+
+      console.log('[useScreenRecorder] Creating MediaRecorder');
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond,
+      });
+      console.log('[useScreenRecorder] MediaRecorder created');
+
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          videoChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onerror = (event) => {
+        console.error('MediaRecorder error:', event);
+        setState(prev => ({ ...prev, error: 'Screen recording error occurred' }));
+      };
+
+      console.log('[useScreenRecorder] Starting MediaRecorder');
+      mediaRecorder.start(100); // Collect data every 100ms
+      console.log('[useScreenRecorder] MediaRecorder started');
+
+      // Start timer
+      console.log('[useScreenRecorder] Starting timer');
+      startTimeRef.current = Date.now();
+      accumulatedTimeRef.current = 0;
+
+      timerRef.current = setInterval(() => {
+        const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+        setState(prev => ({ ...prev, duration: Math.floor(elapsed / 1000) }));
+      }, 100);
+
+      console.log('[useScreenRecorder] Setting isRecording to true');
+      setState(prev => ({ ...prev, isRecording: true, isPaused: false }));
+      console.log('[useScreenRecorder] Recording started successfully');
+    } catch (err) {
+      console.error('[useScreenRecorder] Failed to start region recording:', err);
+      setState(prev => ({
+        ...prev,
+        error: err instanceof Error ? err.message : 'Failed to start region recording',
+      }));
+    }
+  }, []);
+
   const stopRecording = useCallback(async (): Promise<Blob | null> => {
     return new Promise((resolve) => {
       const mediaRecorder = mediaRecorderRef.current;
@@ -230,6 +335,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
           streamRef.current = null;
         }
 
+        // Call region cleanup if exists
+        if (regionCleanupRef.current) {
+          regionCleanupRef.current();
+          regionCleanupRef.current = null;
+        }
+
         resolve(blob);
       };
 
@@ -274,6 +385,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
+    }
+    if (regionCleanupRef.current) {
+      regionCleanupRef.current();
+      regionCleanupRef.current = null;
     }
     if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
 
@@ -329,6 +444,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   return {
     ...state,
     startRecording,
+    startRecordingWithRegion,
     stopRecording,
     pauseRecording,
     resumeRecording,

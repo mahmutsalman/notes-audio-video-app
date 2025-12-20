@@ -43,5 +43,11 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        regionSelector: path.resolve(__dirname, 'public/region-selector.html'),
+      },
+    },
   },
 });

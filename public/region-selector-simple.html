@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Region Selector</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background-color: rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      cursor: crosshair;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    #instructions {
+      position: absolute;
+      top: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.75);
+      color: white;
+      padding: 24px 48px;
+      border-radius: 12px;
+      text-align: center;
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    #instructions h2 {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+
+    #instructions p {
+      font-size: 14px;
+      opacity: 0.8;
+    }
+
+    #rectangle {
+      position: absolute;
+      border: 2px solid #3b82f6;
+      background: rgba(59, 130, 246, 0.1);
+      display: none;
+      pointer-events: none;
+    }
+
+    #dimensions {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.75);
+      color: white;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: monospace;
+      display: none;
+      pointer-events: none;
+      z-index: 1001;
+    }
+
+    #startButton {
+      position: absolute;
+      background: #dc2626;
+      color: white;
+      border: none;
+      padding: 12px 32px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      display: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      transition: background 0.2s;
+      z-index: 1002;
+      pointer-events: auto;
+    }
+
+    #startButton:hover {
+      background: #b91c1c;
+    }
+  </style>
+</head>
+<body>
+  <div id="instructions">
+    <h2>Click and drag to select a region</h2>
+    <p>Press ESC to cancel</p>
+  </div>
+
+  <div id="rectangle"></div>
+  <div id="dimensions"></div>
+  <button id="startButton">Start Recording</button>
+
+  <script>
+    console.log('[RegionSelector] Simple overlay loaded - VERSION 2.0 WITH BUTTON LOGGING');
+
+    let displayInfo = null;
+    let isDrawing = false;
+    let startX = 0;
+    let startY = 0;
+    let rect = null;
+
+    const rectangleEl = document.getElementById('rectangle');
+    const dimensionsEl = document.getElementById('dimensions');
+    const startButton = document.getElementById('startButton');
+    const instructions = document.getElementById('instructions');
+
+    // Listen for display info
+    window.electronAPI?.region?.onDisplayInfo((info) => {
+      console.log('[RegionSelector] Received display info:', info);
+      displayInfo = info;
+    });
+
+    // Mouse down - start drawing
+    document.body.addEventListener('mousedown', (e) => {
+      console.log('[RegionSelector] Mouse down:', e.clientX, e.clientY);
+      isDrawing = true;
+      startX = e.clientX;
+      startY = e.clientY;
+
+      // Hide instructions and button
+      instructions.style.display = 'none';
+      startButton.style.display = 'none';
+
+      // Reset rectangle
+      rectangleEl.style.display = 'block';
+      rectangleEl.style.left = startX + 'px';
+      rectangleEl.style.top = startY + 'px';
+      rectangleEl.style.width = '0px';
+      rectangleEl.style.height = '0px';
+
+      rect = { x: startX, y: startY, width: 0, height: 0 };
+    });
+
+    // Mouse move - update rectangle
+    document.body.addEventListener('mousemove', (e) => {
+      if (!isDrawing) return;
+
+      const currentX = e.clientX;
+      const currentY = e.clientY;
+
+      const width = Math.abs(currentX - startX);
+      const height = Math.abs(currentY - startY);
+      const left = Math.min(startX, currentX);
+      const top = Math.min(startY, currentY);
+
+      rectangleEl.style.left = left + 'px';
+      rectangleEl.style.top = top + 'px';
+      rectangleEl.style.width = width + 'px';
+      rectangleEl.style.height = height + 'px';
+
+      // Update dimensions display
+      dimensionsEl.textContent = `${Math.round(width)} × ${Math.round(height)}`;
+      dimensionsEl.style.display = 'block';
+      dimensionsEl.style.left = (left + width / 2) + 'px';
+      dimensionsEl.style.top = (top - 35) + 'px';
+      dimensionsEl.style.transform = 'translateX(-50%)';
+
+      rect = { x: left, y: top, width, height };
+    });
+
+    // Mouse up - finish drawing
+    document.body.addEventListener('mouseup', (e) => {
+      if (!isDrawing) return;
+
+      console.log('[RegionSelector] Mouse up, rectangle:', rect);
+      isDrawing = false;
+
+      // Show start button if rectangle is big enough
+      if (rect && rect.width > 20 && rect.height > 20) {
+        console.log('[RegionSelector] Rectangle is big enough, showing Start Recording button');
+        console.log('[RegionSelector] Button position - left:', (rect.x + rect.width / 2), 'top:', (rect.y + rect.height + 20));
+        startButton.style.display = 'block';
+        startButton.style.left = (rect.x + rect.width / 2) + 'px';
+        startButton.style.top = (rect.y + rect.height + 20) + 'px';
+        startButton.style.transform = 'translateX(-50%)';
+        console.log('[RegionSelector] Button display style:', startButton.style.display);
+        console.log('[RegionSelector] Button computed style:', window.getComputedStyle(startButton).display);
+      } else {
+        // Rectangle too small, reset
+        rectangleEl.style.display = 'none';
+        dimensionsEl.style.display = 'none';
+        instructions.style.display = 'block';
+        rect = null;
+      }
+    });
+
+    // Start Recording button
+    console.log('[RegionSelector] Setting up Start Recording button listener');
+    console.log('[RegionSelector] startButton element:', startButton);
+
+    // Prevent button from triggering drawing behavior
+    startButton.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      console.log('[RegionSelector] Button mousedown - prevented propagation');
+    });
+
+    startButton.addEventListener('mouseup', (e) => {
+      e.stopPropagation();
+      console.log('[RegionSelector] Button mouseup - prevented propagation');
+    });
+
+    startButton.addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent body from receiving the click
+      console.log('[RegionSelector] ===== BUTTON CLICKED =====');
+      console.log('[RegionSelector] Click event:', e);
+      console.log('[RegionSelector] Start Recording button clicked');
+      console.log('[RegionSelector] rect:', rect);
+      console.log('[RegionSelector] displayInfo:', displayInfo);
+
+      if (!rect || !displayInfo) {
+        console.error('[RegionSelector] Missing rect or displayInfo');
+        return;
+      }
+
+      const captureArea = {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        displayId: displayInfo.id,
+        displayBounds: displayInfo.bounds
+      };
+
+      console.log('[RegionSelector] Sending capture area:', captureArea);
+      window.electronAPI.region.sendRegion(captureArea);
+      console.log('[RegionSelector] sendRegion() called');
+    });
+
+    // ESC key to cancel
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        console.log('[RegionSelector] ESC pressed, canceling');
+        window.electronAPI.region.cancel();
+      }
+    });
+
+    // Debug: Log ALL clicks
+    document.addEventListener('click', (e) => {
+      console.log('[RegionSelector] ===== CLICK DETECTED =====');
+      console.log('[RegionSelector] Click target:', e.target);
+      console.log('[RegionSelector] Click target ID:', e.target.id);
+      console.log('[RegionSelector] Click target tagName:', e.target.tagName);
+      console.log('[RegionSelector] Click coordinates:', e.clientX, e.clientY);
+    }, true); // Use capture phase to ensure we catch it
+
+    console.log('[RegionSelector] Event listeners registered');
+  </script>
+</body>
+</html>

@@ -552,6 +552,52 @@ export function setupIpcHandlers(): void {
     return { filePath, duration };
   });
 
+  // ============ Region Selection ============
+  let regionSelectorWindows: any[] = [];
+
+  ipcMain.handle('region:startSelection', async () => {
+    console.log('[IPC] region:startSelection called');
+    const { createRegionSelectorWindows } = await import('../windows/regionSelector');
+    regionSelectorWindows = createRegionSelectorWindows();
+    console.log(`[IPC] Created ${regionSelectorWindows.length} overlay window(s)`);
+  });
+
+  ipcMain.handle('region:cancel', async () => {
+    const { closeAllRegionSelectorWindows } = await import('../windows/regionSelector');
+    closeAllRegionSelectorWindows();
+    regionSelectorWindows = [];
+  });
+
+  ipcMain.on('region:sendRegion', async (event, region: any) => {
+    console.log('[IPC Handler] region:sendRegion received:', region);
+
+    // Close all overlay windows
+    const { closeAllRegionSelectorWindows } = await import('../windows/regionSelector');
+    closeAllRegionSelectorWindows();
+    regionSelectorWindows = [];
+    console.log('[IPC Handler] Overlay windows closed');
+
+    // Forward region data to main window
+    const { BrowserWindow } = await import('electron');
+    const allWindows = BrowserWindow.getAllWindows();
+    console.log('[IPC Handler] All windows count:', allWindows.length);
+    console.log('[IPC Handler] All windows:', allWindows.map(w => ({
+      id: w.id,
+      hasDisplayId: 'displayId' in w,
+      title: w.getTitle()
+    })));
+
+    const mainWindow = allWindows.find((w: any) => !('displayId' in w));
+    console.log('[IPC Handler] Main window found:', !!mainWindow);
+
+    if (mainWindow) {
+      mainWindow.webContents.send('region:selected', region);
+      console.log('[IPC Handler] Sent region:selected to main window');
+    } else {
+      console.error('[IPC Handler] Main window not found!');
+    }
+  });
+
 
   // ============ Settings ============
   ipcMain.handle('settings:get', async (_, key: string) => {

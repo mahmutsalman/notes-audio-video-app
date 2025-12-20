@@ -129,12 +129,29 @@ export interface ScreenSource {
   thumbnail: string;  // base64 data URL
 }
 
+export interface DisplayInfo {
+  id: string;
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  scaleFactor: number;
+}
+
 export interface CaptureArea {
   x: number;
   y: number;
   width: number;
   height: number;
   displayId: string;
+  displayBounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 }
 
 export interface ScreenRecordingSettings {
@@ -328,6 +345,12 @@ export interface ElectronAPI {
       resolution: string,
       fps: number
     ) => Promise<{ filePath: string; duration: number | null }>;
+  };
+  region: {
+    startSelection: () => Promise<void>;
+    onRegionSelected: (callback: (region: CaptureArea | null) => void) => () => void;
+    sendRegion: (region: CaptureArea) => Promise<void>;
+    cancel: () => Promise<void>;
   };
   video: {
     generateThumbnail: (videoPath: string) => Promise<{ success: boolean; thumbnailPath: string | null }>;

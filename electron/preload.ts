@@ -230,6 +230,28 @@ const electronAPI = {
       ipcRenderer.invoke('screenRecording:delete', id),
   },
 
+  // Region Selection
+  region: {
+    startSelection: (): Promise<void> =>
+      ipcRenderer.invoke('region:startSelection'),
+    onRegionSelected: (callback: (region: any | null) => void) => {
+      const listener = (_event: any, region: any) => callback(region);
+      ipcRenderer.on('region:selected', listener);
+      return () => ipcRenderer.removeListener('region:selected', listener);
+    },
+    sendRegion: (region: any): Promise<void> => {
+      ipcRenderer.send('region:sendRegion', region);
+      return Promise.resolve();
+    },
+    cancel: (): Promise<void> =>
+      ipcRenderer.invoke('region:cancel'),
+    onDisplayInfo: (callback: (displayInfo: any) => void) => {
+      const listener = (_event: any, displayInfo: any) => callback(displayInfo);
+      ipcRenderer.on('display-info', listener);
+      return () => ipcRenderer.removeListener('display-info', listener);
+    },
+  },
+
   // Settings
   settings: {
     get: (key: string): Promise<string | null> =>
