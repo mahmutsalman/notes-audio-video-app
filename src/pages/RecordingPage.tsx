@@ -356,8 +356,10 @@ export default function RecordingPage() {
 
         // Set up looping between start and end
         const loopHandler = () => {
-          if (videoPlayerRef.current && activeDurationId === duration.id) {
+          if (videoPlayerRef.current) {
             if (videoPlayerRef.current.currentTime >= duration.end_time) {
+              console.log('[RecordingPage] Video loop boundary reached at', videoPlayerRef.current.currentTime,
+                          'seeking back to', duration.start_time);
               videoPlayerRef.current.currentTime = duration.start_time;
             }
           }
