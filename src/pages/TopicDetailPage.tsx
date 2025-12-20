@@ -4,6 +4,7 @@ import { useTopic } from '../hooks/useTopics';
 import { useRecordings } from '../hooks/useRecordings';
 import RecordingList from '../components/recordings/RecordingList';
 import QuickRecord from '../components/recordings/QuickRecord';
+import QuickScreenRecord from '../components/recordings/QuickScreenRecord';
 import TopicForm from '../components/topics/TopicForm';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
@@ -155,6 +156,9 @@ export default function TopicDetailPage() {
 
       {/* Quick Record FAB */}
       <QuickRecord topicId={id!} onRecordingSaved={handleRecordingSaved} />
+
+      {/* Quick Screen Record FAB */}
+      <QuickScreenRecord topicId={id!} onRecordingSaved={handleRecordingSaved} />
 
       {/* Edit topic modal */}
       <Modal

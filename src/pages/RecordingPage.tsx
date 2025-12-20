@@ -14,6 +14,7 @@ import Button from '../components/common/Button';
 import NotesEditor from '../components/common/NotesEditor';
 import CodeSnippetCard from '../components/code/CodeSnippetCard';
 import CodeSnippetModal from '../components/code/CodeSnippetModal';
+import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime } from '../utils/formatters';
 import { getNextDurationColor, DURATION_COLORS } from '../utils/durationColors';
 import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio, CodeSnippet, DurationCodeSnippet } from '../types';
@@ -81,7 +82,7 @@ export default function RecordingPage() {
   const [isContentPressed, setIsContentPressed] = useState(false);
   const [activeDurationId, setActiveDurationId] = useState<number | null>(null);
   const [selectedDurationImageIndex, setSelectedDurationImageIndex] = useState<number | null>(null);
-  const [audioLoaded, setAudioLoaded] = useState(false);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
   const [isSeekingDuration, setIsSeekingDuration] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [imageToDelete, setImageToDelete] = useState<{
@@ -123,8 +124,11 @@ export default function RecordingPage() {
     currentCaption: string;
   } | null>(null);
   const [captionText, setCaptionText] = useState('');
+  const [isScreenRecording, setIsScreenRecording] = useState(false);
 
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
+  const videoPlayerRef = useRef<HTMLVideoElement>(null);
+  const videoLoopListenerRef = useRef<(() => void) | null>(null);
 
   // Helper to preserve scroll position across refetch
   const preserveScrollPosition = async (operation: () => Promise<void>) => {
@@ -135,12 +139,28 @@ export default function RecordingPage() {
     });
   };
 
-  // Reset loop state and audio loaded state when changing recordings
+  // Reset loop state and media loaded state when changing recordings
   useEffect(() => {
     setActiveDurationId(null);
-    setAudioLoaded(false);
+    setMediaLoaded(false);
     setIsSeekingDuration(false);
+
+    // Clean up video loop listener when changing recordings
+    if (videoPlayerRef.current && videoLoopListenerRef.current) {
+      videoPlayerRef.current.removeEventListener('timeupdate', videoLoopListenerRef.current);
+      videoLoopListenerRef.current = null;
+    }
   }, [id]);
+
+  // Cleanup video loop listener on unmount
+  useEffect(() => {
+    return () => {
+      // Cleanup video loop listener on unmount
+      if (videoPlayerRef.current && videoLoopListenerRef.current) {
+        videoPlayerRef.current.removeEventListener('timeupdate', videoLoopListenerRef.current);
+      }
+    };
+  }, []);
 
   // Load duration code snippets when active duration changes
   useEffect(() => {
@@ -276,9 +296,17 @@ export default function RecordingPage() {
 
   // Handle duration click for loop playback
   const handleDurationClick = async (duration: Duration) => {
-    // Block clicks until audio is fully loaded
-    if (!audioPlayerRef.current?.isLoaded) {
+    const isVideoRecording = !!recording?.video_path;
+    const isAudioRecording = !!recording?.audio_path;
+
+    // Check media player availability
+    if (isAudioRecording && !audioPlayerRef.current?.isLoaded) {
       console.log('[RecordingPage] Audio not loaded yet, ignoring duration click');
+      return;
+    }
+
+    if (isVideoRecording && !videoPlayerRef.current) {
+      console.log('[RecordingPage] Video player not available, ignoring duration click');
       return;
     }
 
@@ -289,15 +317,58 @@ export default function RecordingPage() {
     }
 
     if (activeDurationId === duration.id) {
-      // Already looping this one - stop
-      audioPlayerRef.current?.clearLoopRegion();
+      // Already looping this one - deactivate
+      console.log('[RecordingPage] Deactivating current duration');
       setActiveDurationId(null);
+      setIsSeekingDuration(false);
+
+      if (isAudioRecording && audioPlayerRef.current) {
+        audioPlayerRef.current.clearLoopRegion();
+      }
+
+      if (isVideoRecording && videoPlayerRef.current && videoLoopListenerRef.current) {
+        videoPlayerRef.current.removeEventListener('timeupdate', videoLoopListenerRef.current);
+        videoLoopListenerRef.current = null;
+      }
     } else {
-      // Start looping this duration - block further clicks until playback starts
-      setIsSeekingDuration(true);
-      audioPlayerRef.current?.setLoopRegion(duration.start_time, duration.end_time);
+      // Activate new duration
+      console.log('[RecordingPage] Activating duration:', duration);
       setActiveDurationId(duration.id);
-      console.log(`[RecordingPage] Activated duration ${duration.id}, fetching media...`);
+      setIsSeekingDuration(true);
+
+      // Handle audio recording
+      if (isAudioRecording && audioPlayerRef.current) {
+        audioPlayerRef.current.setLoopRegion(duration.start_time, duration.end_time);
+        console.log(`[RecordingPage] Activated duration ${duration.id}, fetching media...`);
+      }
+
+      // Handle video recording
+      if (isVideoRecording && videoPlayerRef.current) {
+        console.log('[RecordingPage] Seeking video to:', duration.start_time);
+
+        // Clean up previous loop listener if exists
+        if (videoLoopListenerRef.current) {
+          videoPlayerRef.current.removeEventListener('timeupdate', videoLoopListenerRef.current);
+        }
+
+        // Seek to start time
+        videoPlayerRef.current.currentTime = duration.start_time;
+
+        // Set up looping between start and end
+        const loopHandler = () => {
+          if (videoPlayerRef.current && activeDurationId === duration.id) {
+            if (videoPlayerRef.current.currentTime >= duration.end_time) {
+              videoPlayerRef.current.currentTime = duration.start_time;
+            }
+          }
+        };
+
+        videoLoopListenerRef.current = loopHandler;
+        videoPlayerRef.current.addEventListener('timeupdate', loopHandler);
+
+        await videoPlayerRef.current.play();
+      }
+
       // Fetch images, videos, and audios for this duration if not cached
       const [images, videos, audios] = await Promise.all([
         getDurationImages(duration.id),
@@ -305,6 +376,8 @@ export default function RecordingPage() {
         getDurationAudios(duration.id),
       ]);
       console.log(`[RecordingPage] Duration ${duration.id} media fetched - Images: ${images.length}, Videos: ${videos.length}, Audios: ${audios.length}`);
+
+      setIsSeekingDuration(false);
     }
   };
 
@@ -380,6 +453,48 @@ export default function RecordingPage() {
     if (!recordingAudioToDelete) return;
     await deleteRecordingAudio(recordingAudioToDelete);
     setRecordingAudioToDelete(null);
+  };
+
+  // Handle saving screen recording
+  // TODO: Remove this - screen recordings are now standalone items created from TopicDetailPage
+  const handleSaveScreenRecording = async (_videoBlob: Blob, _marks: any[]) => {
+    if (!id) return;
+
+    try {
+      // OLD APPROACH - TO BE REMOVED
+      // Screen recordings are now standalone items, not attachments
+      console.warn('Screen recording functionality moved to standalone recordings');
+
+      // Temporarily disabled - will be removed in Phase 2
+      /*
+      // Save the video file
+      const arrayBuffer = await videoBlob.arrayBuffer();
+      const settings = await window.electronAPI.settings.getAll();
+
+      await window.electronAPI.screenRecording.save(
+        id,
+        arrayBuffer,
+        settings['screen_recording_resolution'] || '1080p',
+        parseInt(settings['screen_recording_fps'] || '30')
+      );
+
+      // Save duration marks
+      for (const mark of marks) {
+        await window.electronAPI.durations.create({
+          recording_id: id,
+          start_time: mark.start,
+          end_time: mark.end,
+          note: mark.note ?? null,
+        });
+      }
+
+      await preserveScrollPosition(refetch);
+      setIsScreenRecording(false);
+      */
+    } catch (error) {
+      console.error('Failed to save screen recording:', error);
+      alert('Failed to save screen recording. Please try again.');
+    }
   };
 
   // ============ Code Snippet Handlers ============
@@ -758,6 +873,11 @@ export default function RecordingPage() {
   const audioUrl = recording.audio_path
     ? window.electronAPI.paths.getFileUrl(recording.audio_path)
     : null;
+  const videoUrl = recording.video_path
+    ? window.electronAPI.paths.getFileUrl(recording.video_path)
+    : null;
+
+  const isVideoRecording = !!recording.video_path;
 
   return (
     <div
@@ -812,7 +932,7 @@ export default function RecordingPage() {
         </Button>
       </div>
 
-      {/* Audio player */}
+      {/* Audio/Video player */}
       <div
         className={`mb-6 p-4 -mx-4 cursor-pointer rounded-xl
                     bg-gray-50 dark:bg-dark-surface
@@ -820,30 +940,62 @@ export default function RecordingPage() {
                     transition-all duration-75
                     ${isContentPressed ? 'translate-y-1 shadow-none' : ''}`}
       >
-        <h2
-          className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2 select-none"
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setShowDebug(prev => !prev);
-          }}
-        >
-          <span>🎙️</span>
-          Audio
-          <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
-            ({formatDuration(recording.audio_duration)})
-          </span>
-        </h2>
-        {audioUrl ? (
-          <AudioPlayer
-            ref={audioPlayerRef}
-            src={audioUrl}
-            duration={recording.audio_duration ?? undefined}
-            onLoad={() => setAudioLoaded(true)}
-            onPlay={() => setIsSeekingDuration(false)}
-            showDebug={showDebug}
-          />
+        <div className="flex items-center justify-between mb-2">
+          <h2
+            className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2 select-none"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setShowDebug(prev => !prev);
+            }}
+          >
+            <span>{isVideoRecording ? '🎬' : '🎙️'}</span>
+            {isVideoRecording ? 'Screen Recording' : 'Audio'}
+            <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
+              ({formatDuration(isVideoRecording ? recording.video_duration : recording.audio_duration)})
+            </span>
+            {isVideoRecording && recording.video_resolution && recording.video_fps && (
+              <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                • {recording.video_resolution} @ {recording.video_fps}fps
+              </span>
+            )}
+          </h2>
+          {!isVideoRecording && (
+            <button
+              onClick={() => setIsScreenRecording(true)}
+              className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+            >
+              <span>🎬</span>
+              Record Screen
+            </button>
+          )}
+        </div>
+        {isVideoRecording ? (
+          videoUrl ? (
+            <video
+              ref={videoPlayerRef}
+              controls
+              className="w-full rounded-lg bg-black"
+              onLoadedData={() => setMediaLoaded(true)}
+            >
+              <source src={videoUrl} type="video/webm" />
+              Your browser does not support the video tag.
+            </video>
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400">No video file available</p>
+          )
         ) : (
-          <p className="text-gray-500 dark:text-gray-400">No audio file available</p>
+          audioUrl ? (
+            <AudioPlayer
+              ref={audioPlayerRef}
+              src={audioUrl}
+              duration={recording.audio_duration ?? undefined}
+              onLoad={() => setMediaLoaded(true)}
+              onPlay={() => setIsSeekingDuration(false)}
+              showDebug={showDebug}
+            />
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400">No audio file available</p>
+          )
         )}
       </div>
 
@@ -857,7 +1009,7 @@ export default function RecordingPage() {
         onColorChange={handleColorChange}
         durationImagesCache={durationImagesCache}
         durationVideosCache={durationVideosCache}
-        disabled={!audioLoaded || isSeekingDuration}
+        disabled={!mediaLoaded || isSeekingDuration}
       />
 
       {/* Duration Images - shown when a duration is active and has images */}
@@ -1984,6 +2136,16 @@ export default function RecordingPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Screen Recording Modal */}
+      {id && (
+        <ScreenRecordingModal
+          isOpen={isScreenRecording}
+          onClose={() => setIsScreenRecording(false)}
+          recordingId={id}
+          onSave={handleSaveScreenRecording}
+        />
+      )}
       </div>
     </div>
   );

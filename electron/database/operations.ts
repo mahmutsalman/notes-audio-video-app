@@ -140,8 +140,8 @@ export const RecordingsOperations = {
   create(recording: CreateRecording): Recording {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO recordings (topic_id, name, audio_path, audio_duration, notes_content)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO recordings (topic_id, name, audio_path, audio_duration, video_path, video_duration, video_resolution, video_fps, notes_content)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -149,6 +149,10 @@ export const RecordingsOperations = {
       recording.name ?? null,
       recording.audio_path,
       recording.audio_duration,
+      recording.video_path ?? null,
+      recording.video_duration ?? null,
+      recording.video_resolution ?? null,
+      recording.video_fps ?? null,
       recording.notes_content
     );
 
@@ -176,6 +180,22 @@ export const RecordingsOperations = {
     if (updates.audio_duration !== undefined) {
       fields.push('audio_duration = ?');
       values.push(updates.audio_duration);
+    }
+    if (updates.video_path !== undefined) {
+      fields.push('video_path = ?');
+      values.push(updates.video_path);
+    }
+    if (updates.video_duration !== undefined) {
+      fields.push('video_duration = ?');
+      values.push(updates.video_duration);
+    }
+    if (updates.video_resolution !== undefined) {
+      fields.push('video_resolution = ?');
+      values.push(updates.video_resolution);
+    }
+    if (updates.video_fps !== undefined) {
+      fields.push('video_fps = ?');
+      values.push(updates.video_fps);
     }
     if (updates.notes_content !== undefined) {
       fields.push('notes_content = ?');
@@ -742,5 +762,33 @@ export const DurationCodeSnippetsOperations = {
   deleteByDuration(durationId: number): void {
     const db = getDatabase();
     db.prepare('DELETE FROM duration_code_snippets WHERE duration_id = ?').run(durationId);
+  },
+};
+
+// Settings Operations
+export const SettingsOperations = {
+  get(key: string): string | null {
+    const db = getDatabase();
+    const result = db.prepare('SELECT value FROM app_settings WHERE key = ?')
+      .get(key) as { value: string } | undefined;
+    return result?.value || null;
+  },
+
+  set(key: string, value: string): void {
+    const db = getDatabase();
+    db.prepare(`
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(key, value);
+  },
+
+  getAll(): Record<string, string> {
+    const db = getDatabase();
+    const rows = db.prepare('SELECT key, value FROM app_settings').all() as
+      { key: string; value: string }[];
+    return Object.fromEntries(rows.map(r => [r.key, r.value]));
   },
 };

@@ -191,6 +191,31 @@ function runMigrations(db: Database.Database): void {
     console.log('Added name column to recordings table');
   }
 
+  // Migration: Add video columns to recordings table for screen recordings
+  const hasVideoPathColumn = recordingsColumns.some(col => col.name === 'video_path');
+  if (!hasVideoPathColumn) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN video_path TEXT`);
+    console.log('Added video_path column to recordings table');
+  }
+
+  const hasVideoDurationColumn = recordingsColumns.some(col => col.name === 'video_duration');
+  if (!hasVideoDurationColumn) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN video_duration INTEGER`);
+    console.log('Added video_duration column to recordings table');
+  }
+
+  const hasVideoResolutionColumn = recordingsColumns.some(col => col.name === 'video_resolution');
+  if (!hasVideoResolutionColumn) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN video_resolution TEXT`);
+    console.log('Added video_resolution column to recordings table');
+  }
+
+  const hasVideoFpsColumn = recordingsColumns.some(col => col.name === 'video_fps');
+  if (!hasVideoFpsColumn) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN video_fps INTEGER`);
+    console.log('Added video_fps column to recordings table');
+  }
+
   // Migration: Add caption column to images table if it doesn't exist
   const imagesColumns = db.prepare("PRAGMA table_info(images)").all() as { name: string }[];
   const hasImageCaptionColumn = imagesColumns.some(col => col.name === 'caption');
@@ -290,6 +315,33 @@ function runMigrations(db: Database.Database): void {
       CREATE INDEX idx_duration_code_snippets_duration ON duration_code_snippets(duration_id);
     `);
     console.log('Created duration_code_snippets table');
+  }
+
+
+  // Migration: Create app_settings table
+  const appSettingsTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='app_settings'"
+  ).get();
+
+  if (!appSettingsTableExists) {
+    db.exec(`
+      CREATE TABLE app_settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT NOT NULL UNIQUE,
+        value TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_app_settings_key ON app_settings(key);
+
+      INSERT INTO app_settings (key, value) VALUES
+        ('screen_recording_resolution', '1080p'),
+        ('screen_recording_fps', '30'),
+        ('screen_recording_codec', 'vp9'),
+        ('screen_recording_preset_name', 'Standard');
+    `);
+    console.log('Created app_settings table with default values');
   }
 
   // Create the stats view (drop and recreate to handle schema changes)

@@ -9,7 +9,9 @@ import type {
   DurationAudio,
   CodeSnippet, CreateCodeSnippet, UpdateCodeSnippet,
   DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
-  BackupResult
+  BackupResult,
+  ScreenRecording,
+  ScreenSource
 } from '../src/types';
 
 // Type-safe API exposed to renderer
@@ -202,6 +204,40 @@ const electronAPI = {
     create: (): Promise<BackupResult> => ipcRenderer.invoke('backup:create'),
     getPath: (): Promise<string> => ipcRenderer.invoke('backup:getPath'),
     openFolder: (): Promise<void> => ipcRenderer.invoke('backup:openFolder'),
+  },
+
+  // Screen Recording
+  screenRecording: {
+    getSources: (): Promise<ScreenSource[]> =>
+      ipcRenderer.invoke('screenRecording:getSources'),
+    saveFile: (
+      recordingId: number,
+      videoBuffer: ArrayBuffer,
+      resolution: string,
+      fps: number
+    ): Promise<{ filePath: string; duration: number | null }> =>
+      ipcRenderer.invoke('screenRecording:saveFile', recordingId, videoBuffer, resolution, fps),
+    save: (
+      recordingId: number,
+      videoBuffer: ArrayBuffer,
+      resolution: string,
+      fps: number
+    ): Promise<ScreenRecording> =>
+      ipcRenderer.invoke('screenRecording:save', recordingId, videoBuffer, resolution, fps),
+    getByRecording: (recordingId: number): Promise<ScreenRecording[]> =>
+      ipcRenderer.invoke('screenRecording:getByRecording', recordingId),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('screenRecording:delete', id),
+  },
+
+  // Settings
+  settings: {
+    get: (key: string): Promise<string | null> =>
+      ipcRenderer.invoke('settings:get', key),
+    set: (key: string, value: string): Promise<void> =>
+      ipcRenderer.invoke('settings:set', key, value),
+    getAll: (): Promise<Record<string, string>> =>
+      ipcRenderer.invoke('settings:getAll'),
   },
 };
 

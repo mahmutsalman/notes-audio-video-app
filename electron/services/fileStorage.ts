@@ -20,6 +20,7 @@ export async function ensureMediaDirs(): Promise<void> {
     path.join(mediaDir, 'duration_images'),
     path.join(mediaDir, 'duration_videos'),
     path.join(mediaDir, 'duration_audios'),  // duration-level audio attachments
+    path.join(mediaDir, 'screen_recordings'), // screen recordings
   ];
 
   for (const dir of dirs) {
@@ -165,6 +166,37 @@ export async function saveVideoFromBuffer(
   const duration = null; // TODO: Get duration if needed
 
   return { filePath, thumbnailPath, duration };
+}
+
+export async function saveScreenRecording(
+  recordingId: number,
+  videoBuffer: ArrayBuffer,
+  resolution: string,
+  fps: number
+): Promise<{ filePath: string; thumbnailPath: string | null; duration: number | null; fileSize: number }> {
+  const dir = path.join(getMediaDir(), 'screen_recordings', String(recordingId));
+  const thumbDir = path.join(dir, 'thumbnails');
+  await fs.mkdir(thumbDir, { recursive: true });
+
+  const uuid = uuidv4();
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `screen_${resolution}_${fps}fps_${timestamp}.webm`;
+  const filePath = path.join(dir, filename);
+
+  // Write buffer to file
+  const buffer = Buffer.from(videoBuffer);
+  await fs.writeFile(filePath, buffer);
+
+  const fileSize = buffer.length;
+  console.log('Screen recording saved to:', filePath, `(${fileSize} bytes)`);
+
+  // Generate thumbnail using canvas-based approach
+  const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
+  const thumbnailPath = await generateVideoThumbnail(filePath, thumbPath);
+
+  const duration = null; // TODO: Extract duration from video metadata if needed
+
+  return { filePath, thumbnailPath, duration, fileSize };
 }
 
 export async function saveDurationImageFromBuffer(
@@ -330,8 +362,9 @@ export async function deleteRecordingMedia(recordingId: number): Promise<void> {
   const imagesDir = path.join(mediaDir, 'images', String(recordingId));
   const videosDir = path.join(mediaDir, 'videos', String(recordingId));
   const audiosDir = path.join(mediaDir, 'audios', String(recordingId)); // audio attachments
+  const screenRecordingsDir = path.join(mediaDir, 'screen_recordings', String(recordingId)); // screen recordings
 
-  for (const dir of [audiDir, imagesDir, videosDir, audiosDir]) {
+  for (const dir of [audiDir, imagesDir, videosDir, audiosDir, screenRecordingsDir]) {
     try {
       await fs.rm(dir, { recursive: true, force: true });
       console.log('Deleted directory:', dir);

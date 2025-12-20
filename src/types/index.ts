@@ -22,6 +22,10 @@ export interface Recording {
   name: string | null;
   audio_path: string | null;
   audio_duration: number | null;
+  video_path: string | null;
+  video_duration: number | null;
+  video_resolution: string | null;
+  video_fps: number | null;
   notes_content: string | null;
   importance_color: ImportanceColor;
   created_at: string;
@@ -112,6 +116,32 @@ export interface DurationAudio {
   duration: number | null;
   sort_order: number;
   created_at: string;
+}
+
+// Screen Recording types
+
+export type ScreenResolution = '480p' | '720p' | '1080p';
+export type ScreenFPS = 10 | 24 | 30 | 60;
+
+export interface ScreenSource {
+  id: string;
+  name: string;
+  thumbnail: string;  // base64 data URL
+}
+
+export interface CaptureArea {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  displayId: string;
+}
+
+export interface ScreenRecordingSettings {
+  resolution: ScreenResolution;
+  fps: ScreenFPS;
+  codec: 'vp9' | 'vp8';
+  presetName: string;
 }
 
 // Component-specific types
@@ -289,6 +319,20 @@ export interface ElectronAPI {
     create: () => Promise<BackupResult>;
     getPath: () => Promise<string>;
     openFolder: () => Promise<void>;
+  };
+  screenRecording: {
+    getSources: () => Promise<ScreenSource[]>;
+    saveFile: (
+      recordingId: number,
+      videoBuffer: ArrayBuffer,
+      resolution: string,
+      fps: number
+    ) => Promise<{ filePath: string; duration: number | null }>;
+  };
+  settings: {
+    get: (key: string) => Promise<string | null>;
+    set: (key: string, value: string) => Promise<void>;
+    getAll: () => Promise<Record<string, string>>;
   };
 }
 

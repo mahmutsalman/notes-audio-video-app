@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, nativeTheme, clipboard } from 'electron';
+import { ipcMain, dialog, shell, nativeTheme, clipboard, desktopCapturer } from 'electron';
 import {
   TopicsOperations,
   RecordingsOperations,
@@ -11,6 +11,7 @@ import {
   DurationAudiosOperations,
   CodeSnippetsOperations,
   DurationCodeSnippetsOperations,
+  SettingsOperations,
 } from '../database/operations';
 import {
   saveAudioFile,
@@ -37,7 +38,8 @@ import { createBackup, getBackupDir } from '../services/backupService';
 import { mergeAudioFiles } from '../services/audioMerger';
 import type {
   CreateTopic, UpdateTopic, CreateRecording, UpdateRecording, CreateDuration, UpdateDuration,
-  CreateCodeSnippet, UpdateCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet
+  CreateCodeSnippet, UpdateCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
+  CreateScreenRecording
 } from '../../src/types';
 
 export function setupIpcHandlers(): void {
@@ -518,6 +520,50 @@ export function setupIpcHandlers(): void {
       // Ignore if already exists
     }
     await shell.openPath(backupPath);
+  });
+
+  // ============ Screen Recording ============
+  ipcMain.handle('screenRecording:getSources', async () => {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen', 'window'],
+      thumbnailSize: { width: 300, height: 200 }
+    });
+    return sources.map(source => ({
+      id: source.id,
+      name: source.name,
+      thumbnail: source.thumbnail.toDataURL()
+    }));
+  });
+
+  ipcMain.handle('screenRecording:saveFile', async (
+    _,
+    recordingId: number,
+    videoBuffer: ArrayBuffer,
+    resolution: string,
+    fps: number
+  ) => {
+    const { saveScreenRecording } = await import('../services/fileStorage');
+    const { filePath, duration } = await saveScreenRecording(
+      recordingId,
+      videoBuffer,
+      resolution,
+      fps
+    );
+    return { filePath, duration };
+  });
+
+
+  // ============ Settings ============
+  ipcMain.handle('settings:get', async (_, key: string) => {
+    return SettingsOperations.get(key);
+  });
+
+  ipcMain.handle('settings:set', async (_, key: string, value: string) => {
+    SettingsOperations.set(key, value);
+  });
+
+  ipcMain.handle('settings:getAll', async () => {
+    return SettingsOperations.getAll();
   });
 
   console.log('IPC handlers registered');

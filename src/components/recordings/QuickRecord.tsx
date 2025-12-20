@@ -339,6 +339,10 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
         name: formatTimestampName(),
         audio_path: null,
         audio_duration: recorder.duration,
+        video_path: null,
+        video_duration: null,
+        video_resolution: null,
+        video_fps: null,
         notes_content: notes || null,
       });
 
