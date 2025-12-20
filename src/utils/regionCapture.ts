@@ -26,9 +26,15 @@ export async function createCroppedStream(
   });
 
   // 2. Create canvas for cropping
+  // Account for display scale factor (e.g., 2x on Retina displays)
+  const scaleFactor = region.scaleFactor || 1;
+  console.log('[regionCapture] Scale factor:', scaleFactor);
+  console.log('[regionCapture] CSS region:', region.width, 'x', region.height);
+  console.log('[regionCapture] Physical canvas:', region.width * scaleFactor, 'x', region.height * scaleFactor);
+
   const canvas = document.createElement('canvas');
-  canvas.width = region.width;
-  canvas.height = region.height;
+  canvas.width = region.width * scaleFactor;
+  canvas.height = region.height * scaleFactor;
   const ctx = canvas.getContext('2d', { alpha: false });
 
   if (!ctx) {
@@ -62,12 +68,13 @@ export async function createCroppedStream(
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // Draw cropped region from video
+      // Scale coordinates to match physical pixels on HiDPI displays
       ctx.drawImage(
         video,
-        region.x,
-        region.y,
-        region.width,
-        region.height, // Source rectangle
+        region.x * scaleFactor,
+        region.y * scaleFactor,
+        region.width * scaleFactor,
+        region.height * scaleFactor, // Source rectangle (physical pixels)
         0,
         0,
         canvas.width,
@@ -142,6 +149,7 @@ export async function getDisplaySourceId(displayId: string): Promise<string | nu
 
 /**
  * Calculate bitrate for video encoding based on region size and FPS
+ * Note: width and height should already be scaled for HiDPI displays
  */
 export function calculateBitrate(width: number, height: number, fps: number): number {
   const pixelCount = width * height;

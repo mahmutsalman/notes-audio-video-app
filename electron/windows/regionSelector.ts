@@ -33,15 +33,30 @@ export function createRegionSelectorWindows(): RegionSelectorWindow[] {
     console.log(`[RegionSelector] Preload path:`, preloadPath);
     console.log(`[RegionSelector] isDev:`, isDev);
 
+    // Use bounds to cover the entire screen (including menu bar area)
+    // This ensures overlay coordinates match screen capture coordinates
+    const bounds = primaryDisplay.bounds;
+    console.log(`[RegionSelector] Window positioning:`, {
+      bounds: primaryDisplay.bounds,
+      workArea: primaryDisplay.workArea,
+      windowPosition: { x: bounds.x, y: bounds.y },
+      windowSize: { width: bounds.width, height: bounds.height },
+      scaleFactor: primaryDisplay.scaleFactor
+    });
+
     const window = new BrowserWindow({
-      x: primaryDisplay.bounds.x,
-      y: primaryDisplay.bounds.y,
-      width: primaryDisplay.bounds.width,
-      height: primaryDisplay.bounds.height,
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
 
       // Window chrome - frameless and transparent
       frame: false,
       transparent: true,
+
+      // macOS fullscreen mode for complete screen coverage
+      simpleFullscreen: true,
+      fullscreen: true,
 
       // Behavior - always on top and non-interactive with OS
       alwaysOnTop: true,
@@ -70,6 +85,14 @@ export function createRegionSelectorWindows(): RegionSelectorWindow[] {
     }) as RegionSelectorWindow;
 
     console.log(`[RegionSelector] BrowserWindow created successfully`);
+
+    // Set window level to appear above menu bar
+    window.setAlwaysOnTop(true, 'screen-saver');
+    console.log(`[RegionSelector] Window level set to screen-saver`);
+
+    // Force simple fullscreen mode on macOS for complete coverage
+    window.setSimpleFullScreen(true);
+    console.log(`[RegionSelector] Simple fullscreen enabled`);
 
     // Store display ID for reference
     window.displayId = primaryDisplay.id.toString();
@@ -111,6 +134,7 @@ export function createRegionSelectorWindows(): RegionSelectorWindow[] {
       window.webContents.send('display-info', {
         id: primaryDisplay.id.toString(),
         bounds: primaryDisplay.bounds,
+        workArea: primaryDisplay.workArea,
         scaleFactor: primaryDisplay.scaleFactor,
       });
       console.log(`[RegionSelector] Sent display-info to renderer`);
@@ -133,11 +157,24 @@ export function createRegionSelectorWindows(): RegionSelectorWindow[] {
 
 export function closeAllRegionSelectorWindows(): void {
   const allWindows = BrowserWindow.getAllWindows();
+  console.log('[RegionSelector] Closing all region selector windows, total windows:', allWindows.length);
 
   for (const window of allWindows) {
     // Check if this is a region selector window by checking if it has the displayId property
     if ('displayId' in window) {
-      window.close();
+      console.log('[RegionSelector] Found region selector window, closing...');
+
+      // Exit fullscreen mode before closing to ensure proper cleanup
+      if (window.isSimpleFullScreen()) {
+        window.setSimpleFullScreen(false);
+      }
+      if (window.isFullScreen()) {
+        window.setFullScreen(false);
+      }
+
+      // Destroy immediately instead of close for faster cleanup
+      window.destroy();
+      console.log('[RegionSelector] Window destroyed');
     }
   }
 }

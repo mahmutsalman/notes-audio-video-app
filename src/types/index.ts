@@ -146,6 +146,7 @@ export interface CaptureArea {
   width: number;
   height: number;
   displayId: string;
+  scaleFactor: number;
   displayBounds: {
     x: number;
     y: number;

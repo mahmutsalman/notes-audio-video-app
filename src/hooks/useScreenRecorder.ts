@@ -229,8 +229,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         : 'video/webm';
       console.log('[useScreenRecorder] Using mimeType:', mimeType);
 
-      // Calculate bitrate based on region size and FPS
-      const videoBitsPerSecond = calculateBitrate(region.width, region.height, fps);
+      // Calculate bitrate based on region size and FPS (using scaled dimensions)
+      const scaleFactor = region.scaleFactor || 1;
+      const videoBitsPerSecond = calculateBitrate(
+        region.width * scaleFactor,
+        region.height * scaleFactor,
+        fps
+      );
       console.log('[useScreenRecorder] Calculated bitrate:', videoBitsPerSecond);
 
       console.log('[useScreenRecorder] Creating MediaRecorder');
