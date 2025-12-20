@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { generateVideoThumbnail } from './videoThumbnail';
+import { getVideoMetadata } from './videoMetadata';
 
 // Lazy getter to ensure app.setPath() has been called before accessing userData
 // This is necessary because this module is imported before main.ts sets the path
@@ -138,7 +139,10 @@ export async function saveVideoFile(
   const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
   const thumbnailPath = await generateVideoThumbnail(filePath, thumbPath);
 
-  const duration = null; // TODO: Get duration if needed
+  // Extract video duration from metadata
+  const metadata = await getVideoMetadata(filePath);
+  const duration = metadata.duration;
+  console.log(`[FileStorage] Video duration: ${duration}s`);
 
   return { filePath, thumbnailPath, duration };
 }
@@ -163,7 +167,10 @@ export async function saveVideoFromBuffer(
   const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
   const thumbnailPath = await generateVideoThumbnail(filePath, thumbPath);
 
-  const duration = null; // TODO: Get duration if needed
+  // Extract video duration from metadata
+  const metadata = await getVideoMetadata(filePath);
+  const duration = metadata.duration;
+  console.log(`[FileStorage] Video duration: ${duration}s`);
 
   return { filePath, thumbnailPath, duration };
 }
@@ -194,7 +201,10 @@ export async function saveScreenRecording(
   const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
   const thumbnailPath = await generateVideoThumbnail(filePath, thumbPath);
 
-  const duration = null; // TODO: Extract duration from video metadata if needed
+  // Extract video duration from metadata
+  const metadata = await getVideoMetadata(filePath);
+  const duration = metadata.duration;
+  console.log(`[FileStorage] Video duration: ${duration}s`);
 
   return { filePath, thumbnailPath, duration, fileSize };
 }
@@ -251,7 +261,10 @@ export async function saveDurationVideoFromBuffer(
   const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
   const thumbnailPath = await generateVideoThumbnail(filePath, thumbPath);
 
-  const duration = null; // TODO: Get duration if needed
+  // Extract video duration from metadata
+  const metadata = await getVideoMetadata(filePath);
+  const duration = metadata.duration;
+  console.log(`[FileStorage] Video duration: ${duration}s`);
 
   return { filePath, thumbnailPath, duration };
 }
@@ -276,7 +289,10 @@ export async function saveDurationVideoFromFile(
   const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
   const thumbnailPath = await generateVideoThumbnail(filePath, thumbPath);
 
-  const duration = null; // TODO: Get duration if needed
+  // Extract video duration from metadata
+  const metadata = await getVideoMetadata(filePath);
+  const duration = metadata.duration;
+  console.log(`[FileStorage] Video duration: ${duration}s`);
 
   return { filePath, thumbnailPath, duration };
 }

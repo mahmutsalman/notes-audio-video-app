@@ -329,6 +329,9 @@ export interface ElectronAPI {
       fps: number
     ) => Promise<{ filePath: string; duration: number | null }>;
   };
+  video: {
+    generateThumbnail: (videoPath: string) => Promise<{ success: boolean; thumbnailPath: string | null }>;
+  };
   settings: {
     get: (key: string) => Promise<string | null>;
     set: (key: string, value: string) => Promise<void>;

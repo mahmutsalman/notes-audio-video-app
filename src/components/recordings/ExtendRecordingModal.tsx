@@ -92,7 +92,7 @@ export default function ExtendRecordingModal({
 
           // Generate thumbnail asynchronously
           try {
-            const { success, thumbnailPath } = await window.electronAPI.video.generateThumbnail(videoPath);
+            const { thumbnailPath } = await window.electronAPI.video.generateThumbnail(videoPath);
             setSelectedVideos(prev =>
               prev.map(v =>
                 v.filePath === videoPath

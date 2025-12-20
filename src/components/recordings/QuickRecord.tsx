@@ -93,7 +93,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
 
           // Generate thumbnail asynchronously
           try {
-            const { success, thumbnailPath } = await window.electronAPI.video.generateThumbnail(videoPath);
+            const { thumbnailPath } = await window.electronAPI.video.generateThumbnail(videoPath);
             setSelectedVideos(prev =>
               prev.map(v =>
                 v.filePath === videoPath
@@ -302,30 +302,6 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, recorder.isMarking, recorder.completedMarks.length, isPasting, handlePasteToMark, handlePasteVideoToMark]);
-
-  // Handle paste to a specific mark by start time
-  const handlePasteToSpecificMark = useCallback(async (startTime: number) => {
-    if (isPasting) return false;
-    setIsPasting(true);
-    try {
-      const result = await window.electronAPI.clipboard.readImage();
-      if (result.success && result.buffer) {
-        const added = recorder.addImageToMarkByStart(startTime, {
-          data: result.buffer,
-          extension: result.extension || 'png'
-        });
-        if (added) {
-          setPasteSuccess('image');
-        }
-        return added;
-      }
-    } catch (error) {
-      console.error('Failed to read clipboard for mark:', error);
-    } finally {
-      setIsPasting(false);
-    }
-    return false;
-  }, [recorder, isPasting]);
 
   const handleSave = async () => {
     if (!recorder.audioBlob) return;

@@ -44,12 +44,23 @@ export default function RecordingCard({ recording, onContextMenu, matchMetadata 
         />
       </div>
 
-      {/* Audio indicator + duration */}
+      {/* Duration indicator - Show video duration for screen recordings, audio for voice recordings */}
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-red-500">🎙️</span>
-        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-          {formatDuration(recording.audio_duration)}
-        </span>
+        {recording.video_path ? (
+          <>
+            <span className="text-red-500">🎬</span>
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+              {formatDuration(recording.video_duration)}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="text-red-500">🎙️</span>
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+              {formatDuration(recording.audio_duration)}
+            </span>
+          </>
+        )}
       </div>
 
       {/* Truncated notes */}

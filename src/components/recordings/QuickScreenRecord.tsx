@@ -35,7 +35,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved }: QuickSc
         audio_path: null,
         audio_duration: null,
         video_path: null, // Will be updated after saving file
-        video_duration: Math.floor(videoBlob.size / (1024 * 1024 * 5) * 60), // Rough estimate, will be updated
+        video_duration: null, // Will be updated with actual duration from video metadata
         video_resolution: resolution,
         video_fps: fps,
         notes_content: null,
