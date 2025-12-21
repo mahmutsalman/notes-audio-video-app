@@ -6,7 +6,9 @@ interface VideoCompressionDialogProps {
   onClose: () => void;
   videoPath: string;
   videoName: string;
+  recordingId: number;
   onCompressionComplete?: (result: VideoCompressionResult) => void;
+  onReplaceComplete?: (newPath: string) => void;
 }
 
 export default function VideoCompressionDialog({
@@ -14,7 +16,9 @@ export default function VideoCompressionDialog({
   onClose,
   videoPath,
   videoName,
-  onCompressionComplete
+  recordingId,
+  onCompressionComplete,
+  onReplaceComplete
 }: VideoCompressionDialogProps) {
   const [ffmpegAvailable, setFfmpegAvailable] = useState<boolean>(false);
   const [ffmpegVersion, setFfmpegVersion] = useState<string>('');
@@ -58,13 +62,15 @@ export default function VideoCompressionDialog({
     setResult(null);
     setProgress(null);
 
+    // Set up progress listener
+    const cleanup = window.electronAPI.video.onCompressionProgress((prog) => {
+      setProgress(prog);
+    });
+
     try {
       const compressionResult = await window.electronAPI.video.compress(
         videoPath,
-        options,
-        (prog) => {
-          setProgress(prog);
-        }
+        options
       );
 
       if (compressionResult.success) {
@@ -79,6 +85,8 @@ export default function VideoCompressionDialog({
       setError(err instanceof Error ? err.message : 'Compression failed');
     } finally {
       setIsCompressing(false);
+      // Clean up the progress listener
+      cleanup();
     }
   };
 
@@ -91,8 +99,18 @@ export default function VideoCompressionDialog({
         result.outputPath
       );
 
-      if (replaceResult.success) {
-        alert('Original file replaced successfully!');
+      if (replaceResult.success && replaceResult.newPath) {
+        // Update the database with the new MP4 path
+        await window.electronAPI.recordings.update(recordingId, {
+          video_path: replaceResult.newPath
+        });
+
+        // Notify parent component
+        if (onReplaceComplete) {
+          onReplaceComplete(replaceResult.newPath);
+        }
+
+        alert('Original file replaced successfully! File is now MP4 format.');
         onClose();
       } else {
         setError(replaceResult.error || 'Failed to replace original file');

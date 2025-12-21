@@ -390,13 +390,13 @@ export interface ElectronAPI {
     generateThumbnail: (videoPath: string) => Promise<{ success: boolean; thumbnailPath: string | null }>;
     compress: (
       filePath: string,
-      options: VideoCompressionOptions,
-      onProgress?: (progress: CompressionProgress) => void
+      options: VideoCompressionOptions
     ) => Promise<VideoCompressionResult>;
+    onCompressionProgress: (callback: (progress: CompressionProgress) => void) => () => void;
     replaceWithCompressed: (
       originalPath: string,
       compressedPath: string
-    ) => Promise<{ success: boolean; error?: string }>;
+    ) => Promise<{ success: boolean; newPath?: string; error?: string }>;
     checkFFmpeg: () => Promise<{ available: boolean; version?: string; error?: string }>;
   };
   settings: {

@@ -553,9 +553,12 @@ export function setupIpcHandlers(): void {
   });
 
   // ============ Video Compression ============
-  ipcMain.handle('video:compress', async (_, filePath, options, onProgress) => {
+  ipcMain.handle('video:compress', async (event, filePath, options) => {
     const { compressVideo } = await import('../services/videoCompression');
-    return compressVideo(filePath, options, onProgress);
+    return compressVideo(filePath, options, (progress) => {
+      // Send progress updates to the renderer process
+      event.sender.send('video:compression-progress', progress);
+    });
   });
 
   ipcMain.handle('video:replaceWithCompressed', async (_, originalPath, compressedPath) => {

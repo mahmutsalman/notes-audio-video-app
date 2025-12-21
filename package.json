@@ -68,6 +68,10 @@
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**/*",
+      "node_modules/ffprobe-static/**/*"
+    ],
     "mac": {
       "target": "dmg",
       "icon": "resources/icons/icon.icns",

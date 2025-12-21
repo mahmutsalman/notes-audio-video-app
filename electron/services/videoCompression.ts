@@ -26,23 +26,36 @@ export interface CompressionProgress {
 }
 
 function getFfmpegPath(): string {
-  // First try the default path from ffmpeg-static
-  let ffmpegPath = ffmpegStatic as string;
+  // Get app path - in dev this is project root, in prod it's app.asar
+  const appPath = app.getAppPath();
+  console.log('[videoCompression] App path:', appPath);
 
-  // In development, ffmpeg-static should work correctly
-  // In production, we need to resolve it relative to the app
-  if (!fs.existsSync(ffmpegPath)) {
-    // Try to resolve relative to app path
-    const appPath = app.getAppPath();
-    // Replace node_modules with the actual location in the app bundle
-    const relativePath = ffmpegPath.split('node_modules')[1];
-    if (relativePath) {
-      ffmpegPath = path.join(appPath, 'node_modules', relativePath);
+  // Construct paths to try
+  const pathsToTry = [
+    // 1. Development: project_root/node_modules/ffmpeg-static/ffmpeg
+    path.join(appPath, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+
+    // 2. Production (macOS): app.asar.unpacked
+    path.join(path.dirname(appPath), 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+
+    // 3. Try the ffmpeg-static path as-is (might work in some cases)
+    ffmpegStatic as string,
+  ];
+
+  // Try each path
+  for (const tryPath of pathsToTry) {
+    console.log('[videoCompression] Trying path:', tryPath);
+    if (fs.existsSync(tryPath)) {
+      console.log('[videoCompression] ✓ Found ffmpeg at:', tryPath);
+      return tryPath;
     }
+    console.log('[videoCompression] ✗ Not found');
   }
 
-  console.log('[videoCompression] Using ffmpeg path:', ffmpegPath);
-  return ffmpegPath;
+  // Fallback to ffmpeg-static default (will likely fail, but return it anyway)
+  const fallbackPath = ffmpegStatic as string;
+  console.log('[videoCompression] ⚠️ Using fallback path:', fallbackPath);
+  return fallbackPath;
 }
 
 /**
@@ -266,11 +279,12 @@ export async function compressVideo(
 /**
  * Replace original file with compressed version
  * Creates a backup of the original file before replacing
+ * Changes the file extension to .mp4
  */
 export async function replaceWithCompressed(
   originalPath: string,
   compressedPath: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; newPath?: string; error?: string }> {
   try {
     // Verify files exist
     if (!fs.existsSync(originalPath)) {
@@ -280,30 +294,29 @@ export async function replaceWithCompressed(
       return { success: false, error: 'Compressed file not found' };
     }
 
-    // Create backup path
+    // Generate new MP4 path (replace extension)
     const parsedPath = path.parse(originalPath);
+    const newMp4Path = path.join(parsedPath.dir, `${parsedPath.name}.mp4`);
+
+    // Create backup path
     const backupPath = path.join(
       parsedPath.dir,
       `${parsedPath.name}_backup${parsedPath.ext}`
     );
 
-    // Create backup
-    fs.copyFileSync(originalPath, backupPath);
+    // Create backup of original
+    fs.renameSync(originalPath, backupPath);
     console.log('[videoCompression] Backup created:', backupPath);
 
-    // Replace original with compressed
-    fs.copyFileSync(compressedPath, originalPath);
-    console.log('[videoCompression] Original replaced with compressed version');
+    // Rename compressed file to new MP4 path
+    fs.renameSync(compressedPath, newMp4Path);
+    console.log('[videoCompression] Compressed file renamed to:', newMp4Path);
 
-    // Delete compressed file (we've copied it to original location)
-    fs.unlinkSync(compressedPath);
-    console.log('[videoCompression] Temporary compressed file deleted');
-
-    // Delete backup (optional - comment out if you want to keep backups)
+    // Delete backup
     fs.unlinkSync(backupPath);
     console.log('[videoCompression] Backup deleted');
 
-    return { success: true };
+    return { success: true, newPath: newMp4Path };
   } catch (err) {
     console.error('[videoCompression] Error replacing file:', err);
     return {

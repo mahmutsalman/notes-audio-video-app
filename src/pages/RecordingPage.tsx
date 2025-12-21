@@ -131,6 +131,7 @@ export default function RecordingPage() {
     isOpen: boolean;
     videoPath: string;
     videoName: string;
+    recordingId: number;
   } | null>(null);
 
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
@@ -990,15 +991,34 @@ export default function RecordingPage() {
               </span>
             )}
           </h2>
-          {!isVideoRecording && (
-            <button
-              onClick={() => setIsScreenRecording(true)}
-              className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-            >
-              <span>🎬</span>
-              Record Screen
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {isVideoRecording && recording.video_path && (
+              <button
+                onClick={() => {
+                  setCompressionDialog({
+                    isOpen: true,
+                    videoPath: recording.video_path!,
+                    videoName: recording.video_path!.split('/').pop() || 'recording.webm',
+                    recordingId: recording.id
+                  });
+                }}
+                className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                title="Compress to MP4"
+              >
+                <span>⚡</span>
+                Compress
+              </button>
+            )}
+            {!isVideoRecording && (
+              <button
+                onClick={() => setIsScreenRecording(true)}
+                className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+              >
+                <span>🎬</span>
+                Record Screen
+              </button>
+            )}
+          </div>
         </div>
         {isVideoRecording ? (
           videoUrl ? (
@@ -1183,6 +1203,24 @@ export default function RecordingPage() {
                       style={{ backgroundColor: colorConfig.borderColor }}
                     />
                   )}
+                  {/* Compress button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCompressionDialog({
+                        isOpen: true,
+                        videoPath: video.file_path,
+                        videoName: video.file_path.split('/').pop() || 'video.webm',
+                        recordingId: recording.id
+                      });
+                    }}
+                    className="absolute top-1 right-7 w-5 h-5 bg-blue-500 text-white rounded-full
+                               opacity-0 group-hover:opacity-100 transition-opacity
+                               flex items-center justify-center text-xs z-20 hover:bg-blue-600"
+                    title="Compress to MP4"
+                  >
+                    ⚡
+                  </button>
                   <button
                     onClick={() => handleDeleteDurationVideo(video.id)}
                     className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
@@ -1498,6 +1536,24 @@ export default function RecordingPage() {
                       style={{ backgroundColor: colorConfig.borderColor }}
                     />
                   )}
+                  {/* Compress button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCompressionDialog({
+                        isOpen: true,
+                        videoPath: video.file_path,
+                        videoName: video.file_path.split('/').pop() || 'video.webm',
+                        recordingId: recording.id
+                      });
+                    }}
+                    className="absolute top-1 right-8 w-6 h-6 bg-blue-500 text-white rounded-full
+                               opacity-0 group-hover:opacity-100 transition-opacity
+                               flex items-center justify-center text-xs z-20 hover:bg-blue-600"
+                    title="Compress to MP4"
+                  >
+                    ⚡
+                  </button>
                   <button
                     onClick={() => handleDeleteVideo(video.id)}
                     className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full
@@ -2189,9 +2245,14 @@ export default function RecordingPage() {
           onClose={() => setCompressionDialog(null)}
           videoPath={compressionDialog.videoPath}
           videoName={compressionDialog.videoName}
+          recordingId={compressionDialog.recordingId}
           onCompressionComplete={() => {
-            // Optionally refetch or update UI
             console.log('Compression complete');
+          }}
+          onReplaceComplete={async (newPath) => {
+            // Reload the recording to get updated video_path
+            await refetch();
+            setCompressionDialog(null);
           }}
         />
       )}

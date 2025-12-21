@@ -237,10 +237,14 @@ const electronAPI = {
   video: {
     compress: (
       filePath: string,
-      options: VideoCompressionOptions,
-      onProgress?: (progress: CompressionProgress) => void
+      options: VideoCompressionOptions
     ): Promise<VideoCompressionResult> =>
-      ipcRenderer.invoke('video:compress', filePath, options, onProgress),
+      ipcRenderer.invoke('video:compress', filePath, options),
+    onCompressionProgress: (callback: (progress: CompressionProgress) => void) => {
+      const listener = (_event: any, progress: CompressionProgress) => callback(progress);
+      ipcRenderer.on('video:compression-progress', listener);
+      return () => ipcRenderer.removeListener('video:compression-progress', listener);
+    },
     replaceWithCompressed: (
       originalPath: string,
       compressedPath: string
