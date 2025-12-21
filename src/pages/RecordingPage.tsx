@@ -15,6 +15,7 @@ import NotesEditor from '../components/common/NotesEditor';
 import CodeSnippetCard from '../components/code/CodeSnippetCard';
 import CodeSnippetModal from '../components/code/CodeSnippetModal';
 import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
+import VideoCompressionDialog from '../components/video/VideoCompressionDialog';
 import { formatDuration, formatDate, formatRelativeTime } from '../utils/formatters';
 import { getNextDurationColor, DURATION_COLORS } from '../utils/durationColors';
 import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio, CodeSnippet, DurationCodeSnippet } from '../types';
@@ -126,6 +127,11 @@ export default function RecordingPage() {
   const [captionText, setCaptionText] = useState('');
   const [isScreenRecording, setIsScreenRecording] = useState(false);
   const [autoTriggerRegionSelection, setAutoTriggerRegionSelection] = useState(false);
+  const [compressionDialog, setCompressionDialog] = useState<{
+    isOpen: boolean;
+    videoPath: string;
+    videoName: string;
+  } | null>(null);
 
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
   const videoPlayerRef = useRef<HTMLVideoElement>(null);
@@ -2173,6 +2179,20 @@ export default function RecordingPage() {
           recordingId={id}
           onSave={handleSaveScreenRecording}
           autoStartRegionSelection={autoTriggerRegionSelection}
+        />
+      )}
+
+      {/* Video Compression Dialog */}
+      {compressionDialog && (
+        <VideoCompressionDialog
+          isOpen={compressionDialog.isOpen}
+          onClose={() => setCompressionDialog(null)}
+          videoPath={compressionDialog.videoPath}
+          videoName={compressionDialog.videoName}
+          onCompressionComplete={() => {
+            // Optionally refetch or update UI
+            console.log('Compression complete');
+          }}
         />
       )}
       </div>

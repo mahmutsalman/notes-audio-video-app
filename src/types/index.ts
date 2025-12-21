@@ -243,6 +243,28 @@ export type CreateImage = Omit<Image, 'id' | 'created_at'>;
 export type CreateVideo = Omit<Video, 'id' | 'created_at'>;
 export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color'> & { note?: string | null; color?: DurationColor };
 
+// Video Compression Types
+export interface VideoCompressionOptions {
+  crf: number;           // 18-40, lower = better quality
+  preset: 'ultrafast' | 'fast' | 'medium' | 'slow' | 'veryslow';
+  audioBitrate: '24k' | '32k' | '48k' | '64k' | '128k';
+}
+
+export interface VideoCompressionResult {
+  success: boolean;
+  outputPath?: string;
+  originalSize: number;
+  compressedSize: number;
+  compressionRatio: number;
+  error?: string;
+}
+
+export interface CompressionProgress {
+  percent: number;
+  currentTime: string;
+  speed: string;
+}
+
 // IPC Types
 export interface ElectronAPI {
   topics: {
@@ -366,6 +388,16 @@ export interface ElectronAPI {
   };
   video: {
     generateThumbnail: (videoPath: string) => Promise<{ success: boolean; thumbnailPath: string | null }>;
+    compress: (
+      filePath: string,
+      options: VideoCompressionOptions,
+      onProgress?: (progress: CompressionProgress) => void
+    ) => Promise<VideoCompressionResult>;
+    replaceWithCompressed: (
+      originalPath: string,
+      compressedPath: string
+    ) => Promise<{ success: boolean; error?: string }>;
+    checkFFmpeg: () => Promise<{ available: boolean; version?: string; error?: string }>;
   };
   settings: {
     get: (key: string) => Promise<string | null>;

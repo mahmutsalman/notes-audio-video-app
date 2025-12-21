@@ -11,7 +11,10 @@ import type {
   DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
   BackupResult,
   ScreenRecording,
-  ScreenSource
+  ScreenSource,
+  VideoCompressionOptions,
+  VideoCompressionResult,
+  CompressionProgress
 } from '../src/types';
 
 // Type-safe API exposed to renderer
@@ -228,6 +231,23 @@ const electronAPI = {
       ipcRenderer.invoke('screenRecording:getByRecording', recordingId),
     delete: (id: number): Promise<void> =>
       ipcRenderer.invoke('screenRecording:delete', id),
+  },
+
+  // Video Compression
+  video: {
+    compress: (
+      filePath: string,
+      options: VideoCompressionOptions,
+      onProgress?: (progress: CompressionProgress) => void
+    ): Promise<VideoCompressionResult> =>
+      ipcRenderer.invoke('video:compress', filePath, options, onProgress),
+    replaceWithCompressed: (
+      originalPath: string,
+      compressedPath: string
+    ): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('video:replaceWithCompressed', originalPath, compressedPath),
+    checkFFmpeg: (): Promise<{ available: boolean; version?: string; error?: string }> =>
+      ipcRenderer.invoke('video:checkFFmpeg'),
   },
 
   // Region Selection

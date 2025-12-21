@@ -552,6 +552,22 @@ export function setupIpcHandlers(): void {
     return { filePath, duration };
   });
 
+  // ============ Video Compression ============
+  ipcMain.handle('video:compress', async (_, filePath, options, onProgress) => {
+    const { compressVideo } = await import('../services/videoCompression');
+    return compressVideo(filePath, options, onProgress);
+  });
+
+  ipcMain.handle('video:replaceWithCompressed', async (_, originalPath, compressedPath) => {
+    const { replaceWithCompressed } = await import('../services/videoCompression');
+    return replaceWithCompressed(originalPath, compressedPath);
+  });
+
+  ipcMain.handle('video:checkFFmpeg', async () => {
+    const { checkFFmpegAvailable } = await import('../services/videoCompression');
+    return checkFFmpegAvailable();
+  });
+
   // ============ Region Selection ============
   let regionSelectorWindows: any[] = [];
 
