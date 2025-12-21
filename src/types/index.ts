@@ -169,8 +169,9 @@ export interface CaptureArea {
 export interface ScreenRecordingSettings {
   resolution: ScreenResolution;
   fps: ScreenFPS;
-  codec: 'vp9' | 'vp8';
+  codec: 'h264' | 'vp9' | 'vp8';
   presetName: string;
+  bitsPerPixel?: number;  // 0.1-0.25, controls video bitrate quality
 }
 
 // Component-specific types

@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { fixWebmMetadata } from '../utils/webmFixer';
 import { createCroppedStream, getDisplaySourceId, calculateBitrate } from '../utils/regionCapture';
 import { createMicrophoneStream, combineAudioStreams, getBlackHoleDevice } from '../utils/audioCapture';
-import { RESOLUTION_PRESETS } from '../context/ScreenRecordingSettingsContext';
+import { RESOLUTION_PRESETS, useScreenRecordingSettings } from '../context/ScreenRecordingSettingsContext';
 import type { CaptureArea } from '../types';
 
 // Reuse DurationMark types from useVoiceRecorder
@@ -64,6 +64,8 @@ const getCodecName = (mimeType: string): string => {
 };
 
 export function useScreenRecorder(): UseScreenRecorderReturn {
+  const { settings } = useScreenRecordingSettings();
+
   const [state, setState] = useState<ScreenRecorderState>({
     isRecording: false,
     isPaused: false,
@@ -163,12 +165,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       const selectedCodec = getCodecName(mimeType);
       console.log('[useScreenRecorder] Selected codec:', mimeType, '→', selectedCodec);
 
-      // Calculate bitrate with improved quality (0.18 bpp for CleanShot X quality)
+      // Calculate bitrate using preset quality settings
       const videoBitsPerSecond = calculateBitrate(
         resolution.width,
         resolution.height,
         fps,
-        0.18  // CleanShot X quality level
+        settings.bitsPerPixel || 0.18  // Use preset quality or fallback to CleanShot X level
       );
 
       console.log('[useScreenRecorder] Video bitrate:', videoBitsPerSecond);
@@ -378,12 +380,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       const selectedCodec = getCodecName(mimeType);
       console.log('[useScreenRecorder] Selected codec:', mimeType, '→', selectedCodec);
 
-      // Calculate bitrate with improved quality (0.18 bpp for CleanShot X quality)
+      // Calculate bitrate using preset quality settings
       const videoBitsPerSecond = calculateBitrate(
         region.width * scaleFactor,
         region.height * scaleFactor,
         actualFPS,
-        0.18  // CleanShot X quality level
+        settings.bitsPerPixel || 0.18  // Use preset quality or fallback to CleanShot X level
       );
       console.log('[useScreenRecorder] Video bitrate:', videoBitsPerSecond);
 

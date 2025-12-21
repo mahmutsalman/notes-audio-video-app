@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import ScreenSourceSelector from './ScreenSourceSelector';
 import { useScreenRecorder } from '../../hooks/useScreenRecorder';
-import { useScreenRecordingSettings } from '../../context/ScreenRecordingSettingsContext';
+import { useScreenRecordingSettings, QUALITY_PRESETS } from '../../context/ScreenRecordingSettingsContext';
 import type { ScreenSource, CaptureArea } from '../../types';
 
 interface ScreenRecordingModalProps {
@@ -23,7 +23,7 @@ export default function ScreenRecordingModal({
 }: ScreenRecordingModalProps) {
   const [step, setStep] = useState<Step>('source-selection');
   const recorder = useScreenRecorder();
-  const { settings, getResolutionDimensions } = useScreenRecordingSettings();
+  const { settings, getResolutionDimensions, updatePreset } = useScreenRecordingSettings();
   const noteInputRef = useRef<HTMLInputElement>(null);
 
   // Reset on open
@@ -173,12 +173,64 @@ export default function ScreenRecordingModal({
         {/* Content */}
         <div className="p-6">
           {step === 'source-selection' && (
-            <ScreenSourceSelector
-              onSourceSelect={handleSourceSelect}
-              onRegionSelect={handleRegionSelect}
-              onCancel={handleClose}
-              autoStartRegionSelection={autoStartRegionSelection}
-            />
+            <div className="space-y-6">
+              {/* Quality Preset Selector */}
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                  Recording Quality
+                </h3>
+                <div className="grid grid-cols-4 gap-2">
+                  {Object.keys(QUALITY_PRESETS).map((presetName) => {
+                    const preset = QUALITY_PRESETS[presetName as keyof typeof QUALITY_PRESETS];
+                    const isActive = settings.presetName === presetName;
+
+                    return (
+                      <button
+                        key={presetName}
+                        onClick={() => updatePreset(presetName)}
+                        className={`p-3 rounded-lg border-2 transition-all ${
+                          isActive
+                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                            : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                        }`}
+                      >
+                        <div className={`font-medium text-sm ${
+                          isActive ? 'text-primary-700 dark:text-primary-300' : 'text-gray-700 dark:text-gray-300'
+                        }`}>
+                          {presetName}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {preset.resolution} • {preset.fps}fps
+                        </div>
+                        <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                          {preset.bitsPerPixel === 0.1 && 'Smallest files'}
+                          {preset.bitsPerPixel === 0.15 && 'Balanced'}
+                          {preset.bitsPerPixel === 0.18 && 'High quality'}
+                          {preset.bitsPerPixel === 0.2 && 'Premium'}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Current Settings Summary */}
+                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <div className="text-xs text-gray-600 dark:text-gray-400 flex items-center justify-between">
+                    <span>Current: {settings.resolution} • {settings.fps} FPS • H.264</span>
+                    <span className="text-gray-500">
+                      Quality: {(settings.bitsPerPixel || 0.18).toFixed(2)} bpp
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <ScreenSourceSelector
+                onSourceSelect={handleSourceSelect}
+                onRegionSelect={handleRegionSelect}
+                onCancel={handleClose}
+                autoStartRegionSelection={autoStartRegionSelection}
+              />
+            </div>
           )}
 
           {step === 'recording' && (

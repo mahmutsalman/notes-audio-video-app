@@ -24,10 +24,26 @@ export const RESOLUTION_PRESETS: Record<ScreenResolution | '1440p', { width: num
 
 // Common presets for quick switching
 export const QUALITY_PRESETS = {
-  'Minimal': { resolution: '480p' as ScreenResolution, fps: 10 as ScreenFPS },
-  'Standard': { resolution: '1080p' as ScreenResolution, fps: 30 as ScreenFPS },
-  'High': { resolution: '1080p' as ScreenResolution, fps: 60 as ScreenFPS },
-  '2K': { resolution: '1440p' as const, fps: 60 as ScreenFPS },
+  'Minimal': {
+    resolution: '480p' as ScreenResolution,
+    fps: 10 as ScreenFPS,
+    bitsPerPixel: 0.1   // Low quality, smallest files
+  },
+  'Standard': {
+    resolution: '1080p' as ScreenResolution,
+    fps: 30 as ScreenFPS,
+    bitsPerPixel: 0.15  // Good quality, balanced
+  },
+  'High': {
+    resolution: '1080p' as ScreenResolution,
+    fps: 60 as ScreenFPS,
+    bitsPerPixel: 0.18  // CleanShot X quality
+  },
+  '2K': {
+    resolution: '1440p' as const,
+    fps: 60 as ScreenFPS,
+    bitsPerPixel: 0.2   // Premium quality
+  },
 } as const;
 
 interface ScreenRecordingSettingsProviderProps {
@@ -38,8 +54,9 @@ export function ScreenRecordingSettingsProvider({ children }: ScreenRecordingSet
   const [settings, setSettings] = useState<ScreenRecordingSettings>({
     resolution: '1080p',
     fps: 30,
-    codec: 'vp9',
+    codec: 'h264',
     presetName: 'Standard',
+    bitsPerPixel: 0.15,
   });
   const [loading, setLoading] = useState(true);
 
@@ -54,8 +71,9 @@ export function ScreenRecordingSettingsProvider({ children }: ScreenRecordingSet
       setSettings({
         resolution: (allSettings.screen_recording_resolution as ScreenResolution) || '1080p',
         fps: parseInt(allSettings.screen_recording_fps || '30') as ScreenFPS,
-        codec: (allSettings.screen_recording_codec as 'vp9' | 'vp8') || 'vp9',
+        codec: (allSettings.screen_recording_codec as 'h264' | 'vp9' | 'vp8') || 'h264',
         presetName: allSettings.screen_recording_preset_name || 'Standard',
+        bitsPerPixel: parseFloat(allSettings.screen_recording_bits_per_pixel || '0.15'),
       });
     } catch (error) {
       console.error('Failed to load screen recording settings:', error);
@@ -92,6 +110,7 @@ export function ScreenRecordingSettingsProvider({ children }: ScreenRecordingSet
         await Promise.all([
           window.electronAPI.settings.set('screen_recording_resolution', presetConfig.resolution),
           window.electronAPI.settings.set('screen_recording_fps', String(presetConfig.fps)),
+          window.electronAPI.settings.set('screen_recording_bits_per_pixel', String(presetConfig.bitsPerPixel)),
           window.electronAPI.settings.set('screen_recording_preset_name', preset),
         ]);
 
@@ -99,6 +118,7 @@ export function ScreenRecordingSettingsProvider({ children }: ScreenRecordingSet
           ...prev,
           resolution: presetConfig.resolution,
           fps: presetConfig.fps,
+          bitsPerPixel: presetConfig.bitsPerPixel,
           presetName: preset,
         }));
       } else {
