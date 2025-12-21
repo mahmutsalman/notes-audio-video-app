@@ -62,6 +62,31 @@ export default function ScreenRecordingModal({
     };
   }, [step]);
 
+  // Send duration updates to overlay
+  useEffect(() => {
+    if (step !== 'recording' || !recorder.isRecording) return;
+
+    window.electronAPI.region.updateDuration(recorder.duration);
+  }, [step, recorder.isRecording, recorder.duration]);
+
+  // Listen for pause/resume from overlay
+  useEffect(() => {
+    if (step !== 'recording') return;
+
+    const cleanupPause = window.electronAPI.region.onPauseRecording(() => {
+      recorder.pauseRecording();
+    });
+
+    const cleanupResume = window.electronAPI.region.onResumeRecording(() => {
+      recorder.resumeRecording();
+    });
+
+    return () => {
+      cleanupPause();
+      cleanupResume();
+    };
+  }, [step, recorder]);
+
   // Keyboard shortcuts during recording
   useEffect(() => {
     if (step !== 'recording') return;

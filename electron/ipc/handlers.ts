@@ -640,6 +640,32 @@ export function setupIpcHandlers(): void {
     }
   });
 
+  // Duration update (React → All overlay windows)
+  ipcMain.on('region:updateDuration', (event, duration: number) => {
+    const { BrowserWindow } = require('electron');
+    const allWindows = BrowserWindow.getAllWindows();
+
+    allWindows.forEach((win: any) => {
+      if ('displayId' in win) {
+        win.webContents.send('recording:durationUpdate', duration);
+      }
+    });
+  });
+
+  // Pause recording (Overlay → React main window)
+  ipcMain.on('region:pauseRecording', () => {
+    const { BrowserWindow } = require('electron');
+    const mainWindow = BrowserWindow.getAllWindows().find((w: any) => !('displayId' in w));
+    if (mainWindow) mainWindow.webContents.send('recording:pause');
+  });
+
+  // Resume recording (Overlay → React main window)
+  ipcMain.on('region:resumeRecording', () => {
+    const { BrowserWindow } = require('electron');
+    const mainWindow = BrowserWindow.getAllWindows().find((w: any) => !('displayId' in w));
+    if (mainWindow) mainWindow.webContents.send('recording:resume');
+  });
+
   // Enable/disable click-through for overlay window
   ipcMain.on('region:setClickThrough', (event, enabled: boolean) => {
     console.log('[IPC Handler] region:setClickThrough:', enabled);

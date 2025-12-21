@@ -291,6 +291,32 @@ const electronAPI = {
     setClickThrough: (enabled: boolean): void => {
       ipcRenderer.send('region:setClickThrough', enabled);
     },
+    updateDuration: (duration: number): void => {
+      ipcRenderer.send('region:updateDuration', duration);
+    },
+    pauseRecording: (): Promise<void> => {
+      ipcRenderer.send('region:pauseRecording');
+      return Promise.resolve();
+    },
+    resumeRecording: (): Promise<void> => {
+      ipcRenderer.send('region:resumeRecording');
+      return Promise.resolve();
+    },
+    onDurationUpdate: (callback: (duration: number) => void) => {
+      const listener = (_event: any, duration: number) => callback(duration);
+      ipcRenderer.on('recording:durationUpdate', listener);
+      return () => ipcRenderer.removeListener('recording:durationUpdate', listener);
+    },
+    onPauseRecording: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('recording:pause', listener);
+      return () => ipcRenderer.removeListener('recording:pause', listener);
+    },
+    onResumeRecording: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('recording:resume', listener);
+      return () => ipcRenderer.removeListener('recording:resume', listener);
+    },
   },
 
   // Settings

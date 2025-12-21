@@ -391,6 +391,12 @@ export interface ElectronAPI {
     onDisplayInfo: (callback: (displayInfo: any) => void) => () => void;
     onGlobalShortcut: (callback: () => void) => () => void;
     setClickThrough: (enabled: boolean) => void;
+    updateDuration: (duration: number) => void;
+    pauseRecording: () => Promise<void>;
+    resumeRecording: () => Promise<void>;
+    onDurationUpdate: (callback: (duration: number) => void) => () => void;
+    onPauseRecording: (callback: () => void) => () => void;
+    onResumeRecording: (callback: () => void) => () => void;
   };
   video: {
     generateThumbnail: (videoPath: string) => Promise<{ success: boolean; thumbnailPath: string | null }>;

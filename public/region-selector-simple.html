@@ -243,6 +243,78 @@
       grid-template-columns: 1fr 1fr;
       gap: 4px;
     }
+
+    /* Recording Controls Container */
+    #recordingControls {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      z-index: 1002;
+      pointer-events: auto;
+    }
+
+    /* Duration Display */
+    #durationDisplay {
+      background: rgba(28, 28, 30, 0.95);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 18px;
+      font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', monospace;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      min-width: 80px;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    /* Button Group */
+    #buttonGroup {
+      display: flex;
+      gap: 8px;
+      background: rgba(28, 28, 30, 0.95);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: 8px;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* Control Buttons */
+    .control-button {
+      width: 40px;
+      height: 40px;
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 20px;
+      pointer-events: auto;
+    }
+
+    .control-button:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: scale(1.05);
+    }
+
+    .control-button:active {
+      transform: scale(0.95);
+    }
+
+    #stopButtonNew:hover {
+      background: rgba(220, 38, 38, 0.9);
+    }
   </style>
 </head>
 <body>
@@ -311,6 +383,15 @@
   <button id="stopButton">Stop Recording</button>
   <div id="recordingIndicator">Recording</div>
 
+  <!-- Recording Controls (Duration + Pause/Stop Buttons) -->
+  <div id="recordingControls" style="display: none;">
+    <div id="durationDisplay">00:00</div>
+    <div id="buttonGroup">
+      <button id="pauseButton" class="control-button">⏸</button>
+      <button id="stopButtonNew" class="control-button">⏹</button>
+    </div>
+  </div>
+
   <script>
     console.log('[RegionSelector] Simple overlay loaded - VERSION 3.0 WITH CONTROL PANEL');
 
@@ -341,6 +422,20 @@
     const startButton = document.getElementById('startButton');
     const stopButton = document.getElementById('stopButton');
     const recordingIndicator = document.getElementById('recordingIndicator');
+
+    // Recording controls elements
+    const recordingControls = document.getElementById('recordingControls');
+    const durationDisplay = document.getElementById('durationDisplay');
+    const pauseButton = document.getElementById('pauseButton');
+    const stopButtonNew = document.getElementById('stopButtonNew');
+    let isPaused = false;
+
+    // Format duration helper (MM:SS)
+    function formatDuration(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
     const instructions = document.getElementById('instructions');
     const controlPanel = document.getElementById('controlPanel');
 
@@ -888,11 +983,14 @@
       rectangleEl.style.border = '1.5px solid rgba(59, 130, 246, 0.8)';
       rectangleEl.style.background = 'transparent';
 
-      // Position stop button
-      stopButton.style.display = 'block';
-      stopButton.style.left = (rect.x + rect.width / 2) + 'px';
-      stopButton.style.top = (rect.y + rect.height + 20) + 'px';
-      stopButton.style.transform = 'translateX(-50%)';
+      // Hide old standalone stop button
+      stopButton.style.display = 'none';
+
+      // Show new recording controls (duration + pause/stop buttons)
+      recordingControls.style.display = 'flex';
+      recordingControls.style.left = (rect.x + rect.width / 2) + 'px';
+      recordingControls.style.top = (rect.y + rect.height + 20) + 'px';
+      recordingControls.style.transform = 'translateX(-50%)';
 
       // Show recording indicator (positioned above rectangle, outside recording area)
       recordingIndicator.style.display = 'block';
@@ -930,6 +1028,48 @@
       window.electronAPI.region.stopRecording();
 
       console.log('[RegionSelector] Stop recording event sent');
+    });
+
+    // Listen for duration updates from React
+    window.electronAPI.region.onDurationUpdate((duration) => {
+      durationDisplay.textContent = formatDuration(duration);
+    });
+
+    // Pause button handler
+    pauseButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+
+      if (isPaused) {
+        // Resume recording
+        window.electronAPI.region.resumeRecording();
+        pauseButton.textContent = '⏸';
+        isPaused = false;
+
+        // Update recording indicator back to red "Recording"
+        recordingIndicator.textContent = 'Recording';
+        recordingIndicator.style.background = 'rgba(220, 38, 38, 0.9)';
+      } else {
+        // Pause recording
+        window.electronAPI.region.pauseRecording();
+        pauseButton.textContent = '▶';
+        isPaused = true;
+
+        // Update recording indicator to yellow "Paused"
+        recordingIndicator.textContent = 'Paused';
+        recordingIndicator.style.background = 'rgba(234, 179, 8, 0.9)';
+      }
+    });
+
+    // Stop button (new) handler
+    stopButtonNew.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.electronAPI.region.stopRecording();
+    });
+
+    // Prevent propagation for new buttons
+    [pauseButton, stopButtonNew].forEach(btn => {
+      btn.addEventListener('mousedown', (e) => e.stopPropagation());
+      btn.addEventListener('mouseup', (e) => e.stopPropagation());
     });
 
     // ESC key to cancel
@@ -1099,19 +1239,19 @@
     document.addEventListener('mousemove', (e) => {
       if (!isRecording || !clickThroughEnabled) return;
 
-      // Get current stop button bounds
-      const buttonBounds = stopButton.getBoundingClientRect();
+      // Get bounds for entire recording controls container
+      const controlsBounds = recordingControls.getBoundingClientRect();
 
-      // Check if mouse is over button
-      const isOverButton = (
-        e.clientX >= buttonBounds.left &&
-        e.clientX <= buttonBounds.right &&
-        e.clientY >= buttonBounds.top &&
-        e.clientY <= buttonBounds.bottom
+      // Check if mouse is over controls
+      const isOverControls = (
+        e.clientX >= controlsBounds.left &&
+        e.clientX <= controlsBounds.right &&
+        e.clientY >= controlsBounds.top &&
+        e.clientY <= controlsBounds.bottom
       );
 
-      // Toggle click-through: disable when over button, enable otherwise
-      window.electronAPI.region.setClickThrough(!isOverButton);
+      // Toggle click-through: disable when over controls, enable otherwise
+      window.electronAPI.region.setClickThrough(!isOverControls);
     });
 
     // Debug: Log ALL clicks
