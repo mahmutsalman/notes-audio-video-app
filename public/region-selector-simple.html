@@ -291,12 +291,14 @@
     <div class="settings-row">
       <select id="qualitySelect" class="preset-select" title="Video Quality">
         <option value="auto">Auto</option>
+        <option value="480p">480p</option>
         <option value="720p">720p</option>
         <option value="1080p">1080p</option>
         <option value="1440p">1440p</option>
       </select>
 
       <select id="fpsSelect" class="preset-select" title="Frame Rate">
+        <option value="10">10 FPS</option>
         <option value="24">24 FPS</option>
         <option value="30">30 FPS</option>
         <option value="60">60 FPS</option>
@@ -542,7 +544,7 @@
         const settings = await window.electronAPI.settings.getAll();
 
         // Load FPS and quality settings
-        const savedFPS = settings.screen_recording_fps || '30';
+        const savedFPS = settings.screen_recording_fps || '10';
         const savedQuality = settings.screen_recording_quality || 'auto';
 
         // Load mic settings
