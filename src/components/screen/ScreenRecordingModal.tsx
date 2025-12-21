@@ -342,9 +342,18 @@ export default function ScreenRecordingModal({
 
                 {/* Instructions */}
                 <div className="mt-6 text-sm text-gray-500 dark:text-gray-400 space-y-1">
-                  <p><kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">Space</kbd> Pause/Resume</p>
-                  <p><kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">Enter</kbd> Start/End Duration Mark (+ add optional note)</p>
-                  <p><kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">ESC</kbd> Cancel Recording</p>
+                  <div className="flex items-center gap-3">
+                    <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded w-16 text-center">Space</kbd>
+                    <span>Pause/Resume</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded w-16 text-center">Enter</kbd>
+                    <span>Start/End Duration Mark (+ add optional note)</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded w-16 text-center">ESC</kbd>
+                    <span>Cancel Recording</span>
+                  </div>
                 </div>
               </div>
 
