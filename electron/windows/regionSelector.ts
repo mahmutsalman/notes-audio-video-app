@@ -7,6 +7,9 @@ export interface RegionSelectorWindow extends BrowserWindow {
   displayId: string;
 }
 
+// Track active region selector windows
+export let regionSelectorWindows: RegionSelectorWindow[] = [];
+
 export function createRegionSelectorWindows(): RegionSelectorWindow[] {
   const displays = screen.getAllDisplays();
   const windows: RegionSelectorWindow[] = [];
@@ -94,6 +97,17 @@ export function createRegionSelectorWindows(): RegionSelectorWindow[] {
     window.setSimpleFullScreen(true);
     console.log(`[RegionSelector] Simple fullscreen enabled`);
 
+    // macOS: Make window visible on all workspaces/spaces (critical for global shortcut)
+    if (process.platform === 'darwin') {
+      window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      console.log(`[RegionSelector] Set visible on all workspaces (macOS)`);
+    }
+
+    // Bring window to front and focus it
+    window.show();
+    window.focus();
+    console.log(`[RegionSelector] Window shown and focused`);
+
     // Store display ID for reference
     window.displayId = primaryDisplay.id.toString();
 
@@ -151,6 +165,8 @@ export function createRegionSelectorWindows(): RegionSelectorWindow[] {
     console.error(`[RegionSelector] Error creating overlay window:`, error);
   }
 
+  // Store windows in module-level variable for tracking
+  regionSelectorWindows = windows;
   console.log(`[RegionSelector] Returning ${windows.length} window(s)`);
   return windows;
 }
@@ -177,4 +193,8 @@ export function closeAllRegionSelectorWindows(): void {
       console.log('[RegionSelector] Window destroyed');
     }
   }
+
+  // Clear the tracked windows array
+  regionSelectorWindows = [];
+  console.log('[RegionSelector] Cleared region selector windows array');
 }

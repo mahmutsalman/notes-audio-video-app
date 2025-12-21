@@ -120,8 +120,8 @@ export interface DurationAudio {
 
 // Screen Recording types
 
-export type ScreenResolution = '480p' | '720p' | '1080p';
-export type ScreenFPS = 10 | 24 | 30 | 60;
+export type ScreenResolution = '480p' | '720p' | '1080p' | '1440p';
+export type ScreenFPS = 10 | 24 | 30 | 60 | 120;
 
 export interface ScreenSource {
   id: string;
@@ -140,6 +140,12 @@ export interface DisplayInfo {
   scaleFactor: number;
 }
 
+export interface AudioSettings {
+  microphoneEnabled: boolean;
+  microphoneDeviceId?: string;
+  desktopAudioEnabled: boolean;
+}
+
 export interface CaptureArea {
   x: number;
   y: number;
@@ -153,6 +159,11 @@ export interface CaptureArea {
     width: number;
     height: number;
   };
+  // Audio settings
+  audioSettings?: AudioSettings;
+  // Quality settings
+  quality?: 'auto' | '720p' | '1080p' | '1440p';
+  fps?: number;
 }
 
 export interface ScreenRecordingSettings {

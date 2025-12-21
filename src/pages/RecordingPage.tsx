@@ -125,6 +125,7 @@ export default function RecordingPage() {
   } | null>(null);
   const [captionText, setCaptionText] = useState('');
   const [isScreenRecording, setIsScreenRecording] = useState(false);
+  const [autoTriggerRegionSelection, setAutoTriggerRegionSelection] = useState(false);
 
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
   const videoPlayerRef = useRef<HTMLVideoElement>(null);
@@ -161,6 +162,28 @@ export default function RecordingPage() {
       }
     };
   }, []);
+
+  // Global listener for region selection (always active, handles Cmd+D path)
+  // This ensures recording works even when modal isn't open
+  useEffect(() => {
+    console.log('[RecordingPage] Setting up global region:selected listener');
+    const cleanup = window.electronAPI.region.onRegionSelected((region) => {
+      console.log('[RecordingPage] Global region:selected event received');
+      console.log('[RecordingPage] isScreenRecording:', isScreenRecording);
+      console.log('[RecordingPage] region:', region);
+
+      // Only handle if modal is NOT open (Cmd+D path)
+      // If modal is open, ScreenSourceSelector handles it
+      if (!isScreenRecording && region && id) {
+        console.log('[RecordingPage] Handling region selection from Cmd+D - opening modal');
+        // Open modal so it can handle the recording
+        // The modal's ScreenSourceSelector will pick up the same region:selected event
+        setIsScreenRecording(true);
+      }
+    });
+
+    return () => cleanup();
+  }, [isScreenRecording, id]);
 
   // Load duration code snippets when active duration changes
   useEffect(() => {
@@ -2143,9 +2166,13 @@ export default function RecordingPage() {
       {id && (
         <ScreenRecordingModal
           isOpen={isScreenRecording}
-          onClose={() => setIsScreenRecording(false)}
+          onClose={() => {
+            setIsScreenRecording(false);
+            setAutoTriggerRegionSelection(false);
+          }}
           recordingId={id}
           onSave={handleSaveScreenRecording}
+          autoStartRegionSelection={autoTriggerRegionSelection}
         />
       )}
       </div>

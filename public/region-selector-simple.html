@@ -136,6 +136,113 @@
       0%, 50% { opacity: 1; }
       51%, 100% { opacity: 0.3; }
     }
+
+    /* Control Panel Styles (CleanShot X Aesthetic - Compact & Stacked) */
+    #controlPanel {
+      position: absolute;
+      background: rgba(28, 28, 30, 0.95);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 10px;
+      padding: 8px;
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      z-index: 1001;
+      pointer-events: auto;
+      min-width: 200px;
+      max-width: 250px;
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      transition: background 0.2s;
+    }
+
+    .control-group:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .icon-button {
+      width: 28px;
+      height: 28px;
+      background: transparent;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      padding: 0;
+      flex-shrink: 0;
+    }
+
+    .icon-button:hover:not(.disabled) {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .icon-button.active {
+      background: #3b82f6;
+    }
+
+    .icon-button.disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .icon-button svg {
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
+    }
+
+    .device-select, .preset-select {
+      background: rgba(255, 255, 255, 0.08);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 5px;
+      padding: 5px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      outline: none;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .device-select:focus, .preset-select:focus {
+      border-color: #3b82f6;
+      background: rgba(59, 130, 246, 0.1);
+    }
+
+    .device-select option, .preset-select option {
+      background: #1c1c1e;
+      color: white;
+    }
+
+    #audioStatus {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.8);
+      white-space: nowrap;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Compact grid for quality/FPS */
+    .settings-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+    }
   </style>
 </head>
 <body>
@@ -146,12 +253,64 @@
 
   <div id="rectangle"></div>
   <div id="dimensions"></div>
+
+  <!-- Control Panel (CleanShot X Style - Compact & Stacked) -->
+  <div id="controlPanel">
+    <!-- Microphone Row -->
+    <div class="control-group">
+      <button id="micToggle" class="icon-button" title="Toggle Microphone">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+          <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+        </svg>
+      </button>
+      <select id="micSelect" class="device-select">
+        <option value="">Microphone</option>
+      </select>
+    </div>
+
+    <!-- Microphone Level Indicator -->
+    <div id="levelIndicatorGroup" class="control-group" style="display: none;">
+      <span style="font-size: 11px; color: rgba(255, 255, 255, 0.6); width: 45px; white-space: nowrap;">Level:</span>
+      <div style="flex: 1; height: 6px; background: rgba(0, 0, 0, 0.4); border-radius: 3px; overflow: hidden; position: relative;">
+        <div id="levelBar" style="height: 100%; background: linear-gradient(to right, #22c55e 0%, #22c55e 60%, #eab308 60%, #eab308 80%, #ef4444 80%); width: 0%; transition: width 0.05s ease; border-radius: 3px;"></div>
+      </div>
+    </div>
+
+    <!-- Desktop Audio Row -->
+    <div class="control-group">
+      <button id="audioToggle" class="icon-button disabled" title="Toggle Desktop Audio">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+        </svg>
+      </button>
+      <span id="audioStatus">Desktop</span>
+    </div>
+
+    <!-- Quality & FPS Row (Grid) -->
+    <div class="settings-row">
+      <select id="qualitySelect" class="preset-select" title="Video Quality">
+        <option value="auto">Auto</option>
+        <option value="720p">720p</option>
+        <option value="1080p">1080p</option>
+        <option value="1440p">1440p</option>
+      </select>
+
+      <select id="fpsSelect" class="preset-select" title="Frame Rate">
+        <option value="24">24 FPS</option>
+        <option value="30">30 FPS</option>
+        <option value="60">60 FPS</option>
+        <option value="120">120 FPS</option>
+      </select>
+    </div>
+  </div>
+
   <button id="startButton">Start Recording</button>
   <button id="stopButton">Stop Recording</button>
   <div id="recordingIndicator">Recording</div>
 
   <script>
-    console.log('[RegionSelector] Simple overlay loaded - VERSION 2.0 WITH BUTTON LOGGING');
+    console.log('[RegionSelector] Simple overlay loaded - VERSION 3.0 WITH CONTROL PANEL');
 
     let displayInfo = null;
     let isDrawing = false;
@@ -160,17 +319,286 @@
     let rect = null;
     let isRecording = false;
 
+    // Audio and quality settings
+    let audioDevices = [];
+    let selectedMicId = null;
+    let micEnabled = false;
+    let desktopAudioEnabled = false;
+    let hasBlackHole = false;
+
+    // Microphone level monitoring
+    let monitoringStream = null;
+    let audioContext = null;
+    let analyser = null;
+    let animationFrameId = null;
+    let isMonitoring = false;
+
     const rectangleEl = document.getElementById('rectangle');
     const dimensionsEl = document.getElementById('dimensions');
     const startButton = document.getElementById('startButton');
     const stopButton = document.getElementById('stopButton');
     const recordingIndicator = document.getElementById('recordingIndicator');
     const instructions = document.getElementById('instructions');
+    const controlPanel = document.getElementById('controlPanel');
+
+    // Position control panel below rectangle with bounds checking
+    function positionControlPanel() {
+      console.log('[RegionSelector] Positioning control panel');
+      const panelHeight = 120; // approximate height for stacked layout
+      const panelWidth = 220; // compact width
+
+      // Center below rectangle
+      let left = rect.x + (rect.width / 2) - (panelWidth / 2);
+      let top = rect.y + rect.height + 12;
+
+      // Bounds checking
+      if (left < 10) left = 10;
+      if (left + panelWidth > window.innerWidth - 10) {
+        left = window.innerWidth - panelWidth - 10;
+      }
+      if (top + panelHeight > window.innerHeight - 10) {
+        // Show above rectangle instead
+        console.log('[RegionSelector] Not enough space below, positioning above');
+        top = rect.y - panelHeight - 12;
+      }
+
+      controlPanel.style.left = left + 'px';
+      controlPanel.style.top = top + 'px';
+      controlPanel.style.display = 'flex';
+      console.log('[RegionSelector] Control panel positioned at:', left, top);
+    }
+
+    // Enumerate audio devices and populate microphone selector
+    async function loadAudioDevices() {
+      console.log('[RegionSelector] Loading audio devices');
+      try {
+        // Request permission first (required for device labels)
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        audioDevices = devices.filter(d => d.kind === 'audioinput');
+
+        console.log('[RegionSelector] Found', audioDevices.length, 'audio input devices');
+
+        // Populate mic select
+        const micSelect = document.getElementById('micSelect');
+        micSelect.innerHTML = '<option value="">Select Microphone...</option>';
+
+        audioDevices.forEach(device => {
+          const option = document.createElement('option');
+          option.value = device.deviceId;
+          option.textContent = device.label || `Microphone ${device.deviceId.slice(0, 5)}`;
+          micSelect.appendChild(option);
+        });
+
+        // Check for BlackHole
+        hasBlackHole = audioDevices.some(d =>
+          d.label.toLowerCase().includes('blackhole')
+        );
+
+        console.log('[RegionSelector] BlackHole detected:', hasBlackHole);
+        updateDesktopAudioButton();
+      } catch (error) {
+        console.error('[RegionSelector] Failed to load audio devices:', error);
+        // Permission denied or error - disable audio features gracefully
+        const micSelect = document.getElementById('micSelect');
+        micSelect.innerHTML = '<option value="">Microphone permission denied</option>';
+        micSelect.disabled = true;
+        document.getElementById('micToggle').classList.add('disabled');
+      }
+    }
+
+    // Update desktop audio button based on BlackHole detection
+    function updateDesktopAudioButton() {
+      const audioToggle = document.getElementById('audioToggle');
+      const audioStatus = document.getElementById('audioStatus');
+
+      if (hasBlackHole) {
+        audioToggle.classList.remove('disabled');
+        audioStatus.textContent = 'Desktop';
+        audioToggle.title = 'Toggle Desktop Audio';
+        console.log('[RegionSelector] Desktop audio available');
+      } else {
+        audioToggle.classList.add('disabled');
+        audioStatus.textContent = 'Desktop';
+        audioToggle.title = 'Install BlackHole 2ch to capture desktop audio\n\nVisit: https://existential.audio/blackhole/';
+        console.log('[RegionSelector] Desktop audio unavailable (BlackHole not detected)');
+      }
+    }
+
+    // Start monitoring microphone input levels
+    async function startMicrophoneMonitoring() {
+      console.log('[RegionSelector] Starting microphone monitoring');
+
+      // Don't start if already monitoring or mic is disabled
+      if (isMonitoring || !micEnabled || !selectedMicId) {
+        return;
+      }
+
+      try {
+        // Create monitoring stream (separate from recording stream)
+        monitoringStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            deviceId: { exact: selectedMicId },
+            echoCancellation: false,  // Disable for accurate level reading
+            noiseSuppression: false,
+            autoGainControl: false,   // Disable to get raw input levels
+            sampleRate: 48000
+          }
+        });
+
+        // Setup Web Audio API for level analysis
+        audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(monitoringStream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 512;  // 512 samples = good balance
+        analyser.smoothingTimeConstant = 0.8;  // Smooth out rapid changes
+        source.connect(analyser);
+
+        // Start level monitoring loop
+        isMonitoring = true;
+        document.getElementById('levelIndicatorGroup').style.display = 'flex';
+        updateLevelMeter();
+
+        console.log('[RegionSelector] Microphone monitoring started');
+      } catch (error) {
+        console.error('[RegionSelector] Failed to start microphone monitoring:', error);
+        stopMicrophoneMonitoring();
+      }
+    }
+
+    // Stop monitoring microphone input levels
+    function stopMicrophoneMonitoring() {
+      console.log('[RegionSelector] Stopping microphone monitoring');
+
+      isMonitoring = false;
+
+      // Cancel animation frame
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+
+      // Stop monitoring stream
+      if (monitoringStream) {
+        monitoringStream.getTracks().forEach(track => track.stop());
+        monitoringStream = null;
+      }
+
+      // Close audio context
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+
+      analyser = null;
+
+      // Hide level indicator and reset bar
+      const levelIndicatorGroup = document.getElementById('levelIndicatorGroup');
+      const levelBar = document.getElementById('levelBar');
+      if (levelIndicatorGroup) levelIndicatorGroup.style.display = 'none';
+      if (levelBar) levelBar.style.width = '0%';
+
+      console.log('[RegionSelector] Microphone monitoring stopped');
+    }
+
+    // Update level meter visualization (60fps animation loop)
+    function updateLevelMeter() {
+      if (!isMonitoring || !analyser) {
+        return;
+      }
+
+      // Get audio frequency data
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(dataArray);
+
+      // Calculate average level (0-255)
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / dataArray.length;
+
+      // Convert to percentage (0-100%)
+      // Apply logarithmic scaling for better visual representation
+      const normalizedLevel = (average / 255) * 100;
+      const scaledLevel = Math.min(100, normalizedLevel * 3.0); // Amplify for better visibility
+
+      // Update level bar width
+      const levelBar = document.getElementById('levelBar');
+      if (levelBar) {
+        levelBar.style.width = scaledLevel + '%';
+      }
+
+      // Continue animation loop
+      animationFrameId = requestAnimationFrame(updateLevelMeter);
+    }
+
+    // Load saved settings from Electron (Phase 6)
+    async function loadSettings() {
+      console.log('[RegionSelector] Loading saved settings');
+      try {
+        const settings = await window.electronAPI.settings.getAll();
+
+        // Load FPS and quality settings
+        const savedFPS = settings.screen_recording_fps || '30';
+        const savedQuality = settings.screen_recording_quality || 'auto';
+
+        // Load mic settings
+        micEnabled = settings.region_mic_enabled === 'true';
+        selectedMicId = settings.region_mic_device_id || null;
+
+        // Load desktop audio setting
+        desktopAudioEnabled = settings.region_desktop_audio_enabled === 'true';
+
+        console.log('[RegionSelector] Loaded settings:', {
+          fps: savedFPS,
+          quality: savedQuality,
+          micEnabled,
+          selectedMicId,
+          desktopAudioEnabled
+        });
+
+        // Apply to UI
+        document.getElementById('fpsSelect').value = savedFPS;
+        document.getElementById('qualitySelect').value = savedQuality;
+        document.getElementById('micToggle').classList.toggle('active', micEnabled);
+        document.getElementById('audioToggle').classList.toggle('active', desktopAudioEnabled && hasBlackHole);
+
+        // Set mic device if saved and available
+        if (selectedMicId && audioDevices.length > 0) {
+          const micSelect = document.getElementById('micSelect');
+          const deviceExists = Array.from(micSelect.options).some(opt => opt.value === selectedMicId);
+          if (deviceExists) {
+            micSelect.value = selectedMicId;
+            console.log('[RegionSelector] Restored saved microphone:', selectedMicId);
+          } else {
+            console.log('[RegionSelector] Saved microphone not found, resetting');
+            selectedMicId = null;
+          }
+        }
+
+        // Start monitoring if mic was previously enabled
+        if (micEnabled && selectedMicId) {
+          console.log('[RegionSelector] Auto-starting monitoring from saved settings');
+          setTimeout(() => {
+            startMicrophoneMonitoring();
+          }, 500);  // Small delay to ensure UI is ready
+        }
+      } catch (error) {
+        console.error('[RegionSelector] Failed to load settings:', error);
+        // Use defaults on error
+      }
+    }
 
     // Listen for display info
-    window.electronAPI?.region?.onDisplayInfo((info) => {
+    window.electronAPI?.region?.onDisplayInfo(async (info) => {
       console.log('[RegionSelector] Received display info:', info);
       displayInfo = info;
+      // Load audio devices first, then load saved settings
+      await loadAudioDevices();
+      await loadSettings();
     });
 
     // Mouse down - start drawing
@@ -180,9 +608,10 @@
       startX = e.clientX;
       startY = e.clientY;
 
-      // Hide instructions and button
+      // Hide instructions, button, and control panel
       instructions.style.display = 'none';
       startButton.style.display = 'none';
+      controlPanel.style.display = 'none';
 
       // Reset rectangle
       rectangleEl.style.display = 'block';
@@ -228,20 +657,26 @@
       console.log('[RegionSelector] Mouse up, rectangle:', rect);
       isDrawing = false;
 
-      // Show start button if rectangle is big enough
+      // Show control panel and start button if rectangle is big enough
       if (rect && rect.width > 20 && rect.height > 20) {
-        console.log('[RegionSelector] Rectangle is big enough, showing Start Recording button');
-        console.log('[RegionSelector] Button position - left:', (rect.x + rect.width / 2), 'top:', (rect.y + rect.height + 20));
+        console.log('[RegionSelector] Rectangle is big enough, showing control panel and button');
+
+        // Position and show control panel
+        positionControlPanel();
+
+        // Position Start Recording button below control panel
+        const panelBottom = parseInt(controlPanel.style.top) + controlPanel.offsetHeight; // Use actual panel height
         startButton.style.display = 'block';
         startButton.style.left = (rect.x + rect.width / 2) + 'px';
-        startButton.style.top = (rect.y + rect.height + 20) + 'px';
+        startButton.style.top = panelBottom + 12 + 'px'; // 12px gap below panel
         startButton.style.transform = 'translateX(-50%)';
-        console.log('[RegionSelector] Button display style:', startButton.style.display);
-        console.log('[RegionSelector] Button computed style:', window.getComputedStyle(startButton).display);
+
+        console.log('[RegionSelector] Control panel and button shown');
       } else {
         // Rectangle too small, reset
         rectangleEl.style.display = 'none';
         dimensionsEl.style.display = 'none';
+        controlPanel.style.display = 'none';
         instructions.style.display = 'block';
         rect = null;
       }
@@ -273,6 +708,10 @@
         return;
       }
 
+      // Get current quality and FPS settings
+      const quality = document.getElementById('qualitySelect').value;
+      const fps = parseInt(document.getElementById('fpsSelect').value);
+
       const captureArea = {
         x: rect.x,
         y: rect.y,
@@ -280,17 +719,37 @@
         height: rect.height,
         displayId: displayInfo.id,
         scaleFactor: displayInfo.scaleFactor,
-        displayBounds: displayInfo.bounds
+        displayBounds: displayInfo.bounds,
+        // Add audio settings (Phase 2)
+        audioSettings: {
+          microphoneEnabled: micEnabled,
+          microphoneDeviceId: selectedMicId || undefined,
+          desktopAudioEnabled: desktopAudioEnabled
+        },
+        // Add quality settings
+        quality: quality,
+        fps: fps
       };
 
       console.log('[RegionSelector] Starting recording with capture area:', captureArea);
+      console.log('[RegionSelector] Audio settings:', {
+        mic: micEnabled,
+        device: selectedMicId,
+        desktop: desktopAudioEnabled
+      });
+      console.log('[RegionSelector] Quality settings:', { quality, fps });
 
-      // Send region data to start recording (NOT the old sendRegion that closes overlay)
+      // Stop monitoring before starting recording
+      console.log('[RegionSelector] Stopping monitoring before recording');
+      stopMicrophoneMonitoring();
+
+      // Send region data to start recording
       window.electronAPI.region.sendRegion(captureArea);
 
       // Switch to recording mode
       isRecording = true;
       startButton.style.display = 'none';
+      controlPanel.style.display = 'none'; // Hide control panel during recording
       stopButton.style.display = 'block';
       stopButton.style.left = (rect.x + rect.width / 2) + 'px';
       stopButton.style.top = (rect.y + rect.height + 20) + 'px';
@@ -330,8 +789,163 @@
     // ESC key to cancel
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        console.log('[RegionSelector] ESC pressed, canceling');
+        console.log('[RegionSelector] ESC pressed, canceling and cleaning up monitoring');
+        stopMicrophoneMonitoring();
         window.electronAPI.region.cancel();
+      }
+    });
+
+    // Cleanup monitoring when page unloads
+    window.addEventListener('beforeunload', () => {
+      console.log('[RegionSelector] Page unloading, cleaning up monitoring');
+      stopMicrophoneMonitoring();
+    });
+
+    // Control Panel Click Handlers (Phase 1 - Basic Setup)
+
+    // Prevent control panel from triggering drawing
+    controlPanel.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+    });
+
+    controlPanel.addEventListener('mouseup', (e) => {
+      e.stopPropagation();
+    });
+
+    // Microphone toggle button
+    document.getElementById('micToggle').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const button = e.currentTarget;
+
+      // Check if disabled (permission denied)
+      if (button.classList.contains('disabled')) {
+        console.log('[RegionSelector] Microphone disabled (permission denied)');
+        return;
+      }
+
+      micEnabled = !micEnabled;
+      button.classList.toggle('active', micEnabled);
+
+      // Save mic enabled state (Phase 6)
+      try {
+        await window.electronAPI.settings.set('region_mic_enabled', micEnabled ? 'true' : 'false');
+        console.log('[RegionSelector] Saved mic enabled:', micEnabled);
+      } catch (error) {
+        console.error('[RegionSelector] Failed to save mic enabled:', error);
+      }
+
+      if (micEnabled && !selectedMicId) {
+        // Auto-select first device
+        const micSelect = document.getElementById('micSelect');
+        if (micSelect.options.length > 1) {
+          selectedMicId = micSelect.options[1].value;
+          micSelect.value = selectedMicId;
+          console.log('[RegionSelector] Auto-selected first microphone:', selectedMicId);
+          // Save the auto-selected device
+          try {
+            await window.electronAPI.settings.set('region_mic_device_id', selectedMicId);
+          } catch (error) {
+            console.error('[RegionSelector] Failed to save mic device:', error);
+          }
+        }
+      }
+
+      // Start or stop monitoring based on mic state
+      if (micEnabled) {
+        if (selectedMicId) {
+          startMicrophoneMonitoring();
+        }
+      } else {
+        stopMicrophoneMonitoring();
+      }
+
+      console.log('[RegionSelector] Microphone enabled:', micEnabled);
+    });
+
+    // Microphone select
+    document.getElementById('micSelect').addEventListener('change', async (e) => {
+      e.stopPropagation();
+      selectedMicId = e.target.value;
+      console.log('[RegionSelector] Microphone selected:', selectedMicId);
+
+      // Save mic device selection (Phase 6)
+      try {
+        await window.electronAPI.settings.set('region_mic_device_id', selectedMicId);
+        console.log('[RegionSelector] Saved mic device:', selectedMicId);
+      } catch (error) {
+        console.error('[RegionSelector] Failed to save mic device:', error);
+      }
+
+      if (selectedMicId && !micEnabled) {
+        // Auto-enable microphone when device selected
+        micEnabled = true;
+        document.getElementById('micToggle').classList.add('active');
+        console.log('[RegionSelector] Microphone auto-enabled via device selection');
+        // Save the auto-enabled state
+        try {
+          await window.electronAPI.settings.set('region_mic_enabled', 'true');
+        } catch (error) {
+          console.error('[RegionSelector] Failed to save mic enabled:', error);
+        }
+      }
+
+      // Restart monitoring with new device
+      if (micEnabled && selectedMicId) {
+        stopMicrophoneMonitoring();  // Stop old monitoring
+        setTimeout(() => {
+          startMicrophoneMonitoring();  // Start with new device
+        }, 100);  // Small delay for cleanup
+      }
+    });
+
+    // Desktop audio toggle button
+    document.getElementById('audioToggle').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const button = e.currentTarget;
+      if (button.classList.contains('disabled')) {
+        console.log('[RegionSelector] Desktop audio disabled (BlackHole not detected)');
+        return;
+      }
+      button.classList.toggle('active');
+      desktopAudioEnabled = !desktopAudioEnabled;
+      console.log('[RegionSelector] Desktop audio enabled:', desktopAudioEnabled);
+
+      // Save desktop audio state (Phase 6)
+      try {
+        await window.electronAPI.settings.set('region_desktop_audio_enabled', desktopAudioEnabled ? 'true' : 'false');
+        console.log('[RegionSelector] Saved desktop audio enabled:', desktopAudioEnabled);
+      } catch (error) {
+        console.error('[RegionSelector] Failed to save desktop audio enabled:', error);
+      }
+    });
+
+    // Quality select
+    document.getElementById('qualitySelect').addEventListener('change', async (e) => {
+      e.stopPropagation();
+      const quality = e.target.value;
+      console.log('[RegionSelector] Quality selected:', quality);
+
+      // Save quality setting (Phase 6)
+      try {
+        await window.electronAPI.settings.set('screen_recording_quality', quality);
+        console.log('[RegionSelector] Saved quality:', quality);
+      } catch (error) {
+        console.error('[RegionSelector] Failed to save quality:', error);
+      }
+    });
+
+    // FPS select
+    document.getElementById('fpsSelect').addEventListener('change', async (e) => {
+      e.stopPropagation();
+      const fps = e.target.value;
+      console.log('[RegionSelector] FPS selected:', fps);
+
+      // Save FPS setting (Phase 6)
+      try {
+        await window.electronAPI.settings.set('screen_recording_fps', fps);
+        console.log('[RegionSelector] Saved FPS:', fps);
+      } catch (error) {
+        console.error('[RegionSelector] Failed to save FPS:', error);
       }
     });
 

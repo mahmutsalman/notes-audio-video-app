@@ -8,11 +8,16 @@ export interface CroppedStreamResult {
 /**
  * Creates a cropped video stream from a full screen capture
  * Uses canvas to crop frames in real-time
+ * @param sourceId - The desktop capturer source ID
+ * @param region - The capture area with coordinates and scale factor
+ * @param fps - Target frames per second
+ * @param targetDimensions - Optional target dimensions for quality scaling (Phase 5)
  */
 export async function createCroppedStream(
   sourceId: string,
   region: CaptureArea,
-  fps: number
+  fps: number,
+  targetDimensions?: { width: number; height: number }
 ): Promise<CroppedStreamResult> {
   // 1. Get full screen stream
   const fullStream = await navigator.mediaDevices.getUserMedia({
@@ -30,11 +35,15 @@ export async function createCroppedStream(
   const scaleFactor = region.scaleFactor || 1;
   console.log('[regionCapture] Scale factor:', scaleFactor);
   console.log('[regionCapture] CSS region:', region.width, 'x', region.height);
-  console.log('[regionCapture] Physical canvas:', region.width * scaleFactor, 'x', region.height * scaleFactor);
+
+  // Determine canvas dimensions (use target dimensions if provided, otherwise use physical pixels)
+  const canvasWidth = targetDimensions?.width ?? (region.width * scaleFactor);
+  const canvasHeight = targetDimensions?.height ?? (region.height * scaleFactor);
+  console.log('[regionCapture] Canvas dimensions:', canvasWidth, 'x', canvasHeight);
 
   const canvas = document.createElement('canvas');
-  canvas.width = region.width * scaleFactor;
-  canvas.height = region.height * scaleFactor;
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
   const ctx = canvas.getContext('2d', { alpha: false });
 
   if (!ctx) {

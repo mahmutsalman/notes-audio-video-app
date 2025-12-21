@@ -14,11 +14,12 @@ const ScreenRecordingSettingsContext = createContext<
   ScreenRecordingSettingsContextValue | undefined
 >(undefined);
 
-// Resolution presets mapping
-export const RESOLUTION_PRESETS: Record<ScreenResolution, { width: number; height: number }> = {
+// Resolution presets mapping (including 1440p for region recording)
+export const RESOLUTION_PRESETS: Record<ScreenResolution | '1440p', { width: number; height: number }> = {
   '480p': { width: 854, height: 480 },
   '720p': { width: 1280, height: 720 },
   '1080p': { width: 1920, height: 1080 },
+  '1440p': { width: 2560, height: 1440 },
 };
 
 // Common presets for quick switching
@@ -26,6 +27,7 @@ export const QUALITY_PRESETS = {
   'Minimal': { resolution: '480p' as ScreenResolution, fps: 10 as ScreenFPS },
   'Standard': { resolution: '1080p' as ScreenResolution, fps: 30 as ScreenFPS },
   'High': { resolution: '1080p' as ScreenResolution, fps: 60 as ScreenFPS },
+  '2K': { resolution: '1440p' as const, fps: 60 as ScreenFPS },
 } as const;
 
 interface ScreenRecordingSettingsProviderProps {

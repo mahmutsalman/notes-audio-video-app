@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { fixWebmMetadata } from '../utils/webmFixer';
 import { createCroppedStream, getDisplaySourceId, calculateBitrate } from '../utils/regionCapture';
+import { createMicrophoneStream, combineAudioStreams, getBlackHoleDevice } from '../utils/audioCapture';
+import { RESOLUTION_PRESETS } from '../context/ScreenRecordingSettingsContext';
 import type { CaptureArea } from '../types';
 
 // Reuse DurationMark types from useVoiceRecorder
@@ -67,6 +69,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   const startTimeRef = useRef<number>(0);
   const accumulatedTimeRef = useRef<number>(0);
   const regionCleanupRef = useRef<(() => void) | null>(null);
+  const audioStreamsRef = useRef<MediaStream[]>([]);
 
   // Duration marking state (same pattern as audio)
   const [pendingMarkStart, setPendingMarkStart] = useState<number | null>(null);
@@ -203,6 +206,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       }));
 
       videoChunksRef.current = [];
+      audioStreamsRef.current = [];
       setPendingMarkStart(null);
       setPendingMarkNote('');
       setCompletedMarks([]);
@@ -216,12 +220,115 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         throw new Error('Failed to find display source for region');
       }
 
-      // Create cropped stream using canvas
-      console.log('[useScreenRecorder] Creating cropped stream');
-      const { stream, cleanup } = await createCroppedStream(sourceId, region, fps);
-      console.log('[useScreenRecorder] Cropped stream created');
-      streamRef.current = stream;
+      // Determine actual recording dimensions based on quality setting (Phase 5)
+      const scaleFactor = region.scaleFactor || 1;
+      let recordWidth = region.width * scaleFactor;
+      let recordHeight = region.height * scaleFactor;
+
+      if (region.quality && region.quality !== 'auto') {
+        const qualityPreset = RESOLUTION_PRESETS[region.quality];
+        if (qualityPreset) {
+          console.log('[useScreenRecorder] Applying quality preset:', region.quality, qualityPreset);
+
+          // Scale to fit quality preset while maintaining aspect ratio
+          const aspectRatio = recordWidth / recordHeight;
+          if (aspectRatio > qualityPreset.width / qualityPreset.height) {
+            // Width is the limiting factor
+            recordWidth = qualityPreset.width;
+            recordHeight = Math.round(qualityPreset.width / aspectRatio);
+          } else {
+            // Height is the limiting factor
+            recordHeight = qualityPreset.height;
+            recordWidth = Math.round(qualityPreset.height * aspectRatio);
+          }
+
+          console.log('[useScreenRecorder] Target dimensions:', recordWidth, 'x', recordHeight);
+        }
+      } else {
+        console.log('[useScreenRecorder] Using auto quality (original dimensions):', recordWidth, 'x', recordHeight);
+      }
+
+      // Use region.fps if provided, otherwise use fps parameter
+      const actualFPS = region.fps || fps;
+      console.log('[useScreenRecorder] Recording at', actualFPS, 'FPS');
+
+      // Create cropped video stream using canvas
+      console.log('[useScreenRecorder] Creating cropped video stream');
+      const { stream: videoStream, cleanup } = await createCroppedStream(
+        sourceId,
+        region,
+        actualFPS,
+        { width: recordWidth, height: recordHeight }
+      );
+      console.log('[useScreenRecorder] Cropped video stream created');
       regionCleanupRef.current = cleanup;
+
+      // Create audio streams if enabled (Phase 3)
+      const audioStreams: MediaStream[] = [];
+
+      if (region.audioSettings?.microphoneEnabled) {
+        console.log('[useScreenRecorder] Creating microphone stream');
+        const micStream = await createMicrophoneStream(
+          region.audioSettings.microphoneDeviceId
+        );
+        if (micStream) {
+          audioStreams.push(micStream);
+          console.log('[useScreenRecorder] Microphone stream created');
+        } else {
+          console.warn('[useScreenRecorder] Failed to create microphone stream');
+        }
+      }
+
+      if (region.audioSettings?.desktopAudioEnabled) {
+        console.log('[useScreenRecorder] Creating desktop audio stream');
+        const blackHoleDevice = await getBlackHoleDevice();
+        if (blackHoleDevice) {
+          try {
+            const desktopStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                deviceId: { exact: blackHoleDevice.deviceId },
+                sampleRate: 48000
+              }
+            });
+            audioStreams.push(desktopStream);
+            console.log('[useScreenRecorder] Desktop audio stream created');
+          } catch (error) {
+            console.error('[useScreenRecorder] Failed to create desktop audio stream:', error);
+          }
+        } else {
+          console.warn('[useScreenRecorder] BlackHole device not found');
+        }
+      }
+
+      // Combine video and audio streams
+      let finalStream: MediaStream;
+
+      if (audioStreams.length > 0) {
+        console.log('[useScreenRecorder] Combining', audioStreams.length, 'audio streams with video');
+
+        // Combine multiple audio streams if needed
+        const combinedAudioStream = audioStreams.length > 1
+          ? combineAudioStreams(audioStreams)
+          : audioStreams[0];
+
+        // Create final stream with video + audio tracks
+        finalStream = new MediaStream([
+          ...videoStream.getVideoTracks(),
+          ...combinedAudioStream.getAudioTracks()
+        ]);
+
+        // Store audio streams for cleanup
+        audioStreamsRef.current = audioStreams;
+
+        console.log('[useScreenRecorder] Final stream created with audio:',
+          finalStream.getVideoTracks().length, 'video tracks,',
+          finalStream.getAudioTracks().length, 'audio tracks');
+      } else {
+        console.log('[useScreenRecorder] No audio streams, using video only');
+        finalStream = videoStream;
+      }
+
+      streamRef.current = finalStream;
 
       // Create MediaRecorder with VP9 codec
       const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
@@ -230,20 +337,22 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       console.log('[useScreenRecorder] Using mimeType:', mimeType);
 
       // Calculate bitrate based on region size and FPS (using scaled dimensions)
-      const scaleFactor = region.scaleFactor || 1;
+      // Note: scaleFactor already declared earlier for quality scaling
       const videoBitsPerSecond = calculateBitrate(
         region.width * scaleFactor,
         region.height * scaleFactor,
-        fps
+        actualFPS
       );
-      console.log('[useScreenRecorder] Calculated bitrate:', videoBitsPerSecond);
+      console.log('[useScreenRecorder] Calculated video bitrate:', videoBitsPerSecond);
 
       console.log('[useScreenRecorder] Creating MediaRecorder');
-      const mediaRecorder = new MediaRecorder(stream, {
+      const mediaRecorder = new MediaRecorder(finalStream, {
         mimeType,
         videoBitsPerSecond,
+        // Add audio bitrate if audio is enabled
+        audioBitsPerSecond: audioStreams.length > 0 ? 128000 : undefined
       });
-      console.log('[useScreenRecorder] MediaRecorder created');
+      console.log('[useScreenRecorder] MediaRecorder created with audio support:', audioStreams.length > 0);
 
       mediaRecorderRef.current = mediaRecorder;
 
@@ -340,6 +449,15 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
           streamRef.current = null;
         }
 
+        // Cleanup audio streams (Phase 3)
+        if (audioStreamsRef.current.length > 0) {
+          console.log('[ScreenRecording] Cleaning up', audioStreamsRef.current.length, 'audio streams');
+          audioStreamsRef.current.forEach(stream => {
+            stream.getTracks().forEach(track => track.stop());
+          });
+          audioStreamsRef.current = [];
+        }
+
         // Call region cleanup if exists
         if (regionCleanupRef.current) {
           regionCleanupRef.current();
@@ -390,6 +508,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
+    }
+    // Cleanup audio streams
+    if (audioStreamsRef.current.length > 0) {
+      audioStreamsRef.current.forEach(stream => {
+        stream.getTracks().forEach(track => track.stop());
+      });
+      audioStreamsRef.current = [];
     }
     if (regionCleanupRef.current) {
       regionCleanupRef.current();

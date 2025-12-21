@@ -4,6 +4,7 @@ import fs from 'fs';
 import { initDatabase, closeDatabase } from './database/database';
 import { ensureMediaDirs } from './services/fileStorage';
 import { setupIpcHandlers } from './ipc/handlers';
+import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './shortcuts/globalShortcuts';
 
 // Force consistent app name and userData path (ensures dev and prod use same database)
 // This is critical: dev mode uses package.json 'name', prod uses 'productName'
@@ -176,6 +177,9 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+
+  // Register global keyboard shortcuts (Cmd+D for region selection)
+  registerGlobalShortcuts();
 });
 
 // Quit when all windows are closed, except on macOS
@@ -194,6 +198,7 @@ app.on('activate', () => {
 
 // Clean up before quit
 app.on('before-quit', () => {
+  unregisterGlobalShortcuts();
   closeDatabase();
 });
 
