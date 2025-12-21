@@ -894,10 +894,10 @@
       stopButton.style.top = (rect.y + rect.height + 20) + 'px';
       stopButton.style.transform = 'translateX(-50%)';
 
-      // Show recording indicator
+      // Show recording indicator (positioned above rectangle, outside recording area)
       recordingIndicator.style.display = 'block';
       recordingIndicator.style.left = (rect.x + 10) + 'px';
-      recordingIndicator.style.top = (rect.y + 10) + 'px';
+      recordingIndicator.style.top = (rect.y - 40) + 'px'; // Above rectangle to avoid showing in video
 
       // Disable drawing during recording
       document.body.style.cursor = 'default';
