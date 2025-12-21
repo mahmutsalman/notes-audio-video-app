@@ -201,7 +201,16 @@ export default function ScreenRecordingModal({
 
                 {/* Settings Info */}
                 <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                  {settings.resolution} • {settings.fps} FPS • {settings.codec.toUpperCase()}
+                  {/* Show region overlay settings if available, otherwise show global settings */}
+                  {recorder.captureArea?.quality && recorder.captureArea?.fps ? (
+                    <>
+                      {recorder.captureArea.quality.toUpperCase()} • {recorder.captureArea.fps} FPS • {recorder.selectedCodec || 'WEBM'}
+                    </>
+                  ) : (
+                    <>
+                      {settings.resolution} • {settings.fps} FPS • {recorder.selectedCodec || 'WEBM'}
+                    </>
+                  )}
                 </div>
 
                 {/* Duration Marking */}

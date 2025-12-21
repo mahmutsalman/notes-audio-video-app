@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import type { ScreenSource, CaptureArea } from '../../types';
-import { useScreenRecordingSettings, QUALITY_PRESETS } from '../../context/ScreenRecordingSettingsContext';
 
 interface ScreenSourceSelectorProps {
   onSourceSelect: (source: ScreenSource) => void;
@@ -13,7 +12,6 @@ export default function ScreenSourceSelector({ onSourceSelect, onRegionSelect, o
   const [sources, setSources] = useState<ScreenSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { settings, updatePreset } = useScreenRecordingSettings();
 
   useEffect(() => {
     loadSources();
@@ -74,10 +72,6 @@ export default function ScreenSourceSelector({ onSourceSelect, onRegionSelect, o
     }
   };
 
-  const handlePresetChange = (presetName: string) => {
-    updatePreset(presetName);
-  };
-
   const handleSelectRegion = async () => {
     console.log('[ScreenSourceSelector] Select Region button clicked!');
     console.log('[ScreenSourceSelector] window.electronAPI:', window.electronAPI);
@@ -130,43 +124,6 @@ export default function ScreenSourceSelector({ onSourceSelect, onRegionSelect, o
 
   return (
     <div className="space-y-6">
-      {/* Settings Panel */}
-      <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg space-y-4">
-        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Recording Quality</h3>
-
-        {/* Quality Presets */}
-        <div className="flex gap-2">
-          {Object.keys(QUALITY_PRESETS).map((presetName) => {
-            const preset = QUALITY_PRESETS[presetName as keyof typeof QUALITY_PRESETS];
-            const isActive = settings.presetName === presetName;
-
-            return (
-              <button
-                key={presetName}
-                onClick={() => handlePresetChange(presetName)}
-                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
-                }`}
-              >
-                <div className="font-semibold">{presetName}</div>
-                <div className="text-xs opacity-80">
-                  {preset.resolution} • {preset.fps} FPS
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Current Settings Display */}
-        <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
-          <span>Resolution: <strong>{settings.resolution}</strong></span>
-          <span>Frame Rate: <strong>{settings.fps} FPS</strong></span>
-          <span>Codec: <strong>{settings.codec.toUpperCase()}</strong></span>
-        </div>
-      </div>
-
       {/* Source Selection */}
       <div>
         <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">

@@ -21,6 +21,7 @@ export interface ScreenRecorderState {
   error: string | null;
   selectedSource: { id: string; name: string } | null;
   captureArea: CaptureArea | null;
+  selectedCodec: string | null; // Track actual codec being used (h264, vp9, etc.)
 }
 
 export interface ScreenRecorderControls {
@@ -50,6 +51,18 @@ export interface UseScreenRecorderReturn extends ScreenRecorderState, ScreenReco
   isMarking: boolean;
 }
 
+// Helper function to extract codec name from mimeType
+const getCodecName = (mimeType: string): string => {
+  if (mimeType.includes('h264') || mimeType.includes('avc1')) {
+    return 'H264';
+  } else if (mimeType.includes('vp9')) {
+    return 'VP9';
+  } else if (mimeType.includes('vp8')) {
+    return 'VP8';
+  }
+  return 'WEBM';
+};
+
 export function useScreenRecorder(): UseScreenRecorderReturn {
   const [state, setState] = useState<ScreenRecorderState>({
     isRecording: false,
@@ -60,6 +73,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     error: null,
     selectedSource: null,
     captureArea: null,
+    selectedCodec: null,
   });
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -133,16 +147,31 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
 
-      // Create MediaRecorder with VP9 codec
-      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9'
-        : 'video/webm';
+      // Try H.264 first (better hardware support, wider compatibility)
+      // Fall back to VP9 if H.264 not available
+      const codecPreference = [
+        'video/webm;codecs=h264',
+        'video/webm;codecs=avc1',  // Alternative H.264 identifier
+        'video/webm;codecs=vp9',   // Fallback to VP9
+        'video/webm'
+      ];
 
-      // Calculate bitrate based on resolution and FPS
-      const pixelCount = resolution.width * resolution.height;
-      const baseRate = pixelCount * 0.1; // 0.1 bits per pixel
-      const fpsMultiplier = fps / 30; // Scale based on 30 FPS baseline
-      const videoBitsPerSecond = Math.floor(baseRate * fpsMultiplier);
+      const mimeType = codecPreference.find(codec =>
+        MediaRecorder.isTypeSupported(codec)
+      ) || 'video/webm';
+
+      const selectedCodec = getCodecName(mimeType);
+      console.log('[useScreenRecorder] Selected codec:', mimeType, '→', selectedCodec);
+
+      // Calculate bitrate with improved quality (0.18 bpp for CleanShot X quality)
+      const videoBitsPerSecond = calculateBitrate(
+        resolution.width,
+        resolution.height,
+        fps,
+        0.18  // CleanShot X quality level
+      );
+
+      console.log('[useScreenRecorder] Video bitrate:', videoBitsPerSecond);
 
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType,
@@ -150,6 +179,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       });
 
       mediaRecorderRef.current = mediaRecorder;
+
+      // Store the selected codec in state
+      setState(prev => ({ ...prev, selectedCodec }));
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -330,20 +362,30 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
       streamRef.current = finalStream;
 
-      // Create MediaRecorder with VP9 codec
-      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9'
-        : 'video/webm';
-      console.log('[useScreenRecorder] Using mimeType:', mimeType);
+      // Try H.264 first (better hardware support, wider compatibility)
+      // Fall back to VP9 if H.264 not available
+      const codecPreference = [
+        'video/webm;codecs=h264',
+        'video/webm;codecs=avc1',  // Alternative H.264 identifier
+        'video/webm;codecs=vp9',   // Fallback to VP9
+        'video/webm'
+      ];
 
-      // Calculate bitrate based on region size and FPS (using scaled dimensions)
-      // Note: scaleFactor already declared earlier for quality scaling
+      const mimeType = codecPreference.find(codec =>
+        MediaRecorder.isTypeSupported(codec)
+      ) || 'video/webm';
+
+      const selectedCodec = getCodecName(mimeType);
+      console.log('[useScreenRecorder] Selected codec:', mimeType, '→', selectedCodec);
+
+      // Calculate bitrate with improved quality (0.18 bpp for CleanShot X quality)
       const videoBitsPerSecond = calculateBitrate(
         region.width * scaleFactor,
         region.height * scaleFactor,
-        actualFPS
+        actualFPS,
+        0.18  // CleanShot X quality level
       );
-      console.log('[useScreenRecorder] Calculated video bitrate:', videoBitsPerSecond);
+      console.log('[useScreenRecorder] Video bitrate:', videoBitsPerSecond);
 
       console.log('[useScreenRecorder] Creating MediaRecorder');
       const mediaRecorder = new MediaRecorder(finalStream, {
@@ -382,7 +424,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       }, 100);
 
       console.log('[useScreenRecorder] Setting isRecording to true');
-      setState(prev => ({ ...prev, isRecording: true, isPaused: false }));
+      setState(prev => ({ ...prev, isRecording: true, isPaused: false, selectedCodec }));
       console.log('[useScreenRecorder] Recording started successfully');
     } catch (err) {
       console.error('[useScreenRecorder] Failed to start region recording:', err);
@@ -531,6 +573,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       error: null,
       selectedSource: null,
       captureArea: null,
+      selectedCodec: null,
     });
 
     videoChunksRef.current = [];

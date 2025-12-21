@@ -44,7 +44,11 @@ export async function createCroppedStream(
   const canvas = document.createElement('canvas');
   canvas.width = canvasWidth;
   canvas.height = canvasHeight;
-  const ctx = canvas.getContext('2d', { alpha: false });
+  const ctx = canvas.getContext('2d', {
+    alpha: false,
+    // DO NOT use desynchronized: true - causes severe frame dropping
+    willReadFrequently: false  // Optimize for infrequent reads
+  });
 
   if (!ctx) {
     fullStream.getTracks().forEach((track) => track.stop());
@@ -94,7 +98,10 @@ export async function createCroppedStream(
   intervalId = window.setInterval(drawFrame, frameInterval);
 
   // 5. Capture canvas stream
-  const croppedStream = canvas.captureStream(fps);
+  // Don't pass fps to captureStream() - let it capture whenever canvas updates
+  // This fixes low FPS (10fps) capture issues where browsers throttle at low frame rates
+  // The actual FPS is controlled by setInterval's frameInterval
+  const croppedStream = canvas.captureStream();
 
   // 6. Cleanup function
   const cleanup = () => {
@@ -153,11 +160,16 @@ export async function getDisplaySourceId(displayId: string): Promise<string | nu
 /**
  * Calculate bitrate for video encoding based on region size and FPS
  * Note: width and height should already be scaled for HiDPI displays
+ * @param bitsPerPixel - Quality level (0.1=low, 0.15=standard, 0.18=high/CleanShot X, 0.2=premium)
  */
-export function calculateBitrate(width: number, height: number, fps: number): number {
+export function calculateBitrate(
+  width: number,
+  height: number,
+  fps: number,
+  bitsPerPixel: number = 0.18  // Default to CleanShot X quality
+): number {
   const pixelCount = width * height;
-  // Base formula: 0.1 bits per pixel, adjusted for FPS
-  const baseBitrate = pixelCount * 0.1 * (fps / 30);
-  // Add 50% overhead for better quality
-  return Math.round(baseBitrate * 1.5);
+  // Quality-based bitrate calculation
+  const baseBitrate = pixelCount * bitsPerPixel * (fps / 30);
+  return Math.round(baseBitrate);
 }
