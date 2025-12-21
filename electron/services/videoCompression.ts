@@ -112,6 +112,52 @@ export async function checkFFmpegAvailable(): Promise<{ available: boolean; vers
 }
 
 /**
+ * Detect frame rate from video file using ffprobe
+ */
+async function detectFrameRate(
+  ffmpegPath: string,
+  videoPath: string
+): Promise<number> {
+  // ffprobe is in the same directory as ffmpeg
+  const ffprobePath = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+
+  return new Promise((resolve) => {
+    const args = [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=r_frame_rate',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      videoPath
+    ];
+
+    const process = spawn(ffprobePath, args);
+    let output = '';
+
+    process.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+
+    process.on('close', (code) => {
+      if (code === 0 && output.trim()) {
+        // Parse "30/1" or "60/1" format
+        const [num, den] = output.trim().split('/').map(Number);
+        const fps = Math.round(num / den);
+        console.log('[videoCompression] Detected FPS:', fps);
+        resolve(fps);
+      } else {
+        console.warn('[videoCompression] Failed to detect FPS, using default 60');
+        resolve(60); // Fallback to 60fps
+      }
+    });
+
+    process.on('error', () => {
+      console.warn('[videoCompression] FFprobe error, using default 60');
+      resolve(60); // Fallback to 60fps
+    });
+  });
+}
+
+/**
  * Compress and convert WebM video to MP4 using ffmpeg
  * Uses your proven settings: CRF 35, preset slow, audio 32k for 88-90% compression
  */
@@ -147,13 +193,21 @@ export async function compressVideo(
       `${parsedPath.name}_compressed.mp4`
     );
 
+    // Detect input frame rate
+    const detectedFps = await detectFrameRate(ffmpegPath, inputPath);
+    console.log('[videoCompression] Using FPS:', detectedFps);
+
     // Build ffmpeg command
     // Convert WebM to MP4 with H.264 video and AAC audio
+    // Fixed: Added -fflags +genpts, -r (frame rate), and -vsync cfr to fix duration/frame rate issues
     const args = [
+      '-fflags', '+genpts',               // Generate presentation timestamps (fixes WebM duration issues)
       '-i', inputPath,                    // Input file
+      '-r', detectedFps.toString(),       // Explicit frame rate (preserves original FPS)
       '-c:v', 'libx264',                  // H.264 video codec
       '-crf', options.crf.toString(),     // Quality level (18-40, lower = better)
       '-preset', options.preset,          // Encoding speed preset
+      '-vsync', 'cfr',                    // Constant frame rate (prevents slow motion issues)
       '-c:a', 'aac',                      // AAC audio codec
       '-b:a', options.audioBitrate,       // Audio bitrate
       '-movflags', '+faststart',          // Enable fast start for web playback
