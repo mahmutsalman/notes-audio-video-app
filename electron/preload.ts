@@ -243,12 +243,26 @@ const electronAPI = {
       ipcRenderer.send('region:sendRegion', region);
       return Promise.resolve();
     },
+    stopRecording: (): Promise<void> => {
+      ipcRenderer.send('region:stopRecording');
+      return Promise.resolve();
+    },
+    onRecordingStop: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('recording:stop', listener);
+      return () => ipcRenderer.removeListener('recording:stop', listener);
+    },
     cancel: (): Promise<void> =>
       ipcRenderer.invoke('region:cancel'),
     onDisplayInfo: (callback: (displayInfo: any) => void) => {
       const listener = (_event: any, displayInfo: any) => callback(displayInfo);
       ipcRenderer.on('display-info', listener);
       return () => ipcRenderer.removeListener('display-info', listener);
+    },
+    onGlobalShortcut: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('global-shortcut:start-region-selection', listener);
+      return () => ipcRenderer.removeListener('global-shortcut:start-region-selection', listener);
     },
   },
 

@@ -9,6 +9,7 @@ interface ScreenRecordingModalProps {
   onClose: () => void;
   recordingId: number;
   onSave: (videoBlob: Blob, marks: any[]) => Promise<void>;
+  autoStartRegionSelection?: boolean;
 }
 
 type Step = 'source-selection' | 'recording' | 'saving';
@@ -18,6 +19,7 @@ export default function ScreenRecordingModal({
   onClose,
   recordingId: _recordingId, // Not used in component, but passed from parent
   onSave,
+  autoStartRegionSelection = false,
 }: ScreenRecordingModalProps) {
   const [step, setStep] = useState<Step>('source-selection');
   const recorder = useScreenRecorder();
@@ -42,6 +44,22 @@ export default function ScreenRecordingModal({
   // Log step changes for debugging
   useEffect(() => {
     console.log('[ScreenRecordingModal] step changed to:', step);
+  }, [step]);
+
+  // Listen for stop recording event from overlay
+  useEffect(() => {
+    if (step !== 'recording') return;
+
+    console.log('[ScreenRecordingModal] Setting up recording:stop listener');
+    const cleanup = window.electronAPI.region.onRecordingStop(() => {
+      console.log('[ScreenRecordingModal] recording:stop event received from overlay');
+      handleStopRecording();
+    });
+
+    return () => {
+      console.log('[ScreenRecordingModal] Cleaning up recording:stop listener');
+      cleanup();
+    };
   }, [step]);
 
   // Keyboard shortcuts during recording
@@ -159,6 +177,7 @@ export default function ScreenRecordingModal({
               onSourceSelect={handleSourceSelect}
               onRegionSelect={handleRegionSelect}
               onCancel={handleClose}
+              autoStartRegionSelection={autoStartRegionSelection}
             />
           )}
 

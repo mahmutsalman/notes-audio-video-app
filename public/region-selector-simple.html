@@ -90,6 +90,52 @@
     #startButton:hover {
       background: #b91c1c;
     }
+
+    #stopButton {
+      position: absolute;
+      background: #dc2626;
+      color: white;
+      border: none;
+      padding: 12px 32px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      display: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      transition: background 0.2s;
+      z-index: 1002;
+      pointer-events: auto;
+    }
+
+    #stopButton:hover {
+      background: #b91c1c;
+    }
+
+    #recordingIndicator {
+      position: absolute;
+      background: rgba(220, 38, 38, 0.9);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      display: none;
+      z-index: 1001;
+      pointer-events: none;
+    }
+
+    #recordingIndicator::before {
+      content: '●';
+      display: inline-block;
+      margin-right: 8px;
+      animation: blink 1s infinite;
+    }
+
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0.3; }
+    }
   </style>
 </head>
 <body>
@@ -101,6 +147,8 @@
   <div id="rectangle"></div>
   <div id="dimensions"></div>
   <button id="startButton">Start Recording</button>
+  <button id="stopButton">Stop Recording</button>
+  <div id="recordingIndicator">Recording</div>
 
   <script>
     console.log('[RegionSelector] Simple overlay loaded - VERSION 2.0 WITH BUTTON LOGGING');
@@ -110,10 +158,13 @@
     let startX = 0;
     let startY = 0;
     let rect = null;
+    let isRecording = false;
 
     const rectangleEl = document.getElementById('rectangle');
     const dimensionsEl = document.getElementById('dimensions');
     const startButton = document.getElementById('startButton');
+    const stopButton = document.getElementById('stopButton');
+    const recordingIndicator = document.getElementById('recordingIndicator');
     const instructions = document.getElementById('instructions');
 
     // Listen for display info
@@ -213,9 +264,7 @@
 
     startButton.addEventListener('click', (e) => {
       e.stopPropagation(); // Prevent body from receiving the click
-      console.log('[RegionSelector] ===== BUTTON CLICKED =====');
-      console.log('[RegionSelector] Click event:', e);
-      console.log('[RegionSelector] Start Recording button clicked');
+      console.log('[RegionSelector] ===== START BUTTON CLICKED =====');
       console.log('[RegionSelector] rect:', rect);
       console.log('[RegionSelector] displayInfo:', displayInfo);
 
@@ -234,9 +283,48 @@
         displayBounds: displayInfo.bounds
       };
 
-      console.log('[RegionSelector] Sending capture area:', captureArea);
+      console.log('[RegionSelector] Starting recording with capture area:', captureArea);
+
+      // Send region data to start recording (NOT the old sendRegion that closes overlay)
       window.electronAPI.region.sendRegion(captureArea);
-      console.log('[RegionSelector] sendRegion() called');
+
+      // Switch to recording mode
+      isRecording = true;
+      startButton.style.display = 'none';
+      stopButton.style.display = 'block';
+      stopButton.style.left = (rect.x + rect.width / 2) + 'px';
+      stopButton.style.top = (rect.y + rect.height + 20) + 'px';
+      stopButton.style.transform = 'translateX(-50%)';
+
+      // Show recording indicator
+      recordingIndicator.style.display = 'block';
+      recordingIndicator.style.left = (rect.x + 10) + 'px';
+      recordingIndicator.style.top = (rect.y + 10) + 'px';
+
+      // Disable drawing during recording
+      document.body.style.cursor = 'default';
+
+      console.log('[RegionSelector] Switched to recording mode');
+    });
+
+    // Stop Recording button
+    stopButton.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+    });
+
+    stopButton.addEventListener('mouseup', (e) => {
+      e.stopPropagation();
+    });
+
+    stopButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      console.log('[RegionSelector] ===== STOP BUTTON CLICKED =====');
+
+      // Send stop recording signal to main process
+      console.log('[RegionSelector] Sending stopRecording event to main process');
+      window.electronAPI.region.stopRecording();
+
+      console.log('[RegionSelector] Stop recording event sent');
     });
 
     // ESC key to cancel

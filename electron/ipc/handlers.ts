@@ -571,11 +571,12 @@ export function setupIpcHandlers(): void {
   ipcMain.on('region:sendRegion', async (event, region: any) => {
     console.log('[IPC Handler] region:sendRegion received:', region);
 
-    // Close all overlay windows
-    const { closeAllRegionSelectorWindows } = await import('../windows/regionSelector');
-    closeAllRegionSelectorWindows();
-    regionSelectorWindows = [];
-    console.log('[IPC Handler] Overlay windows closed');
+    // DON'T close overlay windows - let them stay open for recording controls
+    // The overlay will close itself when Stop button is clicked (via region:cancel)
+    // const { closeAllRegionSelectorWindows } = await import('../windows/regionSelector');
+    // closeAllRegionSelectorWindows();
+    // regionSelectorWindows = [];
+    console.log('[IPC Handler] Keeping overlay windows open for recording controls');
 
     // Forward region data to main window
     const { BrowserWindow } = await import('electron');
@@ -593,6 +594,28 @@ export function setupIpcHandlers(): void {
     if (mainWindow) {
       mainWindow.webContents.send('region:selected', region);
       console.log('[IPC Handler] Sent region:selected to main window');
+    } else {
+      console.error('[IPC Handler] Main window not found!');
+    }
+  });
+
+  ipcMain.on('region:stopRecording', async () => {
+    console.log('[IPC Handler] region:stopRecording received');
+
+    // Close overlay windows
+    const { closeAllRegionSelectorWindows } = await import('../windows/regionSelector');
+    closeAllRegionSelectorWindows();
+    regionSelectorWindows = [];
+    console.log('[IPC Handler] Overlay windows closed');
+
+    // Forward stop recording event to main window
+    const { BrowserWindow } = await import('electron');
+    const allWindows = BrowserWindow.getAllWindows();
+    const mainWindow = allWindows.find((w: any) => !('displayId' in w));
+
+    if (mainWindow) {
+      mainWindow.webContents.send('recording:stop');
+      console.log('[IPC Handler] Sent recording:stop to main window');
     } else {
       console.error('[IPC Handler] Main window not found!');
     }
