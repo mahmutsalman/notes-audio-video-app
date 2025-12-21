@@ -57,48 +57,42 @@ export async function createCroppedStream(
   });
 
   // 4. Draw cropped frames to canvas continuously
-  let animationFrameId: number | null = null;
-  let lastFrameTime = 0;
+  // Use setInterval instead of requestAnimationFrame to avoid macOS throttling
+  // when app is on different desktop space (Electron issue #9567)
+  let intervalId: number | null = null;
   const frameInterval = 1000 / fps; // milliseconds per frame
 
-  const drawFrame = (timestamp: number) => {
-    // Throttle to target FPS
-    if (timestamp - lastFrameTime >= frameInterval) {
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const drawFrame = () => {
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw cropped region from video
-      // Scale coordinates to match physical pixels on HiDPI displays
-      ctx.drawImage(
-        video,
-        region.x * scaleFactor,
-        region.y * scaleFactor,
-        region.width * scaleFactor,
-        region.height * scaleFactor, // Source rectangle (physical pixels)
-        0,
-        0,
-        canvas.width,
-        canvas.height // Destination rectangle
-      );
-
-      lastFrameTime = timestamp;
-    }
-
-    animationFrameId = requestAnimationFrame(drawFrame);
+    // Draw cropped region from video
+    // Scale coordinates to match physical pixels on HiDPI displays
+    ctx.drawImage(
+      video,
+      region.x * scaleFactor,
+      region.y * scaleFactor,
+      region.width * scaleFactor,
+      region.height * scaleFactor, // Source rectangle (physical pixels)
+      0,
+      0,
+      canvas.width,
+      canvas.height // Destination rectangle
+    );
   };
 
-  // Start drawing frames
-  animationFrameId = requestAnimationFrame(drawFrame);
+  // Start interval-based frame capture
+  intervalId = window.setInterval(drawFrame, frameInterval);
 
   // 5. Capture canvas stream
   const croppedStream = canvas.captureStream(fps);
 
   // 6. Cleanup function
   const cleanup = () => {
-    // Stop animation
-    if (animationFrameId !== null) {
-      cancelAnimationFrame(animationFrameId);
-      animationFrameId = null;
+    // Stop interval
+    if (intervalId !== null) {
+      clearInterval(intervalId);
+      intervalId = null;
     }
 
     // Stop full stream
