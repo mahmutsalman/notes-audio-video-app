@@ -23,26 +23,28 @@ export const RESOLUTION_PRESETS: Record<ScreenResolution | '1440p', { width: num
 };
 
 // Common presets for quick switching
+// Note: bitsPerPixel values are calibrated for the corrected bitrate formula
+// Formula: bitrate = pixels × fps × bitsPerPixel (matches OBS standards)
 export const QUALITY_PRESETS = {
   'Minimal': {
     resolution: '480p' as ScreenResolution,
     fps: 10 as ScreenFPS,
-    bitsPerPixel: 0.1   // Low quality, smallest files
+    bitsPerPixel: 0.04   // ~410 kbps for 480p@10fps - economy quality
   },
   'Standard': {
     resolution: '1080p' as ScreenResolution,
     fps: 30 as ScreenFPS,
-    bitsPerPixel: 0.15  // Good quality, balanced
+    bitsPerPixel: 0.05  // ~3.1 Mbps for 1080p@30fps - good balance
   },
   'High': {
     resolution: '1080p' as ScreenResolution,
     fps: 60 as ScreenFPS,
-    bitsPerPixel: 0.18  // CleanShot X quality
+    bitsPerPixel: 0.08  // ~9.9 Mbps for 1080p@60fps - CleanShot X quality
   },
   '2K': {
     resolution: '1440p' as const,
     fps: 60 as ScreenFPS,
-    bitsPerPixel: 0.2   // Premium quality
+    bitsPerPixel: 0.10   // ~22.1 Mbps for 1440p@60fps - premium quality
   },
 } as const;
 

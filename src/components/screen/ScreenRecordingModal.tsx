@@ -203,10 +203,10 @@ export default function ScreenRecordingModal({
                           {preset.resolution} • {preset.fps}fps
                         </div>
                         <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                          {preset.bitsPerPixel === 0.1 && 'Smallest files'}
-                          {preset.bitsPerPixel === 0.15 && 'Balanced'}
-                          {preset.bitsPerPixel === 0.18 && 'High quality'}
-                          {preset.bitsPerPixel === 0.2 && 'Premium'}
+                          {preset.bitsPerPixel === 0.04 && 'Economy size'}
+                          {preset.bitsPerPixel === 0.05 && 'Balanced'}
+                          {preset.bitsPerPixel === 0.08 && 'CleanShot quality'}
+                          {preset.bitsPerPixel === 0.10 && 'Premium'}
                         </div>
                       </button>
                     );

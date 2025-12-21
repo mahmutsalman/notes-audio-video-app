@@ -160,7 +160,7 @@ export async function getDisplaySourceId(displayId: string): Promise<string | nu
 /**
  * Calculate bitrate for video encoding based on region size and FPS
  * Note: width and height should already be scaled for HiDPI displays
- * @param bitsPerPixel - Quality level (0.1=low, 0.15=standard, 0.18=high/CleanShot X, 0.2=premium)
+ * @param bitsPerPixel - Quality level (0.04=economy, 0.05=standard, 0.08=high/CleanShot X, 0.10=premium)
  */
 export function calculateBitrate(
   width: number,
@@ -169,7 +169,11 @@ export function calculateBitrate(
   bitsPerPixel: number = 0.18  // Default to CleanShot X quality
 ): number {
   const pixelCount = width * height;
-  // Quality-based bitrate calculation
-  const baseBitrate = pixelCount * bitsPerPixel * (fps / 30);
+
+  // Correct formula: bitrate = pixels × frames/sec × bits/pixel
+  // This matches OBS and professional recording standards
+  // Example: 854×480 @ 10fps with 0.04 bpp = 410 kbps (economy quality)
+  const baseBitrate = pixelCount * fps * bitsPerPixel;
+
   return Math.round(baseBitrate);
 }
