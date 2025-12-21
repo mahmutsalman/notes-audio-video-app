@@ -640,6 +640,24 @@ export function setupIpcHandlers(): void {
     }
   });
 
+  // Enable/disable click-through for overlay window
+  ipcMain.on('region:setClickThrough', (event, enabled: boolean) => {
+    console.log('[IPC Handler] region:setClickThrough:', enabled);
+
+    // Find the region selector window that sent this event
+    const { BrowserWindow } = require('electron');
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (senderWindow && 'displayId' in senderWindow) {
+      // Enable click-through with forward option
+      // forward: true → mouse events pass through to apps below
+      senderWindow.setIgnoreMouseEvents(enabled, { forward: true });
+      console.log('[IPC Handler] Click-through enabled:', enabled);
+    } else {
+      console.error('[IPC Handler] Could not find region selector window');
+    }
+  });
+
 
   // ============ Settings ============
   ipcMain.handle('settings:get', async (_, key: string) => {

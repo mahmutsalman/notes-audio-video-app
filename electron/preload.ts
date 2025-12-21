@@ -288,6 +288,9 @@ const electronAPI = {
       ipcRenderer.on('global-shortcut:start-region-selection', listener);
       return () => ipcRenderer.removeListener('global-shortcut:start-region-selection', listener);
     },
+    setClickThrough: (enabled: boolean): void => {
+      ipcRenderer.send('region:setClickThrough', enabled);
+    },
   },
 
   // Settings

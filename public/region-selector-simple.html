@@ -320,6 +320,7 @@
     let startY = 0;
     let rect = null;
     let isRecording = false;
+    let clickThroughEnabled = false;
 
     // Audio and quality settings
     let audioDevices = [];
@@ -877,6 +878,17 @@
       isRecording = true;
       startButton.style.display = 'none';
       controlPanel.style.display = 'none'; // Hide control panel during recording
+
+      // Make overlay invisible and enable click-through
+      document.body.style.background = 'transparent';
+      document.body.style.backdropFilter = 'none';
+      document.body.style.webkitBackdropFilter = 'none';
+
+      // Update rectangle to thin border (CleanShot X style)
+      rectangleEl.style.border = '1.5px solid rgba(59, 130, 246, 0.8)';
+      rectangleEl.style.background = 'transparent';
+
+      // Position stop button
       stopButton.style.display = 'block';
       stopButton.style.left = (rect.x + rect.width / 2) + 'px';
       stopButton.style.top = (rect.y + rect.height + 20) + 'px';
@@ -889,6 +901,13 @@
 
       // Disable drawing during recording
       document.body.style.cursor = 'default';
+
+      // Enable click-through after small delay (let UI update first)
+      setTimeout(() => {
+        console.log('[RegionSelector] Enabling click-through mode');
+        window.electronAPI.region.setClickThrough(true);
+        clickThroughEnabled = true;
+      }, 100);
 
       console.log('[RegionSelector] Switched to recording mode');
     });
@@ -1074,6 +1093,25 @@
       } catch (error) {
         console.error('[RegionSelector] Failed to save FPS:', error);
       }
+    });
+
+    // Mouse position tracking for button hover detection (active only during recording)
+    document.addEventListener('mousemove', (e) => {
+      if (!isRecording || !clickThroughEnabled) return;
+
+      // Get current stop button bounds
+      const buttonBounds = stopButton.getBoundingClientRect();
+
+      // Check if mouse is over button
+      const isOverButton = (
+        e.clientX >= buttonBounds.left &&
+        e.clientX <= buttonBounds.right &&
+        e.clientY >= buttonBounds.top &&
+        e.clientY <= buttonBounds.bottom
+      );
+
+      // Toggle click-through: disable when over button, enable otherwise
+      window.electronAPI.region.setClickThrough(!isOverButton);
     });
 
     // Debug: Log ALL clicks

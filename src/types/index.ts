@@ -386,6 +386,11 @@ export interface ElectronAPI {
     onRegionSelected: (callback: (region: CaptureArea | null) => void) => () => void;
     sendRegion: (region: CaptureArea) => Promise<void>;
     cancel: () => Promise<void>;
+    stopRecording: () => Promise<void>;
+    onRecordingStop: (callback: () => void) => () => void;
+    onDisplayInfo: (callback: (displayInfo: any) => void) => () => void;
+    onGlobalShortcut: (callback: () => void) => () => void;
+    setClickThrough: (enabled: boolean) => void;
   };
   video: {
     generateThumbnail: (videoPath: string) => Promise<{ success: boolean; thumbnailPath: string | null }>;
