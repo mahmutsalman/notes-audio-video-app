@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import ScreenSourceSelector from './ScreenSourceSelector';
 import { useScreenRecorder } from '../../hooks/useScreenRecorder';
 import { useScreenRecordingSettings, QUALITY_PRESETS } from '../../context/ScreenRecordingSettingsContext';
@@ -25,6 +25,34 @@ export default function ScreenRecordingModal({
   const recorder = useScreenRecorder();
   const { settings, getResolutionDimensions, updatePreset } = useScreenRecordingSettings();
   const noteInputRef = useRef<HTMLInputElement>(null);
+
+  // Handler functions (defined before useEffects to avoid temporal dead zone)
+  const handleClose = useCallback(() => {
+    recorder.resetRecording();
+    setStep('source-selection');
+    onClose();
+  }, [recorder, onClose]);
+
+  const handleStopRecording = useCallback(async () => {
+    setStep('saving');
+
+    // Close overlay windows (region selector with blue rectangle)
+    // This IPC call closes the overlay and sends recording:stop event back,
+    // but the listener will be cleaned up by then since step changed to 'saving'
+    window.electronAPI.region.stopRecording();
+
+    const blob = await recorder.stopRecording();
+
+    if (blob) {
+      try {
+        await onSave(blob, recorder.completedMarks);
+        handleClose();
+      } catch (error) {
+        console.error('Failed to save recording:', error);
+        // TODO: Show error message
+      }
+    }
+  }, [recorder, onSave, handleClose]);
 
   // Reset on open
   useEffect(() => {
@@ -60,7 +88,7 @@ export default function ScreenRecordingModal({
       console.log('[ScreenRecordingModal] Cleaning up recording:stop listener');
       cleanup();
     };
-  }, [step]);
+  }, [step, handleStopRecording]);
 
   // Send duration updates to overlay
   useEffect(() => {
@@ -143,27 +171,6 @@ export default function ScreenRecordingModal({
     } catch (error) {
       console.error('[ScreenRecordingModal] startRecordingWithRegion failed:', error);
     }
-  };
-
-  const handleStopRecording = async () => {
-    setStep('saving');
-    const blob = await recorder.stopRecording();
-
-    if (blob) {
-      try {
-        await onSave(blob, recorder.completedMarks);
-        handleClose();
-      } catch (error) {
-        console.error('Failed to save recording:', error);
-        // TODO: Show error message
-      }
-    }
-  };
-
-  const handleClose = () => {
-    recorder.resetRecording();
-    setStep('source-selection');
-    onClose();
   };
 
   const formatDuration = (seconds: number): string => {
