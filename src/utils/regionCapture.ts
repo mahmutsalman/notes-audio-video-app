@@ -98,10 +98,11 @@ export async function createCroppedStream(
   intervalId = window.setInterval(drawFrame, frameInterval);
 
   // 5. Capture canvas stream
-  // Don't pass fps to captureStream() - let it capture whenever canvas updates
-  // This fixes low FPS (10fps) capture issues where browsers throttle at low frame rates
-  // The actual FPS is controlled by setInterval's frameInterval
-  const croppedStream = canvas.captureStream();
+  // Pass explicit FPS to ensure reliable frame capture at all frame rates
+  // Without this parameter, browsers use change detection which fails at low FPS (<15fps)
+  // This causes 10fps recordings to capture only 3-4 frames per 60 seconds instead of 600
+  // Explicit FPS parameter guarantees frame capture at the specified rate
+  const croppedStream = canvas.captureStream(fps);
 
   // 6. Cleanup function
   const cleanup = () => {
