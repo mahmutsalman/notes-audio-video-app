@@ -4,14 +4,14 @@ import { createRegionSelectorWindows, regionSelectorWindows } from '../windows/r
 /**
  * Registers global keyboard shortcuts for the application
  * Currently registers:
- * - Cmd+C (macOS) / Ctrl+C (Windows/Linux) for region selection (temporary for testing)
+ * - Cmd+D (macOS) / Ctrl+D (Windows/Linux) for region selection
  * - Cmd+H (macOS) / Ctrl+H (Windows/Linux) for duration mark input toggle
  */
 export function registerGlobalShortcuts(): void {
   console.log('[GlobalShortcuts] Registering global shortcuts...');
 
-  // Register Cmd+C (macOS) / Ctrl+C (Windows/Linux) for region selection (temporary for testing)
-  const regionShortcut = 'CommandOrControl+C';
+  // Register Cmd+D (macOS) / Ctrl+D (Windows/Linux) for region selection
+  const regionShortcut = 'CommandOrControl+D';
   const regionRegistered = globalShortcut.register(regionShortcut, () => {
     console.log(`[GlobalShortcuts] ${regionShortcut} pressed`);
 
