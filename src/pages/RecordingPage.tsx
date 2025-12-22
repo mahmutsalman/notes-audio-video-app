@@ -18,7 +18,7 @@ import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import VideoCompressionDialog from '../components/video/VideoCompressionDialog';
 import { formatDuration, formatDate, formatRelativeTime } from '../utils/formatters';
 import { getNextDurationColor, DURATION_COLORS } from '../utils/durationColors';
-import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio, CodeSnippet, DurationCodeSnippet } from '../types';
+import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -126,7 +126,14 @@ export default function RecordingPage() {
   } | null>(null);
   const [captionText, setCaptionText] = useState('');
   const [isScreenRecording, setIsScreenRecording] = useState(false);
+  const isScreenRecordingRef = useRef(isScreenRecording);
   const [autoTriggerRegionSelection, setAutoTriggerRegionSelection] = useState(false);
+  const [pendingRegion, setPendingRegion] = useState<CaptureArea | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    isScreenRecordingRef.current = isScreenRecording;
+  }, [isScreenRecording]);
   const [compressionDialog, setCompressionDialog] = useState<{
     isOpen: boolean;
     videoPath: string;
@@ -170,27 +177,51 @@ export default function RecordingPage() {
     };
   }, []);
 
+  // Preload screen sources for instant Cmd+D recording
+  // This eliminates the 200-500ms initialization delay when using Cmd+D
+  useEffect(() => {
+    // Start loading sources in background when page mounts
+    // This makes Cmd+D recording instant by pre-warming Electron's cache
+    window.electronAPI.screenRecording.getSources()
+      .then(() => {
+        console.log('[RecordingPage] Screen sources preloaded and cached');
+      })
+      .catch(err => {
+        console.warn('[RecordingPage] Failed to preload screen sources:', err);
+        // Non-critical - sources will load when modal opens if needed
+      });
+  }, []); // Empty deps - only run once on mount
+
   // Global listener for region selection (always active, handles Cmd+D path)
   // This ensures recording works even when modal isn't open
+  // CRITICAL: Empty dependency array prevents race condition where listener cleanup
+  // runs while still processing event (when isScreenRecording changes)
   useEffect(() => {
     console.log('[RecordingPage] Setting up global region:selected listener');
     const cleanup = window.electronAPI.region.onRegionSelected((region) => {
       console.log('[RecordingPage] Global region:selected event received');
-      console.log('[RecordingPage] isScreenRecording:', isScreenRecording);
       console.log('[RecordingPage] region:', region);
 
-      // Only handle if modal is NOT open (Cmd+D path)
-      // If modal is open, ScreenSourceSelector handles it
-      if (!isScreenRecording && region && id) {
-        console.log('[RecordingPage] Handling region selection from Cmd+D - opening modal');
-        // Open modal so it can handle the recording
-        // The modal's ScreenSourceSelector will pick up the same region:selected event
-        setIsScreenRecording(true);
+      if (region && id) {
+        console.log('[RecordingPage] Storing region from Cmd+D');
+        // Always store region data - auto-start logic in modal handles duplicates
+        setPendingRegion(region);
+
+        // Only open modal if not already open (use ref to avoid stale closure)
+        if (!isScreenRecordingRef.current) {
+          console.log('[RecordingPage] Opening modal');
+          setIsScreenRecording(true);
+        } else {
+          console.log('[RecordingPage] Modal already open, skipping');
+        }
       }
     });
 
-    return () => cleanup();
-  }, [isScreenRecording, id]);
+    return () => {
+      console.log('[RecordingPage] Cleaning up region:selected listener');
+      cleanup();
+    };
+  }, []); // Empty deps - listener active for component lifetime, no race condition
 
   // Load duration code snippets when active duration changes
   useEffect(() => {
@@ -2231,10 +2262,12 @@ export default function RecordingPage() {
           onClose={() => {
             setIsScreenRecording(false);
             setAutoTriggerRegionSelection(false);
+            setPendingRegion(null); // Clear pending region when modal closes
           }}
           recordingId={id}
           onSave={handleSaveScreenRecording}
           autoStartRegionSelection={autoTriggerRegionSelection}
+          pendingRegion={pendingRegion}
         />
       )}
 

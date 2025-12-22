@@ -10,6 +10,7 @@ interface ScreenRecordingModalProps {
   recordingId: number;
   onSave: (videoBlob: Blob, marks: any[]) => Promise<void>;
   autoStartRegionSelection?: boolean;
+  pendingRegion?: CaptureArea | null;
 }
 
 type Step = 'source-selection' | 'recording' | 'saving';
@@ -20,11 +21,23 @@ export default function ScreenRecordingModal({
   recordingId: _recordingId, // Not used in component, but passed from parent
   onSave,
   autoStartRegionSelection = false,
+  pendingRegion = null,
 }: ScreenRecordingModalProps) {
+  // Removed excessive render logging - only log important state changes
   const [step, setStep] = useState<Step>('source-selection');
   const recorder = useScreenRecorder();
-  const { settings, getResolutionDimensions, updatePreset } = useScreenRecordingSettings();
+  const { settings, getResolutionDimensions, updatePreset, loading } = useScreenRecordingSettings();
   const noteInputRef = useRef<HTMLInputElement>(null);
+  const processedRegionIdRef = useRef<number | null>(null); // Track processed region to prevent duplicate starts
+  const wasOpenRef = useRef(false); // Track previous isOpen state to detect true open events
+
+  // Component mount/unmount logging
+  useEffect(() => {
+    console.log('[ScreenRecordingModal] Component MOUNTED');
+    return () => {
+      console.log('[ScreenRecordingModal] Component UNMOUNTING');
+    };
+  }, []);
 
   // Handler functions (defined before useEffects to avoid temporal dead zone)
   const handleClose = useCallback(() => {
@@ -54,13 +67,84 @@ export default function ScreenRecordingModal({
     }
   }, [recorder, onSave, handleClose]);
 
-  // Reset on open
+  const handleRegionSelect = useCallback(async (region: CaptureArea) => {
+    console.log('[ScreenRecordingModal] handleRegionSelect called with region:', region);
+    console.log('[ScreenRecordingModal] Setting step to recording');
+    setStep('recording');
+
+    console.log('[ScreenRecordingModal] Calling startRecordingWithRegion');
+    try {
+      await recorder.startRecordingWithRegion(
+        region,
+        settings.fps
+      );
+      console.log('[ScreenRecordingModal] startRecordingWithRegion completed successfully');
+    } catch (error) {
+      console.error('[ScreenRecordingModal] startRecordingWithRegion failed:', error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.fps]);
+
+  // Reset ONLY when modal transitions from closed to open (false → true)
+  // This prevents resetting during recording when isOpen changes
   useEffect(() => {
-    if (isOpen) {
+    const wasOpen = wasOpenRef.current;
+    const justOpened = !wasOpen && isOpen;
+    const justClosed = wasOpen && !isOpen;
+
+    console.log('[ScreenRecordingModal] Open state change:', { wasOpen, isOpen, justOpened, justClosed });
+
+    if (justOpened) {
+      console.log('[ScreenRecordingModal] Modal just opened - resetting to source-selection');
       setStep('source-selection');
       recorder.resetRecording();
+      // Reset processed region ID when modal opens
+      processedRegionIdRef.current = null;
+    } else if (justClosed) {
+      console.log('[ScreenRecordingModal] Modal just closed - clearing processed region');
+      // Clear processed region ID when modal closes
+      processedRegionIdRef.current = null;
     }
+
+    // Update ref for next comparison
+    wasOpenRef.current = isOpen;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // Auto-start recording when opened via Cmd+D with pending region
+  // CRITICAL: Wait for settings to finish loading before starting!
+  // CRITICAL: Only process each region ONCE using _id tracking
+  useEffect(() => {
+    const regionId = (pendingRegion as any)?._id;
+
+    console.log('[ScreenRecordingModal] Auto-start useEffect triggered');
+    console.log('[ScreenRecordingModal] Region ID:', regionId);
+    console.log('[ScreenRecordingModal] Processed ID:', processedRegionIdRef.current);
+    console.log('[ScreenRecordingModal] Conditions check:');
+    console.log('  - isOpen:', isOpen);
+    console.log('  - pendingRegion:', !!pendingRegion);
+    console.log('  - regionId:', regionId);
+    console.log('  - step:', step);
+    console.log('  - loading:', loading);
+
+    // Check if this specific region has already been processed
+    if (regionId !== undefined && regionId === processedRegionIdRef.current) {
+      console.log('[ScreenRecordingModal] ⚠️ Region already processed, skipping');
+      return;
+    }
+
+    const allConditionsMet = isOpen && pendingRegion && step === 'source-selection' && !loading;
+    console.log('[ScreenRecordingModal] All conditions met:', allConditionsMet);
+
+    if (allConditionsMet) {
+      console.log('[ScreenRecordingModal] ✅ AUTO-START TRIGGERED - Calling handleRegionSelect');
+      // Mark this region as processed BEFORE calling handler to prevent race conditions
+      processedRegionIdRef.current = regionId;
+      handleRegionSelect(pendingRegion);
+    } else {
+      console.log('[ScreenRecordingModal] ❌ AUTO-START BLOCKED - Conditions not met');
+    }
+  }, [isOpen, pendingRegion, step, loading, handleRegionSelect]);
 
   // Auto-focus note input when marking
   // But skip auto-focus during region recording since user types in overlay
@@ -216,25 +300,6 @@ export default function ScreenRecordingModal({
       dimensions,
       settings.fps
     );
-  };
-
-  const handleRegionSelect = async (region: CaptureArea) => {
-    console.log('[ScreenRecordingModal] handleRegionSelect called with region:', region);
-    console.log('[ScreenRecordingModal] Current step:', step);
-    console.log('[ScreenRecordingModal] Setting step to recording');
-    setStep('recording');
-    console.log('[ScreenRecordingModal] Step set to recording');
-
-    console.log('[ScreenRecordingModal] Calling startRecordingWithRegion');
-    try {
-      await recorder.startRecordingWithRegion(
-        region,
-        settings.fps
-      );
-      console.log('[ScreenRecordingModal] startRecordingWithRegion completed successfully');
-    } catch (error) {
-      console.error('[ScreenRecordingModal] startRecordingWithRegion failed:', error);
-    }
   };
 
   const formatDuration = (seconds: number): string => {

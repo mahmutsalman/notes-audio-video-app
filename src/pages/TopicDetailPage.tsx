@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTopic } from '../hooks/useTopics';
 import { useRecordings } from '../hooks/useRecordings';
@@ -10,7 +10,7 @@ import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
 import { formatRelativeTime } from '../utils/formatters';
-import type { CreateTopic } from '../types';
+import type { CreateTopic, CaptureArea } from '../types';
 
 export default function TopicDetailPage() {
   const { topicId } = useParams<{ topicId: string }>();
@@ -24,6 +24,8 @@ export default function TopicDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [pendingRegionData, setPendingRegionData] = useState<CaptureArea | null>(null);
+  const regionIdRef = useRef(0); // Track region selection ID to prevent duplicate processing
 
   const handleUpdateTopic = async (data: CreateTopic) => {
     if (!id) return;
@@ -61,6 +63,42 @@ export default function TopicDetailPage() {
 
   const handleUpdateRecording = async (recordingId: number, updates: Parameters<typeof updateRecording>[1]) => {
     await updateRecording(recordingId, updates);
+  };
+
+  // Memoize pendingRegion to prevent object reference changes causing re-renders
+  // NOTE: Can't use ref.current as dependency - refs don't trigger re-renders
+  // The _id is set when pendingRegionData changes, so we only need that as dependency
+  const pendingRegion = useMemo(() => {
+    if (!pendingRegionData) return null;
+    // Return stable object with ID to track uniqueness
+    return { ...pendingRegionData, _id: regionIdRef.current };
+  }, [pendingRegionData]);
+
+  // Global listener for Cmd+D region selection (works from topic page)
+  // This ensures Cmd+D works without needing to open modal first
+  useEffect(() => {
+    console.log('[TopicDetailPage] Setting up global region:selected listener');
+    const cleanup = window.electronAPI.region.onRegionSelected((region) => {
+      console.log('[TopicDetailPage] Global region:selected event received');
+      console.log('[TopicDetailPage] region:', region);
+
+      if (region && id) {
+        console.log('[TopicDetailPage] Storing region from Cmd+D for topic:', id);
+        // Increment ID to ensure new region is treated as unique
+        regionIdRef.current += 1;
+        // Store region data so QuickScreenRecord modal can auto-start with it
+        setPendingRegionData(region);
+      }
+    });
+
+    return () => cleanup();
+  }, [id]); // Only depend on id - listener active for component lifetime
+
+  // Clear pendingRegion when recording is saved
+  const handleRecordingSavedWithClear = () => {
+    console.log('[TopicDetailPage] Clearing pendingRegion after save');
+    setPendingRegionData(null);
+    handleRecordingSaved();
   };
 
   if (topicLoading) {
@@ -157,8 +195,12 @@ export default function TopicDetailPage() {
       {/* Quick Record FAB */}
       <QuickRecord topicId={id!} onRecordingSaved={handleRecordingSaved} />
 
-      {/* Quick Screen Record FAB */}
-      <QuickScreenRecord topicId={id!} onRecordingSaved={handleRecordingSaved} />
+      {/* Quick Screen Record FAB - now with Cmd+D support */}
+      <QuickScreenRecord
+        topicId={id!}
+        onRecordingSaved={handleRecordingSavedWithClear}
+        pendingRegion={pendingRegion}
+      />
 
       {/* Edit topic modal */}
       <Modal

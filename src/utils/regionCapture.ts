@@ -72,6 +72,7 @@ export async function createCroppedStream(
   // 4. Draw cropped frames to canvas continuously
   // Use requestAnimationFrame with forced change detection
   let animationFrameId: number | null = null;
+  let isCleanedUp = false; // Track if cleanup was called to stop frame loop
   const frameInterval = 1000 / fps; // milliseconds per frame
   let lastFrameTime = 0; // Initialize to 0 - will be set on first frame
   let frameCount = 0;
@@ -150,6 +151,12 @@ export async function createCroppedStream(
   // We draw to canvas AND explicitly request frame capture each time
   const startTime = performance.now();
   const drawFrameWithCapture = (timestamp: number) => {
+    // CRITICAL: Check if cleanup was called - stop immediately if so
+    if (isCleanedUp) {
+      console.log('[regionCapture] ⚠️ Frame loop stopped - cleanup was called');
+      return;
+    }
+
     // On first frame, initialize lastFrameTime
     if (lastFrameTime === 0) {
       lastFrameTime = timestamp;
@@ -196,24 +203,40 @@ export async function createCroppedStream(
 
   // 8. Cleanup function
   const cleanup = () => {
+    console.log('[regionCapture] 🧹 CLEANUP CALLED');
+    console.log('[regionCapture] Animation frame ID before cleanup:', animationFrameId);
+
+    // Set cleanup flag to stop frame loop immediately
+    isCleanedUp = true;
+
     // Stop animation frame loop
     if (animationFrameId !== null) {
+      console.log('[regionCapture] Cancelling animation frame:', animationFrameId);
       cancelAnimationFrame(animationFrameId);
       animationFrameId = null;
+      console.log('[regionCapture] Animation frame cancelled');
+    } else {
+      console.log('[regionCapture] ⚠️ Animation frame ID was already null!');
     }
 
     // Stop full stream
+    console.log('[regionCapture] Stopping full stream tracks');
     fullStream.getTracks().forEach((track) => track.stop());
 
     // Stop cropped stream
+    console.log('[regionCapture] Stopping cropped stream tracks');
     croppedStream.getTracks().forEach((track) => track.stop());
 
     // Remove video element
+    console.log('[regionCapture] Removing video element');
     video.srcObject = null;
     video.remove();
 
     // Remove canvas
+    console.log('[regionCapture] Removing canvas');
     canvas.remove();
+
+    console.log('[regionCapture] ✅ CLEANUP COMPLETE');
   };
 
   return {

@@ -1,15 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ScreenRecordingModal from '../screen/ScreenRecordingModal';
 import { formatTimestampName } from '../../utils/formatters';
+import type { CaptureArea } from '../../types';
 
 interface QuickScreenRecordProps {
   topicId: number;
   onRecordingSaved: () => void;
+  pendingRegion?: CaptureArea | null;
 }
 
-export default function QuickScreenRecord({ topicId, onRecordingSaved }: QuickScreenRecordProps) {
+export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRegion = null }: QuickScreenRecordProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Auto-open modal when pendingRegion is set (from Cmd+D)
+  useEffect(() => {
+    if (pendingRegion) {
+      console.log('[QuickScreenRecord] pendingRegion detected, opening modal');
+      setIsOpen(true);
+    }
+  }, [pendingRegion]);
 
   const handleOpen = () => {
     setIsOpen(true);
@@ -102,6 +112,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved }: QuickSc
           onClose={handleClose}
           recordingId={0} // Not used in standalone mode
           onSave={handleSave}
+          pendingRegion={pendingRegion}
         />
       )}
     </>
