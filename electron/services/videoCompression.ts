@@ -112,12 +112,12 @@ export async function checkFFmpegAvailable(): Promise<{ available: boolean; vers
 }
 
 /**
- * Detect frame rate from video file using ffprobe
+ * Detect video metadata (frame rate and codec) from video file using ffprobe
  */
-async function detectFrameRate(
+async function detectVideoMetadata(
   ffmpegPath: string,
   videoPath: string
-): Promise<number> {
+): Promise<{ fps: number; codec: string }> {
   // ffprobe is in the same directory as ffmpeg
   const ffprobePath = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
 
@@ -125,8 +125,8 @@ async function detectFrameRate(
     const args = [
       '-v', 'error',
       '-select_streams', 'v:0',
-      '-show_entries', 'stream=r_frame_rate',
-      '-of', 'default=noprint_wrappers=1:nokey=1',
+      '-show_entries', 'stream=r_frame_rate,codec_name',
+      '-of', 'default=noprint_wrappers=1',
       videoPath
     ];
 
@@ -139,20 +139,31 @@ async function detectFrameRate(
 
     process.on('close', (code) => {
       if (code === 0 && output.trim()) {
-        // Parse "30/1" or "60/1" format
-        const [num, den] = output.trim().split('/').map(Number);
-        const fps = Math.round(num / den);
-        console.log('[videoCompression] Detected FPS:', fps);
-        resolve(fps);
+        const lines = output.trim().split('\n');
+        let fps = 60;
+        let codec = 'unknown';
+
+        for (const line of lines) {
+          if (line.startsWith('r_frame_rate=')) {
+            const frameRate = line.split('=')[1];
+            const [num, den] = frameRate.split('/').map(Number);
+            fps = Math.round(num / den);
+          } else if (line.startsWith('codec_name=')) {
+            codec = line.split('=')[1];
+          }
+        }
+
+        console.log('[videoCompression] Detected metadata:', { fps, codec });
+        resolve({ fps, codec });
       } else {
-        console.warn('[videoCompression] Failed to detect FPS, using default 60');
-        resolve(60); // Fallback to 60fps
+        console.warn('[videoCompression] Failed to detect metadata, using defaults');
+        resolve({ fps: 60, codec: 'unknown' });
       }
     });
 
     process.on('error', () => {
-      console.warn('[videoCompression] FFprobe error, using default 60');
-      resolve(60); // Fallback to 60fps
+      console.warn('[videoCompression] FFprobe error, using defaults');
+      resolve({ fps: 60, codec: 'unknown' });
     });
   });
 }
@@ -193,43 +204,86 @@ export async function compressVideo(
       `${parsedPath.name}_compressed.mp4`
     );
 
-    // Detect input frame rate
-    const detectedFps = await detectFrameRate(ffmpegPath, inputPath);
-    console.log('[videoCompression] Using FPS:', detectedFps);
+    // Detect input video metadata (frame rate and codec)
+    const { fps: detectedFps, codec: inputCodec } = await detectVideoMetadata(ffmpegPath, inputPath);
+    console.log('[videoCompression] Input video:', { fps: detectedFps, codec: inputCodec });
 
-    // Build ffmpeg command
-    // Convert WebM to MP4 with H.264 video and AAC audio
-    // Fixed: Added -fflags +genpts, -r (frame rate), and -vsync cfr to fix duration/frame rate issues
-    const args = [
-      '-fflags', '+genpts',               // Generate presentation timestamps (fixes WebM duration issues)
-      '-i', inputPath,                    // Input file
-      '-r', detectedFps.toString(),       // Explicit frame rate (preserves original FPS)
-      '-c:v', 'libx264',                  // H.264 video codec
+    // Build ffmpeg command optimized for the input codec and FPS
+    // VP9 WebM → H.264 MP4 conversion with proper frame timing
+    const args = ['-i', inputPath]; // Input file
+
+    // For VP9 input (especially low FPS), use passthrough frame timing to preserve exact frame rates
+    // For H264 input or high FPS, use constant frame rate for consistency
+    const isVP9 = inputCodec.toLowerCase().includes('vp9');
+    const isLowFPS = detectedFps < 24;
+
+    if (isVP9 && isLowFPS) {
+      // VP9 low FPS: Preserve exact frame timing (critical for 10fps videos)
+      console.log('[videoCompression] VP9 low FPS mode: Using passthrough frame timing');
+      args.push(
+        '-fps_mode', 'passthrough',       // Preserve original frame timing (no frame rate conversion)
+        '-enc_time_base', '-1'            // Use input timebase for encoding (preserves exact timing)
+      );
+    } else if (isLowFPS) {
+      // Other codecs at low FPS: Use explicit frame rate with CFR
+      console.log('[videoCompression] Low FPS mode: Using explicit frame rate');
+      args.push(
+        '-r', detectedFps.toString(),     // Explicit output frame rate
+        '-vsync', 'cfr'                   // Constant frame rate
+      );
+    } else {
+      // High FPS: Standard CFR mode with genpts for timestamp generation
+      console.log('[videoCompression] High FPS mode: Using CFR with genpts');
+      args.push(
+        '-fflags', '+genpts',             // Generate presentation timestamps
+        '-r', detectedFps.toString(),     // Explicit frame rate
+        '-vsync', 'cfr'                   // Constant frame rate
+      );
+    }
+
+    // Video encoding settings
+    args.push(
+      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', // Ensure width/height are even (required for H.264)
+      '-c:v', 'libx264',                  // H.264 video codec for MP4
       '-crf', options.crf.toString(),     // Quality level (18-40, lower = better)
       '-preset', options.preset,          // Encoding speed preset
-      '-vsync', 'cfr',                    // Constant frame rate (prevents slow motion issues)
+      '-pix_fmt', 'yuv420p'               // Ensure compatibility (VP9 might use different pixel format)
+    );
+
+    // Audio encoding settings
+    args.push(
       '-c:a', 'aac',                      // AAC audio codec
-      '-b:a', options.audioBitrate,       // Audio bitrate
+      '-b:a', options.audioBitrate        // Audio bitrate
+    );
+
+    // Output file settings
+    args.push(
       '-movflags', '+faststart',          // Enable fast start for web playback
       '-y',                               // Overwrite output file
       outputPath
-    ];
+    );
 
     console.log('[videoCompression] Starting compression:', {
       input: inputPath,
       output: outputPath,
       options,
+      fps: detectedFps,
+      codec: inputCodec,
+      mode: isVP9 && isLowFPS ? 'VP9 Low FPS' : isLowFPS ? 'Low FPS' : 'High FPS',
       originalSize: `${(originalSize / 1024 / 1024).toFixed(2)} MB`
     });
+    console.log('[videoCompression] FFmpeg command:', ffmpegPath, args.join(' '));
 
     return new Promise((resolve) => {
       const process = spawn(ffmpegPath, args);
       let duration = 0;
       let lastProgress = 0;
+      let stderrOutput = ''; // Capture all stderr for error reporting
 
       // Parse ffmpeg stderr for progress
       process.stderr.on('data', (data) => {
         const output = data.toString();
+        stderrOutput += output; // Accumulate stderr output
 
         // Extract duration (only once at the beginning)
         if (duration === 0) {
@@ -289,21 +343,28 @@ export async function compressVideo(
               compressionRatio
             });
           } else {
+            const errorMsg = `Output file not created. FFmpeg stderr:\n${stderrOutput.slice(-500)}`;
+            console.error('[videoCompression]', errorMsg);
             resolve({
               success: false,
               originalSize,
               compressedSize: 0,
               compressionRatio: 0,
-              error: 'Output file not created'
+              error: errorMsg
             });
           }
         } else {
+          // Extract last 1000 characters of stderr for error diagnosis
+          const errorSnippet = stderrOutput.slice(-1000);
+          const errorMsg = `ffmpeg process exited with code ${code}\n\nLast FFmpeg output:\n${errorSnippet}`;
+          console.error('[videoCompression] FFmpeg failed:', errorMsg);
+
           resolve({
             success: false,
             originalSize,
             compressedSize: 0,
             compressionRatio: 0,
-            error: `ffmpeg process exited with code ${code}`
+            error: errorMsg
           });
         }
       });
