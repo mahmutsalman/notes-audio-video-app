@@ -66,52 +66,12 @@ export async function createCroppedStream(
     };
   });
 
-  // 4. Draw cropped frames to canvas continuously
-  // Use requestAnimationFrame with forced change detection
+  // 4. Setup frame capture variables
   let animationFrameId: number | null = null;
   let isCleanedUp = false; // Track if cleanup was called to stop frame loop
   const frameInterval = 1000 / fps; // milliseconds per frame
   let lastFrameTime = 0; // Initialize to 0 - will be set on first frame
   let frameCount = 0;
-
-  const drawFrame = (timestamp: number) => {
-    // Calculate if enough time has passed for next frame
-    const elapsed = timestamp - lastFrameTime;
-
-    if (elapsed >= frameInterval) {
-      lastFrameTime = timestamp;
-      frameCount++;
-
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Draw cropped region from video
-      ctx.drawImage(
-        video,
-        region.x * scaleFactor,
-        region.y * scaleFactor,
-        region.width * scaleFactor,
-        region.height * scaleFactor,
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      );
-
-      // CRITICAL: Force browser to detect change by drawing a unique marker
-      // Without this, Chromium's captureStream change detection fails
-      // Draw a 1x1 pixel at rotating position (invisible but forces detection)
-      const markerX = frameCount % canvas.width;
-      const markerY = Math.floor(frameCount / canvas.width) % canvas.height;
-      ctx.fillStyle = `rgba(0, 0, 0, 0.003)`; // Nearly transparent
-      ctx.fillRect(markerX, markerY, 1, 1);
-
-      console.log('[regionCapture] Frame', frameCount, 'drawn at', timestamp.toFixed(2), 'ms');
-    }
-
-    // Continue animation loop
-    animationFrameId = window.requestAnimationFrame(drawFrame);
-  };
 
   // 5. CRITICAL: Draw first frame BEFORE creating stream
   // This ensures canvas has content when captureStream() is called
@@ -170,6 +130,14 @@ export async function createCroppedStream(
         canvas.width,
         canvas.height
       );
+
+      // CRITICAL: Force browser to detect change by drawing a unique marker
+      // Without this, Chromium's captureStream change detection fails even with requestFrame()
+      // Draw a 1x1 pixel at rotating position (invisible but forces detection)
+      const markerX = frameCount % canvas.width;
+      const markerY = Math.floor(frameCount / canvas.width) % canvas.height;
+      ctx.fillStyle = `rgba(0, 0, 0, 0.003)`; // Nearly transparent
+      ctx.fillRect(markerX, markerY, 1, 1);
 
       // CRITICAL: Manually request frame capture
       // This is the only reliable way to capture frames in Chromium/Electron
