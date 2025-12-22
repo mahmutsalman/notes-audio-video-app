@@ -228,22 +228,88 @@ export async function createCroppedStream(
  */
 export async function getDisplaySourceId(displayId: string): Promise<string | null> {
   try {
+    console.log('[RegionCapture] Getting source for display ID:', displayId);
+
+    // Get all available screen sources from desktopCapturer
     const sources = await window.electronAPI.screenRecording.getSources();
+    console.log('[RegionCapture] Available sources:', sources.map(s => ({
+      id: s.id,
+      name: s.name,
+      display_id: (s as any).display_id
+    })));
 
-    // Try to find a screen source that matches the display
-    // Display IDs from Electron's screen module are different from desktopCapturer IDs
-    // So we'll use the first screen source as a fallback
-    const screenSources = sources.filter((s) => s.name.toLowerCase().includes('screen'));
-
-    if (screenSources.length === 0) {
+    if (!sources || sources.length === 0) {
+      console.error('[RegionCapture] No screen sources available');
       return null;
     }
 
-    // For now, return the first screen source
-    // In a more sophisticated implementation, we could try to match by display bounds
+    // Filter to screen sources only (not windows)
+    // Screen sources have IDs like "screen:0:0" or "screen:1:0"
+    // Window sources have IDs like "window:12345:0"
+    const screenSources = sources.filter((s) => s.id.startsWith('screen:'));
+    console.log('[RegionCapture] Screen sources:', screenSources);
+    console.log('[RegionCapture] Screen source IDs:', screenSources.map(s => s.id));
+
+    if (screenSources.length === 0) {
+      console.error('[RegionCapture] No screen sources found');
+      return null;
+    }
+
+    // Get all displays from Electron's screen module
+    const displays = await window.electronAPI.screen.getAllDisplays();
+    console.log('[RegionCapture] All displays:', displays);
+
+    // Find the display object matching our displayId
+    const targetDisplay = displays.find((d: any) => d.id.toString() === displayId);
+
+    if (!targetDisplay) {
+      console.error('[RegionCapture] Display not found for ID:', displayId);
+      return screenSources[0].id; // Fallback to first source
+    }
+
+    console.log('[RegionCapture] Target display:', targetDisplay);
+
+    // Strategy 1: Try matching by display_id property if available
+    const sourceWithDisplayId = screenSources[0] as any;
+    if (sourceWithDisplayId.display_id !== undefined) {
+      const matchedSource = screenSources.find((s: any) => s.display_id === displayId);
+      if (matchedSource) {
+        console.log('[RegionCapture] Matched source by display_id:', matchedSource.id);
+        return matchedSource.id;
+      }
+    }
+
+    // Strategy 2: Match by system enumeration order
+    // Both screen.getAllDisplays() and desktopCapturer.getSources() return displays
+    // in the SAME system enumeration order (not position order)
+    // Do NOT sort - use original order!
+    const displayIndex = displays.findIndex((d: any) => d.id.toString() === displayId);
+
+    if (displayIndex !== -1 && displayIndex < screenSources.length) {
+      console.log('[RegionCapture] Matched source by system order index:', screenSources[displayIndex].id);
+      console.log('[RegionCapture] Display:', displays[displayIndex].bounds);
+      console.log('[RegionCapture] Source:', screenSources[displayIndex].name);
+      return screenSources[displayIndex].id;
+    }
+
+    // Strategy 3: Match by screen name (e.g., "Screen 1", "Screen 2")
+    // Extract number from display position
+    const displayNumber = displayIndex + 1;
+    const namedSource = screenSources.find(s =>
+      s.name.includes(`Screen ${displayNumber}`) ||
+      s.name.includes(`Display ${displayNumber}`)
+    );
+
+    if (namedSource) {
+      console.log('[RegionCapture] Matched source by name:', namedSource.id);
+      return namedSource.id;
+    }
+
+    // Fallback: Return first source and log warning
+    console.warn('[RegionCapture] Could not match display, using first source');
     return screenSources[0].id;
   } catch (error) {
-    console.error('Failed to get display source ID:', error);
+    console.error('[RegionCapture] Error getting display source:', error);
     return null;
   }
 }

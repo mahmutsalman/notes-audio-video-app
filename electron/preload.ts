@@ -363,6 +363,12 @@ const electronAPI = {
     getAll: (): Promise<Record<string, string>> =>
       ipcRenderer.invoke('settings:getAll'),
   },
+
+  // Screen (Display information)
+  screen: {
+    getAllDisplays: (): Promise<any[]> =>
+      ipcRenderer.invoke('screen:getAllDisplays'),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

@@ -454,6 +454,7 @@
     console.log('[RegionSelector] Simple overlay loaded - VERSION 3.0 WITH CONTROL PANEL');
 
     let displayInfo = null;
+    let currentDisplayId = null; // This overlay's display ID
     let isDrawing = false;
     let startX = 0;
     let startY = 0;
@@ -920,6 +921,11 @@
       await loadSettings();
     });
 
+    // Parse displayId from URL query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    currentDisplayId = urlParams.get('displayId');
+    console.log('[RegionSelector] Overlay initialized for display:', currentDisplayId);
+
     // Mouse down - start drawing
     document.body.addEventListener('mousedown', (e) => {
       console.log('[RegionSelector] Mouse down:', e.clientX, e.clientY);
@@ -1033,6 +1039,7 @@
         width: rect.width,
         height: rect.height,
         displayId: displayInfo.id,
+        selectedFromDisplayId: currentDisplayId, // NEW: which overlay was used for selection
         scaleFactor: displayInfo.scaleFactor,
         displayBounds: displayInfo.bounds,
         // Add audio settings (Phase 2)

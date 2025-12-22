@@ -41,15 +41,23 @@ export function registerGlobalShortcuts(): void {
   const markRegistered = globalShortcut.register(markShortcut, () => {
     console.log(`[GlobalShortcuts] ${markShortcut} pressed`);
 
-    // Broadcast input field toggle to all windows (both React main window and overlays)
+    // Target recording overlays (those with displayId that remain after selection)
     const allWindows = BrowserWindow.getAllWindows();
-    console.log(`[GlobalShortcuts] Broadcasting inputFieldToggle to ${allWindows.length} windows`);
+    const recordingOverlays = allWindows.filter((w: any) => 'displayId' in w && !w.isDestroyed());
 
-    allWindows.forEach(win => {
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('recording:inputFieldToggle');
-      }
+    console.log(`[GlobalShortcuts] Broadcasting inputFieldToggle to ${recordingOverlays.length} recording overlay(s)`);
+
+    recordingOverlays.forEach(win => {
+      win.webContents.send('recording:inputFieldToggle');
+      // Focus the recording overlay window to ensure input field receives focus
+      win.focus();
     });
+
+    // Also send to main window for React modal synchronization
+    const mainWindow = allWindows.find((w: any) => !('displayId' in w));
+    if (mainWindow) {
+      mainWindow.webContents.send('recording:inputFieldToggle');
+    }
   });
 
   if (markRegistered) {

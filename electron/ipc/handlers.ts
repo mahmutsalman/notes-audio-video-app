@@ -589,24 +589,38 @@ export function setupIpcHandlers(): void {
 
   ipcMain.on('region:sendRegion', async (event, region: any) => {
     console.log('[IPC Handler] region:sendRegion received:', region);
+    console.log('[IPC Handler] Selected from display:', region.selectedFromDisplayId);
 
-    // DON'T close overlay windows - let them stay open for recording controls
-    // The overlay will close itself when Stop button is clicked (via region:cancel)
-    // const { closeAllRegionSelectorWindows } = await import('../windows/regionSelector');
-    // closeAllRegionSelectorWindows();
-    // regionSelectorWindows = [];
-    console.log('[IPC Handler] Keeping overlay windows open for recording controls');
-
-    // Forward region data to main window
+    // Close overlays on OTHER displays (not the selected one)
     const { BrowserWindow } = await import('electron');
     const allWindows = BrowserWindow.getAllWindows();
     console.log('[IPC Handler] All windows count:', allWindows.length);
-    console.log('[IPC Handler] All windows:', allWindows.map(w => ({
-      id: w.id,
-      hasDisplayId: 'displayId' in w,
-      title: w.getTitle()
-    })));
 
+    let closedCount = 0;
+    allWindows.forEach((win: any) => {
+      if ('displayId' in win && win.displayId !== region.selectedFromDisplayId) {
+        console.log(`[IPC Handler] Closing overlay for non-selected display ${win.displayId}`);
+
+        // Exit fullscreen modes before closing
+        if (win.isSimpleFullScreen()) win.setSimpleFullScreen(false);
+        if (win.isFullScreen()) win.setFullScreen(false);
+
+        // Destroy immediately
+        win.destroy();
+        closedCount++;
+      }
+    });
+
+    console.log(`[IPC Handler] Closed ${closedCount} non-selected overlay(s)`);
+
+    // Update regionSelectorWindows to only track selected display's window
+    regionSelectorWindows = regionSelectorWindows.filter(
+      (win: any) => !win.isDestroyed() && win.displayId === region.selectedFromDisplayId
+    );
+
+    console.log('[IPC Handler] Kept overlay for selected display:', region.selectedFromDisplayId);
+
+    // Forward region data to main window
     const mainWindow = allWindows.find((w: any) => !('displayId' in w));
     console.log('[IPC Handler] Main window found:', !!mainWindow);
 
@@ -745,6 +759,12 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('settings:getAll', async () => {
     return SettingsOperations.getAll();
+  });
+
+  // ============ Screen (Display Information) ============
+  ipcMain.handle('screen:getAllDisplays', async () => {
+    const { screen } = await import('electron');
+    return screen.getAllDisplays();
   });
 
   console.log('IPC handlers registered');
