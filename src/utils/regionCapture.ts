@@ -70,46 +70,138 @@ export async function createCroppedStream(
   });
 
   // 4. Draw cropped frames to canvas continuously
-  // Use setInterval instead of requestAnimationFrame to avoid macOS throttling
-  // when app is on different desktop space (Electron issue #9567)
-  let intervalId: number | null = null;
+  // Use requestAnimationFrame with forced change detection
+  let animationFrameId: number | null = null;
   const frameInterval = 1000 / fps; // milliseconds per frame
+  let lastFrameTime = 0; // Initialize to 0 - will be set on first frame
+  let frameCount = 0;
 
-  const drawFrame = () => {
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  console.log('[regionCapture] Frame interval:', frameInterval, 'ms for', fps, 'FPS');
 
-    // Draw cropped region from video
-    // Scale coordinates to match physical pixels on HiDPI displays
-    ctx.drawImage(
-      video,
-      region.x * scaleFactor,
-      region.y * scaleFactor,
-      region.width * scaleFactor,
-      region.height * scaleFactor, // Source rectangle (physical pixels)
-      0,
-      0,
-      canvas.width,
-      canvas.height // Destination rectangle
-    );
+  const drawFrame = (timestamp: number) => {
+    // Calculate if enough time has passed for next frame
+    const elapsed = timestamp - lastFrameTime;
+
+    if (elapsed >= frameInterval) {
+      lastFrameTime = timestamp;
+      frameCount++;
+
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw cropped region from video
+      ctx.drawImage(
+        video,
+        region.x * scaleFactor,
+        region.y * scaleFactor,
+        region.width * scaleFactor,
+        region.height * scaleFactor,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+      // CRITICAL: Force browser to detect change by drawing a unique marker
+      // Without this, Chromium's captureStream change detection fails
+      // Draw a 1x1 pixel at rotating position (invisible but forces detection)
+      const markerX = frameCount % canvas.width;
+      const markerY = Math.floor(frameCount / canvas.width) % canvas.height;
+      ctx.fillStyle = `rgba(0, 0, 0, 0.003)`; // Nearly transparent
+      ctx.fillRect(markerX, markerY, 1, 1);
+
+      console.log('[regionCapture] Frame', frameCount, 'drawn at', timestamp.toFixed(2), 'ms');
+    }
+
+    // Continue animation loop
+    animationFrameId = window.requestAnimationFrame(drawFrame);
   };
 
-  // Start interval-based frame capture
-  intervalId = window.setInterval(drawFrame, frameInterval);
+  // 5. CRITICAL: Draw first frame BEFORE creating stream
+  // This ensures canvas has content when captureStream() is called
+  console.log('[regionCapture] Drawing initial frame before captureStream');
+  ctx.drawImage(
+    video,
+    region.x * scaleFactor,
+    region.y * scaleFactor,
+    region.width * scaleFactor,
+    region.height * scaleFactor,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
 
-  // 5. Capture canvas stream
-  // Pass explicit FPS to ensure reliable frame capture at all frame rates
-  // Without this parameter, browsers use change detection which fails at low FPS (<15fps)
-  // This causes 10fps recordings to capture only 3-4 frames per 60 seconds instead of 600
-  // Explicit FPS parameter guarantees frame capture at the specified rate
-  const croppedStream = canvas.captureStream(fps);
+  // 6. Capture canvas stream at 0 FPS (manual control)
+  // captureStream(fps) is broken in Chromium/Electron - use manual requestFrame() instead
+  // See: https://github.com/w3c/mediacapture-fromelement/issues/43
+  console.log('[regionCapture] Creating canvas stream with manual frame control (0 FPS)');
+  const croppedStream = canvas.captureStream(0); // 0 = manual control
+  console.log('[regionCapture] Canvas stream created');
 
-  // 6. Cleanup function
+  // Get the video track for manual frame requests
+  const [videoTrack] = croppedStream.getVideoTracks();
+  if (!videoTrack || !(videoTrack as any).requestFrame) {
+    throw new Error('CanvasCaptureMediaStreamTrack.requestFrame() not supported');
+  }
+  console.log('[regionCapture] Video track supports requestFrame:', !!(videoTrack as any).requestFrame);
+
+  // 7. Start requestAnimationFrame loop with MANUAL frame capture
+  // We draw to canvas AND explicitly request frame capture each time
+  const startTime = performance.now();
+  const drawFrameWithCapture = (timestamp: number) => {
+    // On first frame, initialize lastFrameTime
+    if (lastFrameTime === 0) {
+      lastFrameTime = timestamp;
+      console.log('[regionCapture] First frame callback at', timestamp.toFixed(2), 'ms');
+    }
+
+    const elapsed = timestamp - lastFrameTime;
+
+    // Debug logging for timing issues
+    if (frameCount < 5 || frameCount % 10 === 0) {
+      console.log(`[regionCapture] rAF callback: timestamp=${timestamp.toFixed(2)}ms, lastFrameTime=${lastFrameTime.toFixed(2)}ms, elapsed=${elapsed.toFixed(2)}ms, target=${frameInterval.toFixed(2)}ms, should_capture=${elapsed >= frameInterval}`);
+    }
+
+    if (elapsed >= frameInterval) {
+      lastFrameTime = timestamp;
+      frameCount++;
+
+      // Draw to canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(
+        video,
+        region.x * scaleFactor,
+        region.y * scaleFactor,
+        region.width * scaleFactor,
+        region.height * scaleFactor,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+      // CRITICAL: Manually request frame capture
+      // This is the only reliable way to capture frames in Chromium/Electron
+      (videoTrack as any).requestFrame();
+
+      const elapsedTotal = (timestamp - startTime) / 1000;
+      const expectedFrames = Math.floor(elapsedTotal * fps);
+      console.log(`[regionCapture] ✅ Frame ${frameCount} captured (expected: ~${expectedFrames}, actual FPS: ${(frameCount / elapsedTotal).toFixed(2)})`);
+    }
+
+    animationFrameId = window.requestAnimationFrame(drawFrameWithCapture);
+  };
+
+  console.log('[regionCapture] Starting requestAnimationFrame loop with manual capture for', fps, 'FPS');
+  animationFrameId = window.requestAnimationFrame(drawFrameWithCapture);
+
+  // 8. Cleanup function
   const cleanup = () => {
-    // Stop interval
-    if (intervalId !== null) {
-      clearInterval(intervalId);
-      intervalId = null;
+    // Stop animation frame loop
+    if (animationFrameId !== null) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
     }
 
     // Stop full stream

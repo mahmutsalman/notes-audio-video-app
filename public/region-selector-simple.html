@@ -770,7 +770,7 @@
 
         // Load FPS and quality settings
         const savedFPS = settings.screen_recording_fps || '10';
-        const savedQuality = settings.screen_recording_quality || 'auto';
+        const savedQuality = settings.screen_recording_resolution || 'auto';
 
         // Load mic settings
         micEnabled = settings.region_mic_enabled === 'true';
@@ -1213,7 +1213,7 @@
 
       // Save quality setting (Phase 6)
       try {
-        await window.electronAPI.settings.set('screen_recording_quality', quality);
+        await window.electronAPI.settings.set('screen_recording_resolution', quality);
         console.log('[RegionSelector] Saved quality:', quality);
       } catch (error) {
         console.error('[RegionSelector] Failed to save quality:', error);

@@ -58,7 +58,7 @@ export function ScreenRecordingSettingsProvider({ children }: ScreenRecordingSet
     fps: 30,
     codec: 'h264',
     presetName: 'Standard',
-    bitsPerPixel: 0.15,
+    bitsPerPixel: 0.05,
   });
   const [loading, setLoading] = useState(true);
 
@@ -75,7 +75,7 @@ export function ScreenRecordingSettingsProvider({ children }: ScreenRecordingSet
         fps: parseInt(allSettings.screen_recording_fps || '30') as ScreenFPS,
         codec: (allSettings.screen_recording_codec as 'h264' | 'vp9' | 'vp8') || 'h264',
         presetName: allSettings.screen_recording_preset_name || 'Standard',
-        bitsPerPixel: parseFloat(allSettings.screen_recording_bits_per_pixel || '0.15'),
+        bitsPerPixel: parseFloat(allSettings.screen_recording_bits_per_pixel || '0.05'),
       });
     } catch (error) {
       console.error('Failed to load screen recording settings:', error);

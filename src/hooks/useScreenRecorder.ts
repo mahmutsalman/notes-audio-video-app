@@ -149,20 +149,29 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
 
-      // Try H.264 first (better hardware support, wider compatibility)
-      // Fall back to VP9 if H.264 not available
-      const codecPreference = [
-        'video/webm;codecs=h264',
-        'video/webm;codecs=avc1',  // Alternative H.264 identifier
-        'video/webm;codecs=vp9',   // Fallback to VP9
-        'video/webm'
-      ];
+      // Codec selection based on FPS
+      // VP9 for low FPS (<24fps) - H.264 has severe frame dropping issues at low FPS in Chromium
+      // H.264 for high FPS (>=24fps) - Better hardware support and compatibility
+      const codecPreference = fps < 24
+        ? [
+            'video/webm;codecs=vp9',   // VP9 handles low FPS much better
+            'video/webm;codecs=h264',  // Fallback to H.264
+            'video/webm;codecs=avc1',
+            'video/webm'
+          ]
+        : [
+            'video/webm;codecs=h264',  // H.264 for normal/high FPS
+            'video/webm;codecs=avc1',
+            'video/webm;codecs=vp9',
+            'video/webm'
+          ];
 
       const mimeType = codecPreference.find(codec =>
         MediaRecorder.isTypeSupported(codec)
       ) || 'video/webm';
 
       const selectedCodec = getCodecName(mimeType);
+      console.log('[useScreenRecorder] FPS:', fps, '→ Codec strategy:', fps < 24 ? 'VP9-first (low FPS)' : 'H.264-first (normal FPS)');
       console.log('[useScreenRecorder] Selected codec:', mimeType, '→', selectedCodec);
 
       // Calculate bitrate using preset quality settings
@@ -170,7 +179,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         resolution.width,
         resolution.height,
         fps,
-        settings.bitsPerPixel || 0.18  // Use preset quality or fallback to CleanShot X level
+        settings.bitsPerPixel || 0.08  // Use preset quality or fallback to CleanShot X level
       );
 
       console.log('[useScreenRecorder] Video bitrate:', videoBitsPerSecond);
@@ -364,20 +373,29 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
       streamRef.current = finalStream;
 
-      // Try H.264 first (better hardware support, wider compatibility)
-      // Fall back to VP9 if H.264 not available
-      const codecPreference = [
-        'video/webm;codecs=h264',
-        'video/webm;codecs=avc1',  // Alternative H.264 identifier
-        'video/webm;codecs=vp9',   // Fallback to VP9
-        'video/webm'
-      ];
+      // Codec selection based on FPS
+      // VP9 for low FPS (<24fps) - H.264 has severe frame dropping issues at low FPS in Chromium
+      // H.264 for high FPS (>=24fps) - Better hardware support and compatibility
+      const codecPreference = actualFPS < 24
+        ? [
+            'video/webm;codecs=vp9',   // VP9 handles low FPS much better
+            'video/webm;codecs=h264',  // Fallback to H.264
+            'video/webm;codecs=avc1',
+            'video/webm'
+          ]
+        : [
+            'video/webm;codecs=h264',  // H.264 for normal/high FPS
+            'video/webm;codecs=avc1',
+            'video/webm;codecs=vp9',
+            'video/webm'
+          ];
 
       const mimeType = codecPreference.find(codec =>
         MediaRecorder.isTypeSupported(codec)
       ) || 'video/webm';
 
       const selectedCodec = getCodecName(mimeType);
+      console.log('[useScreenRecorder] FPS:', actualFPS, '→ Codec strategy:', actualFPS < 24 ? 'VP9-first (low FPS)' : 'H.264-first (normal FPS)');
       console.log('[useScreenRecorder] Selected codec:', mimeType, '→', selectedCodec);
 
       // Calculate bitrate using preset quality settings
@@ -385,7 +403,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         region.width * scaleFactor,
         region.height * scaleFactor,
         actualFPS,
-        settings.bitsPerPixel || 0.18  // Use preset quality or fallback to CleanShot X level
+        settings.bitsPerPixel || 0.08  // Use preset quality or fallback to CleanShot X level
       );
       console.log('[useScreenRecorder] Video bitrate:', videoBitsPerSecond);
 
