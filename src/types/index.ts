@@ -403,6 +403,7 @@ export interface ElectronAPI {
     onMarkNoteUpdate: (callback: (note: string) => void) => () => void;
     onInputFieldToggle: (callback: () => void) => () => void;
     sendInputFieldToggle: () => void;
+    setWindowLevel: (level: 'floating' | 'screen-saver') => void;
   };
   video: {
     generateThumbnail: (videoPath: string) => Promise<{ success: boolean; thumbnailPath: string | null }>;

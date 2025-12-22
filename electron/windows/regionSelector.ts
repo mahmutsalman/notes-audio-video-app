@@ -80,8 +80,8 @@ export function createRegionSelectorWindows(): RegionSelectorWindow[] {
           sandbox: false,
         },
 
-        // Show immediately
-        show: true,
+        // Don't show yet - configure first to prevent Space switching
+        show: false,
       }) as RegionSelectorWindow;
 
       console.log(`[RegionSelector] BrowserWindow created for display ${display.id}`);
@@ -94,16 +94,15 @@ export function createRegionSelectorWindows(): RegionSelectorWindow[] {
       window.setSimpleFullScreen(true);
       console.log(`[RegionSelector] Simple fullscreen enabled for display ${display.id}`);
 
-      // macOS: Make window visible on all workspaces/spaces (critical for global shortcut)
+      // macOS: Make window visible on all workspaces/spaces BEFORE showing
       if (process.platform === 'darwin') {
         window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
         console.log(`[RegionSelector] Set visible on all workspaces for display ${display.id} (macOS)`);
       }
 
-      // Bring window to front and focus it
-      window.show();
-      window.focus();
-      console.log(`[RegionSelector] Window shown and focused for display ${display.id}`);
+      // NOW show window - after it's configured to be on all workspaces
+      window.showInactive();
+      console.log(`[RegionSelector] Window shown (inactive) for display ${display.id}`);
 
       // Store display ID for THIS window
       window.displayId = display.id.toString();

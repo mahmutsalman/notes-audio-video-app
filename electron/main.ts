@@ -37,6 +37,11 @@ async function createWindow(): Promise<void> {
   // Setup IPC handlers
   setupIpcHandlers();
 
+  // macOS: Ensure app is visible in dock
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.show();
+  }
+
   // Create the browser window.
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -193,6 +198,13 @@ app.on('activate', () => {
   // On macOS, re-create window when dock icon is clicked
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
+  } else {
+    // Show and focus the main window if it exists
+    const mainWin = BrowserWindow.getAllWindows().find((w: any) => !('displayId' in w));
+    if (mainWin) {
+      mainWin.show();
+      mainWin.focus();
+    }
   }
 });
 

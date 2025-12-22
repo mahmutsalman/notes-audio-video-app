@@ -352,6 +352,9 @@ const electronAPI = {
       ipcRenderer.on('recording:inputFieldToggle', listener);
       return () => ipcRenderer.removeListener('recording:inputFieldToggle', listener);
     },
+    setWindowLevel: (level: 'floating' | 'screen-saver') => {
+      ipcRenderer.send('region:setWindowLevel', level);
+    },
   },
 
   // Settings

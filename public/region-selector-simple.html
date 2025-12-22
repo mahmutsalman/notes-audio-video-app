@@ -505,21 +505,28 @@
     function showMarkInput() {
       const inputField = document.getElementById('durationMarkInput');
       const noteInput = document.getElementById('markNoteInput');
+
+      // Lower window to 'floating' to accept keyboard
+      console.log('[RegionSelector] Lowering window level to floating for keyboard input');
+      window.electronAPI.region.setWindowLevel('floating');
+
       inputField.style.display = 'flex';
       noteInput.value = markNoteText;
 
-      // Force focus with a small delay to ensure the element is rendered
-      // and to handle cross-window focus issues
+      // Focus after level change processed
       setTimeout(() => {
         noteInput.focus();
-        console.log('[RegionSelector] Mark input focused');
-      }, 0);
+        console.log('[RegionSelector] Input field focused and ready for typing');
+      }, 100);
     }
 
     function hideMarkInput() {
       document.getElementById('durationMarkInput').style.display = 'none';
       markNoteText = '';
-      console.log('[RegionSelector] Mark input hidden');
+
+      // Restore screen-saver level to stay above everything
+      console.log('[RegionSelector] Restoring window level to screen-saver');
+      window.electronAPI.region.setWindowLevel('screen-saver');
     }
 
     function updateMarkingIndicator(startSeconds) {
@@ -1173,6 +1180,15 @@
     // Mark note input change handler
     const markNoteInputEl = document.getElementById('markNoteInput');
     if (markNoteInputEl) {
+      // Fallback: Ensure focus when clicking input
+      markNoteInputEl.addEventListener('click', () => {
+        if (document.activeElement !== markNoteInputEl) {
+          console.log('[RegionSelector] Click fallback - re-lowering window level');
+          window.electronAPI.region.setWindowLevel('floating');
+          setTimeout(() => markNoteInputEl.focus(), 50);
+        }
+      });
+
       markNoteInputEl.addEventListener('input', (e) => {
         markNoteText = e.target.value;
         // Don't log every keystroke - too noisy
@@ -1221,6 +1237,13 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         console.log('[RegionSelector] ESC pressed, canceling and cleaning up monitoring');
+
+        // Restore window level if marking (to prevent stuck at floating level)
+        if (isMarking) {
+          console.log('[RegionSelector] Restoring window level to screen-saver before cancel');
+          window.electronAPI.region.setWindowLevel('screen-saver');
+        }
+
         stopMicrophoneMonitoring();
         window.electronAPI.region.cancel();
       } else if (e.key === 'Enter' && isRecording) {

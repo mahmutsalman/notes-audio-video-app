@@ -585,9 +585,25 @@ export function setupIpcHandlers(): void {
     const { closeAllRegionSelectorWindows } = await import('../windows/regionSelector');
     closeAllRegionSelectorWindows();
     regionSelectorWindows = [];
+
+    // Restore main window focus and visibility after cancellation
+    const { BrowserWindow, app } = await import('electron');
+    const allWindows = BrowserWindow.getAllWindows();
+    const mainWindow = allWindows.find((w: any) => !('displayId' in w));
+
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+
+      // macOS: Ensure app is visible in dock
+      if (process.platform === 'darwin' && app.dock) {
+        app.dock.show();
+      }
+      console.log('[IPC Handler] region:cancel - restored main window focus');
+    }
   });
 
-  ipcMain.on('region:sendRegion', async (event, region: any) => {
+  ipcMain.on('region:sendRegion', async (_event, region: any) => {
     console.log('[IPC Handler] region:sendRegion received:', region);
     console.log('[IPC Handler] Selected from display:', region.selectedFromDisplayId);
 
@@ -642,20 +658,29 @@ export function setupIpcHandlers(): void {
     console.log('[IPC Handler] Overlay windows closed');
 
     // Forward stop recording event to main window
-    const { BrowserWindow } = await import('electron');
+    const { BrowserWindow, app } = await import('electron');
     const allWindows = BrowserWindow.getAllWindows();
     const mainWindow = allWindows.find((w: any) => !('displayId' in w));
 
     if (mainWindow) {
+      // Restore main window focus and visibility
+      mainWindow.show();
+      mainWindow.focus();
+
+      // macOS: Ensure app is visible in dock
+      if (process.platform === 'darwin' && app.dock) {
+        app.dock.show();
+      }
+
       mainWindow.webContents.send('recording:stop');
-      console.log('[IPC Handler] Sent recording:stop to main window');
+      console.log('[IPC Handler] Sent recording:stop to main window and restored focus');
     } else {
       console.error('[IPC Handler] Main window not found!');
     }
   });
 
   // Duration update (React → All overlay windows)
-  ipcMain.on('region:updateDuration', (event, duration: number) => {
+  ipcMain.on('region:updateDuration', (_event, duration: number) => {
     const { BrowserWindow } = require('electron');
     const allWindows = BrowserWindow.getAllWindows();
 
@@ -693,8 +718,6 @@ export function setupIpcHandlers(): void {
 
   // Mark state update (React main window → All overlay windows)
   ipcMain.on('region:markStateUpdate', (_event, isMarking: boolean, startTime: number) => {
-    const { BrowserWindow } = require('electron');
-
     // Send to all region selector overlay windows
     regionSelectorWindows.forEach(win => {
       if (win && !win.isDestroyed()) {
@@ -710,7 +733,7 @@ export function setupIpcHandlers(): void {
 
     // Forward to all windows except sender (don't log - too noisy)
     const allWindows = BrowserWindow.getAllWindows();
-    allWindows.forEach(win => {
+    allWindows.forEach((win: any) => {
       if (win && !win.isDestroyed() && win.webContents !== sender) {
         win.webContents.send('recording:markNoteUpdate', note);
       }
@@ -722,7 +745,7 @@ export function setupIpcHandlers(): void {
     const { BrowserWindow } = require('electron');
 
     // Send to all windows (both React main window and overlays)
-    BrowserWindow.getAllWindows().forEach(win => {
+    BrowserWindow.getAllWindows().forEach((win: any) => {
       if (win && !win.isDestroyed()) {
         win.webContents.send('recording:inputFieldToggle');
       }
@@ -747,6 +770,29 @@ export function setupIpcHandlers(): void {
     }
   });
 
+  // Window level management for keyboard input
+  // Note: We use 'modal-panel' instead of 'floating' to stay visible above fullscreen apps
+  // while still accepting keyboard input. Fullscreen apps render between 'floating' and
+  // 'screen-saver' levels, so 'floating' would make the overlay invisible.
+  ipcMain.on('region:setWindowLevel', (event, level: 'floating' | 'screen-saver') => {
+    console.log('[IPC Handler] region:setWindowLevel requested:', level);
+
+    const { BrowserWindow } = require('electron');
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (senderWindow && 'displayId' in senderWindow) {
+      // Use modal-panel instead of floating to stay above fullscreen apps
+      const effectiveLevel = level === 'floating' ? 'modal-panel' : level;
+      senderWindow.setAlwaysOnTop(true, effectiveLevel);
+      console.log('[IPC Handler] Window level set to:', effectiveLevel, `(requested: ${level})`);
+
+      // When lowering for keyboard input, explicitly focus
+      if (level === 'floating') {
+        senderWindow.focus();
+        console.log('[IPC Handler] Window focused for keyboard input');
+      }
+    }
+  });
 
   // ============ Settings ============
   ipcMain.handle('settings:get', async (_, key: string) => {

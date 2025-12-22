@@ -4,14 +4,14 @@ import { createRegionSelectorWindows, regionSelectorWindows } from '../windows/r
 /**
  * Registers global keyboard shortcuts for the application
  * Currently registers:
- * - Cmd+D (macOS) / Ctrl+D (Windows/Linux) for region selection
+ * - Cmd+C (macOS) / Ctrl+C (Windows/Linux) for region selection (temporary for testing)
  * - Cmd+H (macOS) / Ctrl+H (Windows/Linux) for duration mark input toggle
  */
 export function registerGlobalShortcuts(): void {
   console.log('[GlobalShortcuts] Registering global shortcuts...');
 
-  // Register Cmd+D (macOS) / Ctrl+D (Windows/Linux) for region selection
-  const regionShortcut = 'CommandOrControl+D';
+  // Register Cmd+C (macOS) / Ctrl+C (Windows/Linux) for region selection (temporary for testing)
+  const regionShortcut = 'CommandOrControl+C';
   const regionRegistered = globalShortcut.register(regionShortcut, () => {
     console.log(`[GlobalShortcuts] ${regionShortcut} pressed`);
 
@@ -49,8 +49,7 @@ export function registerGlobalShortcuts(): void {
 
     recordingOverlays.forEach(win => {
       win.webContents.send('recording:inputFieldToggle');
-      // Focus the recording overlay window to ensure input field receives focus
-      win.focus();
+      // Don't focus to avoid switching macOS Spaces - overlay is already alwaysOnTop
     });
 
     // Also send to main window for React modal synchronization
