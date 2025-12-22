@@ -397,6 +397,12 @@ export interface ElectronAPI {
     onDurationUpdate: (callback: (duration: number) => void) => () => void;
     onPauseRecording: (callback: () => void) => () => void;
     onResumeRecording: (callback: () => void) => () => void;
+    sendMarkStateUpdate: (isMarking: boolean, startTime: number) => void;
+    onMarkToggle: (callback: () => void) => () => void;
+    sendMarkNote: (note: string) => void;
+    onMarkNoteUpdate: (callback: (note: string) => void) => () => void;
+    onInputFieldToggle: (callback: () => void) => () => void;
+    sendInputFieldToggle: () => void;
   };
   video: {
     generateThumbnail: (videoPath: string) => Promise<{ success: boolean; thumbnailPath: string | null }>;
@@ -415,6 +421,9 @@ export interface ElectronAPI {
     get: (key: string) => Promise<string | null>;
     set: (key: string, value: string) => Promise<void>;
     getAll: () => Promise<Record<string, string>>;
+  };
+  screen: {
+    getAllDisplays: () => Promise<any[]>;
   };
 }
 

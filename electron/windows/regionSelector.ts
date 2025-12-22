@@ -132,7 +132,7 @@ export function createRegionSelectorWindows(): RegionSelectorWindow[] {
           .then(() => console.log(`[RegionSelector] URL loaded successfully for display ${display.id}`))
           .catch(err => console.error(`[RegionSelector] Load URL error for display ${display.id}:`, err));
       } else {
-        const filePath = path.join(__dirname, '../region-selector.html');
+        const filePath = path.join(__dirname, '../dist/region-selector-simple.html');
         console.log(`[RegionSelector] Loading file for display ${display.id}:`, filePath);
         window.loadFile(filePath, {
           query: { displayId: display.id.toString() }

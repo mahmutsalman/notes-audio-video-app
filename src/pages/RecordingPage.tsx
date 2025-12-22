@@ -2249,7 +2249,7 @@ export default function RecordingPage() {
           onCompressionComplete={() => {
             console.log('Compression complete');
           }}
-          onReplaceComplete={async (newPath) => {
+          onReplaceComplete={async (_newPath) => {
             // Reload the recording to get updated video_path
             await refetch();
             setCompressionDialog(null);
