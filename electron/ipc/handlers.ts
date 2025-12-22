@@ -718,12 +718,24 @@ export function setupIpcHandlers(): void {
 
   // Mark state update (React main window → All overlay windows)
   ipcMain.on('region:markStateUpdate', (_event, isMarking: boolean, startTime: number) => {
+    console.log('[IPC Handler] region:markStateUpdate received:', { isMarking, startTime });
+
     // Send to all region selector overlay windows
-    regionSelectorWindows.forEach(win => {
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('recording:markStateUpdate', isMarking, startTime);
-      }
+    // Use dynamic window lookup instead of stale array to ensure production reliability
+    const { BrowserWindow } = require('electron');
+    const allWindows = BrowserWindow.getAllWindows();
+    const recordingOverlays = allWindows.filter((w: any) => 'displayId' in w && !w.isDestroyed());
+
+    console.log(`[IPC Handler] Found ${recordingOverlays.length} recording overlay(s) to send marking state`);
+
+    recordingOverlays.forEach((win, idx) => {
+      console.log(`[IPC Handler] Sending markStateUpdate to overlay ${idx + 1} (displayId: ${win.displayId})`);
+      win.webContents.send('recording:markStateUpdate', isMarking, startTime);
     });
+
+    if (recordingOverlays.length === 0) {
+      console.error('[IPC Handler] CRITICAL: No recording overlays found - marking state not sent!');
+    }
   });
 
   // Mark note update (Bidirectional: React ↔ Overlay)
