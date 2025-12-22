@@ -158,11 +158,6 @@ export async function createCroppedStream(
 
     const elapsed = timestamp - lastFrameTime;
 
-    // Debug logging for timing issues
-    if (frameCount < 5 || frameCount % 10 === 0) {
-      console.log(`[regionCapture] rAF callback: timestamp=${timestamp.toFixed(2)}ms, lastFrameTime=${lastFrameTime.toFixed(2)}ms, elapsed=${elapsed.toFixed(2)}ms, target=${frameInterval.toFixed(2)}ms, should_capture=${elapsed >= frameInterval}`);
-    }
-
     if (elapsed >= frameInterval) {
       lastFrameTime = timestamp;
       frameCount++;
@@ -185,9 +180,12 @@ export async function createCroppedStream(
       // This is the only reliable way to capture frames in Chromium/Electron
       (videoTrack as any).requestFrame();
 
-      const elapsedTotal = (timestamp - startTime) / 1000;
-      const expectedFrames = Math.floor(elapsedTotal * fps);
-      console.log(`[regionCapture] ✅ Frame ${frameCount} captured (expected: ~${expectedFrames}, actual FPS: ${(frameCount / elapsedTotal).toFixed(2)})`);
+      // Log every 30 frames to avoid console spam
+      if (frameCount % 30 === 0) {
+        const elapsedTotal = (timestamp - startTime) / 1000;
+        const expectedFrames = Math.floor(elapsedTotal * fps);
+        console.log(`[regionCapture] ✅ Frame ${frameCount} captured (expected: ~${expectedFrames}, actual FPS: ${(frameCount / elapsedTotal).toFixed(2)})`);
+      }
     }
 
     animationFrameId = window.requestAnimationFrame(drawFrameWithCapture);

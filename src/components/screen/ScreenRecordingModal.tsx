@@ -78,14 +78,12 @@ export default function ScreenRecordingModal({
   useEffect(() => {
     if (step !== 'recording') return;
 
-    console.log('[ScreenRecordingModal] Setting up recording:stop listener');
     const cleanup = window.electronAPI.region.onRecordingStop(() => {
-      console.log('[ScreenRecordingModal] recording:stop event received from overlay');
+      console.log('[ScreenRecordingModal] Recording stopped via overlay');
       handleStopRecording();
     });
 
     return () => {
-      console.log('[ScreenRecordingModal] Cleaning up recording:stop listener');
       cleanup();
     };
   }, [step, handleStopRecording]);
