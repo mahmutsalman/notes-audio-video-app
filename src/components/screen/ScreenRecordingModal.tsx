@@ -248,9 +248,9 @@ export default function ScreenRecordingModal({
                 {/* Current Settings Summary */}
                 <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                   <div className="text-xs text-gray-600 dark:text-gray-400 flex items-center justify-between">
-                    <span>Current: {settings.resolution} • {settings.fps} FPS • H.264</span>
+                    <span>Current: {settings.resolution} • {settings.fps} FPS • {settings.fps < 24 ? 'VP9' : 'H.264'}</span>
                     <span className="text-gray-500">
-                      Quality: {(settings.bitsPerPixel || 0.18).toFixed(2)} bpp
+                      Quality: {(settings.bitsPerPixel || 0.08).toFixed(2)} bpp
                     </span>
                   </div>
                 </div>
