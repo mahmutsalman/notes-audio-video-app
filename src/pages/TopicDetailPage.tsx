@@ -77,13 +77,8 @@ export default function TopicDetailPage() {
   // Global listener for Cmd+D region selection (works from topic page)
   // This ensures Cmd+D works without needing to open modal first
   useEffect(() => {
-    console.log('[TopicDetailPage] Setting up global region:selected listener');
     const cleanup = window.electronAPI.region.onRegionSelected((region) => {
-      console.log('[TopicDetailPage] Global region:selected event received');
-      console.log('[TopicDetailPage] region:', region);
-
       if (region && id) {
-        console.log('[TopicDetailPage] Storing region from Cmd+D for topic:', id);
         // Increment ID to ensure new region is treated as unique
         regionIdRef.current += 1;
         // Store region data so QuickScreenRecord modal can auto-start with it
@@ -96,7 +91,6 @@ export default function TopicDetailPage() {
 
   // Clear pendingRegion when recording is saved
   const handleRecordingSavedWithClear = () => {
-    console.log('[TopicDetailPage] Clearing pendingRegion after save');
     setPendingRegionData(null);
     handleRecordingSaved();
   };

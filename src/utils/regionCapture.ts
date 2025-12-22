@@ -33,13 +33,10 @@ export async function createCroppedStream(
   // 2. Create canvas for cropping
   // Account for display scale factor (e.g., 2x on Retina displays)
   const scaleFactor = region.scaleFactor || 1;
-  console.log('[regionCapture] Scale factor:', scaleFactor);
-  console.log('[regionCapture] CSS region:', region.width, 'x', region.height);
 
   // Determine canvas dimensions (use target dimensions if provided, otherwise use physical pixels)
   const canvasWidth = targetDimensions?.width ?? (region.width * scaleFactor);
   const canvasHeight = targetDimensions?.height ?? (region.height * scaleFactor);
-  console.log('[regionCapture] Canvas dimensions:', canvasWidth, 'x', canvasHeight);
 
   const canvas = document.createElement('canvas');
   canvas.width = canvasWidth;
@@ -76,8 +73,6 @@ export async function createCroppedStream(
   const frameInterval = 1000 / fps; // milliseconds per frame
   let lastFrameTime = 0; // Initialize to 0 - will be set on first frame
   let frameCount = 0;
-
-  console.log('[regionCapture] Frame interval:', frameInterval, 'ms for', fps, 'FPS');
 
   const drawFrame = (timestamp: number) => {
     // Calculate if enough time has passed for next frame
@@ -120,7 +115,6 @@ export async function createCroppedStream(
 
   // 5. CRITICAL: Draw first frame BEFORE creating stream
   // This ensures canvas has content when captureStream() is called
-  console.log('[regionCapture] Drawing initial frame before captureStream');
   ctx.drawImage(
     video,
     region.x * scaleFactor,
@@ -135,17 +129,13 @@ export async function createCroppedStream(
 
   // 6. Capture canvas stream at 0 FPS (manual control)
   // captureStream(fps) is broken in Chromium/Electron - use manual requestFrame() instead
-  // See: https://github.com/w3c/mediacapture-fromelement/issues/43
-  console.log('[regionCapture] Creating canvas stream with manual frame control (0 FPS)');
   const croppedStream = canvas.captureStream(0); // 0 = manual control
-  console.log('[regionCapture] Canvas stream created');
 
   // Get the video track for manual frame requests
   const [videoTrack] = croppedStream.getVideoTracks();
   if (!videoTrack || !(videoTrack as any).requestFrame) {
     throw new Error('CanvasCaptureMediaStreamTrack.requestFrame() not supported');
   }
-  console.log('[regionCapture] Video track supports requestFrame:', !!(videoTrack as any).requestFrame);
 
   // 7. Start requestAnimationFrame loop with MANUAL frame capture
   // We draw to canvas AND explicitly request frame capture each time
@@ -153,14 +143,12 @@ export async function createCroppedStream(
   const drawFrameWithCapture = (timestamp: number) => {
     // CRITICAL: Check if cleanup was called - stop immediately if so
     if (isCleanedUp) {
-      console.log('[regionCapture] ⚠️ Frame loop stopped - cleanup was called');
       return;
     }
 
     // On first frame, initialize lastFrameTime
     if (lastFrameTime === 0) {
       lastFrameTime = timestamp;
-      console.log('[regionCapture] First frame callback at', timestamp.toFixed(2), 'ms');
     }
 
     const elapsed = timestamp - lastFrameTime;
@@ -198,45 +186,27 @@ export async function createCroppedStream(
     animationFrameId = window.requestAnimationFrame(drawFrameWithCapture);
   };
 
-  console.log('[regionCapture] Starting requestAnimationFrame loop with manual capture for', fps, 'FPS');
   animationFrameId = window.requestAnimationFrame(drawFrameWithCapture);
 
   // 8. Cleanup function
   const cleanup = () => {
-    console.log('[regionCapture] 🧹 CLEANUP CALLED');
-    console.log('[regionCapture] Animation frame ID before cleanup:', animationFrameId);
-
     // Set cleanup flag to stop frame loop immediately
     isCleanedUp = true;
 
     // Stop animation frame loop
     if (animationFrameId !== null) {
-      console.log('[regionCapture] Cancelling animation frame:', animationFrameId);
       cancelAnimationFrame(animationFrameId);
       animationFrameId = null;
-      console.log('[regionCapture] Animation frame cancelled');
-    } else {
-      console.log('[regionCapture] ⚠️ Animation frame ID was already null!');
     }
 
-    // Stop full stream
-    console.log('[regionCapture] Stopping full stream tracks');
+    // Stop all streams
     fullStream.getTracks().forEach((track) => track.stop());
-
-    // Stop cropped stream
-    console.log('[regionCapture] Stopping cropped stream tracks');
     croppedStream.getTracks().forEach((track) => track.stop());
 
-    // Remove video element
-    console.log('[regionCapture] Removing video element');
+    // Remove elements
     video.srcObject = null;
     video.remove();
-
-    // Remove canvas
-    console.log('[regionCapture] Removing canvas');
     canvas.remove();
-
-    console.log('[regionCapture] ✅ CLEANUP COMPLETE');
   };
 
   return {

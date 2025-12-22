@@ -16,7 +16,6 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
   // Auto-open modal when pendingRegion is set (from Cmd+D)
   useEffect(() => {
     if (pendingRegion) {
-      console.log('[QuickScreenRecord] pendingRegion detected, opening modal');
       setIsOpen(true);
     }
   }, [pendingRegion]);

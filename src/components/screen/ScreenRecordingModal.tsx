@@ -31,11 +31,10 @@ export default function ScreenRecordingModal({
   const processedRegionIdRef = useRef<number | null>(null); // Track processed region to prevent duplicate starts
   const wasOpenRef = useRef(false); // Track previous isOpen state to detect true open events
 
-  // Component mount/unmount logging
+  // Component lifecycle cleanup
   useEffect(() => {
-    console.log('[ScreenRecordingModal] Component MOUNTED');
     return () => {
-      console.log('[ScreenRecordingModal] Component UNMOUNTING');
+      // Component unmounting - cleanup handled elsewhere
     };
   }, []);
 
@@ -68,19 +67,15 @@ export default function ScreenRecordingModal({
   }, [recorder, onSave, handleClose]);
 
   const handleRegionSelect = useCallback(async (region: CaptureArea) => {
-    console.log('[ScreenRecordingModal] handleRegionSelect called with region:', region);
-    console.log('[ScreenRecordingModal] Setting step to recording');
     setStep('recording');
 
-    console.log('[ScreenRecordingModal] Calling startRecordingWithRegion');
     try {
       await recorder.startRecordingWithRegion(
         region,
         settings.fps
       );
-      console.log('[ScreenRecordingModal] startRecordingWithRegion completed successfully');
     } catch (error) {
-      console.error('[ScreenRecordingModal] startRecordingWithRegion failed:', error);
+      console.error('[ScreenRecordingModal] Failed to start recording:', error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.fps]);
@@ -92,16 +87,12 @@ export default function ScreenRecordingModal({
     const justOpened = !wasOpen && isOpen;
     const justClosed = wasOpen && !isOpen;
 
-    console.log('[ScreenRecordingModal] Open state change:', { wasOpen, isOpen, justOpened, justClosed });
-
     if (justOpened) {
-      console.log('[ScreenRecordingModal] Modal just opened - resetting to source-selection');
       setStep('source-selection');
       recorder.resetRecording();
       // Reset processed region ID when modal opens
       processedRegionIdRef.current = null;
     } else if (justClosed) {
-      console.log('[ScreenRecordingModal] Modal just closed - clearing processed region');
       // Clear processed region ID when modal closes
       processedRegionIdRef.current = null;
     }
@@ -117,32 +108,17 @@ export default function ScreenRecordingModal({
   useEffect(() => {
     const regionId = (pendingRegion as any)?._id;
 
-    console.log('[ScreenRecordingModal] Auto-start useEffect triggered');
-    console.log('[ScreenRecordingModal] Region ID:', regionId);
-    console.log('[ScreenRecordingModal] Processed ID:', processedRegionIdRef.current);
-    console.log('[ScreenRecordingModal] Conditions check:');
-    console.log('  - isOpen:', isOpen);
-    console.log('  - pendingRegion:', !!pendingRegion);
-    console.log('  - regionId:', regionId);
-    console.log('  - step:', step);
-    console.log('  - loading:', loading);
-
     // Check if this specific region has already been processed
     if (regionId !== undefined && regionId === processedRegionIdRef.current) {
-      console.log('[ScreenRecordingModal] ⚠️ Region already processed, skipping');
       return;
     }
 
     const allConditionsMet = isOpen && pendingRegion && step === 'source-selection' && !loading;
-    console.log('[ScreenRecordingModal] All conditions met:', allConditionsMet);
 
     if (allConditionsMet) {
-      console.log('[ScreenRecordingModal] ✅ AUTO-START TRIGGERED - Calling handleRegionSelect');
       // Mark this region as processed BEFORE calling handler to prevent race conditions
       processedRegionIdRef.current = regionId;
       handleRegionSelect(pendingRegion);
-    } else {
-      console.log('[ScreenRecordingModal] ❌ AUTO-START BLOCKED - Conditions not met');
     }
   }, [isOpen, pendingRegion, step, loading, handleRegionSelect]);
 
@@ -154,17 +130,11 @@ export default function ScreenRecordingModal({
     }
   }, [recorder.isMarking, recorder.captureArea]);
 
-  // Log step changes for debugging
-  useEffect(() => {
-    console.log('[ScreenRecordingModal] step changed to:', step);
-  }, [step]);
-
   // Listen for stop recording event from overlay
   useEffect(() => {
     if (step !== 'recording') return;
 
     const cleanup = window.electronAPI.region.onRecordingStop(() => {
-      console.log('[ScreenRecordingModal] Recording stopped via overlay');
       handleStopRecording();
     });
 

@@ -20,7 +20,6 @@ export default function ScreenSourceSelector({ onSourceSelect, onRegionSelect, o
   // Auto-trigger region selection when opened via global shortcut
   useEffect(() => {
     if (autoStartRegionSelection && onRegionSelect && !loading) {
-      console.log('[ScreenSourceSelector] Auto-triggering region selection from global shortcut');
       // Small delay to ensure modal is fully rendered
       const timer = setTimeout(() => {
         handleSelectRegion();
@@ -31,29 +30,17 @@ export default function ScreenSourceSelector({ onSourceSelect, onRegionSelect, o
 
   // Listen for region selection
   useEffect(() => {
-    console.log('[ScreenSourceSelector] useEffect triggered');
-    console.log('[ScreenSourceSelector] onRegionSelect exists:', !!onRegionSelect);
-
     if (!onRegionSelect) {
-      console.warn('[ScreenSourceSelector] onRegionSelect is undefined, skipping listener setup');
       return;
     }
 
-    console.log('[ScreenSourceSelector] Registering region:selected listener');
     const cleanup = window.electronAPI.region.onRegionSelected((region) => {
-      console.log('[ScreenSourceSelector] region:selected event FIRED');
-      console.log('[ScreenSourceSelector] region data:', region);
       if (region) {
-        console.log('[ScreenSourceSelector] Calling onRegionSelect callback');
         onRegionSelect(region);
-        console.log('[ScreenSourceSelector] onRegionSelect callback completed');
       }
     });
 
-    console.log('[ScreenSourceSelector] Listener registered successfully');
-
     return () => {
-      console.log('[ScreenSourceSelector] Cleaning up region listener');
       cleanup();
     };
   }, [onRegionSelect]);
