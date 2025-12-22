@@ -317,6 +317,41 @@ const electronAPI = {
       ipcRenderer.on('recording:resume', listener);
       return () => ipcRenderer.removeListener('recording:resume', listener);
     },
+    // Duration mark synchronization
+    sendMarkToggle: (): Promise<void> => {
+      ipcRenderer.send('region:markToggle');
+      return Promise.resolve();
+    },
+    onMarkToggle: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('recording:markToggle', listener);
+      return () => ipcRenderer.removeListener('recording:markToggle', listener);
+    },
+    sendMarkStateUpdate: (isMarking: boolean, startTime: number): void => {
+      ipcRenderer.send('region:markStateUpdate', isMarking, startTime);
+    },
+    onMarkStateUpdate: (callback: (isMarking: boolean, startTime: number) => void) => {
+      const listener = (_event: any, isMarking: boolean, startTime: number) => callback(isMarking, startTime);
+      ipcRenderer.on('recording:markStateUpdate', listener);
+      return () => ipcRenderer.removeListener('recording:markStateUpdate', listener);
+    },
+    sendMarkNote: (note: string): void => {
+      ipcRenderer.send('region:markNote', note);
+    },
+    onMarkNoteUpdate: (callback: (note: string) => void) => {
+      const listener = (_event: any, note: string) => callback(note);
+      ipcRenderer.on('recording:markNoteUpdate', listener);
+      return () => ipcRenderer.removeListener('recording:markNoteUpdate', listener);
+    },
+    sendInputFieldToggle: (): Promise<void> => {
+      ipcRenderer.send('region:inputFieldToggle');
+      return Promise.resolve();
+    },
+    onInputFieldToggle: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('recording:inputFieldToggle', listener);
+      return () => ipcRenderer.removeListener('recording:inputFieldToggle', listener);
+    },
   },
 
   // Settings

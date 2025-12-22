@@ -666,6 +666,55 @@ export function setupIpcHandlers(): void {
     if (mainWindow) mainWindow.webContents.send('recording:resume');
   });
 
+  // Duration mark synchronization handlers
+
+  // Mark toggle (Overlay → React main window)
+  ipcMain.on('region:markToggle', () => {
+    const { BrowserWindow } = require('electron');
+    const mainWindow = BrowserWindow.getAllWindows().find((w: any) => !('displayId' in w));
+    if (mainWindow) {
+      mainWindow.webContents.send('recording:markToggle');
+    }
+  });
+
+  // Mark state update (React main window → All overlay windows)
+  ipcMain.on('region:markStateUpdate', (_event, isMarking: boolean, startTime: number) => {
+    const { BrowserWindow } = require('electron');
+
+    // Send to all region selector overlay windows
+    regionSelectorWindows.forEach(win => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('recording:markStateUpdate', isMarking, startTime);
+      }
+    });
+  });
+
+  // Mark note update (Bidirectional: React ↔ Overlay)
+  ipcMain.on('region:markNote', (_event, note: string) => {
+    const { BrowserWindow } = require('electron');
+    const sender = _event.sender;
+
+    // Forward to all windows except sender (don't log - too noisy)
+    const allWindows = BrowserWindow.getAllWindows();
+    allWindows.forEach(win => {
+      if (win && !win.isDestroyed() && win.webContents !== sender) {
+        win.webContents.send('recording:markNoteUpdate', note);
+      }
+    });
+  });
+
+  // Input field toggle (React main window → All overlay windows, or Overlay → React)
+  ipcMain.on('region:inputFieldToggle', () => {
+    const { BrowserWindow } = require('electron');
+
+    // Send to all windows (both React main window and overlays)
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('recording:inputFieldToggle');
+      }
+    });
+  });
+
   // Enable/disable click-through for overlay window
   ipcMain.on('region:setClickThrough', (event, enabled: boolean) => {
     console.log('[IPC Handler] region:setClickThrough:', enabled);

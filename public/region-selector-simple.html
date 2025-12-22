@@ -315,6 +315,52 @@
     #stopButtonNew:hover {
       background: rgba(220, 38, 38, 0.9);
     }
+
+    /* Duration Mark Input Field (bottom of screen) */
+    #durationMarkInput {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      z-index: 1003;
+      pointer-events: auto;
+    }
+
+    #markingIndicator {
+      background: rgba(59, 130, 246, 0.95);
+      color: white;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    #markNoteInput {
+      width: 400px;
+      padding: 10px 16px;
+      font-size: 14px;
+      border: 2px solid rgba(59, 130, 246, 0.8);
+      border-radius: 8px;
+      background: rgba(28, 28, 30, 0.95);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      color: white;
+      outline: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    #markNoteInput:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+
+    #markNoteInput::placeholder {
+      color: rgba(255, 255, 255, 0.5);
+    }
   </style>
 </head>
 <body>
@@ -392,6 +438,18 @@
     </div>
   </div>
 
+  <!-- Duration Mark Input Field (bottom of screen) -->
+  <div id="durationMarkInput" style="display: none;">
+    <div id="markingIndicator">
+      <span>Marking from <span id="markStartTime">0:00</span>...</span>
+    </div>
+    <input
+      id="markNoteInput"
+      type="text"
+      placeholder="Type a note (optional) - Press Enter to end mark"
+    />
+  </div>
+
   <script>
     console.log('[RegionSelector] Simple overlay loaded - VERSION 3.0 WITH CONTROL PANEL');
 
@@ -417,6 +475,11 @@
     let animationFrameId = null;
     let isMonitoring = false;
 
+    // Duration mark state
+    let isMarking = false;
+    let markStartTime = 0;
+    let markNoteText = '';
+
     const rectangleEl = document.getElementById('rectangle');
     const dimensionsEl = document.getElementById('dimensions');
     const startButton = document.getElementById('startButton');
@@ -436,6 +499,35 @@
       const secs = seconds % 60;
       return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
+
+    // Duration mark helper functions
+    function showMarkInput() {
+      const inputField = document.getElementById('durationMarkInput');
+      const noteInput = document.getElementById('markNoteInput');
+      inputField.style.display = 'flex';
+      noteInput.value = markNoteText;
+
+      // Force focus with a small delay to ensure the element is rendered
+      // and to handle cross-window focus issues
+      setTimeout(() => {
+        noteInput.focus();
+        console.log('[RegionSelector] Mark input focused');
+      }, 0);
+    }
+
+    function hideMarkInput() {
+      document.getElementById('durationMarkInput').style.display = 'none';
+      markNoteText = '';
+      console.log('[RegionSelector] Mark input hidden');
+    }
+
+    function updateMarkingIndicator(startSeconds) {
+      const mins = Math.floor(startSeconds / 60);
+      const secs = startSeconds % 60;
+      document.getElementById('markStartTime').textContent =
+        `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
     const instructions = document.getElementById('instructions');
     const controlPanel = document.getElementById('controlPanel');
 
@@ -1035,6 +1127,52 @@
       durationDisplay.textContent = formatDuration(duration);
     });
 
+    // Duration mark IPC listeners
+
+    // Listen for marking state updates from React
+    window.electronAPI.region.onMarkStateUpdate((marking, startTime) => {
+      isMarking = marking;
+      markStartTime = startTime || 0;
+
+      if (marking) {
+        console.log('[RegionSelector] Started marking at', startTime);
+        updateMarkingIndicator(markStartTime);
+        showMarkInput();
+      } else {
+        hideMarkInput();
+      }
+    });
+
+    // Listen for note updates from React modal
+    window.electronAPI.region.onMarkNoteUpdate((note) => {
+      // Don't log every keystroke - too noisy
+      markNoteText = note;
+      const noteInput = document.getElementById('markNoteInput');
+      if (noteInput && document.activeElement !== noteInput) {
+        // Only update if not currently typing
+        noteInput.value = note;
+      }
+    });
+
+    // Listen for cmd+h input field toggle
+    window.electronAPI.region.onInputFieldToggle(() => {
+      if (!isRecording) return;
+
+      // Don't send mark toggle back to React - the React modal already handles it!
+      // The overlay will receive the marking state update and show/hide the input field
+      console.log('[RegionSelector] Cmd+H pressed - waiting for marking state from React');
+    });
+
+    // Mark note input change handler
+    const markNoteInputEl = document.getElementById('markNoteInput');
+    if (markNoteInputEl) {
+      markNoteInputEl.addEventListener('input', (e) => {
+        markNoteText = e.target.value;
+        // Don't log every keystroke - too noisy
+        window.electronAPI.region.sendMarkNote(markNoteText);
+      });
+    }
+
     // Pause button handler
     pauseButton.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1072,12 +1210,16 @@
       btn.addEventListener('mouseup', (e) => e.stopPropagation());
     });
 
-    // ESC key to cancel
+    // ESC key to cancel, Enter key for duration marks
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         console.log('[RegionSelector] ESC pressed, canceling and cleaning up monitoring');
         stopMicrophoneMonitoring();
         window.electronAPI.region.cancel();
+      } else if (e.key === 'Enter' && isRecording) {
+        e.preventDefault();
+        console.log('[RegionSelector] Enter pressed, toggling mark');
+        window.electronAPI.region.sendMarkToggle();
       }
     });
 
@@ -1250,8 +1392,18 @@
         e.clientY <= controlsBounds.bottom
       );
 
-      // Toggle click-through: disable when over controls, enable otherwise
-      window.electronAPI.region.setClickThrough(!isOverControls);
+      // Check if mouse is over duration mark input field
+      const inputFieldEl = document.getElementById('durationMarkInput');
+      const inputFieldBounds = inputFieldEl?.getBoundingClientRect();
+      const isOverInputField = inputFieldBounds && (
+        e.clientX >= inputFieldBounds.left &&
+        e.clientX <= inputFieldBounds.right &&
+        e.clientY >= inputFieldBounds.top &&
+        e.clientY <= inputFieldBounds.bottom
+      );
+
+      // Toggle click-through: disable when over controls OR input field, enable otherwise
+      window.electronAPI.region.setClickThrough(!isOverControls && !isOverInputField);
     });
 
     // Debug: Log ALL clicks

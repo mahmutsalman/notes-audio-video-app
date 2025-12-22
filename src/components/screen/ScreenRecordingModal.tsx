@@ -63,11 +63,12 @@ export default function ScreenRecordingModal({
   }, [isOpen]);
 
   // Auto-focus note input when marking
+  // But skip auto-focus during region recording since user types in overlay
   useEffect(() => {
-    if (recorder.isMarking && noteInputRef.current) {
+    if (recorder.isMarking && noteInputRef.current && !recorder.captureArea) {
       noteInputRef.current.focus();
     }
-  }, [recorder.isMarking]);
+  }, [recorder.isMarking, recorder.captureArea]);
 
   // Log step changes for debugging
   useEffect(() => {
@@ -113,6 +114,64 @@ export default function ScreenRecordingModal({
     };
   }, [step, recorder]);
 
+  // Duration mark synchronization: Broadcast marking state to overlay
+  useEffect(() => {
+    if (step !== 'recording') return;
+
+    // Only log when marking state changes, not the start time updates
+    if (recorder.isMarking) {
+      console.log('[ScreenRecordingModal] Started marking at', recorder.pendingMarkStart);
+    }
+    window.electronAPI.region.sendMarkStateUpdate(
+      recorder.isMarking,
+      recorder.pendingMarkStart ?? 0
+    );
+  }, [step, recorder.isMarking, recorder.pendingMarkStart]);
+
+  // Duration mark synchronization: Listen for mark toggle from overlay
+  useEffect(() => {
+    if (step !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onMarkToggle(() => {
+      console.log('[ScreenRecordingModal] Mark toggled from overlay');
+      recorder.handleMarkToggle();
+    });
+
+    return () => cleanup();
+  }, [step, recorder]);
+
+  // Duration mark synchronization: Send note updates to overlay
+  useEffect(() => {
+    if (step !== 'recording' || !recorder.isMarking) return;
+
+    // Don't log every keystroke - too noisy
+    window.electronAPI.region.sendMarkNote(recorder.pendingMarkNote);
+  }, [step, recorder.isMarking, recorder.pendingMarkNote]);
+
+  // Duration mark synchronization: Listen for note updates from overlay
+  useEffect(() => {
+    if (step !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onMarkNoteUpdate((note) => {
+      // Don't log every keystroke - too noisy
+      recorder.setMarkNote(note);
+    });
+
+    return () => cleanup();
+  }, [step, recorder]);
+
+  // Listen for cmd+h input field toggle
+  useEffect(() => {
+    if (step !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onInputFieldToggle(() => {
+      console.log('[ScreenRecordingModal] Cmd+H pressed - toggling duration mark');
+      recorder.handleMarkToggle();
+    });
+
+    return () => cleanup();
+  }, [step, recorder]);
+
   // Keyboard shortcuts during recording
   useEffect(() => {
     if (step !== 'recording') return;
@@ -122,6 +181,13 @@ export default function ScreenRecordingModal({
 
       const target = e.target as HTMLElement;
       const isTypingNote = target === noteInputRef.current;
+
+      // Cmd+H (or Ctrl+H): Toggle duration mark input field
+      if ((e.metaKey || e.ctrlKey) && e.code === 'KeyH') {
+        e.preventDefault();
+        window.electronAPI.region.sendInputFieldToggle();
+        return;
+      }
 
       if (e.code === 'Space' && !isTypingNote) {
         e.preventDefault();
