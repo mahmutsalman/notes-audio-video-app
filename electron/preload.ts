@@ -390,6 +390,8 @@ const electronAPI = {
   screen: {
     getAllDisplays: (): Promise<any[]> =>
       ipcRenderer.invoke('screen:getAllDisplays'),
+    getCursorScreenPoint: (): Promise<{ x: number; y: number }> =>
+      ipcRenderer.invoke('screen:getCursorScreenPoint'),
   },
 };
 

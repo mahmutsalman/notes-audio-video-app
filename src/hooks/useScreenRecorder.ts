@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { fixWebmMetadata } from '../utils/webmFixer';
 import { createCroppedStream, getDisplaySourceId, calculateBitrate } from '../utils/regionCapture';
 import { createMicrophoneStream, combineAudioStreams, getBlackHoleDevice } from '../utils/audioCapture';
+import { SpaceDetector } from '../utils/spaceDetector';
 import { RESOLUTION_PRESETS, useScreenRecordingSettings } from '../context/ScreenRecordingSettingsContext';
 import type { CaptureArea } from '../types';
 
@@ -86,6 +87,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   const accumulatedTimeRef = useRef<number>(0);
   const regionCleanupRef = useRef<(() => void) | null>(null);
   const audioStreamsRef = useRef<MediaStream[]>([]);
+  const spaceDetectorRef = useRef<SpaceDetector | null>(null);
+  const updateSourceRef = useRef<((newSourceId: string) => Promise<void>) | null>(null);
 
   // Duration marking state (same pattern as audio)
   const [pendingMarkStart, setPendingMarkStart] = useState<number | null>(null);
@@ -100,6 +103,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
       if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
+
+      // Cleanup Space detector
+      if (spaceDetectorRef.current) {
+        spaceDetectorRef.current.stop();
+        spaceDetectorRef.current = null;
+      }
     };
   }, [state.videoUrl]);
 
@@ -297,7 +306,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
       // Create cropped video stream using canvas
       console.log('[useScreenRecorder] Creating cropped video stream');
-      const { stream: videoStream, cleanup } = await createCroppedStream(
+      const { stream: videoStream, cleanup, updateSource } = await createCroppedStream(
         sourceId,
         region,
         actualFPS,
@@ -305,6 +314,22 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       );
       console.log('[useScreenRecorder] Cropped video stream created');
       regionCleanupRef.current = cleanup;
+      updateSourceRef.current = updateSource;
+
+      // Start Space detector for automatic source switching
+      console.log('[useScreenRecorder] Starting Space detector');
+      spaceDetectorRef.current = new SpaceDetector();
+      await spaceDetectorRef.current.start(
+        sourceId,
+        region.displayId,
+        async (newSourceId) => {
+          console.log('[useScreenRecorder] 🔄 Space switch detected, updating source');
+          if (updateSourceRef.current) {
+            await updateSourceRef.current(newSourceId);
+          }
+        }
+      );
+      console.log('[useScreenRecorder] Space detector started');
 
       // Create audio streams if enabled (Phase 3)
       const audioStreams: MediaStream[] = [];
@@ -467,6 +492,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
+
+      // Stop Space detector
+      if (spaceDetectorRef.current) {
+        spaceDetectorRef.current.stop();
+        spaceDetectorRef.current = null;
+      }
+      updateSourceRef.current = null;
 
       // Auto-complete pending mark (same as audio)
       if (pendingMarkStart !== null) {

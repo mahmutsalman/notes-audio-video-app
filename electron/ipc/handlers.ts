@@ -898,5 +898,10 @@ export function setupIpcHandlers(): void {
     return screen.getAllDisplays();
   });
 
+  ipcMain.handle('screen:getCursorScreenPoint', async () => {
+    const { screen } = await import('electron');
+    return screen.getCursorScreenPoint();
+  });
+
   console.log('IPC handlers registered');
 }

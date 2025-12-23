@@ -442,6 +442,7 @@ export interface ElectronAPI {
   };
   screen: {
     getAllDisplays: () => Promise<any[]>;
+    getCursorScreenPoint: () => Promise<{ x: number; y: number }>;
   };
 }
 
