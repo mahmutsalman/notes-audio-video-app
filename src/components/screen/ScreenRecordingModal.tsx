@@ -53,11 +53,12 @@ export default function ScreenRecordingModal({
     // but the listener will be cleaned up by then since step changed to 'saving'
     window.electronAPI.region.stopRecording();
 
-    const blob = await recorder.stopRecording();
+    const result = await recorder.stopRecording();
 
-    if (blob) {
+    if (result) {
       try {
-        await onSave(blob, recorder.completedMarks);
+        // Pass duration in milliseconds as third parameter
+        await onSave(result.blob, recorder.completedMarks, result.durationMs);
         handleClose();
       } catch (error) {
         console.error('Failed to save recording:', error);

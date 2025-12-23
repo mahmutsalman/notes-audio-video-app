@@ -455,7 +455,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     }
   }, []);
 
-  const stopRecording = useCallback(async (): Promise<Blob | null> => {
+  const stopRecording = useCallback(async (): Promise<{ blob: Blob; durationMs: number } | null> => {
     return new Promise((resolve) => {
       const mediaRecorder = mediaRecorderRef.current;
       if (!mediaRecorder || mediaRecorder.state === 'inactive') {
@@ -526,7 +526,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
           regionCleanupRef.current = null;
         }
 
-        resolve(blob);
+        resolve({ blob, durationMs });
       };
 
       mediaRecorder.stop();

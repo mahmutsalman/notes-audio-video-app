@@ -4,12 +4,66 @@ import path from 'path';
 import { app } from 'electron';
 import fs from 'fs';
 
+interface RetryOptions {
+  maxRetries: number;
+  initialDelayMs: number;
+  maxDelayMs: number;
+  backoffMultiplier: number;
+}
+
+const DEFAULT_RETRY_OPTIONS: RetryOptions = {
+  maxRetries: 3,
+  initialDelayMs: 200,
+  maxDelayMs: 1000,
+  backoffMultiplier: 2
+};
+
+/**
+ * Retry an async operation with exponential backoff.
+ */
+async function retryWithBackoff<T>(
+  operation: () => Promise<T>,
+  options: Partial<RetryOptions> = {}
+): Promise<T> {
+  const config = { ...DEFAULT_RETRY_OPTIONS, ...options };
+  let lastError: Error | unknown;
+
+  for (let attempt = 0; attempt < config.maxRetries; attempt++) {
+    try {
+      const delayMs = Math.min(
+        config.initialDelayMs * Math.pow(config.backoffMultiplier, attempt),
+        config.maxDelayMs
+      );
+
+      if (attempt > 0) {
+        console.log(
+          `[videoMetadata] Retry attempt ${attempt + 1}/${config.maxRetries} ` +
+          `after ${delayMs}ms delay`
+        );
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      console.warn(
+        `[videoMetadata] Attempt ${attempt + 1}/${config.maxRetries} failed:`,
+        error instanceof Error ? error.message : error
+      );
+    }
+  }
+
+  throw lastError;
+}
+
 export interface VideoMetadata {
   duration: number | null;  // Duration in seconds
   width?: number;
   height?: number;
   fps?: number;
   codec?: string;
+  source?: 'ffprobe' | 'fallback';  // Track duration source
+  error?: string;  // Error message if extraction failed
 }
 
 /**
@@ -70,36 +124,146 @@ function getFfprobePath(): string {
   return prodPath;
 }
 
-export async function getVideoMetadata(filePath: string): Promise<VideoMetadata> {
-  try {
-    const ffprobePath = getFfprobePath();
+export async function getVideoMetadata(
+  filePath: string,
+  fallbackDurationMs?: number
+): Promise<VideoMetadata> {
+  const ffprobePath = getFfprobePath();
 
-    // Verify ffprobe exists before trying to use it
-    if (!fs.existsSync(ffprobePath)) {
-      console.error('[videoMetadata] ffprobe not found at:', ffprobePath);
-      console.error('[videoMetadata] ffprobe-static.path:', ffprobeStatic.path);
-      console.error('[videoMetadata] app.getAppPath():', app.getAppPath());
-      throw new Error(`ffprobe binary not found at: ${ffprobePath}`);
+  // Step 1: Verify FFprobe binary exists
+  if (!fs.existsSync(ffprobePath)) {
+    const error = `FFprobe binary not found at: ${ffprobePath}`;
+    console.error('[videoMetadata]', error);
+
+    if (fallbackDurationMs) {
+      return {
+        duration: Math.floor(fallbackDurationMs / 1000),
+        source: 'fallback',
+        error
+      };
     }
 
-    const info = await ffprobe(filePath, { path: ffprobePath });
+    return { duration: null, error };
+  }
 
-    // Try to get duration from streams first, then format
-    const duration = info.streams[0]?.duration || info.format?.duration || null;
+  // Step 2: Verify input file exists and is readable
+  try {
+    const stats = fs.statSync(filePath);
+    console.log('[videoMetadata] Input file verified:', {
+      path: filePath.split('/').pop(),
+      exists: true,
+      size: stats.size,
+      readable: (stats.mode & fs.constants.R_OK) !== 0
+    });
 
-    // Get video stream metadata
-    const videoStream = info.streams.find((s: any) => s.codec_type === 'video');
+    if (stats.size === 0) {
+      throw new Error('Input file is empty (0 bytes)');
+    }
+  } catch (error) {
+    const errorMsg = `Failed to verify input file: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    console.error('[videoMetadata]', errorMsg);
 
-    return {
-      duration: duration ? Math.floor(parseFloat(duration.toString())) : null,
-      width: videoStream?.width,
-      height: videoStream?.height,
-      fps: videoStream?.r_frame_rate ? parseFloat(videoStream.r_frame_rate.split('/')[0]) / parseFloat(videoStream.r_frame_rate.split('/')[1]) : undefined,
-      codec: videoStream?.codec_name,
-    };
+    if (fallbackDurationMs) {
+      return {
+        duration: Math.floor(fallbackDurationMs / 1000),
+        source: 'fallback',
+        error: errorMsg
+      };
+    }
+
+    return { duration: null, error: errorMsg };
+  }
+
+  // Step 3: Attempt FFprobe extraction with retry logic
+  try {
+    const result = await retryWithBackoff(async () => {
+      console.log('[videoMetadata] Executing FFprobe on:', filePath.split('/').pop());
+      console.log('[videoMetadata] Using FFprobe binary:', ffprobePath);
+
+      const info = await ffprobe(filePath, { path: ffprobePath });
+
+      // Try to get duration from streams first, then format
+      const duration = info.streams[0]?.duration || info.format?.duration || null;
+
+      // Validate duration was found
+      if (duration === null || duration === undefined) {
+        throw new Error('FFprobe returned no duration in streams or format metadata');
+      }
+
+      // Get video stream metadata
+      const videoStream = info.streams.find((s: any) => s.codec_type === 'video');
+
+      console.log('[videoMetadata] ✓ FFprobe extraction successful:', {
+        file: filePath.split('/').pop(),
+        streamDuration: info.streams[0]?.duration,
+        formatDuration: info.format?.duration,
+        finalDuration: duration,
+        codec: videoStream?.codec_name,
+        dimensions: `${videoStream?.width}x${videoStream?.height}`,
+        fps: videoStream?.r_frame_rate
+      });
+
+      return {
+        duration: Math.floor(parseFloat(duration.toString())),
+        width: videoStream?.width,
+        height: videoStream?.height,
+        fps: videoStream?.r_frame_rate
+          ? parseFloat(videoStream.r_frame_rate.split('/')[0]) /
+            parseFloat(videoStream.r_frame_rate.split('/')[1])
+          : undefined,
+        codec: videoStream?.codec_name,
+        source: 'ffprobe' as const
+      };
+    }, {
+      maxRetries: 3,
+      initialDelayMs: 200,
+      maxDelayMs: 1000,
+      backoffMultiplier: 2
+    });
+
+    return result;
+
   } catch (err) {
-    console.error('[videoMetadata] Error extracting metadata from:', filePath);
-    console.error('[videoMetadata] Error details:', err);
-    return { duration: null };
+    // Step 4: FFprobe failed after all retries - use fallback
+    const errorMsg = err instanceof Error ? err.message : String(err);
+
+    console.error('[videoMetadata] ===== FFPROBE FAILED AFTER RETRIES =====');
+    console.error('[videoMetadata] File:', filePath.split('/').pop());
+    console.error('[videoMetadata] Error type:', err instanceof Error ? err.constructor.name : typeof err);
+    console.error('[videoMetadata] Error message:', errorMsg);
+    console.error('[videoMetadata] Full error:', err);
+
+    // Check file integrity one more time
+    if (fs.existsSync(filePath)) {
+      const stats = fs.statSync(filePath);
+      console.error('[videoMetadata] File exists: true');
+      console.error('[videoMetadata] File size:', stats.size, 'bytes');
+      console.error('[videoMetadata] File permissions:', stats.mode.toString(8));
+    } else {
+      console.error('[videoMetadata] File exists: false');
+    }
+
+    console.error('[videoMetadata] ================================================');
+
+    // Use fallback if available
+    if (fallbackDurationMs) {
+      const fallbackDuration = Math.floor(fallbackDurationMs / 1000);
+      console.warn('[videoMetadata] ⚠️  Using fallback duration:', fallbackDuration, 's');
+
+      return {
+        duration: fallbackDuration,
+        source: 'fallback',
+        error: errorMsg
+      };
+    }
+
+    // No fallback available - complete failure
+    console.error('[videoMetadata] ✗ No fallback duration available');
+    return {
+      duration: null,
+      error: errorMsg
+    };
   }
 }

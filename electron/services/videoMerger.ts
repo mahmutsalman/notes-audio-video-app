@@ -267,19 +267,42 @@ export async function mergeVideoFiles(
     console.log('[VideoMerger] Step 4: Replacing original file...');
     await fs.copyFile(outputPath, originalPath);
 
-    // Step 5: Cleanup temp files
-    console.log('[VideoMerger] Step 5: Cleaning up...');
+    // Step 5: Extract actual duration from merged file
+    console.log('[VideoMerger] Step 5: Extracting actual duration...');
+    const { getVideoMetadata } = await import('./videoMetadata');
+    const metadata = await getVideoMetadata(originalPath);
+    const calculatedDurationMs = originalDurationMs + extensionDurationMs;
+    const actualDurationMs = metadata.duration ? metadata.duration * 1000 : calculatedDurationMs;
+
+    console.log('[VideoMerger] ===== DURATION EXTRACTION DEBUG =====');
+    console.log('[VideoMerger] FFprobe result:', {
+      filePath: originalPath.split('/').pop(),
+      rawMetadata: {
+        duration: metadata.duration,
+        codec: metadata.codec,
+        width: metadata.width,
+        height: metadata.height
+      },
+      ffprobeSucceeded: metadata.duration !== null,
+      ffprobeValue: metadata.duration,
+      calculatedValue: Math.floor(calculatedDurationMs / 1000),
+      actualValue: Math.floor(actualDurationMs / 1000),
+      usingFFprobe: metadata.duration !== null
+    });
+    console.log('[VideoMerger] ======================================');
+
+    // Step 6: Cleanup temp files
+    console.log('[VideoMerger] Step 6: Cleaning up...');
     await fs.rm(tempDir, { recursive: true, force: true });
 
-    const totalDurationMs = originalDurationMs + extensionDurationMs;
     const totalTime = (performance.now() - startTime) / 1000;
 
     console.log(`[VideoMerger] TOTAL merge time: ${totalTime.toFixed(2)}s`);
-    console.log(`[VideoMerger] Speed: ${((totalDurationMs / 1000) / totalTime).toFixed(1)}x realtime`);
+    console.log(`[VideoMerger] Speed: ${((actualDurationMs / 1000) / totalTime).toFixed(1)}x realtime`);
 
     return {
       success: true,
-      totalDurationMs,
+      totalDurationMs: actualDurationMs, // Use actual duration instead of calculated
       outputFormat,
       outputPath: originalPath
     };

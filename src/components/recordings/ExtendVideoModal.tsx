@@ -33,6 +33,25 @@ export default function ExtendVideoModal({
 
   const recorder = useScreenRecorder();
 
+  // Fetch fresh recording data when modal opens (prevents stale duration offset)
+  const [currentRecording, setCurrentRecording] = useState(recording);
+
+  useEffect(() => {
+    if (isOpen) {
+      const fetchFreshRecording = async () => {
+        const fresh = await window.electronAPI.recordings.getById(recording.id);
+        if (fresh) {
+          console.log('[ExtendVideoModal] Loaded fresh recording:', {
+            oldDuration: recording.video_duration,
+            freshDuration: fresh.video_duration
+          });
+          setCurrentRecording(fresh);
+        }
+      };
+      fetchFreshRecording();
+    }
+  }, [isOpen, recording.id]);
+
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -68,6 +87,88 @@ export default function ExtendVideoModal({
       };
     }
   }, [isOpen, phase, recorder]);
+
+  // Send duration updates to overlay
+  useEffect(() => {
+    if (phase !== 'recording' || !recorder.isRecording) return;
+
+    window.electronAPI.region.updateDuration(recorder.duration);
+  }, [phase, recorder.isRecording, recorder.duration]);
+
+  // Listen for pause/resume from overlay
+  useEffect(() => {
+    if (phase !== 'recording') return;
+
+    const cleanupPause = window.electronAPI.region.onPauseRecording(() => {
+      recorder.pauseRecording();
+    });
+
+    const cleanupResume = window.electronAPI.region.onResumeRecording(() => {
+      recorder.resumeRecording();
+    });
+
+    return () => {
+      cleanupPause();
+      cleanupResume();
+    };
+  }, [phase, recorder]);
+
+  // Listen for stop recording from overlay
+  useEffect(() => {
+    if (phase !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onRecordingStop(() => {
+      console.log('[ExtendVideoModal] Stop button clicked on overlay');
+      handleStopRecording();
+    });
+
+    return () => cleanup();
+  }, [phase]);
+
+  // Listen for Cmd+H input field toggle
+  useEffect(() => {
+    if (phase !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onInputFieldToggle(() => {
+      console.log('[ExtendVideoModal] Cmd+H pressed - toggling duration mark');
+      recorder.handleMarkToggle();
+    });
+
+    return () => cleanup();
+  }, [phase, recorder]);
+
+  // Synchronize marking state to overlay (enables input field to appear)
+  useEffect(() => {
+    if (phase !== 'recording') return;
+
+    console.log('[ExtendVideoModal] Sending mark state to overlay:', {
+      isMarking: recorder.isMarking,
+      startTime: recorder.pendingMarkStart ?? 0
+    });
+
+    window.electronAPI.region.sendMarkStateUpdate(
+      recorder.isMarking,
+      recorder.pendingMarkStart ?? 0
+    );
+  }, [phase, recorder.isMarking, recorder.pendingMarkStart]);
+
+  // Send note updates to overlay
+  useEffect(() => {
+    if (phase !== 'recording' || !recorder.isMarking) return;
+
+    window.electronAPI.region.sendMarkNote(recorder.pendingMarkNote);
+  }, [phase, recorder.isMarking, recorder.pendingMarkNote]);
+
+  // Listen for note updates from overlay
+  useEffect(() => {
+    if (phase !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onMarkNoteUpdate((note) => {
+      recorder.setMarkNote(note);
+    });
+
+    return () => cleanup();
+  }, [phase, recorder]);
 
   const handleClose = () => {
     if (isMerging) return; // Prevent closing during merge
@@ -162,7 +263,7 @@ export default function ExtendVideoModal({
 
     try {
       // 1. Calculate durations
-      const originalDurationMs = (recording.video_duration ?? 0) * 1000;
+      const originalDurationMs = (currentRecording.video_duration ?? 0) * 1000;
       const extensionDurationMs = recorder.duration * 1000;
 
       // 2. Get extension as ArrayBuffer
@@ -184,12 +285,34 @@ export default function ExtendVideoModal({
       console.log('[ExtendVideo] Video merged successfully');
 
       // 4. Update recording duration in database
-      await window.electronAPI.recordings.update(recording.id, {
-        video_duration: Math.floor(result.totalDurationMs / 1000)
+      const durationToSave = Math.floor(result.totalDurationMs / 1000);
+
+      console.log('[ExtendVideo] ===== DATABASE UPDATE DEBUG =====');
+      console.log('[ExtendVideo] Update details:', {
+        recordingId: recording.id,
+        recordingName: recording.name || 'Unnamed',
+        beforeUpdate: {
+          originalDuration: currentRecording.video_duration,
+          extensionDuration: recorder.duration,
+          formatted: formatDuration(currentRecording.video_duration)
+        },
+        mergeResult: {
+          totalDurationMs: result.totalDurationMs,
+          totalDurationSeconds: durationToSave,
+          formatted: formatDuration(durationToSave)
+        },
+        willSaveToDB: durationToSave
       });
 
+      await window.electronAPI.recordings.update(recording.id, {
+        video_duration: durationToSave
+      });
+
+      console.log('[ExtendVideo] Database update completed for recording ID:', recording.id);
+      console.log('[ExtendVideo] ===================================');
+
       // 5. Save duration marks with offset timestamps (adjusted for original duration)
-      const offsetSeconds = recording.video_duration ?? 0;
+      const offsetSeconds = currentRecording.video_duration ?? 0;
       for (const mark of recorder.completedMarks) {
         await window.electronAPI.durations.create({
           recording_id: recording.id,
@@ -221,7 +344,7 @@ export default function ExtendVideoModal({
     }
   };
 
-  const originalDuration = recording.video_duration ?? 0;
+  const originalDuration = currentRecording.video_duration ?? 0;
 
   return (
     <Modal

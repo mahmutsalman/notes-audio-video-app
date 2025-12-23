@@ -175,12 +175,66 @@ export async function saveVideoFromBuffer(
   return { filePath, thumbnailPath, duration };
 }
 
+/**
+ * Verify file is fully written and readable before FFprobe attempts to read it.
+ * Uses exponential backoff to handle OS-level file I/O delays.
+ */
+async function verifyFileReady(
+  filePath: string,
+  expectedSize: number,
+  maxRetries: number = 5
+): Promise<boolean> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // 1. Check file exists
+      const stats = await fs.stat(filePath);
+
+      // 2. Verify size matches (file write complete)
+      if (stats.size !== expectedSize) {
+        console.warn(
+          `[FileStorage] File size mismatch attempt ${attempt + 1}: ` +
+          `expected ${expectedSize}, got ${stats.size}`
+        );
+        await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+        continue;
+      }
+
+      // 3. Verify file is readable (no exclusive locks)
+      const fd = await fs.open(filePath, 'r');
+      await fd.close();
+
+      console.log(`[FileStorage] ✓ File verified ready on attempt ${attempt + 1}`);
+      return true;
+    } catch (error) {
+      console.warn(
+        `[FileStorage] Verification attempt ${attempt + 1} failed:`,
+        error instanceof Error ? error.message : error
+      );
+
+      // Exponential backoff: 100ms, 200ms, 400ms, 800ms, 1600ms
+      await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempt)));
+    }
+  }
+
+  console.error(`[FileStorage] ✗ File verification failed after ${maxRetries} attempts`);
+  return false;
+}
+
 export async function saveScreenRecording(
   recordingId: number,
   videoBuffer: ArrayBuffer,
   resolution: string,
-  fps: number
-): Promise<{ filePath: string; thumbnailPath: string | null; duration: number | null; fileSize: number }> {
+  fps: number,
+  fallbackDurationMs?: number
+): Promise<{
+  filePath: string;
+  thumbnailPath: string | null;
+  duration: number | null;
+  fileSize: number;
+  durationSource: 'ffprobe' | 'fallback' | 'failed';
+  extractionError?: string;
+  usedFallback: boolean;
+}> {
   const dir = path.join(getMediaDir(), 'screen_recordings', String(recordingId));
   const thumbDir = path.join(dir, 'thumbnails');
   await fs.mkdir(thumbDir, { recursive: true });
@@ -197,16 +251,74 @@ export async function saveScreenRecording(
   const fileSize = buffer.length;
   console.log('Screen recording saved to:', filePath, `(${fileSize} bytes)`);
 
+  // Verify file is fully written and readable
+  const fileReady = await verifyFileReady(filePath, fileSize);
+
+  if (!fileReady) {
+    console.error('[FileStorage] ✗ File verification failed - FFprobe will likely fail');
+  } else {
+    console.log('[FileStorage] ✓ File verified ready for FFprobe');
+  }
+
   // Generate thumbnail using canvas-based approach
   const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
   const thumbnailPath = await generateVideoThumbnail(filePath, thumbPath);
 
-  // Extract video duration from metadata
-  const metadata = await getVideoMetadata(filePath);
-  const duration = metadata.duration;
-  console.log(`[FileStorage] Video duration: ${duration}s`);
+  // Extract duration with enhanced error handling
+  let duration: number | null = null;
+  let durationSource: 'ffprobe' | 'fallback' | 'failed' = 'failed';
+  let extractionError: string | undefined;
+  let usedFallback = false;
 
-  return { filePath, thumbnailPath, duration, fileSize };
+  try {
+    const metadata = await getVideoMetadata(filePath, fallbackDurationMs);
+
+    if (metadata.duration !== null) {
+      duration = metadata.duration;
+      durationSource = metadata.source || 'ffprobe';
+      usedFallback = metadata.source === 'fallback';
+
+      if (usedFallback) {
+        console.warn('[FileStorage] ⚠️  Using fallback duration:', duration, 's');
+        extractionError = metadata.error;
+      } else {
+        console.log('[FileStorage] ✓ FFprobe extraction successful:', duration, 's');
+      }
+    } else {
+      extractionError = metadata.error || 'Unknown FFprobe error';
+      console.error('[FileStorage] ✗ Duration extraction completely failed');
+    }
+  } catch (err) {
+    extractionError = err instanceof Error ? err.message : String(err);
+    console.error('[FileStorage] Exception during duration extraction:', extractionError);
+  }
+
+  // Final fallback: use client duration if everything failed
+  if (duration === null && fallbackDurationMs) {
+    duration = Math.floor(fallbackDurationMs / 1000);
+    durationSource = 'fallback';
+    usedFallback = true;
+    console.warn('[FileStorage] ⚠️  Using client-provided fallback:', duration, 's');
+  }
+
+  console.log('[FileStorage] ===== DURATION EXTRACTION SUMMARY =====');
+  console.log('[FileStorage] File:', filePath.split('/').pop());
+  console.log('[FileStorage] Size:', fileSize, 'bytes');
+  console.log('[FileStorage] Duration:', duration, 's');
+  console.log('[FileStorage] Source:', durationSource);
+  console.log('[FileStorage] Used Fallback:', usedFallback);
+  console.log('[FileStorage] Error:', extractionError || 'none');
+  console.log('[FileStorage] ==========================================');
+
+  return {
+    filePath,
+    thumbnailPath,
+    duration,
+    fileSize,
+    durationSource,
+    extractionError,
+    usedFallback
+  };
 }
 
 export async function saveDurationImageFromBuffer(

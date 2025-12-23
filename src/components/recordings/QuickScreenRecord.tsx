@@ -28,7 +28,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
     setIsOpen(false);
   };
 
-  const handleSave = async (videoBlob: Blob, marks: any[]) => {
+  const handleSave = async (videoBlob: Blob, marks: any[], durationMs: number) => {
     setIsSaving(true);
 
     try {
@@ -52,22 +52,40 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
 
       console.log('[QuickScreenRecord] Recording created with ID:', recording.id);
 
-      // Save the video file
+      // Save the video file with client-calculated duration as fallback
       const arrayBuffer = await videoBlob.arrayBuffer();
-      const { filePath, duration } = await window.electronAPI.screenRecording.saveFile(
+      const result = await window.electronAPI.screenRecording.saveFile(
         recording.id,
         arrayBuffer,
         resolution,
-        fps
+        fps,
+        durationMs
       );
+
+      console.log('[QuickScreenRecord] Video file saved:', result.filePath);
+
+      // Enhanced debug logging
+      if (result._debug) {
+        if (result._debug.usedFallback) {
+          console.warn('[QuickScreenRecord] ⚠️  Used fallback duration (FFprobe failed)');
+          console.warn('[QuickScreenRecord] FFprobe error:', result._debug.extractionError);
+        } else if (result._debug.durationExtracted) {
+          console.log('[QuickScreenRecord] ✓ FFprobe extraction successful');
+        }
+      }
+
+      if (result.duration === null) {
+        console.error('[QuickScreenRecord] ❌ CRITICAL: Duration extraction completely failed');
+        console.error('[QuickScreenRecord] This should never happen with fallback enabled');
+      }
 
       // Update the recording with the actual video path and duration
       await window.electronAPI.recordings.update(recording.id, {
-        video_path: filePath,
-        video_duration: duration,
+        video_path: result.filePath,
+        video_duration: result.duration,
       });
 
-      console.log('[QuickScreenRecord] Video file saved:', filePath);
+      console.log('[QuickScreenRecord] Recording updated with duration:', result.duration);
 
       // Save duration marks
       for (const mark of marks) {

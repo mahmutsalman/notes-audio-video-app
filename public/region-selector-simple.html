@@ -1194,6 +1194,18 @@
         // Don't log every keystroke - too noisy
         window.electronAPI.region.sendMarkNote(markNoteText);
       });
+
+      // Listen for Enter key on the input field to finalize mark
+      markNoteInputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && isRecording) {
+          e.preventDefault();
+          e.stopPropagation(); // Prevent document listener from also firing
+          console.log('[RegionSelector] Enter pressed in input field - finalizing mark');
+
+          // Send the mark toggle to end the marking
+          window.electronAPI.region.sendMarkToggle();
+        }
+      });
     }
 
     // Pause button handler

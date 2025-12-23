@@ -540,16 +540,42 @@ export function setupIpcHandlers(): void {
     recordingId: number,
     videoBuffer: ArrayBuffer,
     resolution: string,
-    fps: number
+    fps: number,
+    fallbackDurationMs?: number
   ) => {
-    const { saveScreenRecording } = await import('../services/fileStorage');
-    const { filePath, duration } = await saveScreenRecording(
-      recordingId,
-      videoBuffer,
-      resolution,
-      fps
-    );
-    return { filePath, duration };
+    try {
+      const { saveScreenRecording } = await import('../services/fileStorage');
+      const result = await saveScreenRecording(
+        recordingId,
+        videoBuffer,
+        resolution,
+        fps,
+        fallbackDurationMs
+      );
+
+      // Enhanced error reporting
+      if (result.duration === null && result.extractionError) {
+        console.error('[IPC] FFprobe extraction failed:', result.extractionError);
+      }
+
+      if (result.usedFallback) {
+        console.warn('[IPC] Using fallback duration:', result.duration, 's');
+      }
+
+      return {
+        filePath: result.filePath,
+        duration: result.duration,
+        _debug: {
+          durationExtracted: result.durationSource === 'ffprobe',
+          usedFallback: result.durationSource === 'fallback',
+          extractionError: result.extractionError,
+          fileSize: result.fileSize
+        }
+      };
+    } catch (error) {
+      console.error('[IPC] Error saving screen recording:', error);
+      throw error;
+    }
   });
 
   // ============ Video Compression ============
