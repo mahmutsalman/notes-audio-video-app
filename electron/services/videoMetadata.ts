@@ -12,24 +12,62 @@ export interface VideoMetadata {
   codec?: string;
 }
 
+/**
+ * Get FFprobe binary path for both development and production.
+ * FFprobe has platform-specific subdirectories: bin/{platform}/{arch}/ffprobe
+ * Development: node_modules/ffprobe-static/bin/darwin/arm64/ffprobe
+ * Production: app.asar.unpacked/node_modules/ffprobe-static/bin/darwin/arm64/ffprobe
+ */
 function getFfprobePath(): string {
-  // First try the default path from ffprobe-static
-  let ffprobePath = ffprobeStatic.path;
+  const isDev = !app.isPackaged;
 
-  // In development, ffprobe-static.path should work correctly
-  // In production, we need to resolve it relative to the app
-  if (!fs.existsSync(ffprobePath)) {
-    // Try to resolve relative to app path
-    const appPath = app.getAppPath();
-    // Replace node_modules with the actual location in the app bundle
-    const relativePath = ffprobePath.split('node_modules')[1];
-    if (relativePath) {
-      ffprobePath = path.join(appPath, 'node_modules', relativePath);
-    }
+  // Platform-specific path components
+  const platform = process.platform; // 'darwin', 'linux', 'win32'
+  const arch = process.arch; // 'arm64', 'x64'
+  const binaryName = platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+  const relativePath = path.join('bin', platform, arch, binaryName);
+
+  if (isDev) {
+    const devPath = path.join(
+      app.getAppPath(),
+      'node_modules',
+      'ffprobe-static',
+      relativePath
+    );
+    console.log('[videoMetadata] Development mode');
+    console.log('[videoMetadata] Platform:', platform, 'Arch:', arch);
+    console.log('[videoMetadata] FFprobe path:', devPath);
+    return devPath;
   }
 
-  console.log('[videoMetadata] Using ffprobe path:', ffprobePath);
-  return ffprobePath;
+  // Production: Use process.resourcesPath
+  const prodPath = path.join(
+    process.resourcesPath,
+    'app.asar.unpacked',
+    'node_modules',
+    'ffprobe-static',
+    relativePath
+  );
+  console.log('[videoMetadata] Production mode');
+  console.log('[videoMetadata] Platform:', platform, 'Arch:', arch);
+  console.log('[videoMetadata] process.resourcesPath:', process.resourcesPath);
+  console.log('[videoMetadata] FFprobe path:', prodPath);
+
+  // Verify and provide detailed error if missing
+  if (!fs.existsSync(prodPath)) {
+    const errorMsg = [
+      'FFprobe binary not found at expected production path',
+      `Expected: ${prodPath}`,
+      `Platform: ${platform}, Arch: ${arch}`,
+      `process.resourcesPath: ${process.resourcesPath}`,
+      'Binary may not have been unpacked during build.',
+      'Check package.json asarUnpack configuration.'
+    ].join('\n');
+    console.error('[videoMetadata]', errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  return prodPath;
 }
 
 export async function getVideoMetadata(filePath: string): Promise<VideoMetadata> {

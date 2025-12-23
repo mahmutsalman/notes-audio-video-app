@@ -25,37 +25,47 @@ export interface CompressionProgress {
   speed: string;
 }
 
+/**
+ * Get FFmpeg binary path for both development and production.
+ * Development: node_modules/ffmpeg-static/ffmpeg
+ * Production: app.asar.unpacked/node_modules/ffmpeg-static/ffmpeg
+ */
 function getFfmpegPath(): string {
-  // Get app path - in dev this is project root, in prod it's app.asar
-  const appPath = app.getAppPath();
-  console.log('[videoCompression] App path:', appPath);
+  const isDev = !app.isPackaged;
 
-  // Construct paths to try
-  const pathsToTry = [
-    // 1. Development: project_root/node_modules/ffmpeg-static/ffmpeg
-    path.join(appPath, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-
-    // 2. Production (macOS): app.asar.unpacked
-    path.join(path.dirname(appPath), 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-
-    // 3. Try the ffmpeg-static path as-is (might work in some cases)
-    ffmpegStatic as string,
-  ];
-
-  // Try each path
-  for (const tryPath of pathsToTry) {
-    console.log('[videoCompression] Trying path:', tryPath);
-    if (fs.existsSync(tryPath)) {
-      console.log('[videoCompression] ✓ Found ffmpeg at:', tryPath);
-      return tryPath;
-    }
-    console.log('[videoCompression] ✗ Not found');
+  if (isDev) {
+    const devPath = path.join(app.getAppPath(), 'node_modules', 'ffmpeg-static', 'ffmpeg');
+    console.log('[videoCompression] Development mode');
+    console.log('[videoCompression] FFmpeg path:', devPath);
+    return devPath;
   }
 
-  // Fallback to ffmpeg-static default (will likely fail, but return it anyway)
-  const fallbackPath = ffmpegStatic as string;
-  console.log('[videoCompression] ⚠️ Using fallback path:', fallbackPath);
-  return fallbackPath;
+  // Production: Use process.resourcesPath (NOT path.dirname(appPath))
+  const prodPath = path.join(
+    process.resourcesPath,
+    'app.asar.unpacked',
+    'node_modules',
+    'ffmpeg-static',
+    'ffmpeg'
+  );
+  console.log('[videoCompression] Production mode');
+  console.log('[videoCompression] process.resourcesPath:', process.resourcesPath);
+  console.log('[videoCompression] FFmpeg path:', prodPath);
+
+  // Verify and provide detailed error if missing
+  if (!fs.existsSync(prodPath)) {
+    const errorMsg = [
+      'FFmpeg binary not found at expected production path',
+      `Expected: ${prodPath}`,
+      `process.resourcesPath: ${process.resourcesPath}`,
+      'Binary may not have been unpacked during build.',
+      'Check package.json asarUnpack configuration.'
+    ].join('\n');
+    console.error('[videoCompression]', errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  return prodPath;
 }
 
 /**
