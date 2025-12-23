@@ -1,7 +1,5 @@
-import { getDisplaySourceId } from './regionCapture';
-
 export interface SpaceSwitchCallback {
-  (newSourceId: string, newDisplayId: string): void | Promise<void>;
+  (newSourceId: string, newDisplayId: string, force?: boolean): void | Promise<void>;
 }
 
 /**
@@ -23,8 +21,12 @@ export interface SpaceSwitchCallback {
 export class SpaceDetector {
   private currentSourceId: string | null = null;
   private currentDisplayId: string | null = null;
+  private recordedDisplayId: string | null = null; // Track which display we're recording
   private pollInterval: NodeJS.Timeout | null = null;
   private isActive: boolean = false;
+  private lastWindowCount: number = 0; // Track window count for Space transition detection
+  private consecutiveSameSourceCount: number = 0; // Track consecutive same-source detections
+  private onSwitch: SpaceSwitchCallback = () => {}; // Store callback for use in methods
 
   /**
    * Start detecting Space switches
@@ -44,9 +46,29 @@ export class SpaceDetector {
 
     this.currentSourceId = initialSourceId;
     this.currentDisplayId = initialDisplayId;
+    this.recordedDisplayId = initialDisplayId; // Store which display we're monitoring
+    this.onSwitch = onSwitch; // Store callback for use in polling loop
     this.isActive = true;
 
-    console.log('[SpaceDetector] Started with source:', initialSourceId, 'display:', initialDisplayId);
+    console.log('[SpaceDetector] ===== STARTING SPACE DETECTOR =====');
+    console.log('[SpaceDetector] Initial source:', initialSourceId);
+    console.log('[SpaceDetector] Initial display:', initialDisplayId);
+    console.log('[SpaceDetector] Recorded display:', this.recordedDisplayId);
+
+    // DIAGNOSTIC: Test getSources() immediately to verify it works
+    try {
+      const testSources = await window.electronAPI.screenRecording.getSources();
+      console.log('[SpaceDetector] ✅ getSources() test SUCCESSFUL, found', testSources.length, 'sources');
+      console.log('[SpaceDetector] Test sources:', testSources.map((s: any) => s.id));
+    } catch (error) {
+      console.error('[SpaceDetector] ❌ getSources() test FAILED:', error);
+      console.error('[SpaceDetector] Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
+    }
+
+    console.log('[SpaceDetector] Starting poll interval...');
 
     // Poll for Space switches every 250ms
     // This provides good responsiveness while maintaining low CPU usage (~0.2-0.5%)
@@ -56,78 +78,163 @@ export class SpaceDetector {
       try {
         const { sourceId, displayId } = await this.detectActiveDisplay();
 
+        // Check for Space transition even if source ID unchanged
+        const spaceTransition = await this.detectSpaceTransition();
+
         // Check if we've switched to a different source
         if (sourceId !== this.currentSourceId) {
-          console.log('[SpaceDetector] 🔄 Space switch detected:', {
-            from: this.currentSourceId,
-            to: sourceId,
-            displayId
-          });
-
+          // Normal source change detected
+          console.log('[SpaceDetector] 🔄 Source changed:', this.currentSourceId, '→', sourceId);
           this.currentSourceId = sourceId;
           this.currentDisplayId = displayId;
+          this.consecutiveSameSourceCount = 0;
 
           // Trigger callback
-          await onSwitch(sourceId, displayId);
+          await this.onSwitch(sourceId, displayId);
+        } else if (spaceTransition) {
+          // Space transition detected via window list change (same source ID)
+          console.log('[SpaceDetector] 🔄 Space transition detected (same source, window count changed)');
+          this.consecutiveSameSourceCount++;
+
+          // Force refresh after detecting Space transition
+          if (this.consecutiveSameSourceCount >= 1) {
+            await this.onSwitch(sourceId, displayId, true); // Pass force flag
+          }
+        } else {
+          // No change detected
+          this.consecutiveSameSourceCount = 0;
         }
       } catch (error) {
-        console.error('[SpaceDetector] Detection error:', error);
+        // CRITICAL: Log errors with full details instead of swallowing them
+        console.error('[SpaceDetector] ❌ Poll error:', error);
+        console.error('[SpaceDetector] Error details:', {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          currentSourceId: this.currentSourceId,
+          recordedDisplayId: this.recordedDisplayId
+        });
         // Continue polling even if one iteration fails
       }
-    }, 250); // 250ms = 4 Hz polling frequency
+    }, 100); // 100ms = 10 Hz polling frequency (faster detection)
   }
 
   /**
-   * Detect which display is currently active based on cursor position
-   * @returns The source ID and display ID of the active display
+   * Detect Space transition by monitoring window list changes
+   * When user switches to a different Space, the available windows change significantly
+   * @returns true if a Space transition is detected (window count changed by >3)
    */
-  private async detectActiveDisplay(): Promise<{ sourceId: string; displayId: string }> {
-    const displays = await window.electronAPI.screen.getAllDisplays();
-
-    // Try to find display containing the cursor
+  private async detectSpaceTransition(): Promise<boolean> {
     try {
-      const cursorPoint = await window.electronAPI.screen.getCursorScreenPoint();
+      // Get all sources including windows
+      const allSources = await window.electronAPI.screenRecording.getSources();
+      const windowCount = allSources.filter((s: any) => s.id.startsWith('window:')).length;
 
-      // Check each display to see if cursor is within its bounds
-      for (const display of displays) {
-        if (this.containsPoint(display.bounds, cursorPoint)) {
-          const sourceId = await getDisplaySourceId(display.id.toString());
-          if (sourceId) {
-            return { sourceId, displayId: display.id.toString() };
-          }
-        }
+      // Detect significant window list change (indicates Space switch)
+      const windowCountChanged = Math.abs(windowCount - this.lastWindowCount) > 3;
+      this.lastWindowCount = windowCount;
+
+      if (windowCountChanged) {
+        console.log('[SpaceDetector] 🔄 Space transition detected via window count change');
       }
+
+      return windowCountChanged;
     } catch (error) {
-      console.warn('[SpaceDetector] Cursor detection failed, falling back to primary display:', error);
+      console.error('[SpaceDetector] Error detecting Space transition:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get sources matching the recorded display
+   * Uses system enumeration order to match display ID to source
+   * @param displayId - The display ID to find sources for
+   * @param allScreenSources - All available screen sources from desktopCapturer
+   * @returns Array of sources for this display (usually 1 element)
+   */
+  private async getSourcesForDisplay(
+    displayId: string,
+    allScreenSources: any[]
+  ): Promise<any[]> {
+    const displays = await window.electronAPI.screen.getAllDisplays();
+    const displayIndex = displays.findIndex((d: any) => d.id.toString() === displayId);
+
+    if (displayIndex === -1) {
+      console.warn('[SpaceDetector] Display not found:', displayId);
+      return [];
     }
 
-    // Fallback to primary display (bounds.x === 0 && bounds.y === 0)
-    const primary = displays.find(d => d.bounds.x === 0 && d.bounds.y === 0) || displays[0];
-    const sourceId = await getDisplaySourceId(primary.id.toString());
+    // Strategy: Match by enumeration order (most reliable)
+    // Both screen.getAllDisplays() and desktopCapturer.getSources() return displays
+    // in the SAME system enumeration order (NOT position order)
+    if (displayIndex < allScreenSources.length) {
+      const source = allScreenSources[displayIndex];
+      console.log('[SpaceDetector] Matched display', displayId, 'to source', source.id, 'via index', displayIndex);
+      return [source];
+    }
 
-    if (!sourceId) {
+    console.warn('[SpaceDetector] No source found at index', displayIndex, 'for display', displayId);
+    return [];
+  }
+
+  /**
+   * Detect which source is currently active for the recorded display
+   * Uses source polling instead of cursor position to detect Space switches
+   * @returns The source ID and display ID of the active source
+   */
+  private async detectActiveDisplay(): Promise<{ sourceId: string; displayId: string }> {
+    // Get current screen sources from desktopCapturer
+    // This is the KEY change: polling sources instead of cursor position
+    // macOS returns different sources for different Spaces on the SAME display
+    const allSources = await window.electronAPI.screenRecording.getSources();
+    const screenSources = allSources.filter((s: any) => s.id.startsWith('screen:'));
+
+    console.log('[SpaceDetector] Polled sources:', screenSources.map((s: any) => s.id));
+
+    if (!this.recordedDisplayId) {
+      throw new Error('[SpaceDetector] recordedDisplayId not set - call start() first');
+    }
+
+    // Find sources matching our recorded display using enumeration order
+    const displaySources = await this.getSourcesForDisplay(this.recordedDisplayId, screenSources);
+
+    if (displaySources.length === 0) {
+      // This shouldn't happen in normal operation
+      console.error('[SpaceDetector] No sources found for display:', this.recordedDisplayId);
+
+      // Fallback: return last known source to avoid crash
+      if (this.currentSourceId) {
+        console.warn('[SpaceDetector] Using last known source:', this.currentSourceId);
+        return {
+          sourceId: this.currentSourceId,
+          displayId: this.recordedDisplayId
+        };
+      }
+
+      // Last resort: use first available source
+      if (screenSources.length > 0) {
+        console.warn('[SpaceDetector] Using first available source:', screenSources[0].id);
+        return {
+          sourceId: screenSources[0].id,
+          displayId: this.recordedDisplayId
+        };
+      }
+
       throw new Error('No valid display source found');
     }
 
-    return { sourceId, displayId: primary.id.toString() };
-  }
+    // Return the first (and usually only) source for this display
+    const currentSource = displaySources[0];
 
-  /**
-   * Check if a point is contained within display bounds
-   * @param bounds - Display bounds (x, y, width, height)
-   * @param point - Point to check (x, y)
-   * @returns true if point is within bounds
-   */
-  private containsPoint(
-    bounds: { x: number; y: number; width: number; height: number },
-    point: { x: number; y: number }
-  ): boolean {
-    return (
-      point.x >= bounds.x &&
-      point.x < bounds.x + bounds.width &&
-      point.y >= bounds.y &&
-      point.y < bounds.y + bounds.height
-    );
+    // Log source change detection
+    if (currentSource.id !== this.currentSourceId) {
+      console.log('[SpaceDetector] 🎯 Source changed on display', this.recordedDisplayId);
+      console.log('[SpaceDetector]   From:', this.currentSourceId, '→ To:', currentSource.id);
+    }
+
+    return {
+      sourceId: currentSource.id,
+      displayId: this.recordedDisplayId
+    };
   }
 
   /**
