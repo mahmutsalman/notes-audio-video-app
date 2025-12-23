@@ -386,8 +386,17 @@ export interface ElectronAPI {
       recordingId: number,
       videoBuffer: ArrayBuffer,
       resolution: string,
-      fps: number
-    ) => Promise<{ filePath: string; duration: number | null }>;
+      fps: number,
+      fallbackDurationMs?: number
+    ) => Promise<{
+      filePath: string;
+      duration: number | null;
+      _debug?: {
+        usedFallback?: boolean;
+        extractionError?: string;
+        durationExtracted?: boolean;
+      };
+    }>;
   };
   region: {
     startSelection: () => Promise<void>;

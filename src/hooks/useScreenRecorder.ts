@@ -37,7 +37,7 @@ export interface ScreenRecorderControls {
     region: CaptureArea,
     fps: number
   ) => Promise<void>;
-  stopRecording: () => Promise<Blob | null>;
+  stopRecording: () => Promise<{ blob: Blob; durationMs: number } | null>;
   pauseRecording: () => void;
   resumeRecording: () => void;
   resetRecording: () => void;
@@ -88,7 +88,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   const regionCleanupRef = useRef<(() => void) | null>(null);
   const audioStreamsRef = useRef<MediaStream[]>([]);
   const spaceDetectorRef = useRef<SpaceDetector | null>(null);
-  const updateSourceRef = useRef<((newSourceId: string) => Promise<void>) | null>(null);
+  const updateSourceRef = useRef<((newSourceId: string, force?: boolean) => Promise<void>) | null>(null);
 
   // Duration marking state (same pattern as audio)
   const [pendingMarkStart, setPendingMarkStart] = useState<number | null>(null);
@@ -322,10 +322,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       await spaceDetectorRef.current.start(
         sourceId,
         region.displayId,
-        async (newSourceId) => {
-          console.log('[useScreenRecorder] 🔄 Space switch detected, updating source');
+        async (newSourceId, _displayId, force = false) => {
+          console.log(`[useScreenRecorder] 🔄 Space switch detected (force: ${force}), updating source`);
           if (updateSourceRef.current) {
-            await updateSourceRef.current(newSourceId);
+            await updateSourceRef.current(newSourceId, force);
           }
         }
       );

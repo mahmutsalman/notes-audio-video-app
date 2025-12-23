@@ -8,7 +8,7 @@ interface ScreenRecordingModalProps {
   isOpen: boolean;
   onClose: () => void;
   recordingId: number;
-  onSave: (videoBlob: Blob, marks: any[]) => Promise<void>;
+  onSave: (videoBlob: Blob, marks: any[], durationMs: number) => Promise<void>;
   autoStartRegionSelection?: boolean;
   pendingRegion?: CaptureArea | null;
 }
