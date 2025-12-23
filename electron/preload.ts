@@ -393,6 +393,45 @@ const electronAPI = {
     getCursorScreenPoint: (): Promise<{ x: number; y: number }> =>
       ipcRenderer.invoke('screen:getCursorScreenPoint'),
   },
+
+  // ScreenCaptureKit (macOS native screen capture)
+  screenCaptureKit: {
+    getDisplayDimensions: (displayId: number): Promise<{
+      success: boolean;
+      width?: number;
+      height?: number;
+      scaleFactor?: number;
+      error?: string;
+    }> =>
+      ipcRenderer.invoke('screencapturekit:getDisplayDimensions', displayId),
+
+    startCapture: (config: {
+      displayId: number;
+      width: number;
+      height: number;
+      frameRate: number;
+    }): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('screencapturekit:start', config),
+
+    stopCapture: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('screencapturekit:stop'),
+
+    isCapturing: (): Promise<{ isCapturing: boolean }> =>
+      ipcRenderer.invoke('screencapturekit:isCapturing'),
+
+    onFrame: (callback: (frameData: { buffer: Uint8Array; width: number; height: number }) => void) => {
+      ipcRenderer.on('screencapturekit:frame', (_event, data) => callback(data));
+    },
+
+    onError: (callback: (error: string) => void) => {
+      ipcRenderer.on('screencapturekit:error', (_event, error) => callback(error));
+    },
+
+    removeAllListeners: () => {
+      ipcRenderer.removeAllListeners('screencapturekit:frame');
+      ipcRenderer.removeAllListeners('screencapturekit:error');
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

@@ -444,6 +444,25 @@ export interface ElectronAPI {
     getAllDisplays: () => Promise<any[]>;
     getCursorScreenPoint: () => Promise<{ x: number; y: number }>;
   };
+  screenCaptureKit: {
+    getDisplayDimensions: (displayId: number) => Promise<{
+      success: boolean;
+      width?: number;
+      height?: number;
+      scaleFactor?: number;
+      error?: string;
+    }>;
+    startCapture: (config: {
+      displayId: number;
+      width: number;
+      height: number;
+      frameRate: number;
+    }) => Promise<{ success: boolean; error?: string }>;
+    stopCapture: () => Promise<void>;
+    onFrame: (callback: (data: { buffer: ArrayBuffer; width: number; height: number }) => void) => void;
+    onError: (callback: (error: string) => void) => void;
+    removeAllListeners: () => void;
+  };
 }
 
 declare global {

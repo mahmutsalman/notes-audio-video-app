@@ -1,4 +1,10 @@
 import type { CaptureArea } from '../types';
+import { FrameFreezeDetector } from './frameFreezeDetector';
+import {
+  createScreenCaptureKitStream,
+  isScreenCaptureKitAvailable,
+  type ScreenCaptureKitRegion
+} from './screenCaptureKitCapture';
 
 export interface CroppedStreamResult {
   stream: MediaStream;
@@ -20,6 +26,65 @@ export async function createCroppedStream(
   fps: number,
   targetDimensions?: { width: number; height: number }
 ): Promise<CroppedStreamResult> {
+  // Check if ScreenCaptureKit is available (macOS 12.3+)
+  const useScreenCaptureKit = isScreenCaptureKitAvailable();
+
+  if (useScreenCaptureKit) {
+    console.log('[RegionCapture] 🚀 Using ScreenCaptureKit (native macOS API - no Space freeze!)');
+
+    // Account for display scale factor
+    const scaleFactor = region.scaleFactor || 1;
+    const canvasWidth = targetDimensions?.width ?? (region.width * scaleFactor);
+    const canvasHeight = targetDimensions?.height ?? (region.height * scaleFactor);
+
+    // Get display dimensions for full capture
+    const displayId = parseInt(region.displayId, 10);
+    const displayDimensionsResult = await window.electronAPI.screenCaptureKit.getDisplayDimensions(displayId);
+
+    if (!displayDimensionsResult.success || !displayDimensionsResult.width || !displayDimensionsResult.height) {
+      throw new Error(`Failed to get display dimensions: ${displayDimensionsResult.error || 'Unknown error'}`);
+    }
+
+    console.log('[RegionCapture] Display dimensions:', {
+      displayId,
+      width: displayDimensionsResult.width,
+      height: displayDimensionsResult.height,
+      scaleFactor: displayDimensionsResult.scaleFactor
+    });
+
+    // Create ScreenCaptureKit region from CaptureArea
+    const screenCaptureKitRegion: ScreenCaptureKitRegion = {
+      displayId,
+      x: region.x * scaleFactor,
+      y: region.y * scaleFactor,
+      width: region.width * scaleFactor,
+      height: region.height * scaleFactor
+    };
+
+    // Use ScreenCaptureKit for capture with full display dimensions
+    const { stream, cleanup } = await createScreenCaptureKitStream(
+      screenCaptureKitRegion,
+      fps,
+      canvasWidth,
+      canvasHeight,
+      displayDimensionsResult.width,
+      displayDimensionsResult.height
+    );
+
+    // Return with no-op updateSource (ScreenCaptureKit handles Space transitions automatically)
+    return {
+      stream,
+      cleanup,
+      updateSource: async () => {
+        console.log('[RegionCapture] ScreenCaptureKit handles Space transitions automatically - no manual update needed');
+      }
+    };
+  }
+
+  // Legacy implementation (fallback for older macOS versions)
+  console.warn('[RegionCapture] ⚠️  Using legacy desktopCapturer (may freeze on Space switch)');
+  console.warn('[RegionCapture] ⚠️  Upgrade to macOS 12.3+ for ScreenCaptureKit support');
+
   let currentSourceId = sourceId;
   let fullStream: MediaStream;
   let video: HTMLVideoElement;
@@ -29,6 +94,11 @@ export async function createCroppedStream(
   let videoTrack: MediaStreamTrack;
   let animationFrameId: number | null = null;
   let isCleanedUp = false;
+
+  // Freeze detection for automatic Space switch recovery
+  const freezeDetector = new FrameFreezeDetector();
+  let lastFreezeCheck = 0;
+  let isRecovering = false;
 
   // Account for display scale factor (e.g., 2x on Retina displays)
   const scaleFactor = region.scaleFactor || 1;
@@ -44,9 +114,15 @@ export async function createCroppedStream(
   const initializeStream = async (newSourceId: string): Promise<void> => {
     console.log('[RegionCapture] Initializing stream for source:', newSourceId);
 
-    // Stop old stream if exists
+    // Stop old stream if exists and remove event listeners
     if (fullStream) {
-      fullStream.getTracks().forEach((track) => track.stop());
+      // Remove all event listeners to prevent memory leaks
+      fullStream.removeEventListener('inactive', () => {});
+      fullStream.getTracks().forEach((track) => {
+        track.removeEventListener('ended', () => {});
+        track.stop();
+      });
+      console.log('[RegionCapture] Old stream cleaned up');
     }
 
     // Create new stream with new source ID
@@ -62,6 +138,36 @@ export async function createCroppedStream(
 
     // Update video element source
     video.srcObject = fullStream;
+
+    // CRITICAL: Monitor stream state to detect macOS Space transition invalidation
+    // When macOS switches Spaces, it can suspend/invalidate the screen capture stream
+    fullStream.addEventListener('inactive', () => {
+      console.error('[RegionCapture] 🚨 Stream became INACTIVE - macOS likely suspended it during Space transition!');
+      if (!isRecovering) {
+        console.log('[RegionCapture] Triggering stream recreation...');
+        handleFreeze(); // Force stream recreation
+      }
+    });
+
+    // Monitor individual tracks for 'ended' events (macOS can kill tracks during Space transitions)
+    fullStream.getTracks().forEach(track => {
+      track.addEventListener('ended', () => {
+        console.error('[RegionCapture] 🚨 Track ENDED - macOS killed the capture track!');
+        if (!isRecovering) {
+          console.log('[RegionCapture] Triggering stream recreation...');
+          handleFreeze(); // Force stream recreation
+        }
+      });
+
+      console.log(`[RegionCapture] Track state: ${track.readyState}, enabled: ${track.enabled}, muted: ${track.muted}`);
+    });
+
+    // Check if stream is actually active after creation
+    if (!fullStream.active) {
+      console.warn('[RegionCapture] ⚠️  Stream created but NOT ACTIVE! This may cause issues.');
+    } else {
+      console.log('[RegionCapture] ✅ Stream is ACTIVE');
+    }
 
     // Wait for video to be ready with timeout protection
     await new Promise<void>((resolve, reject) => {
@@ -168,6 +274,36 @@ export async function createCroppedStream(
   let lastFrameTime = 0; // Initialize to 0 - will be set on first frame
   let frameCount = 0;
 
+  /**
+   * Handle video freeze detection - attempt source refresh
+   * Called when freeze detector identifies that frames have stopped changing
+   * Force refreshes stream even if source ID unchanged (handles Space switches)
+   */
+  const handleFreeze = async () => {
+    if (isRecovering) return;
+    isRecovering = true;
+
+    console.log('[RegionCapture] 🧊 Freeze detected, forcing stream refresh');
+
+    try {
+      // Get fresh source ID for the display
+      const newSourceId = await getDisplaySourceId(region.displayId);
+
+      if (newSourceId) {
+        // Force refresh even if source ID is same (Space switch case)
+        await updateSource(newSourceId, true);
+        freezeDetector.reset();
+        console.log('[RegionCapture] ✅ Stream refreshed successfully');
+      } else {
+        console.warn('[RegionCapture] ⚠️ No source ID returned');
+      }
+    } catch (error) {
+      console.error('[RegionCapture] ❌ Source refresh failed:', error);
+    } finally {
+      isRecovering = false;
+    }
+  };
+
   // 7. Start requestAnimationFrame loop with MANUAL frame capture
   // We draw to canvas AND explicitly request frame capture each time
   const startTime = performance.now();
@@ -208,14 +344,49 @@ export async function createCroppedStream(
         // CRITICAL: Force browser to detect change by drawing a unique marker
         // Without this, Chromium's captureStream change detection fails even with requestFrame()
         // Draw a 1x1 pixel at rotating position (invisible but forces detection)
-        const markerX = frameCount % canvas.width;
-        const markerY = Math.floor(frameCount / canvas.width) % canvas.height;
-        ctx.fillStyle = `rgba(0, 0, 0, 0.003)`; // Nearly transparent
-        ctx.fillRect(markerX, markerY, 1, 1);
+        // IMPORTANT: Skip marker during potential freeze to allow freeze detection to work
+        if (!freezeDetector.isPotentiallyFrozen()) {
+          const markerX = frameCount % canvas.width;
+          const markerY = Math.floor(frameCount / canvas.width) % canvas.height;
+          ctx.fillStyle = `rgba(0, 0, 0, 0.003)`; // Nearly transparent
+          ctx.fillRect(markerX, markerY, 1, 1);
+        }
 
         // CRITICAL: Manually request frame capture
         // This is the only reliable way to capture frames in Chromium/Electron
         (videoTrack as any).requestFrame();
+
+        // Check for freeze every 100ms (10 Hz) - faster detection
+        if (timestamp - lastFreezeCheck > 100) {
+          if (freezeDetector.checkFrame(canvas) && !isRecovering) {
+            handleFreeze();
+          }
+          lastFreezeCheck = timestamp;
+        }
+
+        // CRITICAL: Periodic stream health check (every 1 second)
+        // Detect if macOS has invalidated the stream during Space transitions
+        if (frameCount % 10 === 0) { // Every ~1 second at 10 FPS
+          if (fullStream && !fullStream.active) {
+            console.error('[RegionCapture] 🚨 STREAM HEALTH CHECK FAILED - Stream is INACTIVE!');
+            if (!isRecovering) {
+              console.log('[RegionCapture] Triggering emergency stream recreation...');
+              handleFreeze(); // Force recreation
+            }
+          }
+
+          // Check track states
+          const tracks = fullStream?.getTracks() || [];
+          tracks.forEach(track => {
+            if (track.readyState === 'ended') {
+              console.error('[RegionCapture] 🚨 TRACK HEALTH CHECK FAILED - Track is ENDED!');
+              if (!isRecovering) {
+                console.log('[RegionCapture] Triggering emergency stream recreation...');
+                handleFreeze(); // Force recreation
+              }
+            }
+          });
+        }
 
         // Log every 30 frames to avoid console spam
         if (frameCount % 30 === 0) {
@@ -239,18 +410,22 @@ export async function createCroppedStream(
   /**
    * Update the capture source (for Space switching)
    * Recreates the MediaStream with a new source ID while keeping the canvas stream active
+   * @param newSourceId - The new source ID to switch to
+   * @param force - If true, refresh stream even if source ID unchanged (for Space switches)
    */
-  const updateSource = async (newSourceId: string): Promise<void> => {
-    if (newSourceId === currentSourceId) {
+  const updateSource = async (newSourceId: string, force: boolean = false): Promise<void> => {
+    // Allow refresh even if source ID unchanged when forced (Space switch case)
+    if (newSourceId === currentSourceId && !force) {
       console.log('[RegionCapture] Source unchanged, skipping update');
       return;
     }
 
-    console.log('[RegionCapture] 🔄 Updating source:', currentSourceId, '→', newSourceId);
+    console.log(`[RegionCapture] 🔄 Updating source: ${currentSourceId} → ${newSourceId} (force: ${force})`);
     currentSourceId = newSourceId;
 
     try {
       await initializeStream(newSourceId);
+      freezeDetector.reset(); // Reset detector after successful refresh
       console.log('[RegionCapture] ✅ Source update complete');
     } catch (error) {
       console.error('[RegionCapture] ❌ Source update failed:', error);
