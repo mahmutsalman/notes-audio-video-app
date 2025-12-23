@@ -48,6 +48,16 @@ export interface VideoCompressionOptions {
   audioBitrate: '24k' | '32k' | '48k' | '64k' | '128k';
 }
 
+export interface VideoCodecParams {
+  codec: string;           // e.g., 'h264', 'vp9'
+  bitrate?: number;        // Average bitrate in bps
+  pixelFormat: string;     // e.g., 'yuv420p'
+  frameRate: string;       // e.g., '10/1'
+  profile?: string;        // e.g., 'High', 'Main'
+  level?: string;          // e.g., '4.0'
+  encoder?: string;        // e.g., 'libx264'
+}
+
 /**
  * Detect video format by analyzing file extension and codec
  */
@@ -133,23 +143,71 @@ async function compressVideo(
   inputPath: string,
   outputPath: string,
   targetFormat: 'webm' | 'mp4',
-  options: VideoCompressionOptions
+  options: VideoCompressionOptions,
+  matchParams?: VideoCodecParams
 ): Promise<void> {
   console.log('[VideoMerger] Compressing video to', targetFormat);
   const ffmpegPath = getFFmpegPath();
 
-  const args: string[] = [
-    '-i', inputPath,
-    '-c:v', 'libx264',        // H.264 codec for MP4
-    '-crf', options.crf.toString(),
-    '-preset', options.preset,
-    '-pix_fmt', 'yuv420p',    // Compatibility
-    '-c:a', 'aac',            // AAC audio for MP4
-    '-b:a', options.audioBitrate,
-    '-movflags', '+faststart', // Enable streaming
-    '-y',                     // Overwrite
-    outputPath
-  ];
+  let args: string[];
+
+  if (matchParams) {
+    // Match original parameters for stream copy compatibility
+    console.log('[VideoMerger] Matching original codec parameters:', matchParams);
+
+    args = [
+      '-i', inputPath,
+      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',  // Ensure even dimensions for H.264
+      '-c:v', 'libx264'
+    ];
+
+    // Add profile if available
+    if (matchParams.profile) {
+      args.push('-profile:v', matchParams.profile);
+    }
+
+    // Add level if available
+    if (matchParams.level) {
+      args.push('-level', matchParams.level);
+    }
+
+    // Add pixel format
+    args.push('-pix_fmt', matchParams.pixelFormat);
+
+    // Add frame rate
+    args.push('-r', matchParams.frameRate);
+
+    // Add bitrate if available, otherwise use CRF
+    if (matchParams.bitrate) {
+      args.push('-b:v', matchParams.bitrate.toString());
+    } else {
+      args.push('-crf', '23'); // Higher quality when matching
+    }
+
+    // Audio settings
+    args.push(
+      '-c:a', 'aac',
+      '-b:a', options.audioBitrate,
+      '-movflags', '+faststart',
+      '-y',
+      outputPath
+    );
+  } else {
+    // Original behavior - use compression options
+    args = [
+      '-i', inputPath,
+      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',  // Ensure even dimensions for H.264
+      '-c:v', 'libx264',        // H.264 codec for MP4
+      '-crf', options.crf.toString(),
+      '-preset', options.preset,
+      '-pix_fmt', 'yuv420p',    // Compatibility
+      '-c:a', 'aac',            // AAC audio for MP4
+      '-b:a', options.audioBitrate,
+      '-movflags', '+faststart', // Enable streaming
+      '-y',                     // Overwrite
+      outputPath
+    ];
+  }
 
   return new Promise((resolve, reject) => {
     const process = spawn(ffmpegPath, args);
@@ -164,7 +222,13 @@ async function compressVideo(
         console.log('[VideoMerger] Compression successful');
         resolve();
       } else {
-        console.error('[VideoMerger] Compression failed:', errorOutput);
+        console.error('[VideoMerger] Compression failed:', {
+          code,
+          inputFormat: path.extname(inputPath),
+          outputFormat: targetFormat,
+          matchingParams: !!matchParams,
+          lastError: errorOutput.slice(-1000)
+        });
         reject(new Error(`FFmpeg compression failed with code ${code}`));
       }
     });
@@ -185,13 +249,27 @@ async function compressAndConcat(
   targetFormat: 'webm' | 'mp4',
   compressionOptions: VideoCompressionOptions
 ): Promise<string> {
-  console.log('[VideoMerger] Different formats detected - compressing extension first');
+  console.log('[VideoMerger] Different formats detected - analyzing original codec params');
 
-  // Step 1: Compress extension to match original format
+  let matchParams: VideoCodecParams | undefined;
+
+  // Step 1: Analyze original video codec params for MP4
+  if (targetFormat === 'mp4') {
+    try {
+      const { getVideoCodecParams } = await import('./videoMetadata');
+      matchParams = await getVideoCodecParams(originalPath);
+      console.log('[VideoMerger] Original codec params:', matchParams);
+    } catch (error) {
+      console.warn('[VideoMerger] Failed to analyze codec params, using defaults:', error);
+      // Falls back to compressionOptions
+    }
+  }
+
+  // Step 2: Compress extension to match original format
   const compressedExtensionPath = path.join(tempDir, `extension_compressed.${targetFormat}`);
-  await compressVideo(extensionPath, compressedExtensionPath, targetFormat, compressionOptions);
+  await compressVideo(extensionPath, compressedExtensionPath, targetFormat, compressionOptions, matchParams);
 
-  // Step 2: Concat the compressed videos
+  // Step 3: Concat the compressed videos
   const outputPath = path.join(tempDir, `output.${targetFormat}`);
   await concatVideos(originalPath, compressedExtensionPath, outputPath);
 

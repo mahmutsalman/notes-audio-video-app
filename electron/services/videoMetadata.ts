@@ -66,6 +66,16 @@ export interface VideoMetadata {
   error?: string;  // Error message if extraction failed
 }
 
+export interface VideoCodecParams {
+  codec: string;           // e.g., 'h264', 'vp9'
+  bitrate?: number;        // Average bitrate in bps
+  pixelFormat: string;     // e.g., 'yuv420p'
+  frameRate: string;       // e.g., '10/1'
+  profile?: string;        // e.g., 'High', 'Main'
+  level?: string;          // e.g., '4.0'
+  encoder?: string;        // e.g., 'libx264'
+}
+
 /**
  * Get FFprobe binary path for both development and production.
  * FFprobe has platform-specific subdirectories: bin/{platform}/{arch}/ffprobe
@@ -122,6 +132,61 @@ function getFfprobePath(): string {
   }
 
   return prodPath;
+}
+
+/**
+ * Get video codec parameters for matching during compression.
+ * Extracts codec, bitrate, pixel format, frame rate, profile, and level.
+ */
+export async function getVideoCodecParams(filePath: string): Promise<VideoCodecParams> {
+  const ffprobePath = getFfprobePath();
+
+  console.log('[videoMetadata] Analyzing codec params for:', filePath.split('/').pop());
+
+  try {
+    const info = await ffprobe(filePath, { path: ffprobePath });
+    const videoStream = info.streams.find((s: any) => s.codec_type === 'video');
+
+    if (!videoStream) {
+      throw new Error('No video stream found in file');
+    }
+
+    // Extract codec parameters
+    const codec = videoStream.codec_name || 'h264';
+    const bitrate = videoStream.bit_rate ? parseInt(videoStream.bit_rate) : undefined;
+    const pixelFormat = videoStream.pix_fmt || 'yuv420p';
+    const frameRate = videoStream.r_frame_rate || '30/1';
+    const profile = videoStream.profile?.toLowerCase();
+    const level = videoStream.level ? (videoStream.level / 10).toFixed(1) : undefined;
+
+    // Try to extract encoder from tags
+    const encoder = videoStream.tags?.encoder || info.format?.tags?.encoder;
+
+    const params: VideoCodecParams = {
+      codec,
+      bitrate,
+      pixelFormat,
+      frameRate,
+      profile,
+      level,
+      encoder
+    };
+
+    console.log('[videoMetadata] Codec params extracted:', params);
+    return params;
+
+  } catch (error) {
+    console.error('[videoMetadata] Failed to extract codec params:', error);
+
+    // Return sensible defaults for H.264
+    return {
+      codec: 'h264',
+      pixelFormat: 'yuv420p',
+      frameRate: '30/1',
+      profile: 'high',
+      level: '4.0'
+    };
+  }
 }
 
 export async function getVideoMetadata(

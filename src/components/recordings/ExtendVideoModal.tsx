@@ -137,6 +137,18 @@ export default function ExtendVideoModal({
     return () => cleanup();
   }, [phase, recorder]);
 
+  // Listen for Enter key mark toggle from overlay
+  useEffect(() => {
+    if (phase !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onMarkToggle(() => {
+      console.log('[ExtendVideoModal] Enter key pressed in overlay - toggling duration mark');
+      recorder.handleMarkToggle();
+    });
+
+    return () => cleanup();
+  }, [phase, recorder]);
+
   // Synchronize marking state to overlay (enables input field to appear)
   useEffect(() => {
     if (phase !== 'recording') return;
