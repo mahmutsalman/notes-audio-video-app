@@ -9,8 +9,9 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5174 && electron .\"",
     "electron:build": "vite build && electron-builder",
-    "postinstall": "electron-builder install-app-deps",
-    "rebuild": "electron-rebuild -f -w better-sqlite3"
+    "rebuild:native": "cd electron/native/screencapturekit && node-gyp rebuild",
+    "rebuild": "npm run rebuild:native && electron-rebuild -f -w better-sqlite3",
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
     "electron",
@@ -50,6 +51,8 @@
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
     "electron-rebuild": "^3.2.9",
+    "node-addon-api": "^7.1.1",
+    "node-gyp": "^10.3.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.7.2",
@@ -66,11 +69,21 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "electron/native/screencapturekit/build/Release/**/*"
     ],
     "asarUnpack": [
       "node_modules/ffmpeg-static/**/*",
       "node_modules/ffprobe-static/**/*"
+    ],
+    "extraFiles": [
+      {
+        "from": "electron/native/screencapturekit/build/Release",
+        "to": "Resources/native/screencapturekit",
+        "filter": [
+          "*.node"
+        ]
+      }
     ],
     "mac": {
       "target": "dmg",

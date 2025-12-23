@@ -5,6 +5,7 @@ import { initDatabase, closeDatabase } from './database/database';
 import { ensureMediaDirs } from './services/fileStorage';
 import { setupIpcHandlers } from './ipc/handlers';
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './shortcuts/globalShortcuts';
+import { registerScreenCaptureHandlers, unregisterScreenCaptureHandlers } from './screencapture/ipc-handlers';
 
 // Force consistent app name and userData path (ensures dev and prod use same database)
 // This is critical: dev mode uses package.json 'name', prod uses 'productName'
@@ -87,7 +88,12 @@ async function createWindow(): Promise<void> {
     mainWindow?.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors);
   });
 
+  // Register ScreenCaptureKit IPC handlers
+  registerScreenCaptureHandlers(mainWindow);
+
   mainWindow.on('closed', () => {
+    // Cleanup ScreenCaptureKit handlers
+    unregisterScreenCaptureHandlers();
     mainWindow = null;
   });
 }
