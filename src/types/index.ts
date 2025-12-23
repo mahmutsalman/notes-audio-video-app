@@ -260,6 +260,14 @@ export interface VideoCompressionResult {
   error?: string;
 }
 
+export interface VideoMergeResult {
+  success: boolean;
+  totalDurationMs: number;
+  outputFormat: 'webm' | 'mp4';
+  outputPath?: string;
+  error?: string;
+}
+
 export interface CompressionProgress {
   percent: number;
   currentTime: string;
@@ -384,6 +392,8 @@ export interface ElectronAPI {
   region: {
     startSelection: () => Promise<void>;
     onRegionSelected: (callback: (region: CaptureArea | null) => void) => () => void;
+    setExtensionMode: (isExtensionMode: boolean) => Promise<void>;
+    onRegionSelectedForExtension: (callback: (region: CaptureArea) => void) => () => void;
     sendRegion: (region: CaptureArea) => Promise<void>;
     cancel: () => Promise<void>;
     stopRecording: () => Promise<void>;
@@ -417,6 +427,13 @@ export interface ElectronAPI {
       compressedPath: string
     ) => Promise<{ success: boolean; newPath?: string; error?: string }>;
     checkFFmpeg: () => Promise<{ available: boolean; version?: string; error?: string }>;
+    mergeExtension: (
+      recordingId: number,
+      extensionBuffer: ArrayBuffer,
+      originalDurationMs: number,
+      extensionDurationMs: number,
+      compressionOptions?: VideoCompressionOptions
+    ) => Promise<VideoMergeResult>;
   };
   settings: {
     get: (key: string) => Promise<string | null>;

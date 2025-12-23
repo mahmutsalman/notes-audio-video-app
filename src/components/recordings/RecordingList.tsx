@@ -5,6 +5,7 @@ import ContextMenu, { type ContextMenuItemType } from '../common/ContextMenu';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
 import ExtendRecordingModal from './ExtendRecordingModal';
+import ExtendVideoModal from './ExtendVideoModal';
 import { SearchBar } from './SearchBar';
 import { useRecordingSearch } from '../../hooks/useRecordingSearch';
 
@@ -68,6 +69,15 @@ export default function RecordingList({
     recording: null,
   });
 
+  // Extend video modal state
+  const [extendVideoModal, setExtendVideoModal] = useState<{
+    isOpen: boolean;
+    recording: Recording | null;
+  }>({
+    isOpen: false,
+    recording: null,
+  });
+
   const handleContextMenu = (e: React.MouseEvent, recording: Recording) => {
     e.preventDefault();
     setContextMenu({
@@ -109,12 +119,23 @@ export default function RecordingList({
   };
 
   const handleExtendClick = () => {
-    if (contextMenu.recording) {
+    if (!contextMenu.recording) return;
+
+    // Check if video or audio recording
+    if (contextMenu.recording.video_path) {
+      // Video recording → open video extend modal
+      setExtendVideoModal({
+        isOpen: true,
+        recording: contextMenu.recording,
+      });
+    } else if (contextMenu.recording.audio_path) {
+      // Audio recording → open audio extend modal
       setExtendModal({
         isOpen: true,
         recording: contextMenu.recording,
       });
     }
+
     closeContextMenu();
   };
 
@@ -122,8 +143,13 @@ export default function RecordingList({
     setExtendModal({ isOpen: false, recording: null });
   };
 
+  const closeExtendVideoModal = () => {
+    setExtendVideoModal({ isOpen: false, recording: null });
+  };
+
   const handleExtensionSaved = () => {
     closeExtendModal();
+    closeExtendVideoModal();
     // Notify parent to refresh the recordings list
     onRecordingExtended?.();
   };
@@ -350,6 +376,16 @@ export default function RecordingList({
           isOpen={extendModal.isOpen}
           onClose={closeExtendModal}
           recording={extendModal.recording}
+          onExtensionSaved={handleExtensionSaved}
+        />
+      )}
+
+      {/* Extend Video Modal */}
+      {extendVideoModal.recording && (
+        <ExtendVideoModal
+          isOpen={extendVideoModal.isOpen}
+          onClose={closeExtendVideoModal}
+          recording={extendVideoModal.recording}
           onExtensionSaved={handleExtensionSaved}
         />
       )}

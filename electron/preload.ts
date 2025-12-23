@@ -110,6 +110,38 @@ const electronAPI = {
   video: {
     generateThumbnail: (videoPath: string): Promise<{ success: boolean; thumbnailPath: string | null }> =>
       ipcRenderer.invoke('video:generateThumbnail', videoPath),
+    compress: (
+      filePath: string,
+      options: VideoCompressionOptions
+    ): Promise<VideoCompressionResult> =>
+      ipcRenderer.invoke('video:compress', filePath, options),
+    onCompressionProgress: (callback: (progress: CompressionProgress) => void) => {
+      const listener = (_event: any, progress: CompressionProgress) => callback(progress);
+      ipcRenderer.on('video:compression-progress', listener);
+      return () => ipcRenderer.removeListener('video:compression-progress', listener);
+    },
+    replaceWithCompressed: (
+      originalPath: string,
+      compressedPath: string
+    ): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('video:replaceWithCompressed', originalPath, compressedPath),
+    checkFFmpeg: (): Promise<{ available: boolean; version?: string; error?: string }> =>
+      ipcRenderer.invoke('video:checkFFmpeg'),
+    mergeExtension: (
+      recordingId: number,
+      extensionBuffer: ArrayBuffer,
+      originalDurationMs: number,
+      extensionDurationMs: number,
+      compressionOptions?: VideoCompressionOptions
+    ): Promise<VideoMergeResult> =>
+      ipcRenderer.invoke(
+        'video:mergeExtension',
+        recordingId,
+        extensionBuffer,
+        originalDurationMs,
+        extensionDurationMs,
+        compressionOptions
+      ),
   },
 
   // Durations (marked time segments within recordings)
@@ -233,27 +265,6 @@ const electronAPI = {
       ipcRenderer.invoke('screenRecording:delete', id),
   },
 
-  // Video Compression
-  video: {
-    compress: (
-      filePath: string,
-      options: VideoCompressionOptions
-    ): Promise<VideoCompressionResult> =>
-      ipcRenderer.invoke('video:compress', filePath, options),
-    onCompressionProgress: (callback: (progress: CompressionProgress) => void) => {
-      const listener = (_event: any, progress: CompressionProgress) => callback(progress);
-      ipcRenderer.on('video:compression-progress', listener);
-      return () => ipcRenderer.removeListener('video:compression-progress', listener);
-    },
-    replaceWithCompressed: (
-      originalPath: string,
-      compressedPath: string
-    ): Promise<{ success: boolean; error?: string }> =>
-      ipcRenderer.invoke('video:replaceWithCompressed', originalPath, compressedPath),
-    checkFFmpeg: (): Promise<{ available: boolean; version?: string; error?: string }> =>
-      ipcRenderer.invoke('video:checkFFmpeg'),
-  },
-
   // Region Selection
   region: {
     startSelection: (): Promise<void> =>
@@ -262,6 +273,13 @@ const electronAPI = {
       const listener = (_event: any, region: any) => callback(region);
       ipcRenderer.on('region:selected', listener);
       return () => ipcRenderer.removeListener('region:selected', listener);
+    },
+    setExtensionMode: (isExtensionMode: boolean): Promise<void> =>
+      ipcRenderer.invoke('region:setExtensionMode', isExtensionMode),
+    onRegionSelectedForExtension: (callback: (region: any) => void) => {
+      const listener = (_event: any, region: any) => callback(region);
+      ipcRenderer.on('region:selected-for-extension', listener);
+      return () => ipcRenderer.removeListener('region:selected-for-extension', listener);
     },
     sendRegion: (region: any): Promise<void> => {
       ipcRenderer.send('region:sendRegion', region);

@@ -571,8 +571,37 @@ export function setupIpcHandlers(): void {
     return checkFFmpegAvailable();
   });
 
+  ipcMain.handle('video:mergeExtension', async (
+    _,
+    recordingId: number,
+    extensionBuffer: ArrayBuffer,
+    originalDurationMs: number,
+    extensionDurationMs: number,
+    compressionOptions?: any
+  ) => {
+    const { mergeVideoFiles } = await import('../services/videoMerger');
+
+    // Get video path from recording
+    const recording = await RecordingsOperations.getById(recordingId);
+
+    if (!recording || !recording.video_path) {
+      throw new Error('Recording not found or has no video');
+    }
+
+    const result = await mergeVideoFiles(
+      recording.video_path,
+      extensionBuffer,
+      originalDurationMs,
+      extensionDurationMs,
+      compressionOptions
+    );
+
+    return result;
+  });
+
   // ============ Region Selection ============
   let regionSelectorWindows: any[] = [];
+  let regionSelectionContext: 'new-recording' | 'extend-recording' = 'new-recording';
 
   ipcMain.handle('region:startSelection', async () => {
     console.log('[IPC] region:startSelection called');
@@ -601,6 +630,12 @@ export function setupIpcHandlers(): void {
       }
       console.log('[IPC Handler] region:cancel - restored main window focus');
     }
+  });
+
+  ipcMain.handle('region:setExtensionMode', async (_, isExtensionMode: boolean) => {
+    console.log('[IPC] region:setExtensionMode called:', isExtensionMode);
+    regionSelectionContext = isExtensionMode ? 'extend-recording' : 'new-recording';
+    console.log('[IPC] Region selection context set to:', regionSelectionContext);
   });
 
   ipcMain.on('region:sendRegion', async (_event, region: any) => {
@@ -636,13 +671,25 @@ export function setupIpcHandlers(): void {
 
     console.log('[IPC Handler] Kept overlay for selected display:', region.selectedFromDisplayId);
 
-    // Forward region data to main window
+    // Forward region data to main window based on context
     const mainWindow = allWindows.find((w: any) => !('displayId' in w));
     console.log('[IPC Handler] Main window found:', !!mainWindow);
+    console.log('[IPC Handler] Region selection context:', regionSelectionContext);
 
     if (mainWindow) {
-      mainWindow.webContents.send('region:selected', region);
-      console.log('[IPC Handler] Sent region:selected to main window');
+      if (regionSelectionContext === 'extend-recording') {
+        // Send to ExtendVideoModal
+        mainWindow.webContents.send('region:selected-for-extension', region);
+        console.log('[IPC Handler] Sent region:selected-for-extension to main window');
+      } else {
+        // Send for new recording (normal flow)
+        mainWindow.webContents.send('region:selected', region);
+        console.log('[IPC Handler] Sent region:selected to main window');
+      }
+
+      // Reset context after sending
+      regionSelectionContext = 'new-recording';
+      console.log('[IPC Handler] Region selection context reset to new-recording');
     } else {
       console.error('[IPC Handler] Main window not found!');
     }
