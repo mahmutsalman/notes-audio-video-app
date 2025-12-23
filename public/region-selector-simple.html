@@ -1259,9 +1259,15 @@
         stopMicrophoneMonitoring();
         window.electronAPI.region.cancel();
       } else if (e.key === 'Enter' && isRecording) {
-        e.preventDefault();
-        console.log('[RegionSelector] Enter pressed, toggling mark');
-        window.electronAPI.region.sendMarkToggle();
+        // ✅ FIX: Only fire if input field is NOT focused
+        const markNoteInputEl = document.getElementById('markNoteInput');
+        if (document.activeElement !== markNoteInputEl) {
+          e.preventDefault();
+          console.log('[RegionSelector] Enter pressed (document-level), toggling mark');
+          window.electronAPI.region.sendMarkToggle();
+        } else {
+          console.log('[RegionSelector] Enter pressed in input field - handled by input listener');
+        }
       }
     });
 
