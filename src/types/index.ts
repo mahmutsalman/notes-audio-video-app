@@ -164,6 +164,8 @@ export interface CaptureArea {
   // Quality settings
   quality?: 'auto' | '720p' | '1080p' | '1440p';
   fps?: number;
+  // Recording ID for folder organization
+  recordingId?: number;
 }
 
 export interface ScreenRecordingSettings {
@@ -466,10 +468,17 @@ export interface ElectronAPI {
       width: number;
       height: number;
       frameRate: number;
+      regionX?: number;
+      regionY?: number;
+      regionWidth?: number;
+      regionHeight?: number;
+      scaleFactor?: number;
+      outputPath?: string;
     }) => Promise<{ success: boolean; error?: string }>;
-    stopCapture: () => Promise<void>;
-    onFrame: (callback: (data: { buffer: ArrayBuffer; width: number; height: number }) => void) => void;
-    onError: (callback: (error: string) => void) => void;
+    stopCapture: () => Promise<{ success: boolean; error?: string }>;
+    isCapturing: () => Promise<{ isCapturing: boolean }>;
+    onComplete: (callback: (data: { filePath: string }) => void) => void;
+    onError: (callback: (data: { error: string }) => void) => void;
     removeAllListeners: () => void;
   };
 }

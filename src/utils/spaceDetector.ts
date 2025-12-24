@@ -1,3 +1,5 @@
+import { logger } from './logger'; // Phase 4: Logging Optimization
+
 export interface SpaceSwitchCallback {
   (newSourceId: string, newDisplayId: string, force?: boolean): void | Promise<void>;
 }
@@ -59,7 +61,7 @@ export class SpaceDetector {
     try {
       const testSources = await window.electronAPI.screenRecording.getSources();
       console.log('[SpaceDetector] ✅ getSources() test SUCCESSFUL, found', testSources.length, 'sources');
-      console.log('[SpaceDetector] Test sources:', testSources.map((s: any) => s.id));
+      logger.debug('[SpaceDetector] Test sources:', testSources.map((s: any) => s.id)); // Phase 4: High-frequency log
     } catch (error) {
       console.error('[SpaceDetector] ❌ getSources() test FAILED:', error);
       console.error('[SpaceDetector] Error details:', {
@@ -168,7 +170,7 @@ export class SpaceDetector {
     // in the SAME system enumeration order (NOT position order)
     if (displayIndex < allScreenSources.length) {
       const source = allScreenSources[displayIndex];
-      console.log('[SpaceDetector] Matched display', displayId, 'to source', source.id, 'via index', displayIndex);
+      logger.debug('[SpaceDetector] Matched display', displayId, 'to source', source.id, 'via index', displayIndex); // Phase 4: High-frequency log
       return [source];
     }
 
@@ -188,7 +190,7 @@ export class SpaceDetector {
     const allSources = await window.electronAPI.screenRecording.getSources();
     const screenSources = allSources.filter((s: any) => s.id.startsWith('screen:'));
 
-    console.log('[SpaceDetector] Polled sources:', screenSources.map((s: any) => s.id));
+    logger.debug('[SpaceDetector] Polled sources:', screenSources.map((s: any) => s.id)); // Phase 4: High-frequency log (every 100ms)
 
     if (!this.recordedDisplayId) {
       throw new Error('[SpaceDetector] recordedDisplayId not set - call start() first');

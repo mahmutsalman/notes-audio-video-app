@@ -1,44 +1,72 @@
 #include <napi.h>
 #import "ScreenCaptureKit.h"
 
-// Global reference to manager and thread-safe function
+// Global reference to manager
 static ScreenCaptureManager *manager = nil;
-static Napi::ThreadSafeFunction tsfn;
+static Napi::ThreadSafeFunction completionTsfn;
+static Napi::ThreadSafeFunction errorTsfn;
 
-// Start capture
+// Start capture with file output
 Napi::Value StartCapture(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
-    if (info.Length() < 5) {
-        Napi::TypeError::New(env, "Expected 5 arguments: displayID, width, height, frameRate, callback")
+    if (info.Length() < 10) {
+        Napi::TypeError::New(env, "Expected 10 or 11 arguments: displayID, width, height, frameRate, [scaleFactor], regionX, regionY, regionWidth, regionHeight, outputPath, callbacks")
             .ThrowAsJavaScriptException();
         return env.Null();
     }
 
-    // Detailed type checking with specific error messages
+    // Type checking
     if (!info[0].IsNumber()) {
-        Napi::TypeError::New(env, "Argument 0 (displayID) must be a number")
-            .ThrowAsJavaScriptException();
+        Napi::TypeError::New(env, "Argument 0 (displayID) must be a number").ThrowAsJavaScriptException();
         return env.Null();
     }
     if (!info[1].IsNumber()) {
-        Napi::TypeError::New(env, "Argument 1 (width) must be a number")
-            .ThrowAsJavaScriptException();
+        Napi::TypeError::New(env, "Argument 1 (width) must be a number").ThrowAsJavaScriptException();
         return env.Null();
     }
     if (!info[2].IsNumber()) {
-        Napi::TypeError::New(env, "Argument 2 (height) must be a number")
-            .ThrowAsJavaScriptException();
+        Napi::TypeError::New(env, "Argument 2 (height) must be a number").ThrowAsJavaScriptException();
         return env.Null();
     }
     if (!info[3].IsNumber()) {
-        Napi::TypeError::New(env, "Argument 3 (frameRate) must be a number")
-            .ThrowAsJavaScriptException();
+        Napi::TypeError::New(env, "Argument 3 (frameRate) must be a number").ThrowAsJavaScriptException();
         return env.Null();
     }
-    if (!info[4].IsFunction()) {
-        Napi::TypeError::New(env, "Argument 4 (callback) must be a function")
-            .ThrowAsJavaScriptException();
+    bool hasScaleFactor = info.Length() >= 11;
+    int regionXIndex = hasScaleFactor ? 5 : 4;
+    int regionYIndex = hasScaleFactor ? 6 : 5;
+    int regionWidthIndex = hasScaleFactor ? 7 : 6;
+    int regionHeightIndex = hasScaleFactor ? 8 : 7;
+    int outputPathIndex = hasScaleFactor ? 9 : 8;
+    int callbacksIndex = hasScaleFactor ? 10 : 9;
+
+    if (hasScaleFactor && !info[4].IsNumber()) {
+        Napi::TypeError::New(env, "Argument 4 (scaleFactor) must be a number").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    if (!info[regionXIndex].IsNumber()) {
+        Napi::TypeError::New(env, "Argument 4/5 (regionX) must be a number").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    if (!info[regionYIndex].IsNumber()) {
+        Napi::TypeError::New(env, "Argument 5/6 (regionY) must be a number").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    if (!info[regionWidthIndex].IsNumber()) {
+        Napi::TypeError::New(env, "Argument 6/7 (regionWidth) must be a number").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    if (!info[regionHeightIndex].IsNumber()) {
+        Napi::TypeError::New(env, "Argument 7/8 (regionHeight) must be a number").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    if (!info[outputPathIndex].IsString()) {
+        Napi::TypeError::New(env, "Argument 8/9 (outputPath) must be a string").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    if (!info[callbacksIndex].IsObject()) {
+        Napi::TypeError::New(env, "Argument 9/10 (callbacks) must be an object").ThrowAsJavaScriptException();
         return env.Null();
     }
 
@@ -46,66 +74,114 @@ Napi::Value StartCapture(const Napi::CallbackInfo& info) {
     int width = info[1].As<Napi::Number>().Int32Value();
     int height = info[2].As<Napi::Number>().Int32Value();
     int frameRate = info[3].As<Napi::Number>().Int32Value();
-    Napi::Function frameCallback = info[4].As<Napi::Function>();
+    double scaleFactor = hasScaleFactor ? info[4].As<Napi::Number>().DoubleValue() : 1.0;
+    int regionX = info[regionXIndex].As<Napi::Number>().Int32Value();
+    int regionY = info[regionYIndex].As<Napi::Number>().Int32Value();
+    int regionWidth = info[regionWidthIndex].As<Napi::Number>().Int32Value();
+    int regionHeight = info[regionHeightIndex].As<Napi::Number>().Int32Value();
+    std::string outputPath = info[outputPathIndex].As<Napi::String>().Utf8Value();
 
-    NSLog(@"[ScreenCaptureKit Native] Creating ThreadSafeFunction");
+    Napi::Object callbacks = info[callbacksIndex].As<Napi::Object>();
+    Napi::Function onComplete = callbacks.Get("onComplete").As<Napi::Function>();
+    Napi::Function onError = callbacks.Get("onError").As<Napi::Function>();
 
-    // Create thread-safe function for frame callback
-    tsfn = Napi::ThreadSafeFunction::New(
+    NSLog(@"[ScreenCaptureKit Native] Starting file-based recording with region cropping");
+    NSLog(@"[ScreenCaptureKit Native] Output: %s", outputPath.c_str());
+    NSLog(@"[ScreenCaptureKit Native] Display: %dx%d @ %d FPS", width, height, frameRate);
+    NSLog(@"[ScreenCaptureKit Native] Scale factor: %.2f", scaleFactor);
+    NSLog(@"[ScreenCaptureKit Native] Region: {%d, %d, %d, %d}", regionX, regionY, regionWidth, regionHeight);
+
+    // Create thread-safe functions for callbacks
+    completionTsfn = Napi::ThreadSafeFunction::New(
         env,
-        frameCallback,
-        "FrameCallback",
-        0,          // Unlimited queue
-        1,          // Only one thread will use this
-        [](Napi::Env) {  // Finalizer
-            NSLog(@"[ScreenCaptureKit Native] ThreadSafeFunction finalized");
+        onComplete,
+        "CompletionCallback",
+        0,  // Unlimited queue (completion happens once)
+        1,
+        [](Napi::Env) {
+            NSLog(@"[ScreenCaptureKit Native] Completion TSFN finalized");
         }
     );
 
-    NSLog(@"[ScreenCaptureKit Native] Creating ScreenCaptureManager with displayID=%u, width=%d, height=%d, fps=%d",
-          displayID, width, height, frameRate);
+    errorTsfn = Napi::ThreadSafeFunction::New(
+        env,
+        onError,
+        "ErrorCallback",
+        0,  // Unlimited queue
+        1,
+        [](Napi::Env) {
+            NSLog(@"[ScreenCaptureKit Native] Error TSFN finalized");
+        }
+    );
 
-    // Create manager
+    // Convert std::string to NSString
+    NSString *outputPathNS = [NSString stringWithUTF8String:outputPath.c_str()];
+
+    // Create manager with file-based recording
     manager = [[ScreenCaptureManager alloc] initWithDisplayID:displayID
                                                         width:width
                                                        height:height
-                                                   frameRate:frameRate
-                                                frameCallback:^(NSData *data, int w, int h) {
+                                                 scaleFactor:scaleFactor
+                                                    frameRate:frameRate
+                                                      regionX:regionX
+                                                      regionY:regionY
+                                                  regionWidth:regionWidth
+                                                 regionHeight:regionHeight
+                                                   outputPath:outputPathNS
+                                          completionCallback:^(NSString *filePath, NSError *error) {
         @autoreleasepool {
-            // Copy data to ensure it's valid when callback executes
-            NSData *dataCopy = [data copy];
+            if (filePath && !error) {
+                // Success - call completion callback with file path
+                std::string filePathStr = [filePath UTF8String];
 
-            // Call JS callback from native thread
-            napi_status status = tsfn.NonBlockingCall([dataCopy, w, h](Napi::Env env, Napi::Function jsCallback) {
-                @autoreleasepool {
-                    try {
-                        // Create buffer from data
-                        Napi::Buffer<uint8_t> buffer = Napi::Buffer<uint8_t>::Copy(env,
-                            (uint8_t*)[dataCopy bytes],
-                            [dataCopy length]);
+                completionTsfn.BlockingCall([filePathStr](Napi::Env env, Napi::Function jsCallback) {
+                    jsCallback.Call({
+                        Napi::String::New(env, filePathStr)
+                    });
+                });
 
-                        // Call the JavaScript callback
-                        jsCallback.Call({
-                            buffer,
-                            Napi::Number::New(env, w),
-                            Napi::Number::New(env, h)
-                        });
-                    } catch (const std::exception& e) {
-                        NSLog(@"[ScreenCaptureKit Native] Exception in frame callback: %s", e.what());
-                    }
-                }
-            });
+                NSLog(@"[ScreenCaptureKit Native] ✅ Recording completed: %@", filePath);
+            } else {
+                // Error - call error callback
+                std::string errorMsg = error ? [[error localizedDescription] UTF8String] : "Unknown error";
 
-            if (status != napi_ok) {
-                NSLog(@"[ScreenCaptureKit Native] Failed to call JS callback: %d", status);
+                errorTsfn.BlockingCall([errorMsg](Napi::Env env, Napi::Function jsCallback) {
+                    jsCallback.Call({
+                        Napi::String::New(env, errorMsg)
+                    });
+                });
+
+                NSLog(@"[ScreenCaptureKit Native] ❌ Recording failed: %@", error);
             }
+
+            // Release the thread-safe functions after calling them
+            if (completionTsfn) {
+                completionTsfn.Release();
+                NSLog(@"[ScreenCaptureKit Native] Completion TSFN released");
+            }
+            if (errorTsfn) {
+                errorTsfn.Release();
+                NSLog(@"[ScreenCaptureKit Native] Error TSFN released");
+            }
+
+            // Clean up manager now that we're done
+            manager = nil;
+            NSLog(@"[ScreenCaptureKit Native] Manager cleaned up");
         }
     }
-                                                errorCallback:^(NSError *error) {
-        NSLog(@"[ScreenCaptureKit Native] Error: %@", error);
-    }];
+                                               errorCallback:^(NSError *error) {
+        @autoreleasepool {
+            std::string errorMsg = error ? [[error localizedDescription] UTF8String] : "Unknown error";
 
-    NSLog(@"[ScreenCaptureKit Native] Manager created, starting capture");
+            errorTsfn.BlockingCall([errorMsg](Napi::Env env, Napi::Function jsCallback) {
+                jsCallback.Call({
+                    Napi::String::New(env, errorMsg)
+                });
+            });
+
+            NSLog(@"[ScreenCaptureKit Native] ⚠️  Stream error: %@", error);
+        }
+    }];
 
     NSError *error = nil;
     BOOL success = [manager startCapture:&error];
@@ -113,9 +189,15 @@ Napi::Value StartCapture(const Napi::CallbackInfo& info) {
     if (!success) {
         NSString *errorMsg = error ? error.localizedDescription : @"Unknown error";
         Napi::Error::New(env, [errorMsg UTF8String]).ThrowAsJavaScriptException();
+
+        // Clean up thread-safe functions
+        if (completionTsfn) completionTsfn.Release();
+        if (errorTsfn) errorTsfn.Release();
+
         return Napi::Boolean::New(env, false);
     }
 
+    NSLog(@"[ScreenCaptureKit Native] ✅ Recording started with AVAssetWriter");
     return Napi::Boolean::New(env, true);
 }
 
@@ -127,15 +209,16 @@ Napi::Value StopCapture(const Napi::CallbackInfo& info) {
 
     if (manager) {
         [manager stopCapture];
-        manager = nil;
+        // DO NOT set manager = nil here!
+        // Keep manager alive until completion callback fires
+        // Manager will be cleaned up in the completion callback
     }
 
-    // Release the thread-safe function
-    if (tsfn) {
-        tsfn.Release();
-    }
+    // DO NOT release the thread-safe functions here!
+    // They will be released AFTER the completion callback is called
+    // AVAssetWriter finishes asynchronously, so we need to wait for the callback
 
-    NSLog(@"[ScreenCaptureKit Native] Capture stopped and cleaned up");
+    NSLog(@"[ScreenCaptureKit Native] Capture stopped, waiting for AVAssetWriter to finish");
 
     return env.Null();
 }

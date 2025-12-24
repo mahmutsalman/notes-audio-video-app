@@ -79,22 +79,56 @@ export async function detectBlackHoleAudio(): Promise<boolean> {
 }
 
 /**
+ * Combined audio stream result with cleanup function
+ * Phase 3: AudioContext Lifecycle Management
+ */
+export interface CombinedAudioResult {
+  stream: MediaStream;
+  cleanup: () => Promise<void>;
+}
+
+/**
  * Combine multiple audio streams into a single stream
  * Uses Web Audio API to mix audio sources
+ * Phase 3: Returns cleanup function to properly release AudioContext resources
  */
-export function combineAudioStreams(streams: MediaStream[]): MediaStream {
+export function combineAudioStreams(streams: MediaStream[]): CombinedAudioResult {
   const audioContext = new AudioContext({ sampleRate: 48000 });
   const destination = audioContext.createMediaStreamDestination();
+  const sources: MediaStreamAudioSourceNode[] = [];
 
   streams.forEach(stream => {
     const audioTracks = stream.getAudioTracks();
     if (audioTracks.length > 0) {
       const source = audioContext.createMediaStreamSource(stream);
       source.connect(destination);
+      sources.push(source); // Store for cleanup
     }
   });
 
-  return destination.stream;
+  // Phase 3: Cleanup function to release AudioContext resources
+  const cleanup = async () => {
+    // Disconnect all source nodes
+    sources.forEach(source => {
+      try {
+        source.disconnect();
+      } catch (error) {
+        console.warn('[AudioCapture] Error disconnecting source:', error);
+      }
+    });
+    sources.length = 0; // Clear array
+
+    // Close AudioContext (releases audio processing resources)
+    if (audioContext.state !== 'closed') {
+      await audioContext.close();
+      console.log('[AudioCapture] AudioContext closed and resources released');
+    }
+  };
+
+  return {
+    stream: destination.stream,
+    cleanup
+  };
 }
 
 /**

@@ -410,6 +410,12 @@ const electronAPI = {
       width: number;
       height: number;
       frameRate: number;
+      regionX?: number;
+      regionY?: number;
+      regionWidth?: number;
+      regionHeight?: number;
+      scaleFactor?: number;
+      outputPath?: string;
     }): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('screencapturekit:start', config),
 
@@ -419,16 +425,16 @@ const electronAPI = {
     isCapturing: (): Promise<{ isCapturing: boolean }> =>
       ipcRenderer.invoke('screencapturekit:isCapturing'),
 
-    onFrame: (callback: (frameData: { buffer: Uint8Array; width: number; height: number }) => void) => {
-      ipcRenderer.on('screencapturekit:frame', (_event, data) => callback(data));
+    onComplete: (callback: (data: { filePath: string }) => void) => {
+      ipcRenderer.on('screencapturekit:complete', (_event, data) => callback(data));
     },
 
-    onError: (callback: (error: string) => void) => {
-      ipcRenderer.on('screencapturekit:error', (_event, error) => callback(error));
+    onError: (callback: (data: { error: string }) => void) => {
+      ipcRenderer.on('screencapturekit:error', (_event, data) => callback(data));
     },
 
     removeAllListeners: () => {
-      ipcRenderer.removeAllListeners('screencapturekit:frame');
+      ipcRenderer.removeAllListeners('screencapturekit:complete');
       ipcRenderer.removeAllListeners('screencapturekit:error');
     },
   },

@@ -1,18 +1,20 @@
 import { EventEmitter } from 'events';
 import * as path from 'path';
+import * as fs from 'fs';
 import { app } from 'electron';
 
 interface ScreenCaptureConfig {
   displayId: number;
   width: number;
   height: number;
+  scaleFactor?: number;
   frameRate: number;
-}
-
-export interface FrameData {
-  buffer: Buffer;
-  width: number;
-  height: number;
+  recordingId?: number; // Optional recording ID for folder organization
+  regionX?: number; // Optional region cropping (defaults to 0)
+  regionY?: number; // Optional region cropping (defaults to 0)
+  regionWidth?: number; // Optional region cropping (defaults to width)
+  regionHeight?: number; // Optional region cropping (defaults to height)
+  outputPath?: string; // Optional output path, will be generated if not provided
 }
 
 export class ScreenCaptureKitManager extends EventEmitter {
@@ -65,15 +67,17 @@ export class ScreenCaptureKitManager extends EventEmitter {
     }
 
     // Log config for debugging
-    console.log('[ScreenCaptureKit] Starting capture with config:', {
+    console.log('[ScreenCaptureKit] Starting file-based capture with config:', {
       displayId: config.displayId,
-      displayIdType: typeof config.displayId,
       width: config.width,
-      widthType: typeof config.width,
       height: config.height,
-      heightType: typeof config.height,
+      scaleFactor: config.scaleFactor,
       frameRate: config.frameRate,
-      frameRateType: typeof config.frameRate
+      regionX: config.regionX,
+      regionY: config.regionY,
+      regionWidth: config.regionWidth,
+      regionHeight: config.regionHeight,
+      outputPath: config.outputPath
     });
 
     // Ensure all parameters are numbers
@@ -81,6 +85,11 @@ export class ScreenCaptureKitManager extends EventEmitter {
     const width = Number(config.width);
     const height = Number(config.height);
     const frameRate = Number(config.frameRate);
+    const scaleFactor = config.scaleFactor !== undefined ? Number(config.scaleFactor) : 1;
+    const regionX = config.regionX !== undefined ? Number(config.regionX) : 0;
+    const regionY = config.regionY !== undefined ? Number(config.regionY) : 0;
+    const regionWidth = config.regionWidth !== undefined ? Number(config.regionWidth) : width;
+    const regionHeight = config.regionHeight !== undefined ? Number(config.regionHeight) : height;
 
     // Validate parameters
     if (!Number.isInteger(displayId) || displayId < 0) {
@@ -96,17 +105,42 @@ export class ScreenCaptureKitManager extends EventEmitter {
       throw new Error(`Invalid frameRate: ${config.frameRate}`);
     }
 
-    const frameCallback = (buffer: Buffer, width: number, height: number) => {
-      this.emit('frame', { buffer, width, height });
+    // Extract recordingId from config
+    const recordingId = config.recordingId;
+
+    // Generate output path if not provided
+    const outputPath = config.outputPath || this.generateOutputPath(recordingId);
+
+    // Ensure output directory exists
+    const outputDir = path.dirname(outputPath);
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    // Setup callbacks for file-based recording
+    const callbacks = {
+      onComplete: (filePath: string) => {
+        console.log('[ScreenCaptureKit] ✅ Recording completed:', filePath);
+        this.emit('complete', filePath);
+      },
+      onError: (errorMessage: string) => {
+        console.error('[ScreenCaptureKit] ❌ Recording error:', errorMessage);
+        this.emit('error', new Error(errorMessage));
+      }
     };
 
     try {
-      console.log('[ScreenCaptureKit] Calling native.startCapture with validated parameters:', {
+      console.log('[ScreenCaptureKit] Calling native.startCapture with file output:', {
         displayId,
         width,
         height,
+        scaleFactor,
         frameRate,
-        callbackType: typeof frameCallback
+        regionX,
+        regionY,
+        regionWidth,
+        regionHeight,
+        outputPath
       });
 
       const success = this.native.startCapture(
@@ -114,18 +148,44 @@ export class ScreenCaptureKitManager extends EventEmitter {
         width,
         height,
         frameRate,
-        frameCallback
+        scaleFactor,
+        regionX,
+        regionY,
+        regionWidth,
+        regionHeight,
+        outputPath,
+        callbacks
       );
 
       if (success) {
         this.isCapturing = true;
         this.emit('started');
-        console.log('[ScreenCaptureKit] ✅ Capture started successfully');
+        console.log('[ScreenCaptureKit] ✅ File-based capture started with AVAssetWriter');
       }
     } catch (error) {
       console.error('[ScreenCaptureKit] ❌ Failed to start capture:', error);
       this.emit('error', error);
       throw error;
+    }
+  }
+
+  private generateOutputPath(recordingId?: number): string {
+    const userDataPath = app.getPath('userData');
+    const timestamp = Date.now();
+
+    if (recordingId !== undefined) {
+      // Use recordingId folder structure to match fileStorage pattern
+      const recordingsDir = path.join(
+        userDataPath,
+        'media',
+        'screen_recordings',
+        String(recordingId)
+      );
+      return path.join(recordingsDir, `recording_${timestamp}.mov`);
+    } else {
+      // Fallback: direct to screen_recordings (legacy)
+      const recordingsDir = path.join(userDataPath, 'media', 'screen_recordings');
+      return path.join(recordingsDir, `recording_${timestamp}.mov`);
     }
   }
 

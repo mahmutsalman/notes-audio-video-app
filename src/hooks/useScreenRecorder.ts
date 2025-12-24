@@ -4,6 +4,7 @@ import { createCroppedStream, getDisplaySourceId, calculateBitrate } from '../ut
 import { createMicrophoneStream, combineAudioStreams, getBlackHoleDevice } from '../utils/audioCapture';
 import { SpaceDetector } from '../utils/spaceDetector';
 import { RESOLUTION_PRESETS, useScreenRecordingSettings } from '../context/ScreenRecordingSettingsContext';
+import { memoryMonitor, type MemoryAlert } from '../utils/memoryMonitor'; // Phase 6: Memory Monitoring
 import type { CaptureArea } from '../types';
 
 // Reuse DurationMark types from useVoiceRecorder
@@ -87,6 +88,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   const accumulatedTimeRef = useRef<number>(0);
   const regionCleanupRef = useRef<(() => void) | null>(null);
   const audioStreamsRef = useRef<MediaStream[]>([]);
+  const audioContextCleanupRef = useRef<(() => Promise<void>) | null>(null); // Phase 3: AudioContext cleanup
   const spaceDetectorRef = useRef<SpaceDetector | null>(null);
   const updateSourceRef = useRef<((newSourceId: string, force?: boolean) => Promise<void>) | null>(null);
 
@@ -94,6 +96,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   const [pendingMarkStart, setPendingMarkStart] = useState<number | null>(null);
   const [pendingMarkNote, setPendingMarkNote] = useState<string>('');
   const [completedMarks, setCompletedMarks] = useState<DurationMark[]>([]);
+
+  // Phase 6: Memory monitoring state
+  const [memoryAlert, setMemoryAlert] = useState<MemoryAlert | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -304,17 +309,62 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       const actualFPS = region.fps || fps;
       console.log('[useScreenRecorder] Recording at', actualFPS, 'FPS');
 
-      // Create cropped video stream using canvas
-      console.log('[useScreenRecorder] Creating cropped video stream');
-      const { stream: videoStream, cleanup, updateSource } = await createCroppedStream(
+      // Create cropped video stream (or file-based recording for ScreenCaptureKit)
+      console.log('[useScreenRecorder] Creating capture stream/file');
+      const captureResult = await createCroppedStream(
         sourceId,
         region,
         actualFPS,
         { width: recordWidth, height: recordHeight }
       );
-      console.log('[useScreenRecorder] Cropped video stream created');
-      regionCleanupRef.current = cleanup;
-      updateSourceRef.current = updateSource;
+      console.log('[useScreenRecorder] Capture created (file-based:', captureResult.isFileBased, ')');
+      regionCleanupRef.current = captureResult.cleanup;
+      updateSourceRef.current = captureResult.updateSource;
+
+      // Handle file-based recording (ScreenCaptureKit with AVAssetWriter)
+      if (captureResult.isFileBased && captureResult.filePath) {
+        console.log('[useScreenRecorder] ✅ File-based recording flow activated');
+        console.log('[useScreenRecorder] 📍 Recording start time:', new Date().toISOString());
+        console.log('[useScreenRecorder] 📂 RecordingId:', region.recordingId);
+
+        // Store recordingId and start time for later use
+        (window as any).__screenRecordingId = region.recordingId;
+        (window as any).__screenRecordingStartTime = Date.now();
+        (window as any).__isFileBased = true; // Flag to prevent legacy flow
+
+        // Start timer
+        startTimeRef.current = Date.now();
+        accumulatedTimeRef.current = 0;
+
+        timerRef.current = setInterval(() => {
+          const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+          setState(prev => ({ ...prev, duration: Math.floor(elapsed / 1000) }));
+        }, 100);
+
+        setState(prev => ({ ...prev, isRecording: true, isPaused: false, selectedCodec: 'H.264 (Hardware)' }));
+
+        // Store the file path promise for later
+        // When stop is called, we'll wait for this promise to resolve
+        (window as any).__screenRecordingFilePromise = captureResult.filePath;
+
+        console.log('[useScreenRecorder] ✅ File-based recording started - MediaRecorder flow WILL NOT execute');
+        console.log('[useScreenRecorder] 🚫 Preventing legacy WebM recording flow');
+
+        // CRITICAL: Return here to prevent MediaRecorder flow
+        return;
+      }
+
+      // Safety check: Ensure we don't run MediaRecorder flow if file-based recording is active
+      if ((window as any).__isFileBased) {
+        console.error('[useScreenRecorder] ❌ CRITICAL: MediaRecorder flow attempted while file-based recording is active!');
+        console.error('[useScreenRecorder] This should never happen - the return statement should prevent this');
+        throw new Error('Dual recording flow detected - file-based recording already active');
+      }
+
+      // Legacy stream-based recording (desktopCapturer)
+      const videoStream = captureResult.stream!;
+      console.log('[useScreenRecorder] 📹 Using legacy stream-based recording with MediaRecorder');
+      console.log('[useScreenRecorder] ℹ️ This flow creates .webm files with VP9/H.264 codec');
 
       // Start Space detector for automatic source switching
       console.log('[useScreenRecorder] Starting Space detector');
@@ -374,10 +424,16 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       if (audioStreams.length > 0) {
         console.log('[useScreenRecorder] Combining', audioStreams.length, 'audio streams with video');
 
-        // Combine multiple audio streams if needed
-        const combinedAudioStream = audioStreams.length > 1
-          ? combineAudioStreams(audioStreams)
-          : audioStreams[0];
+        // Combine multiple audio streams if needed (Phase 3: Store cleanup function)
+        let combinedAudioStream: MediaStream;
+        if (audioStreams.length > 1) {
+          const { stream, cleanup } = combineAudioStreams(audioStreams);
+          combinedAudioStream = stream;
+          audioContextCleanupRef.current = cleanup; // Store cleanup for later
+        } else {
+          combinedAudioStream = audioStreams[0];
+          audioContextCleanupRef.current = null; // No AudioContext when using single stream
+        }
 
         // Create final stream with video + audio tracks
         finalStream = new MediaStream([
@@ -470,6 +526,25 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
       console.log('[useScreenRecorder] Setting isRecording to true');
       setState(prev => ({ ...prev, isRecording: true, isPaused: false, selectedCodec }));
+
+      // Phase 6: Start memory monitoring
+      memoryMonitor.start({
+        interval: 2000,              // Check every 2 seconds
+        warningThreshold: 0.7,       // Warn at 70% heap usage
+        criticalThreshold: 0.85,     // Critical at 85% heap usage
+        onAlert: (alert) => {
+          setMemoryAlert(alert);
+
+          // Optional: Auto-stop on critical threshold to prevent crash
+          if (alert.level === 'critical') {
+            console.error('[ScreenRecorder] 🚨 Critical memory detected - consider stopping recording');
+            // Uncomment to enable auto-stop on critical memory:
+            // console.error('[ScreenRecorder] Auto-stopping recording to prevent crash');
+            // stopRecording();
+          }
+        }
+      });
+
       console.log('[useScreenRecorder] Recording started successfully');
     } catch (err) {
       console.error('[useScreenRecorder] Failed to start region recording:', err);
@@ -481,6 +556,113 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   }, []);
 
   const stopRecording = useCallback(async (): Promise<{ blob: Blob; durationMs: number } | null> => {
+    // Handle file-based recording (ScreenCaptureKit with AVAssetWriter)
+    if ((window as any).__screenRecordingFilePromise) {
+      console.log('[useScreenRecorder] 🛑 Stopping file-based recording');
+      console.log('[useScreenRecorder] 📍 Stop time:', new Date().toISOString());
+
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+
+      const startTime = (window as any).__screenRecordingStartTime || startTimeRef.current;
+      const endTime = Date.now();
+      const actualDurationMs = endTime - startTime;
+      const durationMs = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+
+      console.log('[useScreenRecorder] ⏱️ Recording duration:', {
+        startTime: new Date(startTime).toISOString(),
+        endTime: new Date(endTime).toISOString(),
+        durationMs: actualDurationMs,
+        durationSec: (actualDurationMs / 1000).toFixed(2),
+        accumulatedTime: accumulatedTimeRef.current,
+        calculatedDuration: durationMs
+      });
+
+      // Detect premature stop
+      if (actualDurationMs < 1000) {
+        console.warn('[useScreenRecorder] ⚠️ PREMATURE STOP DETECTED! Duration:', actualDurationMs, 'ms');
+        console.warn('[useScreenRecorder] Recording stopped in less than 1 second - this is likely a bug');
+      } else if (actualDurationMs < 5000) {
+        console.warn('[useScreenRecorder] ⚠️ Short recording detected:', (actualDurationMs / 1000).toFixed(2), 'seconds');
+      }
+
+      // Auto-complete pending mark
+      if (pendingMarkStart !== null) {
+        const endTime = Math.floor(durationMs / 1000);
+        if (endTime > pendingMarkStart) {
+          setCompletedMarks(prev => [...prev, {
+            start: pendingMarkStart,
+            end: endTime,
+            note: pendingMarkNote.trim() || undefined,
+          }]);
+        }
+        setPendingMarkStart(null);
+        setPendingMarkNote('');
+      }
+
+      try {
+        // FIRST: Stop the native capture (but keep listeners alive)
+        console.log('[useScreenRecorder] 📞 Calling native stopCapture');
+        await window.electronAPI.screenCaptureKit.stopCapture();
+        console.log('[useScreenRecorder] ✅ Native stopCapture completed');
+
+        // SECOND: Wait for the completion event with the file path
+        console.log('[useScreenRecorder] ⏳ Waiting for file path from native completion callback...');
+        const filePath = await (window as any).__screenRecordingFilePromise;
+        console.log('[useScreenRecorder] ✅ File path received:', filePath);
+
+        // Clear all file-based recording state
+        console.log('[useScreenRecorder] 🧹 Cleaning up file-based recording state');
+        delete (window as any).__screenRecordingFilePromise;
+        delete (window as any).__screenRecordingId;
+        delete (window as any).__screenRecordingStartTime;
+        delete (window as any).__isFileBased;
+
+        // FINALLY: Clean up the listeners now that we have the file
+        if (regionCleanupRef.current) {
+          console.log('[useScreenRecorder] 🧹 Cleaning up region listeners');
+          regionCleanupRef.current();
+          regionCleanupRef.current = null;
+        }
+
+        console.log('[useScreenRecorder] ✅ File-based recording stopped successfully');
+        console.log('[useScreenRecorder] 📁 Final file path:', filePath);
+        console.log('[useScreenRecorder] ⏱️ Final duration:', (actualDurationMs / 1000).toFixed(2), 'seconds');
+
+        // For file-based recording, we don't have a blob
+        // The file is already saved, so we set state with the file path
+        setState(prev => ({
+          ...prev,
+          isRecording: false,
+          isPaused: false,
+          videoBlob: null, // No blob for file-based
+          videoUrl: filePath, // Use file path directly
+        }));
+
+        // Create a dummy blob to maintain API compatibility
+        // The caller should check for file path instead
+        return { blob: new Blob(), durationMs };
+      } catch (error) {
+        console.error('[useScreenRecorder] ❌ File-based recording failed:', error);
+
+        // Clean up on error
+        if (regionCleanupRef.current) {
+          regionCleanupRef.current();
+          regionCleanupRef.current = null;
+        }
+
+        setState(prev => ({
+          ...prev,
+          isRecording: false,
+          error: error instanceof Error ? error.message : 'Recording failed'
+        }));
+        return null;
+      }
+    }
+
+    // Legacy MediaRecorder-based recording
     return new Promise((resolve) => {
       const mediaRecorder = mediaRecorderRef.current;
       if (!mediaRecorder || mediaRecorder.state === 'inactive') {
@@ -492,6 +674,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
+
+      // Phase 6: Stop memory monitoring
+      memoryMonitor.stop();
+      setMemoryAlert(null);
 
       // Stop Space detector
       if (spaceDetectorRef.current) {
@@ -546,6 +732,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         // Cleanup audio streams (Phase 3)
         if (audioStreamsRef.current.length > 0) {
           console.log('[ScreenRecording] Cleaning up', audioStreamsRef.current.length, 'audio streams');
+
+          // Clean up AudioContext if exists (Phase 3: Memory Leak Fix)
+          if (audioContextCleanupRef.current) {
+            await audioContextCleanupRef.current();
+            audioContextCleanupRef.current = null;
+          }
+
           audioStreamsRef.current.forEach(stream => {
             stream.getTracks().forEach(track => track.stop());
           });
@@ -599,12 +792,24 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+
+    // Phase 6: Stop memory monitoring
+    memoryMonitor.stop();
+    setMemoryAlert(null);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
     // Cleanup audio streams
     if (audioStreamsRef.current.length > 0) {
+      // Clean up AudioContext if exists (Phase 3: Memory Leak Fix)
+      if (audioContextCleanupRef.current) {
+        audioContextCleanupRef.current().catch(err =>
+          console.warn('[ScreenRecording] AudioContext cleanup error:', err)
+        );
+        audioContextCleanupRef.current = null;
+      }
+
       audioStreamsRef.current.forEach(stream => {
         stream.getTracks().forEach(track => track.stop());
       });
@@ -680,5 +885,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     pendingMarkNote,
     completedMarks,
     isMarking: pendingMarkStart !== null,
+    memoryAlert, // Phase 6: Memory monitoring alerts
   };
 }

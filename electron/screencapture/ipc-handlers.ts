@@ -14,15 +14,24 @@ export function registerScreenCaptureHandlers(mainWindow: BrowserWindow) {
       if (!captureManager) {
         captureManager = new ScreenCaptureKitManager();
 
-        // Forward frames to renderer
-        captureManager.on('frame', (frameData) => {
-          mainWindow.webContents.send('screencapturekit:frame', frameData);
+        // Forward completion to renderer with file path
+        captureManager.on('complete', (filePath: string) => {
+          console.log('[ScreenCaptureKit] IPC: forwarding completion with file path:', filePath);
+          mainWindow.webContents.send('screencapturekit:complete', { filePath });
+
+          // Clean up after forwarding the completion event
+          if (captureManager) {
+            captureManager.removeAllListeners();
+            captureManager = null;
+            console.log('[ScreenCaptureKit] IPC: captureManager cleaned up after completion');
+          }
         });
 
         // Forward errors to renderer
         captureManager.on('error', (error) => {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          mainWindow.webContents.send('screencapturekit:error', errorMessage);
+          console.error('[ScreenCaptureKit] IPC: forwarding error:', errorMessage);
+          mainWindow.webContents.send('screencapturekit:error', { error: errorMessage });
         });
 
         // Log capture events
@@ -51,8 +60,9 @@ export function registerScreenCaptureHandlers(mainWindow: BrowserWindow) {
     try {
       if (captureManager) {
         captureManager.stopCapture();
-        captureManager.removeAllListeners();
-        captureManager = null;
+        // DO NOT removeAllListeners or set to null here!
+        // The completion event needs to be forwarded to renderer
+        // Cleanup will happen after completion callback fires
       }
       return { success: true };
     } catch (error) {

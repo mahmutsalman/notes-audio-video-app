@@ -5,11 +5,14 @@ import {
   isScreenCaptureKitAvailable,
   type ScreenCaptureKitRegion
 } from './screenCaptureKitCapture';
+import { logger } from './logger'; // Phase 4: Logging Optimization
 
 export interface CroppedStreamResult {
-  stream: MediaStream;
+  stream?: MediaStream; // Optional for legacy desktopCapturer
+  filePath?: Promise<string>; // Optional for ScreenCaptureKit file-based recording
   cleanup: () => void;
   updateSource: (newSourceId: string) => Promise<void>;
+  isFileBased?: boolean; // Flag to indicate recording method
 }
 
 /**
@@ -30,12 +33,7 @@ export async function createCroppedStream(
   const useScreenCaptureKit = isScreenCaptureKitAvailable();
 
   if (useScreenCaptureKit) {
-    console.log('[RegionCapture] 🚀 Using ScreenCaptureKit (native macOS API - no Space freeze!)');
-
-    // Account for display scale factor
-    const scaleFactor = region.scaleFactor || 1;
-    const canvasWidth = targetDimensions?.width ?? (region.width * scaleFactor);
-    const canvasHeight = targetDimensions?.height ?? (region.height * scaleFactor);
+    console.log('[RegionCapture] 🚀 Using ScreenCaptureKit with AVAssetWriter (file-based recording)');
 
     // Get display dimensions for full capture
     const displayId = parseInt(region.displayId, 10);
@@ -44,6 +42,8 @@ export async function createCroppedStream(
     if (!displayDimensionsResult.success || !displayDimensionsResult.width || !displayDimensionsResult.height) {
       throw new Error(`Failed to get display dimensions: ${displayDimensionsResult.error || 'Unknown error'}`);
     }
+
+    const scaleFactor = region.scaleFactor ?? displayDimensionsResult.scaleFactor ?? 1;
 
     console.log('[RegionCapture] Display dimensions:', {
       displayId,
@@ -58,23 +58,27 @@ export async function createCroppedStream(
       x: region.x * scaleFactor,
       y: region.y * scaleFactor,
       width: region.width * scaleFactor,
-      height: region.height * scaleFactor
+      height: region.height * scaleFactor,
+      scaleFactor,
+      recordingId: region.recordingId // Pass recordingId for folder organization
     };
 
-    // Use ScreenCaptureKit for capture with full display dimensions
-    const { stream, cleanup } = await createScreenCaptureKitStream(
+    // Use ScreenCaptureKit for file-based capture
+    // Note: targetDimensions are not used as cropping/scaling happens in hardware encoder
+    const { filePath, cleanup } = await createScreenCaptureKitStream(
       screenCaptureKitRegion,
       fps,
-      canvasWidth,
-      canvasHeight,
+      targetDimensions?.width ?? (region.width * scaleFactor),
+      targetDimensions?.height ?? (region.height * scaleFactor),
       displayDimensionsResult.width,
       displayDimensionsResult.height
     );
 
-    // Return with no-op updateSource (ScreenCaptureKit handles Space transitions automatically)
+    // Return file-based result (no MediaStream, file path instead)
     return {
-      stream,
+      filePath,
       cleanup,
+      isFileBased: true,
       updateSource: async () => {
         console.log('[RegionCapture] ScreenCaptureKit handles Space transitions automatically - no manual update needed');
       }
@@ -100,6 +104,20 @@ export async function createCroppedStream(
   let lastFreezeCheck = 0;
   let isRecovering = false;
 
+  // Event listener handler storage for proper cleanup (Phase 1: Memory Leak Fix)
+  interface StreamHandlers {
+    inactive: () => void;
+    trackHandlers: Map<MediaStreamTrack, () => void>;
+  }
+  const streamHandlers = new Map<MediaStream, StreamHandlers>();
+
+  interface VideoHandlers {
+    canplay: () => void;
+    waiting: () => void;
+    playing: () => void;
+  }
+  let videoHandlers: VideoHandlers | null = null;
+
   // Account for display scale factor (e.g., 2x on Retina displays)
   const scaleFactor = region.scaleFactor || 1;
 
@@ -114,15 +132,29 @@ export async function createCroppedStream(
   const initializeStream = async (newSourceId: string): Promise<void> => {
     console.log('[RegionCapture] Initializing stream for source:', newSourceId);
 
-    // Stop old stream if exists and remove event listeners
-    if (fullStream) {
-      // Remove all event listeners to prevent memory leaks
-      fullStream.removeEventListener('inactive', () => {});
-      fullStream.getTracks().forEach((track) => {
-        track.removeEventListener('ended', () => {});
-        track.stop();
+    // Stop old stream if exists and remove event listeners PROPERLY (Phase 1: Memory Leak Fix)
+    if (fullStream && streamHandlers.has(fullStream)) {
+      const handlers = streamHandlers.get(fullStream)!;
+
+      // Remove stream inactive listener
+      fullStream.removeEventListener('inactive', handlers.inactive);
+
+      // Remove track ended listeners
+      handlers.trackHandlers.forEach((handler, track) => {
+        track.removeEventListener('ended', handler);
       });
-      console.log('[RegionCapture] Old stream cleaned up');
+
+      // Clear handlers map for this stream
+      streamHandlers.delete(fullStream);
+
+      // Stop all tracks
+      fullStream.getTracks().forEach(track => track.stop());
+
+      console.log('[RegionCapture] Old stream cleaned up (listeners properly removed)');
+    } else if (fullStream) {
+      // Fallback: old stream without stored handlers
+      fullStream.getTracks().forEach(track => track.stop());
+      console.log('[RegionCapture] Old stream cleaned up (no handlers to remove)');
     }
 
     // Create new stream with new source ID
@@ -139,27 +171,45 @@ export async function createCroppedStream(
     // Update video element source
     video.srcObject = fullStream;
 
-    // CRITICAL: Monitor stream state to detect macOS Space transition invalidation
-    // When macOS switches Spaces, it can suspend/invalidate the screen capture stream
-    fullStream.addEventListener('inactive', () => {
+    // Define stream inactive handler (Phase 1: Memory Leak Fix - store reference)
+    const streamInactiveHandler = () => {
       console.error('[RegionCapture] 🚨 Stream became INACTIVE - macOS likely suspended it during Space transition!');
       if (!isRecovering) {
         console.log('[RegionCapture] Triggering stream recreation...');
         handleFreeze(); // Force stream recreation
       }
-    });
+    };
+
+    // Add stream inactive listener
+    fullStream.addEventListener('inactive', streamInactiveHandler);
+
+    // Track ended handlers for each track
+    const trackHandlers = new Map<MediaStreamTrack, () => void>();
 
     // Monitor individual tracks for 'ended' events (macOS can kill tracks during Space transitions)
     fullStream.getTracks().forEach(track => {
-      track.addEventListener('ended', () => {
+      // Define track ended handler (Phase 1: Memory Leak Fix - store reference)
+      const trackEndedHandler = () => {
         console.error('[RegionCapture] 🚨 Track ENDED - macOS killed the capture track!');
         if (!isRecovering) {
           console.log('[RegionCapture] Triggering stream recreation...');
           handleFreeze(); // Force stream recreation
         }
-      });
+      };
+
+      // Add track ended listener
+      track.addEventListener('ended', trackEndedHandler);
+
+      // Store handler for proper cleanup
+      trackHandlers.set(track, trackEndedHandler);
 
       console.log(`[RegionCapture] Track state: ${track.readyState}, enabled: ${track.enabled}, muted: ${track.muted}`);
+    });
+
+    // Store all handlers for this stream (Phase 1: Memory Leak Fix)
+    streamHandlers.set(fullStream, {
+      inactive: streamInactiveHandler,
+      trackHandlers
     });
 
     // Check if stream is actually active after creation
@@ -203,18 +253,36 @@ export async function createCroppedStream(
       };
     });
 
-    // Add event listeners for video state monitoring (helps debug Space switching issues)
-    video.addEventListener('canplay', () => {
-      console.log('[RegionCapture] ▶️  Video can play - buffered enough data');
-    });
+    // Define video state handlers (Phase 1: Memory Leak Fix - store references)
+    // Phase 4: Use logger.debug() for high-frequency video state logs
+    const canplayHandler = () => {
+      logger.debug('[RegionCapture] ▶️  Video can play - buffered enough data');
+    };
+    const waitingHandler = () => {
+      logger.debug('[RegionCapture] ⏸️  Video waiting for data - buffering...');
+    };
+    const playingHandler = () => {
+      logger.debug('[RegionCapture] ▶️  Video playing');
+    };
 
-    video.addEventListener('waiting', () => {
-      console.log('[RegionCapture] ⏸️  Video waiting for data - buffering...');
-    });
+    // Remove old video listeners if they exist (only on re-initialization)
+    if (videoHandlers) {
+      video.removeEventListener('canplay', videoHandlers.canplay);
+      video.removeEventListener('waiting', videoHandlers.waiting);
+      video.removeEventListener('playing', videoHandlers.playing);
+    }
 
-    video.addEventListener('playing', () => {
-      console.log('[RegionCapture] ▶️  Video playing');
-    });
+    // Add new video event listeners
+    video.addEventListener('canplay', canplayHandler);
+    video.addEventListener('waiting', waitingHandler);
+    video.addEventListener('playing', playingHandler);
+
+    // Store handlers for cleanup (Phase 1: Memory Leak Fix)
+    videoHandlers = {
+      canplay: canplayHandler,
+      waiting: waitingHandler,
+      playing: playingHandler
+    };
 
     // Draw first frame immediately to avoid blank frame
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -445,6 +513,30 @@ export async function createCroppedStream(
       animationFrameId = null;
     }
 
+    // Remove stream event listeners (Phase 1: Memory Leak Fix)
+    if (fullStream && streamHandlers.has(fullStream)) {
+      const handlers = streamHandlers.get(fullStream)!;
+
+      // Remove stream inactive listener
+      fullStream.removeEventListener('inactive', handlers.inactive);
+
+      // Remove track ended listeners
+      handlers.trackHandlers.forEach((handler, track) => {
+        track.removeEventListener('ended', handler);
+      });
+
+      // Clear handlers map
+      streamHandlers.delete(fullStream);
+    }
+
+    // Remove video event listeners (Phase 1: Memory Leak Fix)
+    if (videoHandlers) {
+      video.removeEventListener('canplay', videoHandlers.canplay);
+      video.removeEventListener('waiting', videoHandlers.waiting);
+      video.removeEventListener('playing', videoHandlers.playing);
+      videoHandlers = null;
+    }
+
     // Stop all streams
     fullStream?.getTracks().forEach((track) => track.stop());
     croppedStream?.getTracks().forEach((track) => track.stop());
@@ -454,13 +546,14 @@ export async function createCroppedStream(
     video.remove();
     canvas.remove();
 
-    console.log('[RegionCapture] Cleanup complete');
+    console.log('[RegionCapture] Cleanup complete (all event listeners removed)');
   };
 
   return {
     stream: croppedStream,
     cleanup,
     updateSource,
+    isFileBased: false,
   };
 }
 
