@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -12,8 +12,19 @@ export default function Header() {
     success: false,
     message: '',
   });
+  const hideBackupStatusTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isHome = location.pathname === '/';
+
+  const showBackupStatus = (success: boolean, message: string) => {
+    setBackupStatus({ show: true, success, message });
+    if (hideBackupStatusTimeout.current) {
+      clearTimeout(hideBackupStatusTimeout.current);
+    }
+    hideBackupStatusTimeout.current = setTimeout(() => {
+      setBackupStatus(prev => ({ ...prev, show: false }));
+    }, 3000);
+  };
 
   const handleBackup = async () => {
     if (isBackingUp) return;
@@ -26,30 +37,25 @@ export default function Header() {
 
       if (result.success) {
         const sizeKB = result.stats ? Math.round(result.stats.totalSize / 1024) : 0;
-        setBackupStatus({
-          show: true,
-          success: true,
-          message: `Backup created (${sizeKB} KB)`,
-        });
+        const backupRoot = await window.electronAPI.backup.getPath();
+        showBackupStatus(true, `Backup created (${sizeKB} KB). Location: ${backupRoot}`);
       } else {
-        setBackupStatus({
-          show: true,
-          success: false,
-          message: result.error || 'Backup failed',
-        });
+        showBackupStatus(false, result.error || 'Backup failed');
       }
     } catch (error) {
-      setBackupStatus({
-        show: true,
-        success: false,
-        message: error instanceof Error ? error.message : 'Backup failed',
-      });
+      showBackupStatus(false, error instanceof Error ? error.message : 'Backup failed');
     } finally {
       setIsBackingUp(false);
-      // Auto-hide status after 3 seconds
-      setTimeout(() => {
-        setBackupStatus(prev => ({ ...prev, show: false }));
-      }, 3000);
+    }
+  };
+
+  const handleOpenBackupFolder = async () => {
+    try {
+      const backupRoot = await window.electronAPI.backup.getPath();
+      await window.electronAPI.backup.openFolder();
+      showBackupStatus(true, `Backup location: ${backupRoot}`);
+    } catch (error) {
+      showBackupStatus(false, error instanceof Error ? error.message : 'Failed to open backup folder');
     }
   };
 
@@ -168,7 +174,7 @@ export default function Header() {
 
       {/* Open backup folder button */}
       <button
-        onClick={() => window.electronAPI.backup.openFolder()}
+        onClick={handleOpenBackupFolder}
         className="titlebar-no-drag p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-hover transition-colors mr-1"
         title="Open backup folder"
       >

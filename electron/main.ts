@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { initDatabase, closeDatabase } from './database/database';
 import { ensureMediaDirs } from './services/fileStorage';
+import { migrateLegacyBackups } from './services/backupService';
 import { setupIpcHandlers } from './ipc/handlers';
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './shortcuts/globalShortcuts';
 import { registerScreenCaptureHandlers, unregisterScreenCaptureHandlers } from './screencapture/ipc-handlers';
@@ -29,11 +30,18 @@ let mainWindow: BrowserWindow | null = null;
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 async function createWindow(): Promise<void> {
+  // One-time migration of legacy backups from app bundle to userData.
+  await migrateLegacyBackups();
+
   // Initialize database
   initDatabase();
 
   // Ensure media directories exist
   await ensureMediaDirs();
+
+  // Clear extend logs from previous session
+  const { clearExtendLog } = await import('./services/extendLogger');
+  await clearExtendLog();
 
   // Setup IPC handlers
   setupIpcHandlers();

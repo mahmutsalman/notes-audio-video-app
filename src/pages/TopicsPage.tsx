@@ -4,7 +4,7 @@ import TopicList from '../components/topics/TopicList';
 import TopicForm from '../components/topics/TopicForm';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
-import type { CreateTopic } from '../types';
+import type { CreateTopic, UpdateTopic } from '../types';
 
 export default function TopicsPage() {
   const { topics, loading, error, createTopic, updateTopic, deleteTopic } = useTopics();
@@ -43,6 +43,10 @@ export default function TopicsPage() {
     } finally {
       setIsCreating(false);
     }
+  };
+
+  const handleUpdateTopic = async (id: number, updates: UpdateTopic) => {
+    await updateTopic(id, updates);
   };
 
   return (
@@ -93,7 +97,7 @@ export default function TopicsPage() {
       <TopicList
         topics={filteredTopics}
         loading={loading}
-        onUpdateTopic={updateTopic}
+        onUpdateTopic={handleUpdateTopic}
         onDeleteTopic={deleteTopic}
       />
 

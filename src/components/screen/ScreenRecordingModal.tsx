@@ -14,7 +14,8 @@ interface ScreenRecordingModalProps {
     durationMs: number,
     filePath?: string,
     audioBlob?: Blob | null,
-    audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 }
+    audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 },
+    audioOffsetMs?: number
   ) => Promise<void>;
   autoStartRegionSelection?: boolean;
   pendingRegion?: CaptureArea | null;
@@ -71,7 +72,8 @@ export default function ScreenRecordingModal({
           result.durationMs,
           result.filePath,
           result.audioBlob,
-          result.audioConfig
+          result.audioConfig,
+          result.audioOffsetMs
         );
         handleClose();
       } catch (error) {

@@ -129,18 +129,20 @@ const electronAPI = {
       ipcRenderer.invoke('video:checkFFmpeg'),
     mergeExtension: (
       recordingId: number,
-      extensionBuffer: ArrayBuffer,
+      extensionSource: ArrayBuffer | string,
       originalDurationMs: number,
       extensionDurationMs: number,
-      compressionOptions?: VideoCompressionOptions
+      compressionOptions?: VideoCompressionOptions,
+      audioOffsetMs?: number
     ): Promise<VideoMergeResult> =>
       ipcRenderer.invoke(
         'video:mergeExtension',
         recordingId,
-        extensionBuffer,
+        extensionSource,
         originalDurationMs,
         extensionDurationMs,
-        compressionOptions
+        compressionOptions,
+        audioOffsetMs
       ),
   },
 
@@ -261,7 +263,8 @@ const electronAPI = {
       fallbackDurationMs?: number,
       audioBuffer?: ArrayBuffer,
       audioBitrate?: '32k' | '64k' | '128k',
-      audioChannels?: 1 | 2
+      audioChannels?: 1 | 2,
+      audioOffsetMs?: number
     ): Promise<{ filePath: string; duration: number | null; _debug?: any }> =>
       ipcRenderer.invoke(
         'screenRecording:finalizeFile',
@@ -272,7 +275,8 @@ const electronAPI = {
         fallbackDurationMs,
         audioBuffer,
         audioBitrate,
-        audioChannels
+        audioChannels,
+        audioOffsetMs
       ),
     save: (
       recordingId: number,

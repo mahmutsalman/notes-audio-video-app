@@ -49,7 +49,8 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
     durationMs: number,
     filePath?: string,
     audioBlob?: Blob | null,
-    audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 }
+    audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 },
+    audioOffsetMs?: number
   ) => {
     setIsSaving(true);
 
@@ -94,7 +95,8 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
           durationMs,
           audioBuffer,
           resolvedAudioConfig.bitrate,
-          resolvedAudioConfig.channels
+          resolvedAudioConfig.channels,
+          audioOffsetMs
         );
       } else if (videoBlob) {
         // Save the video file with client-calculated duration as fallback

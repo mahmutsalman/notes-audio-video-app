@@ -44,6 +44,7 @@ export interface ScreenRecorderControls {
     filePath?: string;
     audioBlob?: Blob | null;
     audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 };
+    audioOffsetMs?: number;
   } | null>;
   pauseRecording: () => void;
   resumeRecording: () => void;
@@ -99,6 +100,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   const audioStreamsRef = useRef<MediaStream[]>([]);
   const audioContextCleanupRef = useRef<(() => Promise<void>) | null>(null); // Phase 3: AudioContext cleanup
   const audioEncodingRef = useRef<{ bitrate: '32k' | '64k' | '128k'; channels: 1 | 2; bitsPerSecond: number } | null>(null);
+  const audioStartTimeRef = useRef<number | null>(null);
   const spaceDetectorRef = useRef<SpaceDetector | null>(null);
   const updateSourceRef = useRef<((newSourceId: string, force?: boolean) => Promise<void>) | null>(null);
 
@@ -503,6 +505,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
                 console.error('[useScreenRecorder] Audio recorder error (file-based):', event);
               };
 
+              audioStartTimeRef.current = Date.now();
               audioRecorder.start(100);
               console.log('[useScreenRecorder] ✅ Audio recorder started (file-based)');
             } catch (error) {
@@ -734,6 +737,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     filePath?: string;
     audioBlob?: Blob | null;
     audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 };
+    audioOffsetMs?: number;
   } | null> => {
     // Handle file-based recording (ScreenCaptureKit with AVAssetWriter)
     if ((window as any).__screenRecordingFilePromise) {
@@ -749,6 +753,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       const endTime = Date.now();
       const actualDurationMs = endTime - startTime;
       const durationMs = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+      const audioOffsetMs = audioStartTimeRef.current ? audioStartTimeRef.current - startTime : 0;
 
       console.log('[useScreenRecorder] ⏱️ Recording duration:', {
         startTime: new Date(startTime).toISOString(),
@@ -831,8 +836,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
           ? { bitrate: audioEncodingRef.current.bitrate, channels: audioEncodingRef.current.channels }
           : undefined;
         audioEncodingRef.current = null;
+        audioStartTimeRef.current = null;
 
-        return { blob: null, durationMs, filePath, audioBlob, audioConfig };
+        return { blob: null, durationMs, filePath, audioBlob, audioConfig, audioOffsetMs };
       } catch (error) {
         console.error('[useScreenRecorder] ❌ File-based recording failed:', error);
 
@@ -844,6 +850,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
         await cleanupAudioResources();
         audioEncodingRef.current = null;
+        audioStartTimeRef.current = null;
 
         setState(prev => ({
           ...prev,
@@ -995,6 +1002,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       console.warn('[ScreenRecording] Audio cleanup error:', err)
     );
     audioEncodingRef.current = null;
+    audioStartTimeRef.current = null;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;

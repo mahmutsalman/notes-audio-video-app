@@ -512,7 +512,15 @@ export default function RecordingPage() {
 
   // Handle saving screen recording
   // TODO: Remove this - screen recordings are now standalone items created from TopicDetailPage
-  const handleSaveScreenRecording = async (_videoBlob: Blob | null, _marks: any[], _durationMs?: number, _filePath?: string) => {
+  const handleSaveScreenRecording = async (
+    _videoBlob: Blob | null,
+    _marks: any[],
+    _durationMs?: number,
+    _filePath?: string,
+    _audioBlob?: Blob | null,
+    _audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 },
+    _audioOffsetMs?: number
+  ) => {
     if (!id) return;
 
     try {

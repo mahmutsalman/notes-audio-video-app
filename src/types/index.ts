@@ -408,7 +408,8 @@ export interface ElectronAPI {
       fallbackDurationMs?: number,
       audioBuffer?: ArrayBuffer,
       audioBitrate?: '32k' | '64k' | '128k',
-      audioChannels?: 1 | 2
+      audioChannels?: 1 | 2,
+      audioOffsetMs?: number
     ) => Promise<{
       filePath: string;
       duration: number | null;
@@ -459,7 +460,7 @@ export interface ElectronAPI {
     checkFFmpeg: () => Promise<{ available: boolean; version?: string; error?: string }>;
     mergeExtension: (
       recordingId: number,
-      extensionBuffer: ArrayBuffer,
+      extensionSource: ArrayBuffer | string,
       originalDurationMs: number,
       extensionDurationMs: number,
       compressionOptions?: VideoCompressionOptions

@@ -519,7 +519,10 @@ export function setupIpcHandlers(): void {
     } catch {
       // Ignore if already exists
     }
-    await shell.openPath(backupPath);
+    const openResult = await shell.openPath(backupPath);
+    if (openResult) {
+      throw new Error(openResult);
+    }
   });
 
   // ============ Screen Recording ============
@@ -587,7 +590,8 @@ export function setupIpcHandlers(): void {
     fallbackDurationMs?: number,
     audioBuffer?: ArrayBuffer,
     audioBitrate?: '32k' | '64k' | '128k',
-    audioChannels?: 1 | 2
+    audioChannels?: 1 | 2,
+    audioOffsetMs?: number
   ) => {
     try {
       const { finalizeScreenRecordingFile } = await import('../services/fileStorage');
@@ -599,7 +603,8 @@ export function setupIpcHandlers(): void {
         fallbackDurationMs,
         audioBuffer,
         audioBitrate,
-        audioChannels
+        audioChannels,
+        audioOffsetMs
       );
 
       if (result.duration === null && result.extractionError) {
@@ -648,10 +653,11 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('video:mergeExtension', async (
     _,
     recordingId: number,
-    extensionBuffer: ArrayBuffer,
+    extensionSource: ArrayBuffer | string,
     originalDurationMs: number,
     extensionDurationMs: number,
-    compressionOptions?: any
+    compressionOptions?: any,
+    audioOffsetMs?: number
   ) => {
     const { mergeVideoFiles } = await import('../services/videoMerger');
 
@@ -662,12 +668,15 @@ export function setupIpcHandlers(): void {
       throw new Error('Recording not found or has no video');
     }
 
+    const shouldCleanupExtension = typeof extensionSource === 'string';
     const result = await mergeVideoFiles(
       recording.video_path,
-      extensionBuffer,
+      extensionSource as ArrayBuffer | string,
       originalDurationMs,
       extensionDurationMs,
-      compressionOptions
+      compressionOptions,
+      shouldCleanupExtension,
+      audioOffsetMs
     );
 
     return result;

@@ -7,6 +7,7 @@ import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { generateVideoThumbnail } from './videoThumbnail';
 import { getVideoMetadata } from './videoMetadata';
+import { appendExtendLog } from './extendLogger';
 
 const execFileAsync = promisify(execFile);
 
@@ -343,7 +344,8 @@ export async function finalizeScreenRecordingFile(
   fallbackDurationMs?: number,
   audioBuffer?: ArrayBuffer,
   audioBitrate?: '32k' | '64k' | '128k',
-  audioChannels?: 1 | 2
+  audioChannels?: 1 | 2,
+  audioOffsetMs?: number
 ): Promise<{
   filePath: string;
   thumbnailPath: string | null;
@@ -361,6 +363,19 @@ export async function finalizeScreenRecordingFile(
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `screen_${resolution}_${fps}fps_${timestamp}${ext}`;
   const filePath = path.join(dir, filename);
+
+  await appendExtendLog('finalize:start', {
+    recordingId,
+    sourceFile: path.basename(sourcePath),
+    targetFile: path.basename(filePath),
+    resolution,
+    fps,
+    fallbackDurationMs,
+    audioBytes: audioBuffer?.byteLength ?? 0,
+    audioBitrate,
+    audioChannels,
+    audioOffsetMs
+  });
 
   if (sourcePath !== filePath) {
     try {
@@ -387,14 +402,31 @@ export async function finalizeScreenRecordingFile(
       const ffmpegPath = getFFmpegPath();
       const bitrate = audioBitrate || '128k';
       const channels = audioChannels || 2;
+      const offsetMs = audioOffsetMs ?? 0;
+      const offsetSeconds = Math.abs(offsetMs) / 1000;
+      const audioInputArgs: string[] = [];
+
+      if (offsetMs > 0) {
+        audioInputArgs.push('-itsoffset', offsetSeconds.toFixed(3));
+      } else if (offsetMs < 0) {
+        audioInputArgs.push('-ss', offsetSeconds.toFixed(3));
+      }
 
       console.log('[FileStorage] Muxing audio into screen recording:', {
         bitrate,
-        channels
+        channels,
+        audioOffsetMs: offsetMs
+      });
+      await appendExtendLog('finalize:muxStart', {
+        bitrate,
+        channels,
+        audioOffsetMs: offsetMs,
+        audioBytes: audioBuffer.byteLength
       });
 
       await execFileAsync(ffmpegPath, [
         '-i', filePath,
+        ...audioInputArgs,
         '-i', audioPath,
         '-map', '0:v:0',
         '-map', '1:a:0',
@@ -402,6 +434,8 @@ export async function finalizeScreenRecordingFile(
         '-c:a', 'aac',
         '-b:a', bitrate,
         '-ac', String(channels),
+        '-af', 'aresample=async=1',
+        '-shortest',
         '-movflags', '+faststart',
         '-y',
         muxedPath
@@ -409,8 +443,14 @@ export async function finalizeScreenRecordingFile(
 
       await fs.copyFile(muxedPath, filePath);
       console.log('[FileStorage] ✓ Audio mux completed');
+      await appendExtendLog('finalize:muxComplete', {
+        outputFile: path.basename(filePath)
+      });
     } catch (error) {
       console.error('[FileStorage] Failed to mux audio into screen recording:', error);
+      await appendExtendLog('finalize:muxError', {
+        error: error instanceof Error ? error.message : String(error)
+      });
     } finally {
       try {
         await fs.rm(tempDir, { recursive: true, force: true });
@@ -481,6 +521,14 @@ export async function finalizeScreenRecordingFile(
   console.log('[FileStorage] Used Fallback:', usedFallback);
   console.log('[FileStorage] Error:', extractionError || 'none');
   console.log('[FileStorage] ==========================================');
+  await appendExtendLog('finalize:duration', {
+    file: path.basename(filePath),
+    sizeBytes: fileSize,
+    duration,
+    durationSource,
+    usedFallback,
+    error: extractionError || null
+  });
 
   return {
     filePath,

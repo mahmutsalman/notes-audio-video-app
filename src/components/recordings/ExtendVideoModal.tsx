@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useScreenRecorder } from '../../hooks/useScreenRecorder';
+import { useScreenRecordingSettings } from '../../context/ScreenRecordingSettingsContext';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
 import { formatDuration } from '../../utils/formatters';
@@ -14,6 +15,32 @@ interface ExtendVideoModalProps {
 
 type Phase = 'region-selection' | 'recording' | 'compression' | 'merging';
 
+const DEFAULT_COMPRESSION_OPTIONS: VideoCompressionOptions = {
+  crf: 20,
+  preset: 'medium',
+  audioBitrate: '128k'
+};
+
+const resolveQualityPreset = (resolution: string | null): CaptureArea['quality'] | undefined => {
+  if (!resolution) return undefined;
+  const normalized = resolution.trim().toLowerCase();
+
+  if (normalized === '480p' || normalized === '720p' || normalized === '1080p') {
+    return normalized as CaptureArea['quality'];
+  }
+
+  const match = normalized.match(/(\d+)\s*[x×]\s*(\d+)/);
+  if (!match) return undefined;
+
+  const width = parseInt(match[1], 10);
+  const height = parseInt(match[2], 10);
+  const minDimension = Math.min(width, height);
+
+  if (minDimension <= 480) return '480p';
+  if (minDimension <= 720) return '720p';
+  return '1080p';
+};
+
 export default function ExtendVideoModal({
   isOpen,
   onClose,
@@ -25,13 +52,13 @@ export default function ExtendVideoModal({
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [selectedImages, setSelectedImages] = useState<{ data: ArrayBuffer; extension: string }[]>([]);
   const [selectedVideos, setSelectedVideos] = useState<VideoWithThumbnail[]>([]);
-  const [compressionOptions, setCompressionOptions] = useState<VideoCompressionOptions>({
-    crf: 35,
-    preset: 'slow',
-    audioBitrate: '32k'
-  });
+  const [extensionFilePath, setExtensionFilePath] = useState<string | null>(null);
+  const [extensionAudioBuffer, setExtensionAudioBuffer] = useState<ArrayBuffer | null>(null);
+  const [extensionAudioConfig, setExtensionAudioConfig] = useState<{ bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 } | null>(null);
+  const [extensionAudioOffsetMs, setExtensionAudioOffsetMs] = useState<number | null>(null);
 
   const recorder = useScreenRecorder();
+  const { settings } = useScreenRecordingSettings();
 
   // Fetch fresh recording data when modal opens (prevents stale duration offset)
   const [currentRecording, setCurrentRecording] = useState(recording);
@@ -60,6 +87,10 @@ export default function ExtendVideoModal({
       setMergeError(null);
       setSelectedImages([]);
       setSelectedVideos([]);
+      setExtensionFilePath(null);
+      setExtensionAudioBuffer(null);
+      setExtensionAudioConfig(null);
+      setExtensionAudioOffsetMs(null);
       recorder.resetRecording();
     }
   }, [isOpen]);
@@ -75,9 +106,18 @@ export default function ExtendVideoModal({
         console.log('[ExtendVideoModal] Region selected for extension:', region);
         setPhase('recording');
 
+        const resolvedQuality = resolveQualityPreset(currentRecording.video_resolution) ?? region.quality;
+        const resolvedFps = currentRecording.video_fps ?? region.fps ?? settings.fps ?? 30;
+
+        const extensionRegion: CaptureArea = {
+          ...region,
+          recordingId: currentRecording.id,
+          quality: resolvedQuality,
+          fps: resolvedFps
+        };
+
         // Start recording immediately with the selected region
-        const fps = 10; // Default FPS, could be made configurable
-        recorder.startRecordingWithRegion(region, fps);
+        recorder.startRecordingWithRegion(extensionRegion, resolvedFps);
       });
 
       return () => {
@@ -86,7 +126,15 @@ export default function ExtendVideoModal({
         cleanup();
       };
     }
-  }, [isOpen, phase, recorder]);
+  }, [
+    isOpen,
+    phase,
+    recorder,
+    currentRecording.id,
+    currentRecording.video_fps,
+    currentRecording.video_resolution,
+    settings.fps
+  ]);
 
   // Send duration updates to overlay
   useEffect(() => {
@@ -192,11 +240,25 @@ export default function ExtendVideoModal({
       recorder.stopRecording();
     }
     recorder.resetRecording();
+    setExtensionFilePath(null);
+    setExtensionAudioBuffer(null);
+    setExtensionAudioConfig(null);
+    setExtensionAudioOffsetMs(null);
     onClose();
   };
 
   const handleStopRecording = async () => {
-    await recorder.stopRecording();
+    const result = await recorder.stopRecording();
+    setExtensionFilePath(result?.filePath ?? null);
+    setExtensionAudioConfig(result?.audioConfig ?? null);
+    setExtensionAudioOffsetMs(result?.audioOffsetMs ?? null);
+
+    if (result?.audioBlob && result.audioBlob.size > 0) {
+      const audioBuffer = await result.audioBlob.arrayBuffer();
+      setExtensionAudioBuffer(audioBuffer);
+    } else {
+      setExtensionAudioBuffer(null);
+    }
     setPhase('compression');
   };
 
@@ -267,7 +329,7 @@ export default function ExtendVideoModal({
   // (unlike voice recorder). Duration marks are simplified to just start/end/note.
 
   const handleMerge = async () => {
-    if (!recorder.videoBlob) return;
+    if (!recorder.videoBlob && !extensionFilePath) return;
 
     setPhase('merging');
     setIsMerging(true);
@@ -278,17 +340,47 @@ export default function ExtendVideoModal({
       const originalDurationMs = (currentRecording.video_duration ?? 0) * 1000;
       const extensionDurationMs = recorder.duration * 1000;
 
-      // 2. Get extension as ArrayBuffer
-      const extensionBuffer = await recorder.videoBlob.arrayBuffer();
+      // 2. Prepare extension source
+      let extensionSource: ArrayBuffer | string;
+
+      if (extensionFilePath) {
+        let preparedExtensionPath = extensionFilePath;
+
+        if (extensionAudioBuffer && extensionAudioConfig) {
+          const resolution = currentRecording.video_resolution || settings.resolution || '1080p';
+          const fps = currentRecording.video_fps ?? settings.fps ?? 30;
+          const finalized = await window.electronAPI.screenRecording.finalizeFile(
+            recording.id,
+            extensionFilePath,
+            resolution,
+            fps,
+            extensionDurationMs,
+            extensionAudioBuffer,
+            extensionAudioConfig.bitrate,
+            extensionAudioConfig.channels,
+            extensionAudioOffsetMs ?? undefined
+          );
+          preparedExtensionPath = finalized.filePath;
+          setExtensionFilePath(finalized.filePath);
+          setExtensionAudioBuffer(null);
+          setExtensionAudioConfig(null);
+        }
+
+        extensionSource = preparedExtensionPath;
+      } else {
+        extensionSource = await recorder.videoBlob!.arrayBuffer();
+      }
 
       // 3. Merge video files using native FFmpeg
       console.log('[ExtendVideo] Merging video files with native FFmpeg...');
+      console.log('[ExtendVideo] Audio offset:', extensionAudioOffsetMs);
       const result = await window.electronAPI.video.mergeExtension(
         recording.id,
-        extensionBuffer,
+        extensionSource,
         originalDurationMs,
         extensionDurationMs,
-        compressionOptions
+        DEFAULT_COMPRESSION_OPTIONS,
+        extensionAudioOffsetMs ?? undefined
       );
 
       if (!result.success) {
@@ -357,6 +449,10 @@ export default function ExtendVideoModal({
   };
 
   const originalDuration = currentRecording.video_duration ?? 0;
+  const extensionDuration = recorder.duration;
+  const totalDuration = originalDuration + extensionDuration;
+  const qualityLabel = currentRecording.video_resolution ?? 'Auto';
+  const fpsLabel = currentRecording.video_fps ?? settings.fps ?? 30;
 
   return (
     <Modal
@@ -365,7 +461,7 @@ export default function ExtendVideoModal({
       title={
         phase === 'region-selection' ? 'Select Capture Region' :
         phase === 'recording' ? 'Extend Video Recording' :
-        phase === 'compression' ? 'Compression Settings' :
+        phase === 'compression' ? 'Extension Summary' :
         'Extending Recording...'
       }
       size="lg"
@@ -385,9 +481,9 @@ export default function ExtendVideoModal({
             {recording.name}
           </div>
         )}
-        {recording.video_resolution && (
+        {currentRecording.video_resolution && (
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {recording.video_resolution} • {recording.video_fps}fps
+            {currentRecording.video_resolution} • {currentRecording.video_fps}fps
           </div>
         )}
       </div>
@@ -463,17 +559,17 @@ export default function ExtendVideoModal({
       {phase === 'compression' && (
         <div className="space-y-4">
           {/* Extension info */}
-          {recorder.videoBlob && (
+          {(recorder.videoBlob || extensionFilePath) && (
             <div className="flex items-center gap-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
               <span className="text-green-500 text-xl">✓</span>
               <span className="font-medium text-gray-900 dark:text-gray-100">
                 Extension recorded
               </span>
               <span className="text-gray-500 dark:text-gray-400">
-                +{formatDuration(recorder.duration)}
+                +{formatDuration(extensionDuration)}
               </span>
               <span className="text-gray-400 dark:text-gray-500">
-                → Total: {formatDuration(originalDuration + recorder.duration)}
+                → Total: {formatDuration(totalDuration)}
               </span>
             </div>
           )}
@@ -485,66 +581,31 @@ export default function ExtendVideoModal({
             </div>
           )}
 
-          {/* Compression settings */}
+          {/* Extension summary */}
           <div className="p-4 bg-gray-50 dark:bg-dark-hover rounded-lg">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              Compression Settings
+              Extension Summary
             </h4>
-
-            {/* CRF Slider */}
-            <div className="mb-4">
-              <label className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
-                <span>Quality (CRF)</span>
-                <span className="font-mono">{compressionOptions.crf}</span>
-              </label>
-              <input
-                type="range"
-                min="23"
-                max="40"
-                value={compressionOptions.crf}
-                onChange={(e) => setCompressionOptions(prev => ({ ...prev, crf: parseInt(e.target.value) }))}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-                <span>Higher quality (larger)</span>
-                <span>Lower quality (smaller)</span>
-              </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <span className="text-gray-600 dark:text-gray-400">Extension duration</span>
+              <span className="font-mono text-gray-900 dark:text-gray-100">
+                +{formatDuration(extensionDuration)}
+              </span>
+              <span className="text-gray-600 dark:text-gray-400">Total duration</span>
+              <span className="font-mono text-gray-900 dark:text-gray-100">
+                {formatDuration(totalDuration)}
+              </span>
+              <span className="text-gray-600 dark:text-gray-400">Quality</span>
+              <span className="text-gray-900 dark:text-gray-100">
+                {qualityLabel} • {fpsLabel}fps
+              </span>
+              <span className="text-gray-600 dark:text-gray-400">Marked sections</span>
+              <span className="text-gray-900 dark:text-gray-100">
+                {recorder.completedMarks.length}
+              </span>
             </div>
-
-            {/* Preset Select */}
-            <div className="mb-4">
-              <label className="text-sm text-gray-600 dark:text-gray-400 mb-2 block">
-                Encoding Speed
-              </label>
-              <select
-                value={compressionOptions.preset}
-                onChange={(e) => setCompressionOptions(prev => ({ ...prev, preset: e.target.value as any }))}
-                className="w-full px-3 py-2 bg-white dark:bg-dark-surface border border-gray-300 dark:border-dark-border rounded-lg"
-              >
-                <option value="ultrafast">Ultra Fast (lowest compression)</option>
-                <option value="fast">Fast</option>
-                <option value="medium">Medium</option>
-                <option value="slow">Slow (recommended)</option>
-                <option value="veryslow">Very Slow (best compression)</option>
-              </select>
-            </div>
-
-            {/* Audio Bitrate Select */}
-            <div>
-              <label className="text-sm text-gray-600 dark:text-gray-400 mb-2 block">
-                Audio Bitrate
-              </label>
-              <select
-                value={compressionOptions.audioBitrate}
-                onChange={(e) => setCompressionOptions(prev => ({ ...prev, audioBitrate: e.target.value as any }))}
-                className="w-full px-3 py-2 bg-white dark:bg-dark-surface border border-gray-300 dark:border-dark-border rounded-lg"
-              >
-                <option value="24k">24 kbps (very low)</option>
-                <option value="32k">32 kbps (recommended for speech)</option>
-                <option value="48k">48 kbps</option>
-                <option value="64k">64 kbps</option>
-                <option value="128k">128 kbps (high quality)</option>
-              </select>
+            <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+              Extension quality is locked to the original recording.
             </div>
           </div>
 
@@ -553,7 +614,7 @@ export default function ExtendVideoModal({
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  New Marked Sections ({recorder.completedMarks.length})
+                  Extension Durations ({recorder.completedMarks.length})
                 </span>
                 <span className="text-xs text-gray-500 dark:text-gray-400">
                   Will be offset by +{formatDuration(originalDuration)}

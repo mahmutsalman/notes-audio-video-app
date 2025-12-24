@@ -16,9 +16,7 @@ export interface BackupResult {
   };
 }
 
-// Get the backup directory - saves inside app bundle
-export function getBackupDir(): string {
-  // Use app.getAppPath() which returns the path to the app's main directory
+function getLegacyBackupDir(): string {
   let appPath = app.getAppPath();
 
   // If we're in a packaged app (asar), go up to Contents folder
@@ -27,6 +25,79 @@ export function getBackupDir(): string {
   }
 
   return path.join(appPath, 'backup');
+}
+
+// Get the backup directory - store under Application Support (userData)
+export function getBackupDir(): string {
+  return path.join(app.getPath('userData'), 'backups');
+}
+
+function getAvailablePath(destPath: string): string {
+  if (!existsSync(destPath)) {
+    return destPath;
+  }
+
+  const parsed = path.parse(destPath);
+  let counter = 1;
+
+  while (true) {
+    const candidate = path.join(parsed.dir, `${parsed.name}_legacy_${counter}${parsed.ext}`);
+    if (!existsSync(candidate)) {
+      return candidate;
+    }
+    counter += 1;
+  }
+}
+
+export async function migrateLegacyBackups(): Promise<void> {
+  const legacyDir = getLegacyBackupDir();
+  const newDir = getBackupDir();
+  const markerPath = path.join(app.getPath('userData'), '.backup_migration_done');
+
+  if (existsSync(markerPath)) {
+    return;
+  }
+
+  if (!existsSync(legacyDir) || legacyDir === newDir) {
+    await fs.writeFile(markerPath, new Date().toISOString());
+    return;
+  }
+
+  let hadErrors = false;
+
+  try {
+    await fs.mkdir(newDir, { recursive: true });
+    const entries = await fs.readdir(legacyDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const sourcePath = path.join(legacyDir, entry.name);
+      const targetPath = getAvailablePath(path.join(newDir, entry.name));
+
+      try {
+        await fs.rename(sourcePath, targetPath);
+      } catch (error) {
+        try {
+          if (entry.isDirectory()) {
+            await fs.cp(sourcePath, targetPath, { recursive: true });
+            await fs.rm(sourcePath, { recursive: true, force: true });
+          } else if (entry.isFile()) {
+            await fs.copyFile(sourcePath, targetPath);
+            await fs.rm(sourcePath, { force: true });
+          }
+        } catch (copyError) {
+          hadErrors = true;
+          console.error('Failed to migrate legacy backup:', sourcePath, copyError);
+        }
+      }
+    }
+
+    if (!hadErrors) {
+      await fs.rm(legacyDir, { recursive: true, force: true });
+      await fs.writeFile(markerPath, new Date().toISOString());
+    }
+  } catch (error) {
+    console.error('Legacy backup migration failed:', error);
+  }
 }
 
 // Get timestamp string for backup folder naming

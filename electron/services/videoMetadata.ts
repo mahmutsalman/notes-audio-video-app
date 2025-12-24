@@ -18,6 +18,25 @@ const DEFAULT_RETRY_OPTIONS: RetryOptions = {
   backoffMultiplier: 2
 };
 
+const parseFpsValue = (value?: string): number | undefined => {
+  if (!value) return undefined;
+  const [num, den] = value.split('/');
+  const numerator = parseFloat(num);
+  const denominator = den ? parseFloat(den) : 1;
+
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) {
+    return undefined;
+  }
+
+  return numerator / denominator;
+};
+
+const normalizeFps = (fps?: number): number | undefined => {
+  if (!fps || !Number.isFinite(fps)) return undefined;
+  if (fps < 1 || fps > 120) return undefined;
+  return Math.round(fps * 1000) / 1000;
+};
+
 /**
  * Retry an async operation with exponential backoff.
  */
@@ -62,6 +81,10 @@ export interface VideoMetadata {
   height?: number;
   fps?: number;
   codec?: string;
+  audioStreams?: number;
+  audioChannels?: number;
+  audioSampleRate?: number;
+  audioCodec?: string;
   source?: 'ffprobe' | 'fallback';  // Track duration source
   error?: string;  // Error message if extraction failed
 }
@@ -70,10 +93,12 @@ export interface VideoCodecParams {
   codec: string;           // e.g., 'h264', 'vp9'
   bitrate?: number;        // Average bitrate in bps
   pixelFormat: string;     // e.g., 'yuv420p'
-  frameRate: string;       // e.g., '10/1'
+  frameRate?: string;      // e.g., '10'
   profile?: string;        // e.g., 'High', 'Main'
   level?: string;          // e.g., '4.0'
   encoder?: string;        // e.g., 'libx264'
+  width?: number;
+  height?: number;
 }
 
 /**
@@ -155,21 +180,35 @@ export async function getVideoCodecParams(filePath: string): Promise<VideoCodecP
     const codec = videoStream.codec_name || 'h264';
     const bitrate = videoStream.bit_rate ? parseInt(videoStream.bit_rate) : undefined;
     const pixelFormat = videoStream.pix_fmt || 'yuv420p';
-    const frameRate = videoStream.r_frame_rate || '30/1';
+    const avgFps = normalizeFps(parseFpsValue(videoStream.avg_frame_rate));
+    const rawFps = normalizeFps(parseFpsValue(videoStream.r_frame_rate));
+    const frameRateValue = avgFps ?? rawFps;
+    const frameRate = frameRateValue ? `${frameRateValue}` : undefined;
     const profile = videoStream.profile?.toLowerCase();
     const level = videoStream.level ? (videoStream.level / 10).toFixed(1) : undefined;
 
     // Try to extract encoder from tags
     const encoder = videoStream.tags?.encoder || info.format?.tags?.encoder;
+    const width = videoStream.width;
+    const height = videoStream.height;
+
+    const bitsPerPixel = (bitrate && width && height && frameRateValue)
+      ? bitrate / (width * height * frameRateValue)
+      : undefined;
+    const keepBitrate = bitrate && bitsPerPixel !== undefined
+      ? bitsPerPixel >= 0.07
+      : (bitrate && bitrate >= 500000);
 
     const params: VideoCodecParams = {
       codec,
-      bitrate,
+      bitrate: keepBitrate ? bitrate : undefined,
       pixelFormat,
       frameRate,
       profile,
       level,
-      encoder
+      encoder,
+      width,
+      height
     };
 
     console.log('[videoMetadata] Codec params extracted:', params);
@@ -182,7 +221,6 @@ export async function getVideoCodecParams(filePath: string): Promise<VideoCodecP
     return {
       codec: 'h264',
       pixelFormat: 'yuv420p',
-      frameRate: '30/1',
       profile: 'high',
       level: '4.0'
     };
@@ -259,6 +297,8 @@ export async function getVideoMetadata(
 
       // Get video stream metadata
       const videoStream = info.streams.find((s: any) => s.codec_type === 'video');
+      const audioStreams = info.streams.filter((s: any) => s.codec_type === 'audio');
+      const audioStream = audioStreams[0];
 
       console.log('[videoMetadata] ✓ FFprobe extraction successful:', {
         file: filePath.split('/').pop(),
@@ -274,11 +314,13 @@ export async function getVideoMetadata(
         duration: Math.floor(parseFloat(duration.toString())),
         width: videoStream?.width,
         height: videoStream?.height,
-        fps: videoStream?.r_frame_rate
-          ? parseFloat(videoStream.r_frame_rate.split('/')[0]) /
-            parseFloat(videoStream.r_frame_rate.split('/')[1])
-          : undefined,
+        fps: normalizeFps(parseFpsValue(videoStream?.avg_frame_rate)) ??
+          normalizeFps(parseFpsValue(videoStream?.r_frame_rate)),
         codec: videoStream?.codec_name,
+        audioStreams: audioStreams.length,
+        audioChannels: audioStream?.channels,
+        audioSampleRate: audioStream?.sample_rate ? parseInt(audioStream.sample_rate, 10) : undefined,
+        audioCodec: audioStream?.codec_name,
         source: 'ffprobe' as const
       };
     }, {
