@@ -129,7 +129,7 @@ app.whenReady().then(() => {
         '.wav': 'audio/wav',
         '.ogg': 'audio/ogg',
         '.mp4': 'video/mp4',
-        '.mov': 'video/quicktime',
+        '.mov': 'video/mp4',
         '.mkv': 'video/x-matroska',
         '.m4v': 'video/mp4',
         '.avi': 'video/x-msvideo',

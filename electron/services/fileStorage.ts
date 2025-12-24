@@ -321,6 +321,117 @@ export async function saveScreenRecording(
   };
 }
 
+export async function finalizeScreenRecordingFile(
+  recordingId: number,
+  sourcePath: string,
+  resolution: string,
+  fps: number,
+  fallbackDurationMs?: number
+): Promise<{
+  filePath: string;
+  thumbnailPath: string | null;
+  duration: number | null;
+  fileSize: number;
+  durationSource: 'ffprobe' | 'fallback' | 'failed';
+  extractionError?: string;
+  usedFallback: boolean;
+}> {
+  const dir = path.join(getMediaDir(), 'screen_recordings', String(recordingId));
+  const thumbDir = path.join(dir, 'thumbnails');
+  await fs.mkdir(thumbDir, { recursive: true });
+
+  const ext = path.extname(sourcePath) || '.mov';
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `screen_${resolution}_${fps}fps_${timestamp}${ext}`;
+  const filePath = path.join(dir, filename);
+
+  if (sourcePath !== filePath) {
+    try {
+      await fs.rename(sourcePath, filePath);
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === 'EXDEV') {
+        await fs.copyFile(sourcePath, filePath);
+        await fs.unlink(sourcePath);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  const stats = await fs.stat(filePath);
+  const fileSize = stats.size;
+
+  if (fileSize === 0) {
+    throw new Error('Captured file is empty');
+  }
+
+  const fileReady = await verifyFileReady(filePath, fileSize);
+  if (!fileReady) {
+    console.error('[FileStorage] ✗ File verification failed - FFprobe may fail');
+  } else {
+    console.log('[FileStorage] ✓ File verified ready for FFprobe');
+  }
+
+  const uuid = uuidv4();
+  const thumbPath = path.join(thumbDir, `${uuid}_thumb.png`);
+  const thumbnailPath = await generateVideoThumbnail(filePath, thumbPath);
+
+  let duration: number | null = null;
+  let durationSource: 'ffprobe' | 'fallback' | 'failed' = 'failed';
+  let extractionError: string | undefined;
+  let usedFallback = false;
+
+  try {
+    const metadata = await getVideoMetadata(filePath, fallbackDurationMs);
+
+    if (metadata.duration !== null) {
+      duration = metadata.duration;
+      durationSource = metadata.source || 'ffprobe';
+      usedFallback = metadata.source === 'fallback';
+
+      if (usedFallback) {
+        console.warn('[FileStorage] ⚠️  Using fallback duration:', duration, 's');
+        extractionError = metadata.error;
+      } else {
+        console.log('[FileStorage] ✓ FFprobe extraction successful:', duration, 's');
+      }
+    } else {
+      extractionError = metadata.error || 'Unknown FFprobe error';
+      console.error('[FileStorage] ✗ Duration extraction completely failed');
+    }
+  } catch (err) {
+    extractionError = err instanceof Error ? err.message : String(err);
+    console.error('[FileStorage] Exception during duration extraction:', extractionError);
+  }
+
+  if (duration === null && fallbackDurationMs) {
+    duration = Math.floor(fallbackDurationMs / 1000);
+    durationSource = 'fallback';
+    usedFallback = true;
+    console.warn('[FileStorage] ⚠️  Using client-provided fallback:', duration, 's');
+  }
+
+  console.log('[FileStorage] ===== DURATION EXTRACTION SUMMARY =====');
+  console.log('[FileStorage] File:', filePath.split('/').pop());
+  console.log('[FileStorage] Size:', fileSize, 'bytes');
+  console.log('[FileStorage] Duration:', duration, 's');
+  console.log('[FileStorage] Source:', durationSource);
+  console.log('[FileStorage] Used Fallback:', usedFallback);
+  console.log('[FileStorage] Error:', extractionError || 'none');
+  console.log('[FileStorage] ==========================================');
+
+  return {
+    filePath,
+    thumbnailPath,
+    duration,
+    fileSize,
+    durationSource,
+    extractionError,
+    usedFallback
+  };
+}
+
 export async function saveDurationImageFromBuffer(
   durationId: number,
   imageBuffer: ArrayBuffer,

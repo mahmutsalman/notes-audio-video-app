@@ -15,7 +15,6 @@ import NotesEditor from '../components/common/NotesEditor';
 import CodeSnippetCard from '../components/code/CodeSnippetCard';
 import CodeSnippetModal from '../components/code/CodeSnippetModal';
 import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
-import VideoCompressionDialog from '../components/video/VideoCompressionDialog';
 import { formatDuration, formatDate, formatRelativeTime } from '../utils/formatters';
 import { getNextDurationColor, DURATION_COLORS } from '../utils/durationColors';
 import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea } from '../types';
@@ -134,13 +133,6 @@ export default function RecordingPage() {
   useEffect(() => {
     isScreenRecordingRef.current = isScreenRecording;
   }, [isScreenRecording]);
-  const [compressionDialog, setCompressionDialog] = useState<{
-    isOpen: boolean;
-    videoPath: string;
-    videoName: string;
-    recordingId: number;
-  } | null>(null);
-
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
   const videoPlayerRef = useRef<HTMLVideoElement>(null);
   const videoLoopListenerRef = useRef<(() => void) | null>(null);
@@ -520,7 +512,7 @@ export default function RecordingPage() {
 
   // Handle saving screen recording
   // TODO: Remove this - screen recordings are now standalone items created from TopicDetailPage
-  const handleSaveScreenRecording = async (_videoBlob: Blob, _marks: any[]) => {
+  const handleSaveScreenRecording = async (_videoBlob: Blob | null, _marks: any[], _durationMs?: number, _filePath?: string) => {
     if (!id) return;
 
     try {
@@ -940,6 +932,23 @@ export default function RecordingPage() {
     ? window.electronAPI.paths.getFileUrl(recording.video_path)
     : null;
 
+  const getVideoMimeType = (filePath: string | null) => {
+    const ext = filePath?.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'mov':
+        return 'video/mp4';
+      case 'mp4':
+      case 'm4v':
+        return 'video/mp4';
+      case 'webm':
+        return 'video/webm';
+      default:
+        return 'video/mp4';
+    }
+  };
+
+  const videoMimeType = getVideoMimeType(recording.video_path);
+
   const isVideoRecording = !!recording.video_path;
 
   return (
@@ -1023,23 +1032,6 @@ export default function RecordingPage() {
             )}
           </h2>
           <div className="flex items-center gap-2">
-            {isVideoRecording && recording.video_path && (
-              <button
-                onClick={() => {
-                  setCompressionDialog({
-                    isOpen: true,
-                    videoPath: recording.video_path!,
-                    videoName: recording.video_path!.split('/').pop() || 'recording.webm',
-                    recordingId: recording.id
-                  });
-                }}
-                className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                title="Compress to MP4"
-              >
-                <span>⚡</span>
-                Compress
-              </button>
-            )}
             {!isVideoRecording && (
               <button
                 onClick={() => setIsScreenRecording(true)}
@@ -1059,7 +1051,7 @@ export default function RecordingPage() {
               className="w-full rounded-lg bg-black"
               onLoadedData={() => setMediaLoaded(true)}
             >
-              <source src={videoUrl} type="video/webm" />
+              <source src={videoUrl} type={videoMimeType} />
               Your browser does not support the video tag.
             </video>
           ) : (
@@ -1234,24 +1226,6 @@ export default function RecordingPage() {
                       style={{ backgroundColor: colorConfig.borderColor }}
                     />
                   )}
-                  {/* Compress button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCompressionDialog({
-                        isOpen: true,
-                        videoPath: video.file_path,
-                        videoName: video.file_path.split('/').pop() || 'video.webm',
-                        recordingId: recording.id
-                      });
-                    }}
-                    className="absolute top-1 right-7 w-5 h-5 bg-blue-500 text-white rounded-full
-                               opacity-0 group-hover:opacity-100 transition-opacity
-                               flex items-center justify-center text-xs z-20 hover:bg-blue-600"
-                    title="Compress to MP4"
-                  >
-                    ⚡
-                  </button>
                   <button
                     onClick={() => handleDeleteDurationVideo(video.id)}
                     className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
@@ -1567,24 +1541,6 @@ export default function RecordingPage() {
                       style={{ backgroundColor: colorConfig.borderColor }}
                     />
                   )}
-                  {/* Compress button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCompressionDialog({
-                        isOpen: true,
-                        videoPath: video.file_path,
-                        videoName: video.file_path.split('/').pop() || 'video.webm',
-                        recordingId: recording.id
-                      });
-                    }}
-                    className="absolute top-1 right-8 w-6 h-6 bg-blue-500 text-white rounded-full
-                               opacity-0 group-hover:opacity-100 transition-opacity
-                               flex items-center justify-center text-xs z-20 hover:bg-blue-600"
-                    title="Compress to MP4"
-                  >
-                    ⚡
-                  </button>
                   <button
                     onClick={() => handleDeleteVideo(video.id)}
                     className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full
@@ -2271,24 +2227,6 @@ export default function RecordingPage() {
         />
       )}
 
-      {/* Video Compression Dialog */}
-      {compressionDialog && (
-        <VideoCompressionDialog
-          isOpen={compressionDialog.isOpen}
-          onClose={() => setCompressionDialog(null)}
-          videoPath={compressionDialog.videoPath}
-          videoName={compressionDialog.videoName}
-          recordingId={compressionDialog.recordingId}
-          onCompressionComplete={() => {
-            console.log('Compression complete');
-          }}
-          onReplaceComplete={async (_newPath) => {
-            // Reload the recording to get updated video_path
-            await refetch();
-            setCompressionDialog(null);
-          }}
-        />
-      )}
       </div>
     </div>
   );

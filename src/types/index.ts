@@ -399,6 +399,21 @@ export interface ElectronAPI {
         durationExtracted?: boolean;
       };
     }>;
+    finalizeFile: (
+      recordingId: number,
+      sourcePath: string,
+      resolution: string,
+      fps: number,
+      fallbackDurationMs?: number
+    ) => Promise<{
+      filePath: string;
+      duration: number | null;
+      _debug?: {
+        usedFallback?: boolean;
+        extractionError?: string;
+        durationExtracted?: boolean;
+      };
+    }>;
   };
   region: {
     startSelection: () => Promise<void>;

@@ -244,7 +244,7 @@
 
         // Create AVAssetWriter
         _assetWriter = [[AVAssetWriter alloc] initWithURL:outputURL
-                                                 fileType:AVFileTypeQuickTimeMovie
+                                                 fileType:AVFileTypeMPEG4
                                                     error:error];
         if (!_assetWriter || *error) {
             NSLog(@"[ScreenCaptureKit] ❌ Failed to create AVAssetWriter: %@", *error);

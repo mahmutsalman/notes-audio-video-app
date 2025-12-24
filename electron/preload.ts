@@ -253,6 +253,14 @@ const electronAPI = {
       fallbackDurationMs?: number
     ): Promise<{ filePath: string; duration: number | null; _debug?: any }> =>
       ipcRenderer.invoke('screenRecording:saveFile', recordingId, videoBuffer, resolution, fps, fallbackDurationMs),
+    finalizeFile: (
+      recordingId: number,
+      sourcePath: string,
+      resolution: string,
+      fps: number,
+      fallbackDurationMs?: number
+    ): Promise<{ filePath: string; duration: number | null; _debug?: any }> =>
+      ipcRenderer.invoke('screenRecording:finalizeFile', recordingId, sourcePath, resolution, fps, fallbackDurationMs),
     save: (
       recordingId: number,
       videoBuffer: ArrayBuffer,

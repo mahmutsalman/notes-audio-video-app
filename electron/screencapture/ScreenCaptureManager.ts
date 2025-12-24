@@ -205,11 +205,11 @@ export class ScreenCaptureKitManager extends EventEmitter {
         'screen_recordings',
         String(recordingId)
       );
-      return path.join(recordingsDir, `recording_${timestamp}.mov`);
+      return path.join(recordingsDir, `recording_${timestamp}.mp4`);
     } else {
       // Fallback: direct to screen_recordings (legacy)
       const recordingsDir = path.join(userDataPath, 'media', 'screen_recordings');
-      return path.join(recordingsDir, `recording_${timestamp}.mov`);
+      return path.join(recordingsDir, `recording_${timestamp}.mp4`);
     }
   }
 

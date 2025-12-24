@@ -43,7 +43,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
     setIsOpen(false);
   };
 
-  const handleSave = async (videoBlob: Blob, marks: any[], durationMs: number) => {
+  const handleSave = async (videoBlob: Blob | null, marks: any[], durationMs: number, filePath?: string) => {
     setIsSaving(true);
 
     try {
@@ -67,15 +67,29 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
 
       console.log('[QuickScreenRecord] Recording created with ID:', recording.id);
 
-      // Save the video file with client-calculated duration as fallback
-      const arrayBuffer = await videoBlob.arrayBuffer();
-      const result = await window.electronAPI.screenRecording.saveFile(
-        recording.id,
-        arrayBuffer,
-        resolution,
-        fps,
-        durationMs
-      );
+      let result: { filePath: string; duration: number | null; _debug?: any };
+
+      if (filePath) {
+        result = await window.electronAPI.screenRecording.finalizeFile(
+          recording.id,
+          filePath,
+          resolution,
+          fps,
+          durationMs
+        );
+      } else if (videoBlob) {
+        // Save the video file with client-calculated duration as fallback
+        const arrayBuffer = await videoBlob.arrayBuffer();
+        result = await window.electronAPI.screenRecording.saveFile(
+          recording.id,
+          arrayBuffer,
+          resolution,
+          fps,
+          durationMs
+        );
+      } else {
+        throw new Error('No video data available to save');
+      }
 
       console.log('[QuickScreenRecord] Video file saved:', result.filePath);
 

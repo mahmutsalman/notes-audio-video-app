@@ -578,6 +578,48 @@ export function setupIpcHandlers(): void {
     }
   });
 
+  ipcMain.handle('screenRecording:finalizeFile', async (
+    _,
+    recordingId: number,
+    sourcePath: string,
+    resolution: string,
+    fps: number,
+    fallbackDurationMs?: number
+  ) => {
+    try {
+      const { finalizeScreenRecordingFile } = await import('../services/fileStorage');
+      const result = await finalizeScreenRecordingFile(
+        recordingId,
+        sourcePath,
+        resolution,
+        fps,
+        fallbackDurationMs
+      );
+
+      if (result.duration === null && result.extractionError) {
+        console.error('[IPC] FFprobe extraction failed:', result.extractionError);
+      }
+
+      if (result.usedFallback) {
+        console.warn('[IPC] Using fallback duration:', result.duration, 's');
+      }
+
+      return {
+        filePath: result.filePath,
+        duration: result.duration,
+        _debug: {
+          durationExtracted: result.durationSource === 'ffprobe',
+          usedFallback: result.durationSource === 'fallback',
+          extractionError: result.extractionError,
+          fileSize: result.fileSize
+        }
+      };
+    } catch (error) {
+      console.error('[IPC] Error finalizing screen recording:', error);
+      throw error;
+    }
+  });
+
   // ============ Video Compression ============
   ipcMain.handle('video:compress', async (event, filePath, options) => {
     const { compressVideo } = await import('../services/videoCompression');

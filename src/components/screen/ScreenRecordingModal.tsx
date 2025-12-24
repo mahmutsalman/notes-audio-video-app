@@ -8,7 +8,7 @@ interface ScreenRecordingModalProps {
   isOpen: boolean;
   onClose: () => void;
   recordingId: number;
-  onSave: (videoBlob: Blob, marks: any[], durationMs: number) => Promise<void>;
+  onSave: (videoBlob: Blob | null, marks: any[], durationMs: number, filePath?: string) => Promise<void>;
   autoStartRegionSelection?: boolean;
   pendingRegion?: CaptureArea | null;
 }
@@ -58,7 +58,7 @@ export default function ScreenRecordingModal({
     if (result) {
       try {
         // Pass duration in milliseconds as third parameter
-        await onSave(result.blob, recorder.completedMarks, result.durationMs);
+        await onSave(result.blob, recorder.completedMarks, result.durationMs, result.filePath);
         handleClose();
       } catch (error) {
         console.error('Failed to save recording:', error);

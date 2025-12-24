@@ -38,7 +38,7 @@ export interface ScreenRecorderControls {
     region: CaptureArea,
     fps: number
   ) => Promise<void>;
-  stopRecording: () => Promise<{ blob: Blob; durationMs: number } | null>;
+  stopRecording: () => Promise<{ blob: Blob | null; durationMs: number; filePath?: string } | null>;
   pauseRecording: () => void;
   resumeRecording: () => void;
   resetRecording: () => void;
@@ -556,7 +556,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     }
   }, []);
 
-  const stopRecording = useCallback(async (): Promise<{ blob: Blob; durationMs: number } | null> => {
+  const stopRecording = useCallback(async (): Promise<{ blob: Blob | null; durationMs: number; filePath?: string } | null> => {
     // Handle file-based recording (ScreenCaptureKit with AVAssetWriter)
     if ((window as any).__screenRecordingFilePromise) {
       console.log('[useScreenRecorder] 🛑 Stopping file-based recording');
@@ -644,7 +644,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
         // Create a dummy blob to maintain API compatibility
         // The caller should check for file path instead
-        return { blob: new Blob(), durationMs };
+        return { blob: null, durationMs, filePath };
       } catch (error) {
         console.error('[useScreenRecorder] ❌ File-based recording failed:', error);
 
