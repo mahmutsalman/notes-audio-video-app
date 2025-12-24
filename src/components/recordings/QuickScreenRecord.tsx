@@ -74,6 +74,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
         video_duration: null, // Will be updated with actual duration from video metadata
         video_resolution: resolution,
         video_fps: fps,
+        video_size: null,
         notes_content: null,
       });
 
@@ -130,6 +131,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
       await window.electronAPI.recordings.update(recording.id, {
         video_path: result.filePath,
         video_duration: result.duration,
+        video_size: result._debug?.fileSize ?? null,
       });
 
       console.log('[QuickScreenRecord] Recording updated with duration:', result.duration);

@@ -57,6 +57,7 @@ function runMigrations(db: Database.Database): void {
       audio_path TEXT,
       audio_duration INTEGER,
       notes_content TEXT,
+      video_size INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
@@ -214,6 +215,12 @@ function runMigrations(db: Database.Database): void {
   if (!hasVideoFpsColumn) {
     db.exec(`ALTER TABLE recordings ADD COLUMN video_fps INTEGER`);
     console.log('Added video_fps column to recordings table');
+  }
+
+  const hasVideoSizeColumn = recordingsColumns.some(col => col.name === 'video_size');
+  if (!hasVideoSizeColumn) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN video_size INTEGER`);
+    console.log('Added video_size column to recordings table');
   }
 
   // Migration: Add caption column to images table if it doesn't exist

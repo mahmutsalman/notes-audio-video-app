@@ -319,6 +319,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
         video_duration: null,
         video_resolution: null,
         video_fps: null,
+        video_size: null,
         notes_content: notes || null,
       });
 

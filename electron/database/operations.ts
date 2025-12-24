@@ -140,8 +140,8 @@ export const RecordingsOperations = {
   create(recording: CreateRecording): Recording {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO recordings (topic_id, name, audio_path, audio_duration, video_path, video_duration, video_resolution, video_fps, notes_content)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO recordings (topic_id, name, audio_path, audio_duration, video_path, video_duration, video_resolution, video_fps, video_size, notes_content)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -153,6 +153,7 @@ export const RecordingsOperations = {
       recording.video_duration ?? null,
       recording.video_resolution ?? null,
       recording.video_fps ?? null,
+      recording.video_size ?? null,
       recording.notes_content
     );
 
@@ -196,6 +197,10 @@ export const RecordingsOperations = {
     if (updates.video_fps !== undefined) {
       fields.push('video_fps = ?');
       values.push(updates.video_fps);
+    }
+    if (updates.video_size !== undefined) {
+      fields.push('video_size = ?');
+      values.push(updates.video_size);
     }
     if (updates.notes_content !== undefined) {
       fields.push('notes_content = ?');

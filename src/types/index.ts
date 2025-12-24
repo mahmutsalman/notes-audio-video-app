@@ -26,6 +26,7 @@ export interface Recording {
   video_duration: number | null;
   video_resolution: string | null;
   video_fps: number | null;
+  video_size: number | null;
   notes_content: string | null;
   importance_color: ImportanceColor;
   created_at: string;

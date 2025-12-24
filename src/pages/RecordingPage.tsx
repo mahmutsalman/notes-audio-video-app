@@ -15,7 +15,7 @@ import NotesEditor from '../components/common/NotesEditor';
 import CodeSnippetCard from '../components/code/CodeSnippetCard';
 import CodeSnippetModal from '../components/code/CodeSnippetModal';
 import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
-import { formatDuration, formatDate, formatRelativeTime } from '../utils/formatters';
+import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
 import { getNextDurationColor, DURATION_COLORS } from '../utils/durationColors';
 import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea } from '../types';
 
@@ -1028,6 +1028,11 @@ export default function RecordingPage() {
             {isVideoRecording && recording.video_resolution && recording.video_fps && (
               <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
                 • {recording.video_resolution} @ {recording.video_fps}fps
+              </span>
+            )}
+            {isVideoRecording && recording.video_size !== null && (
+              <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                • {formatFileSize(recording.video_size)}
               </span>
             )}
           </h2>
