@@ -315,7 +315,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         sourceId,
         region,
         actualFPS,
-        { width: recordWidth, height: recordHeight }
+        { width: recordWidth, height: recordHeight },
+        settings.bitsPerPixel
       );
       console.log('[useScreenRecorder] Capture created (file-based:', captureResult.isFileBased, ')');
       regionCleanupRef.current = captureResult.cleanup;
@@ -481,8 +482,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
       // Calculate bitrate using preset quality settings
       const videoBitsPerSecond = calculateBitrate(
-        region.width * scaleFactor,
-        region.height * scaleFactor,
+        recordWidth,
+        recordHeight,
         actualFPS,
         settings.bitsPerPixel || 0.08  // Use preset quality or fallback to CleanShot X level
       );

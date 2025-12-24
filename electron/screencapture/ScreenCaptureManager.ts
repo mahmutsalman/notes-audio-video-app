@@ -14,6 +14,9 @@ interface ScreenCaptureConfig {
   regionY?: number; // Optional region cropping (defaults to 0)
   regionWidth?: number; // Optional region cropping (defaults to width)
   regionHeight?: number; // Optional region cropping (defaults to height)
+  outputWidth?: number; // Optional output width for scaling (defaults to regionWidth)
+  outputHeight?: number; // Optional output height for scaling (defaults to regionHeight)
+  bitsPerPixel?: number; // Optional bitrate control for hardware encoder
   outputPath?: string; // Optional output path, will be generated if not provided
 }
 
@@ -77,6 +80,9 @@ export class ScreenCaptureKitManager extends EventEmitter {
       regionY: config.regionY,
       regionWidth: config.regionWidth,
       regionHeight: config.regionHeight,
+      outputWidth: config.outputWidth,
+      outputHeight: config.outputHeight,
+      bitsPerPixel: config.bitsPerPixel,
       outputPath: config.outputPath
     });
 
@@ -90,6 +96,9 @@ export class ScreenCaptureKitManager extends EventEmitter {
     const regionY = config.regionY !== undefined ? Number(config.regionY) : 0;
     const regionWidth = config.regionWidth !== undefined ? Number(config.regionWidth) : width;
     const regionHeight = config.regionHeight !== undefined ? Number(config.regionHeight) : height;
+    const outputWidth = config.outputWidth !== undefined ? Number(config.outputWidth) : regionWidth;
+    const outputHeight = config.outputHeight !== undefined ? Number(config.outputHeight) : regionHeight;
+    const bitsPerPixel = config.bitsPerPixel !== undefined ? Number(config.bitsPerPixel) : 0.15;
 
     // Validate parameters
     if (!Number.isInteger(displayId) || displayId < 0) {
@@ -103,6 +112,15 @@ export class ScreenCaptureKitManager extends EventEmitter {
     }
     if (!Number.isInteger(frameRate) || frameRate <= 0) {
       throw new Error(`Invalid frameRate: ${config.frameRate}`);
+    }
+    if (!Number.isInteger(outputWidth) || outputWidth <= 0) {
+      throw new Error(`Invalid outputWidth: ${config.outputWidth}`);
+    }
+    if (!Number.isInteger(outputHeight) || outputHeight <= 0) {
+      throw new Error(`Invalid outputHeight: ${config.outputHeight}`);
+    }
+    if (!Number.isFinite(bitsPerPixel) || bitsPerPixel <= 0) {
+      throw new Error(`Invalid bitsPerPixel: ${config.bitsPerPixel}`);
     }
 
     // Extract recordingId from config
@@ -140,6 +158,9 @@ export class ScreenCaptureKitManager extends EventEmitter {
         regionY,
         regionWidth,
         regionHeight,
+        outputWidth,
+        outputHeight,
+        bitsPerPixel,
         outputPath
       });
 
@@ -153,6 +174,9 @@ export class ScreenCaptureKitManager extends EventEmitter {
         regionY,
         regionWidth,
         regionHeight,
+        outputWidth,
+        outputHeight,
+        bitsPerPixel,
         outputPath,
         callbacks
       );

@@ -14,12 +14,11 @@ const ScreenRecordingSettingsContext = createContext<
   ScreenRecordingSettingsContextValue | undefined
 >(undefined);
 
-// Resolution presets mapping (including 1440p for region recording)
-export const RESOLUTION_PRESETS: Record<ScreenResolution | '1440p', { width: number; height: number }> = {
+// Resolution presets mapping
+export const RESOLUTION_PRESETS: Record<ScreenResolution, { width: number; height: number }> = {
   '480p': { width: 854, height: 480 },
   '720p': { width: 1280, height: 720 },
   '1080p': { width: 1920, height: 1080 },
-  '1440p': { width: 2560, height: 1440 },
 };
 
 // Common presets for quick switching
@@ -32,25 +31,35 @@ export const QUALITY_PRESETS = {
     bitsPerPixel: 0.04   // ~410 kbps for 480p@10fps - economy quality
   },
   'Standard': {
-    resolution: '1080p' as ScreenResolution,
+    resolution: '720p' as ScreenResolution,
     fps: 30 as ScreenFPS,
-    bitsPerPixel: 0.05  // ~3.1 Mbps for 1080p@30fps - good balance
+    bitsPerPixel: 0.05  // ~1.4 Mbps for 720p@30fps - good balance
   },
   'High': {
     resolution: '1080p' as ScreenResolution,
     fps: 60 as ScreenFPS,
     bitsPerPixel: 0.08  // ~9.9 Mbps for 1080p@60fps - CleanShot X quality
   },
-  '2K': {
-    resolution: '1440p' as const,
-    fps: 60 as ScreenFPS,
-    bitsPerPixel: 0.10   // ~22.1 Mbps for 1440p@60fps - premium quality
-  },
 } as const;
 
 interface ScreenRecordingSettingsProviderProps {
   children: React.ReactNode;
 }
+
+const normalizeResolution = (value?: string): ScreenResolution => {
+  if (value === '480p' || value === '720p' || value === '1080p') {
+    return value;
+  }
+  return '1080p';
+};
+
+const normalizeFPS = (value?: string): ScreenFPS => {
+  const parsed = parseInt(value || '', 10);
+  if (parsed === 10 || parsed === 30 || parsed === 60) {
+    return parsed as ScreenFPS;
+  }
+  return 30;
+};
 
 export function ScreenRecordingSettingsProvider({ children }: ScreenRecordingSettingsProviderProps) {
   const [settings, setSettings] = useState<ScreenRecordingSettings>({
@@ -71,8 +80,8 @@ export function ScreenRecordingSettingsProvider({ children }: ScreenRecordingSet
       const allSettings = await window.electronAPI.settings.getAll();
 
       setSettings({
-        resolution: (allSettings.screen_recording_resolution as ScreenResolution) || '1080p',
-        fps: parseInt(allSettings.screen_recording_fps || '30') as ScreenFPS,
+        resolution: normalizeResolution(allSettings.screen_recording_resolution),
+        fps: normalizeFPS(allSettings.screen_recording_fps),
         codec: (allSettings.screen_recording_codec as 'h264' | 'vp9' | 'vp8') || 'h264',
         presetName: allSettings.screen_recording_preset_name || 'Standard',
         bitsPerPixel: parseFloat(allSettings.screen_recording_bits_per_pixel || '0.05'),
@@ -134,7 +143,7 @@ export function ScreenRecordingSettingsProvider({ children }: ScreenRecordingSet
   };
 
   const getResolutionDimensions = (resolution: ScreenResolution) => {
-    return RESOLUTION_PRESETS[resolution];
+    return RESOLUTION_PRESETS[resolution] || RESOLUTION_PRESETS['1080p'];
   };
 
   return (

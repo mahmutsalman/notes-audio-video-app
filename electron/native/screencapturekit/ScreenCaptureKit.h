@@ -16,6 +16,9 @@
                           regionY:(int)regionY
                       regionWidth:(int)regionWidth
                      regionHeight:(int)regionHeight
+                      outputWidth:(int)outputWidth
+                     outputHeight:(int)outputHeight
+                    bitsPerPixel:(double)bitsPerPixel
                        outputPath:(NSString *)outputPath
               completionCallback:(void (^)(NSString *filePath, NSError *error))completionCallback
                     errorCallback:(void (^)(NSError *error))errorCallback;

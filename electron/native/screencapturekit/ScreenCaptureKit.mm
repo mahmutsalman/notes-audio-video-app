@@ -9,6 +9,9 @@
     int _height;
     int _frameRate;
     double _displayScaleFactor;
+    int _outputWidth;
+    int _outputHeight;
+    double _bitsPerPixel;
     int _writerWidth;
     int _writerHeight;
 
@@ -47,6 +50,9 @@
                           regionY:(int)regionY
                       regionWidth:(int)regionWidth
                      regionHeight:(int)regionHeight
+                      outputWidth:(int)outputWidth
+                     outputHeight:(int)outputHeight
+                    bitsPerPixel:(double)bitsPerPixel
                        outputPath:(NSString *)outputPath
               completionCallback:(void (^)(NSString *, NSError *))completionCallback
                     errorCallback:(void (^)(NSError *))errorCallback {
@@ -57,6 +63,9 @@
         _height = height;
         _displayScaleFactor = scaleFactor > 0 ? scaleFactor : 1.0;
         _frameRate = frameRate;
+        _outputWidth = outputWidth > 0 ? outputWidth : width;
+        _outputHeight = outputHeight > 0 ? outputHeight : height;
+        _bitsPerPixel = bitsPerPixel > 0 ? bitsPerPixel : 0.15;
         _writerWidth = 0;
         _writerHeight = 0;
         _regionX = regionX;
@@ -83,7 +92,8 @@
 
     NSLog(@"[ScreenCaptureKit] 🎬 Starting capture with AVAssetWriter");
     NSLog(@"[ScreenCaptureKit] Output path: %@", _outputPath);
-    NSLog(@"[ScreenCaptureKit] Resolution: %dx%d @ %d FPS", _width, _height, _frameRate);
+    NSLog(@"[ScreenCaptureKit] Display: %dx%d @ %d FPS", _width, _height, _frameRate);
+    NSLog(@"[ScreenCaptureKit] Output: %dx%d (bpp %.2f)", _outputWidth, _outputHeight, _bitsPerPixel);
 
     // Get shareable content
     dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
@@ -137,13 +147,13 @@
 
     // Create stream configuration
     _config = [[SCStreamConfiguration alloc] init];
-    _config.width = _width;
-    _config.height = _height;
+    _config.width = _outputWidth;
+    _config.height = _outputHeight;
     _config.minimumFrameInterval = CMTimeMake(1, _frameRate);
     _config.queueDepth = 8; // Increased to prevent backpressure and frame drops
     _config.showsCursor = YES;
     _config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange; // YUV format for video encoding
-    _config.scalesToFit = YES;
+    _config.scalesToFit = (_outputWidth != _width || _outputHeight != _height);
 
     // Set source rect for region cropping (macOS 13.0+)
     if (@available(macOS 13.0, *)) {
@@ -157,11 +167,15 @@
                                        _regionHeight / scaleFactor);
         _config.sourceRect = sourceRect;
         if (useRegionCropping) {
-            _config.width = _regionWidth;
-            _config.height = _regionHeight;
-            _config.scalesToFit = NO;
-            NSLog(@"[ScreenCaptureKit] 📐 Output size set to region: %dx%d (scaleFactor %.2f)",
-                  _regionWidth, _regionHeight, scaleFactor);
+            BOOL shouldScale = (_outputWidth != _regionWidth || _outputHeight != _regionHeight);
+            _config.scalesToFit = shouldScale;
+            NSLog(@"[ScreenCaptureKit] 📐 Output size: %dx%d (region %dx%d, scaleFactor %.2f, scaled=%@)",
+                  _outputWidth,
+                  _outputHeight,
+                  _regionWidth,
+                  _regionHeight,
+                  scaleFactor,
+                  shouldScale ? @"YES" : @"NO");
         }
         NSLog(@"[ScreenCaptureKit] 🎯 Using sourceRect for native cropping: {%.1f, %.1f, %.1f, %.1f} (scaleFactor %.2f)",
               sourceRect.origin.x,
@@ -238,12 +252,13 @@
         }
 
         // Configure video settings for hardware H.264 encoding
+        double bitsPerPixel = _bitsPerPixel > 0 ? _bitsPerPixel : 0.15;
         NSDictionary *videoSettings = @{
             AVVideoCodecKey: AVVideoCodecTypeH264,
             AVVideoWidthKey: @(width),
             AVVideoHeightKey: @(height),
             AVVideoCompressionPropertiesKey: @{
-                AVVideoAverageBitRateKey: @(width * height * _frameRate * 0.15), // 0.15 bits per pixel
+                AVVideoAverageBitRateKey: @(width * height * _frameRate * bitsPerPixel),
                 AVVideoExpectedSourceFrameRateKey: @(_frameRate),
                 AVVideoMaxKeyFrameIntervalKey: @(_frameRate * 2), // Keyframe every 2 seconds
                 AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
@@ -298,7 +313,7 @@
         NSLog(@"[ScreenCaptureKit] ✅ AVAssetWriter initialized");
         NSLog(@"[ScreenCaptureKit] 🎯 Using hardware H.264 encoder");
         NSLog(@"[ScreenCaptureKit] 📏 Writer resolution: %dx%d", width, height);
-        NSLog(@"[ScreenCaptureKit] 📊 Bitrate: %.2f Mbps", (width * height * _frameRate * 0.15) / 1000000.0);
+        NSLog(@"[ScreenCaptureKit] 📊 Bitrate: %.2f Mbps", (width * height * _frameRate * bitsPerPixel) / 1000000.0);
 
         return YES;
     }

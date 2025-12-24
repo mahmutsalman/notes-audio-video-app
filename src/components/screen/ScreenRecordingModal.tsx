@@ -311,7 +311,7 @@ export default function ScreenRecordingModal({
                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                   Recording Quality
                 </h3>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {Object.keys(QUALITY_PRESETS).map((presetName) => {
                     const preset = QUALITY_PRESETS[presetName as keyof typeof QUALITY_PRESETS];
                     const isActive = settings.presetName === presetName;
@@ -338,7 +338,6 @@ export default function ScreenRecordingModal({
                           {preset.bitsPerPixel === 0.04 && 'Economy size'}
                           {preset.bitsPerPixel === 0.05 && 'Balanced'}
                           {preset.bitsPerPixel === 0.08 && 'CleanShot quality'}
-                          {preset.bitsPerPixel === 0.10 && 'Premium'}
                         </div>
                       </button>
                     );

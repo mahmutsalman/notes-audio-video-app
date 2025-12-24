@@ -120,8 +120,8 @@ export interface DurationAudio {
 
 // Screen Recording types
 
-export type ScreenResolution = '480p' | '720p' | '1080p' | '1440p';
-export type ScreenFPS = 10 | 24 | 30 | 60 | 120;
+export type ScreenResolution = '480p' | '720p' | '1080p';
+export type ScreenFPS = 10 | 30 | 60;
 
 export interface ScreenSource {
   id: string;
@@ -162,7 +162,7 @@ export interface CaptureArea {
   // Audio settings
   audioSettings?: AudioSettings;
   // Quality settings
-  quality?: 'auto' | '720p' | '1080p' | '1440p';
+  quality?: 'auto' | '480p' | '720p' | '1080p';
   fps?: number;
   // Recording ID for folder organization
   recordingId?: number;
@@ -468,6 +468,9 @@ export interface ElectronAPI {
       width: number;
       height: number;
       frameRate: number;
+      outputWidth?: number;
+      outputHeight?: number;
+      bitsPerPixel?: number;
       regionX?: number;
       regionY?: number;
       regionWidth?: number;

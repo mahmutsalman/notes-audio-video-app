@@ -27,7 +27,8 @@ export async function createCroppedStream(
   sourceId: string,
   region: CaptureArea,
   fps: number,
-  targetDimensions?: { width: number; height: number }
+  targetDimensions?: { width: number; height: number },
+  bitsPerPixel?: number
 ): Promise<CroppedStreamResult> {
   // Check if ScreenCaptureKit is available (macOS 12.3+)
   const useScreenCaptureKit = isScreenCaptureKitAvailable();
@@ -64,14 +65,14 @@ export async function createCroppedStream(
     };
 
     // Use ScreenCaptureKit for file-based capture
-    // Note: targetDimensions are not used as cropping/scaling happens in hardware encoder
     const { filePath, cleanup } = await createScreenCaptureKitStream(
       screenCaptureKitRegion,
       fps,
       targetDimensions?.width ?? (region.width * scaleFactor),
       targetDimensions?.height ?? (region.height * scaleFactor),
       displayDimensionsResult.width,
-      displayDimensionsResult.height
+      displayDimensionsResult.height,
+      bitsPerPixel
     );
 
     // Return file-based result (no MediaStream, file path instead)

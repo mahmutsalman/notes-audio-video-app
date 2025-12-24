@@ -408,19 +408,15 @@
     <!-- Quality & FPS Row (Grid) -->
     <div class="settings-row">
       <select id="qualitySelect" class="preset-select" title="Video Quality">
-        <option value="auto">Auto</option>
         <option value="480p">480p</option>
         <option value="720p">720p</option>
         <option value="1080p">1080p</option>
-        <option value="1440p">1440p</option>
       </select>
 
       <select id="fpsSelect" class="preset-select" title="Frame Rate">
         <option value="10">10 FPS</option>
-        <option value="24">24 FPS</option>
         <option value="30">30 FPS</option>
         <option value="60">60 FPS</option>
-        <option value="120">120 FPS</option>
       </select>
     </div>
   </div>
@@ -869,8 +865,8 @@
         const settings = await window.electronAPI.settings.getAll();
 
         // Load FPS and quality settings
-        const savedFPS = settings.screen_recording_fps || '10';
-        const savedQuality = settings.screen_recording_resolution || 'auto';
+        const savedFPS = settings.screen_recording_fps || '30';
+        const savedQuality = settings.screen_recording_resolution || '1080p';
 
         // Load mic settings
         micEnabled = settings.region_mic_enabled === 'true';
@@ -887,9 +883,16 @@
           desktopAudioEnabled
         });
 
-        // Apply to UI
-        document.getElementById('fpsSelect').value = savedFPS;
-        document.getElementById('qualitySelect').value = savedQuality;
+        // Apply to UI with fallback for legacy values
+        const fpsSelect = document.getElementById('fpsSelect');
+        const qualitySelect = document.getElementById('qualitySelect');
+        const fpsOptions = Array.from(fpsSelect.options).map(option => option.value);
+        const qualityOptions = Array.from(qualitySelect.options).map(option => option.value);
+        const resolvedFPS = fpsOptions.includes(savedFPS) ? savedFPS : '30';
+        const resolvedQuality = qualityOptions.includes(savedQuality) ? savedQuality : '1080p';
+
+        fpsSelect.value = resolvedFPS;
+        qualitySelect.value = resolvedQuality;
         document.getElementById('micToggle').classList.toggle('active', micEnabled);
         document.getElementById('audioToggle').classList.toggle('active', desktopAudioEnabled && hasBlackHole);
 

@@ -13,6 +13,21 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  const normalizeResolution = (value?: string) => {
+    if (value === '480p' || value === '720p' || value === '1080p') {
+      return value;
+    }
+    return '1080p';
+  };
+
+  const normalizeFPS = (value?: string) => {
+    const parsed = parseInt(value || '', 10);
+    if (parsed === 10 || parsed === 30 || parsed === 60) {
+      return parsed;
+    }
+    return 30;
+  };
+
   // Auto-open modal when pendingRegion is set (from Cmd+D)
   useEffect(() => {
     if (pendingRegion) {
@@ -34,8 +49,8 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
     try {
       // Get settings to extract resolution and FPS
       const settings = await window.electronAPI.settings.getAll();
-      const resolution = settings['screen_recording_resolution'] || '1080p';
-      const fps = parseInt(settings['screen_recording_fps'] || '30');
+      const resolution = normalizeResolution(settings['screen_recording_resolution']);
+      const fps = normalizeFPS(settings['screen_recording_fps']);
 
       // Create the recording record first
       const recording = await window.electronAPI.recordings.create({

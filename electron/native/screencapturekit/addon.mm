@@ -10,8 +10,8 @@ static Napi::ThreadSafeFunction errorTsfn;
 Napi::Value StartCapture(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
-    if (info.Length() < 10) {
-        Napi::TypeError::New(env, "Expected 10 or 11 arguments: displayID, width, height, frameRate, [scaleFactor], regionX, regionY, regionWidth, regionHeight, outputPath, callbacks")
+    if (info.Length() < 14) {
+        Napi::TypeError::New(env, "Expected 14 arguments: displayID, width, height, frameRate, scaleFactor, regionX, regionY, regionWidth, regionHeight, outputWidth, outputHeight, bitsPerPixel, outputPath, callbacks")
             .ThrowAsJavaScriptException();
         return env.Null();
     }
@@ -33,15 +33,18 @@ Napi::Value StartCapture(const Napi::CallbackInfo& info) {
         Napi::TypeError::New(env, "Argument 3 (frameRate) must be a number").ThrowAsJavaScriptException();
         return env.Null();
     }
-    bool hasScaleFactor = info.Length() >= 11;
-    int regionXIndex = hasScaleFactor ? 5 : 4;
-    int regionYIndex = hasScaleFactor ? 6 : 5;
-    int regionWidthIndex = hasScaleFactor ? 7 : 6;
-    int regionHeightIndex = hasScaleFactor ? 8 : 7;
-    int outputPathIndex = hasScaleFactor ? 9 : 8;
-    int callbacksIndex = hasScaleFactor ? 10 : 9;
+    int scaleFactorIndex = 4;
+    int regionXIndex = 5;
+    int regionYIndex = 6;
+    int regionWidthIndex = 7;
+    int regionHeightIndex = 8;
+    int outputWidthIndex = 9;
+    int outputHeightIndex = 10;
+    int bitsPerPixelIndex = 11;
+    int outputPathIndex = 12;
+    int callbacksIndex = 13;
 
-    if (hasScaleFactor && !info[4].IsNumber()) {
+    if (!info[scaleFactorIndex].IsNumber()) {
         Napi::TypeError::New(env, "Argument 4 (scaleFactor) must be a number").ThrowAsJavaScriptException();
         return env.Null();
     }
@@ -61,12 +64,24 @@ Napi::Value StartCapture(const Napi::CallbackInfo& info) {
         Napi::TypeError::New(env, "Argument 7/8 (regionHeight) must be a number").ThrowAsJavaScriptException();
         return env.Null();
     }
+    if (!info[outputWidthIndex].IsNumber()) {
+        Napi::TypeError::New(env, "Argument 9 (outputWidth) must be a number").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    if (!info[outputHeightIndex].IsNumber()) {
+        Napi::TypeError::New(env, "Argument 10 (outputHeight) must be a number").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    if (!info[bitsPerPixelIndex].IsNumber()) {
+        Napi::TypeError::New(env, "Argument 11 (bitsPerPixel) must be a number").ThrowAsJavaScriptException();
+        return env.Null();
+    }
     if (!info[outputPathIndex].IsString()) {
-        Napi::TypeError::New(env, "Argument 8/9 (outputPath) must be a string").ThrowAsJavaScriptException();
+        Napi::TypeError::New(env, "Argument 12 (outputPath) must be a string").ThrowAsJavaScriptException();
         return env.Null();
     }
     if (!info[callbacksIndex].IsObject()) {
-        Napi::TypeError::New(env, "Argument 9/10 (callbacks) must be an object").ThrowAsJavaScriptException();
+        Napi::TypeError::New(env, "Argument 13 (callbacks) must be an object").ThrowAsJavaScriptException();
         return env.Null();
     }
 
@@ -74,11 +89,14 @@ Napi::Value StartCapture(const Napi::CallbackInfo& info) {
     int width = info[1].As<Napi::Number>().Int32Value();
     int height = info[2].As<Napi::Number>().Int32Value();
     int frameRate = info[3].As<Napi::Number>().Int32Value();
-    double scaleFactor = hasScaleFactor ? info[4].As<Napi::Number>().DoubleValue() : 1.0;
+    double scaleFactor = info[scaleFactorIndex].As<Napi::Number>().DoubleValue();
     int regionX = info[regionXIndex].As<Napi::Number>().Int32Value();
     int regionY = info[regionYIndex].As<Napi::Number>().Int32Value();
     int regionWidth = info[regionWidthIndex].As<Napi::Number>().Int32Value();
     int regionHeight = info[regionHeightIndex].As<Napi::Number>().Int32Value();
+    int outputWidth = info[outputWidthIndex].As<Napi::Number>().Int32Value();
+    int outputHeight = info[outputHeightIndex].As<Napi::Number>().Int32Value();
+    double bitsPerPixel = info[bitsPerPixelIndex].As<Napi::Number>().DoubleValue();
     std::string outputPath = info[outputPathIndex].As<Napi::String>().Utf8Value();
 
     Napi::Object callbacks = info[callbacksIndex].As<Napi::Object>();
@@ -90,6 +108,7 @@ Napi::Value StartCapture(const Napi::CallbackInfo& info) {
     NSLog(@"[ScreenCaptureKit Native] Display: %dx%d @ %d FPS", width, height, frameRate);
     NSLog(@"[ScreenCaptureKit Native] Scale factor: %.2f", scaleFactor);
     NSLog(@"[ScreenCaptureKit Native] Region: {%d, %d, %d, %d}", regionX, regionY, regionWidth, regionHeight);
+    NSLog(@"[ScreenCaptureKit Native] Output: %dx%d (bpp %.2f)", outputWidth, outputHeight, bitsPerPixel);
 
     // Create thread-safe functions for callbacks
     completionTsfn = Napi::ThreadSafeFunction::New(
@@ -127,6 +146,9 @@ Napi::Value StartCapture(const Napi::CallbackInfo& info) {
                                                       regionY:regionY
                                                   regionWidth:regionWidth
                                                  regionHeight:regionHeight
+                                                  outputWidth:outputWidth
+                                                 outputHeight:outputHeight
+                                                bitsPerPixel:bitsPerPixel
                                                    outputPath:outputPathNS
                                           completionCallback:^(NSString *filePath, NSError *error) {
         @autoreleasepool {

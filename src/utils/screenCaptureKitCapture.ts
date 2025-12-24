@@ -29,6 +29,7 @@ export async function createScreenCaptureKitStream(
   targetHeight: number,
   displayWidth: number,
   displayHeight: number,
+  bitsPerPixel?: number,
   outputPath?: string
 ): Promise<{
   filePath: Promise<string>;
@@ -39,6 +40,7 @@ export async function createScreenCaptureKitStream(
     fps,
     target: { width: targetWidth, height: targetHeight },
     display: { width: displayWidth, height: displayHeight },
+    bitsPerPixel,
     outputPath
   });
 
@@ -53,6 +55,9 @@ export async function createScreenCaptureKitStream(
     width: displayWidth,
     height: displayHeight,
     frameRate: fps,
+    outputWidth: targetWidth,
+    outputHeight: targetHeight,
+    bitsPerPixel,
     recordingId: region.recordingId, // Pass recordingId for folder organization
     regionX: region.x,
     regionY: region.y,

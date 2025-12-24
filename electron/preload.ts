@@ -410,6 +410,9 @@ const electronAPI = {
       width: number;
       height: number;
       frameRate: number;
+      outputWidth?: number;
+      outputHeight?: number;
+      bitsPerPixel?: number;
       regionX?: number;
       regionY?: number;
       regionWidth?: number;
