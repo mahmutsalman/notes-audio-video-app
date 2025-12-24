@@ -7,7 +7,7 @@ import Button from '../components/common/Button';
 import type { CreateTopic } from '../types';
 
 export default function TopicsPage() {
-  const { topics, loading, error, createTopic } = useTopics();
+  const { topics, loading, error, createTopic, updateTopic, deleteTopic } = useTopics();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -90,7 +90,12 @@ export default function TopicsPage() {
       )}
 
       {/* Topics list */}
-      <TopicList topics={filteredTopics} loading={loading} />
+      <TopicList
+        topics={filteredTopics}
+        loading={loading}
+        onUpdateTopic={updateTopic}
+        onDeleteTopic={deleteTopic}
+      />
 
       {/* Create topic modal */}
       <Modal

@@ -6,14 +6,23 @@ import { formatRelativeTime } from '../../utils/formatters';
 
 interface TopicCardProps {
   topic: Topic;
+  onContextMenu?: (e: React.MouseEvent, topic: Topic) => void;
 }
 
-export default function TopicCard({ topic }: TopicCardProps) {
+export default function TopicCard({ topic, onContextMenu }: TopicCardProps) {
   const navigate = useNavigate();
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (onContextMenu) {
+      e.preventDefault();
+      onContextMenu(e, topic);
+    }
+  };
 
   return (
     <Card
       onClick={() => navigate(`/topic/${topic.id}`)}
+      onContextMenu={handleContextMenu}
       hoverable
       className="p-4"
     >
