@@ -584,7 +584,10 @@ export function setupIpcHandlers(): void {
     sourcePath: string,
     resolution: string,
     fps: number,
-    fallbackDurationMs?: number
+    fallbackDurationMs?: number,
+    audioBuffer?: ArrayBuffer,
+    audioBitrate?: '32k' | '64k' | '128k',
+    audioChannels?: 1 | 2
   ) => {
     try {
       const { finalizeScreenRecordingFile } = await import('../services/fileStorage');
@@ -593,7 +596,10 @@ export function setupIpcHandlers(): void {
         sourcePath,
         resolution,
         fps,
-        fallbackDurationMs
+        fallbackDurationMs,
+        audioBuffer,
+        audioBitrate,
+        audioChannels
       );
 
       if (result.duration === null && result.extractionError) {

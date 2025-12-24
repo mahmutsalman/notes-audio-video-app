@@ -43,7 +43,14 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
     setIsOpen(false);
   };
 
-  const handleSave = async (videoBlob: Blob | null, marks: any[], durationMs: number, filePath?: string) => {
+  const handleSave = async (
+    videoBlob: Blob | null,
+    marks: any[],
+    durationMs: number,
+    filePath?: string,
+    audioBlob?: Blob | null,
+    audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 }
+  ) => {
     setIsSaving(true);
 
     try {
@@ -51,6 +58,11 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
       const settings = await window.electronAPI.settings.getAll();
       const resolution = normalizeResolution(settings['screen_recording_resolution']);
       const fps = normalizeFPS(settings['screen_recording_fps']);
+      const resolvedAudioConfig = audioConfig ?? (resolution === '480p'
+        ? { bitrate: '32k' as const, channels: 1 as const }
+        : resolution === '720p'
+          ? { bitrate: '64k' as const, channels: 2 as const }
+          : { bitrate: '128k' as const, channels: 2 as const });
 
       // Create the recording record first
       const recording = await window.electronAPI.recordings.create({
@@ -70,12 +82,18 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
       let result: { filePath: string; duration: number | null; _debug?: any };
 
       if (filePath) {
+        const audioBuffer = audioBlob && audioBlob.size > 0
+          ? await audioBlob.arrayBuffer()
+          : undefined;
         result = await window.electronAPI.screenRecording.finalizeFile(
           recording.id,
           filePath,
           resolution,
           fps,
-          durationMs
+          durationMs,
+          audioBuffer,
+          resolvedAudioConfig.bitrate,
+          resolvedAudioConfig.channels
         );
       } else if (videoBlob) {
         // Save the video file with client-calculated duration as fallback

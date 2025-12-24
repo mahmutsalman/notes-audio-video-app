@@ -404,7 +404,10 @@ export interface ElectronAPI {
       sourcePath: string,
       resolution: string,
       fps: number,
-      fallbackDurationMs?: number
+      fallbackDurationMs?: number,
+      audioBuffer?: ArrayBuffer,
+      audioBitrate?: '32k' | '64k' | '128k',
+      audioChannels?: 1 | 2
     ) => Promise<{
       filePath: string;
       duration: number | null;

@@ -38,7 +38,13 @@ export interface ScreenRecorderControls {
     region: CaptureArea,
     fps: number
   ) => Promise<void>;
-  stopRecording: () => Promise<{ blob: Blob | null; durationMs: number; filePath?: string } | null>;
+  stopRecording: () => Promise<{
+    blob: Blob | null;
+    durationMs: number;
+    filePath?: string;
+    audioBlob?: Blob | null;
+    audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 };
+  } | null>;
   pauseRecording: () => void;
   resumeRecording: () => void;
   resetRecording: () => void;
@@ -81,7 +87,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   });
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioRecorderRef = useRef<MediaRecorder | null>(null);
   const videoChunksRef = useRef<Blob[]>([]);
+  const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -89,6 +97,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   const regionCleanupRef = useRef<(() => void) | null>(null);
   const audioStreamsRef = useRef<MediaStream[]>([]);
   const audioContextCleanupRef = useRef<(() => Promise<void>) | null>(null); // Phase 3: AudioContext cleanup
+  const audioEncodingRef = useRef<{ bitrate: '32k' | '64k' | '128k'; channels: 1 | 2; bitsPerSecond: number } | null>(null);
   const spaceDetectorRef = useRef<SpaceDetector | null>(null);
   const updateSourceRef = useRef<((newSourceId: string, force?: boolean) => Promise<void>) | null>(null);
 
@@ -116,6 +125,63 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       }
     };
   }, [state.videoUrl]);
+
+  const getAudioEncodingConfig = (resolution: string | undefined) => {
+    switch (resolution) {
+      case '480p':
+        return { bitrate: '32k' as const, channels: 1 as const, bitsPerSecond: 32000 };
+      case '720p':
+        return { bitrate: '64k' as const, channels: 2 as const, bitsPerSecond: 64000 };
+      case '1080p':
+      default:
+        return { bitrate: '128k' as const, channels: 2 as const, bitsPerSecond: 128000 };
+    }
+  };
+
+  const getAudioMimeType = () => {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/ogg'
+    ];
+    return candidates.find(codec => MediaRecorder.isTypeSupported(codec));
+  };
+
+  const stopAudioRecorder = async (): Promise<Blob | null> => {
+    const recorder = audioRecorderRef.current;
+    if (!recorder || recorder.state === 'inactive') {
+      audioRecorderRef.current = null;
+      audioChunksRef.current = [];
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      recorder.onstop = () => {
+        const blob = audioChunksRef.current.length
+          ? new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+          : null;
+        audioChunksRef.current = [];
+        audioRecorderRef.current = null;
+        resolve(blob);
+      };
+      recorder.stop();
+    });
+  };
+
+  const cleanupAudioResources = async () => {
+    if (audioContextCleanupRef.current) {
+      await audioContextCleanupRef.current();
+      audioContextCleanupRef.current = null;
+    }
+
+    if (audioStreamsRef.current.length > 0) {
+      audioStreamsRef.current.forEach(stream => {
+        stream.getTracks().forEach(track => track.stop());
+      });
+      audioStreamsRef.current = [];
+    }
+  };
 
   const startRecording = useCallback(async (
     sourceId: string,
@@ -267,6 +333,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       setPendingMarkStart(null);
       setPendingMarkNote('');
       setCompletedMarks([]);
+      audioChunksRef.current = [];
+      audioRecorderRef.current = null;
+      audioEncodingRef.current = null;
       console.log('[useScreenRecorder] Initial state set');
 
       // Get display source ID for the region's display
@@ -348,6 +417,99 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         // When stop is called, we'll wait for this promise to resolve
         (window as any).__screenRecordingFilePromise = captureResult.filePath;
 
+        // Start audio recording if enabled (file-based path)
+        const shouldUseRegionAudio = !!region.audioSettings?.microphoneEnabled || !!region.audioSettings?.desktopAudioEnabled;
+        if (shouldUseRegionAudio) {
+          const resolvedQuality = region.quality && region.quality !== 'auto'
+            ? region.quality
+            : settings.resolution;
+          const audioConfig = getAudioEncodingConfig(resolvedQuality);
+          const audioChannelCount = audioConfig.channels === 1 ? 1 : undefined;
+          const channelConfig = audioChannelCount ? { channelCount: audioChannelCount } : {};
+          const audioStreams: MediaStream[] = [];
+
+          if (region.audioSettings?.microphoneEnabled) {
+            console.log('[useScreenRecorder] Creating microphone stream (file-based)');
+            const micStream = await createMicrophoneStream(
+              region.audioSettings.microphoneDeviceId,
+              audioChannelCount
+            );
+            if (micStream) {
+              audioStreams.push(micStream);
+              console.log('[useScreenRecorder] Microphone stream created (file-based)');
+            } else {
+              console.warn('[useScreenRecorder] Failed to create microphone stream (file-based)');
+            }
+          }
+
+          if (region.audioSettings?.desktopAudioEnabled) {
+            console.log('[useScreenRecorder] Creating desktop audio stream (file-based)');
+            const blackHoleDevice = await getBlackHoleDevice();
+            if (blackHoleDevice) {
+              try {
+                const desktopStream = await navigator.mediaDevices.getUserMedia({
+                  audio: {
+                    deviceId: { exact: blackHoleDevice.deviceId },
+                    sampleRate: 48000,
+                    ...channelConfig
+                  }
+                });
+                audioStreams.push(desktopStream);
+                console.log('[useScreenRecorder] Desktop audio stream created (file-based)');
+              } catch (error) {
+                console.error('[useScreenRecorder] Failed to create desktop audio stream (file-based):', error);
+              }
+            } else {
+              console.warn('[useScreenRecorder] BlackHole device not found (file-based)');
+            }
+          }
+
+          if (audioStreams.length > 0) {
+            audioStreamsRef.current = audioStreams;
+            let audioStream: MediaStream;
+
+            if (audioStreams.length > 1) {
+              const { stream, cleanup } = combineAudioStreams(audioStreams);
+              audioStream = stream;
+              audioContextCleanupRef.current = cleanup;
+            } else {
+              audioStream = audioStreams[0];
+              audioContextCleanupRef.current = null;
+            }
+
+            audioEncodingRef.current = audioConfig;
+
+            const audioMimeType = getAudioMimeType();
+            const recorderOptions: MediaRecorderOptions = {
+              audioBitsPerSecond: audioConfig.bitsPerSecond
+            };
+            if (audioMimeType) {
+              recorderOptions.mimeType = audioMimeType;
+            }
+
+            try {
+              const audioRecorder = new MediaRecorder(audioStream, recorderOptions);
+              audioRecorderRef.current = audioRecorder;
+              audioChunksRef.current = [];
+
+              audioRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                  audioChunksRef.current.push(event.data);
+                }
+              };
+
+              audioRecorder.onerror = (event) => {
+                console.error('[useScreenRecorder] Audio recorder error (file-based):', event);
+              };
+
+              audioRecorder.start(100);
+              console.log('[useScreenRecorder] ✅ Audio recorder started (file-based)');
+            } catch (error) {
+              console.error('[useScreenRecorder] Failed to start audio recorder (file-based):', error);
+            }
+          }
+        }
+
         console.log('[useScreenRecorder] ✅ File-based recording started - MediaRecorder flow WILL NOT execute');
         console.log('[useScreenRecorder] 🚫 Preventing legacy WebM recording flow');
 
@@ -382,13 +544,21 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       );
       console.log('[useScreenRecorder] Space detector started');
 
+      const resolvedQuality = region.quality && region.quality !== 'auto'
+        ? region.quality
+        : settings.resolution;
+      const audioConfig = getAudioEncodingConfig(resolvedQuality);
+      const audioChannelCount = audioConfig.channels === 1 ? 1 : undefined;
+      const channelConfig = audioChannelCount ? { channelCount: audioChannelCount } : {};
+
       // Create audio streams if enabled (Phase 3)
       const audioStreams: MediaStream[] = [];
 
       if (region.audioSettings?.microphoneEnabled) {
         console.log('[useScreenRecorder] Creating microphone stream');
         const micStream = await createMicrophoneStream(
-          region.audioSettings.microphoneDeviceId
+          region.audioSettings.microphoneDeviceId,
+          audioChannelCount
         );
         if (micStream) {
           audioStreams.push(micStream);
@@ -406,7 +576,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
             const desktopStream = await navigator.mediaDevices.getUserMedia({
               audio: {
                 deviceId: { exact: blackHoleDevice.deviceId },
-                sampleRate: 48000
+                sampleRate: 48000,
+                ...channelConfig
               }
             });
             audioStreams.push(desktopStream);
@@ -494,7 +665,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         mimeType,
         videoBitsPerSecond,
         // Add audio bitrate if audio is enabled
-        audioBitsPerSecond: audioStreams.length > 0 ? 128000 : undefined
+        audioBitsPerSecond: audioStreams.length > 0 ? audioConfig.bitsPerSecond : undefined
       });
       console.log('[useScreenRecorder] MediaRecorder created with audio support:', audioStreams.length > 0);
 
@@ -556,7 +727,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     }
   }, []);
 
-  const stopRecording = useCallback(async (): Promise<{ blob: Blob | null; durationMs: number; filePath?: string } | null> => {
+  const stopRecording = useCallback(async (): Promise<{
+    blob: Blob | null;
+    durationMs: number;
+    filePath?: string;
+    audioBlob?: Blob | null;
+    audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 };
+  } | null> => {
     // Handle file-based recording (ScreenCaptureKit with AVAssetWriter)
     if ((window as any).__screenRecordingFilePromise) {
       console.log('[useScreenRecorder] 🛑 Stopping file-based recording');
@@ -604,6 +781,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       }
 
       try {
+        const audioBlobPromise = stopAudioRecorder();
+
         // FIRST: Stop the native capture (but keep listeners alive)
         console.log('[useScreenRecorder] 📞 Calling native stopCapture');
         await window.electronAPI.screenCaptureKit.stopCapture();
@@ -613,6 +792,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         console.log('[useScreenRecorder] ⏳ Waiting for file path from native completion callback...');
         const filePath = await (window as any).__screenRecordingFilePromise;
         console.log('[useScreenRecorder] ✅ File path received:', filePath);
+
+        const audioBlob = await audioBlobPromise;
+        await cleanupAudioResources();
 
         // Clear all file-based recording state
         console.log('[useScreenRecorder] 🧹 Cleaning up file-based recording state');
@@ -644,7 +826,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
         // Create a dummy blob to maintain API compatibility
         // The caller should check for file path instead
-        return { blob: null, durationMs, filePath };
+        const audioConfig = audioEncodingRef.current
+          ? { bitrate: audioEncodingRef.current.bitrate, channels: audioEncodingRef.current.channels }
+          : undefined;
+        audioEncodingRef.current = null;
+
+        return { blob: null, durationMs, filePath, audioBlob, audioConfig };
       } catch (error) {
         console.error('[useScreenRecorder] ❌ File-based recording failed:', error);
 
@@ -653,6 +840,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
           regionCleanupRef.current();
           regionCleanupRef.current = null;
         }
+
+        await cleanupAudioResources();
+        audioEncodingRef.current = null;
 
         setState(prev => ({
           ...prev,
@@ -789,6 +979,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
+    if (audioRecorderRef.current && audioRecorderRef.current.state !== 'inactive') {
+      audioRecorderRef.current.stop();
+    }
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -797,6 +990,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     // Phase 6: Stop memory monitoring
     memoryMonitor.stop();
     setMemoryAlert(null);
+    cleanupAudioResources().catch(err =>
+      console.warn('[ScreenRecording] Audio cleanup error:', err)
+    );
+    audioEncodingRef.current = null;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
@@ -835,7 +1032,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     });
 
     videoChunksRef.current = [];
+    audioChunksRef.current = [];
     mediaRecorderRef.current = null;
+    audioRecorderRef.current = null;
     startTimeRef.current = 0;
     accumulatedTimeRef.current = 0;
     setPendingMarkStart(null);

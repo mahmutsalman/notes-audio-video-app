@@ -37,20 +37,23 @@ export async function enumerateAudioDevices(): Promise<AudioDevice[]> {
  * Create a microphone audio stream
  * @param deviceId - Optional specific device ID, uses default if not provided
  */
-export async function createMicrophoneStream(deviceId?: string): Promise<MediaStream | null> {
+export async function createMicrophoneStream(deviceId?: string, channelCount?: number): Promise<MediaStream | null> {
   try {
+    const channelConfig = channelCount ? { channelCount } : {};
     const constraints: MediaStreamConstraints = {
       audio: deviceId
         ? {
             deviceId: { exact: deviceId },
             echoCancellation: true,
             noiseSuppression: true,
-            sampleRate: 48000
+            sampleRate: 48000,
+            ...channelConfig
           }
         : {
             echoCancellation: true,
             noiseSuppression: true,
-            sampleRate: 48000
+            sampleRate: 48000,
+            ...channelConfig
           }
     };
 
@@ -153,7 +156,7 @@ export async function getBlackHoleDevice(): Promise<MediaDeviceInfo | null> {
  * Create a desktop audio stream using BlackHole
  * @returns MediaStream or null if BlackHole is not available
  */
-export async function createDesktopAudioStream(): Promise<MediaStream | null> {
+export async function createDesktopAudioStream(channelCount?: number): Promise<MediaStream | null> {
   try {
     const blackHoleDevice = await getBlackHoleDevice();
     if (!blackHoleDevice) {
@@ -161,10 +164,12 @@ export async function createDesktopAudioStream(): Promise<MediaStream | null> {
       return null;
     }
 
+    const channelConfig = channelCount ? { channelCount } : {};
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         deviceId: { exact: blackHoleDevice.deviceId },
-        sampleRate: 48000
+        sampleRate: 48000,
+        ...channelConfig
       }
     });
 

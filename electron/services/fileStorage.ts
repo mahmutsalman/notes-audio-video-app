@@ -1,9 +1,14 @@
 import { app } from 'electron';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs/promises';
+import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { generateVideoThumbnail } from './videoThumbnail';
 import { getVideoMetadata } from './videoMetadata';
+
+const execFileAsync = promisify(execFile);
 
 // Lazy getter to ensure app.setPath() has been called before accessing userData
 // This is necessary because this module is imported before main.ts sets the path
@@ -175,6 +180,15 @@ export async function saveVideoFromBuffer(
   return { filePath, thumbnailPath, duration };
 }
 
+function getFFmpegPath(): string {
+  if (!app.isPackaged) {
+    const appPath = app.getAppPath();
+    return path.join(appPath, 'node_modules', 'ffmpeg-static', 'ffmpeg');
+  }
+
+  return path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg');
+}
+
 /**
  * Verify file is fully written and readable before FFprobe attempts to read it.
  * Uses exponential backoff to handle OS-level file I/O delays.
@@ -326,7 +340,10 @@ export async function finalizeScreenRecordingFile(
   sourcePath: string,
   resolution: string,
   fps: number,
-  fallbackDurationMs?: number
+  fallbackDurationMs?: number,
+  audioBuffer?: ArrayBuffer,
+  audioBitrate?: '32k' | '64k' | '128k',
+  audioChannels?: 1 | 2
 ): Promise<{
   filePath: string;
   thumbnailPath: string | null;
@@ -355,6 +372,50 @@ export async function finalizeScreenRecordingFile(
         await fs.unlink(sourcePath);
       } else {
         throw error;
+      }
+    }
+  }
+
+  if (audioBuffer && audioBuffer.byteLength > 0) {
+    const tempDir = path.join(os.tmpdir(), `screen-recording-audio-${uuidv4()}`);
+    try {
+      await fs.mkdir(tempDir, { recursive: true });
+      const audioPath = path.join(tempDir, 'audio.webm');
+      await fs.writeFile(audioPath, Buffer.from(audioBuffer));
+
+      const muxedPath = path.join(tempDir, `muxed${ext}`);
+      const ffmpegPath = getFFmpegPath();
+      const bitrate = audioBitrate || '128k';
+      const channels = audioChannels || 2;
+
+      console.log('[FileStorage] Muxing audio into screen recording:', {
+        bitrate,
+        channels
+      });
+
+      await execFileAsync(ffmpegPath, [
+        '-i', filePath,
+        '-i', audioPath,
+        '-map', '0:v:0',
+        '-map', '1:a:0',
+        '-c:v', 'copy',
+        '-c:a', 'aac',
+        '-b:a', bitrate,
+        '-ac', String(channels),
+        '-movflags', '+faststart',
+        '-y',
+        muxedPath
+      ]);
+
+      await fs.copyFile(muxedPath, filePath);
+      console.log('[FileStorage] ✓ Audio mux completed');
+    } catch (error) {
+      console.error('[FileStorage] Failed to mux audio into screen recording:', error);
+    } finally {
+      try {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
       }
     }
   }

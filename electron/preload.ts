@@ -258,9 +258,22 @@ const electronAPI = {
       sourcePath: string,
       resolution: string,
       fps: number,
-      fallbackDurationMs?: number
+      fallbackDurationMs?: number,
+      audioBuffer?: ArrayBuffer,
+      audioBitrate?: '32k' | '64k' | '128k',
+      audioChannels?: 1 | 2
     ): Promise<{ filePath: string; duration: number | null; _debug?: any }> =>
-      ipcRenderer.invoke('screenRecording:finalizeFile', recordingId, sourcePath, resolution, fps, fallbackDurationMs),
+      ipcRenderer.invoke(
+        'screenRecording:finalizeFile',
+        recordingId,
+        sourcePath,
+        resolution,
+        fps,
+        fallbackDurationMs,
+        audioBuffer,
+        audioBitrate,
+        audioChannels
+      ),
     save: (
       recordingId: number,
       videoBuffer: ArrayBuffer,
