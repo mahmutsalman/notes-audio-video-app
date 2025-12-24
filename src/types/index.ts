@@ -489,6 +489,7 @@ export interface ElectronAPI {
       outputWidth?: number;
       outputHeight?: number;
       bitsPerPixel?: number;
+      recordingId?: number;
       regionX?: number;
       regionY?: number;
       regionWidth?: number;

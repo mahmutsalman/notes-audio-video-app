@@ -57,6 +57,7 @@ export interface UseScreenRecorderReturn extends ScreenRecorderState, ScreenReco
   pendingMarkNote: string;
   completedMarks: DurationMark[];
   isMarking: boolean;
+  memoryAlert: MemoryAlert | null;
 }
 
 // Helper function to extract codec name from mimeType

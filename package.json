@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
+    "build:dmg": "tsc && vite build && electron-builder -m dmg",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5174 && electron .\"",
     "electron:build": "vite build && electron-builder",
@@ -86,7 +87,7 @@
       }
     ],
     "mac": {
-      "target": "dmg",
+      "target": "zip",
       "icon": "resources/icons/icon.icns",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
