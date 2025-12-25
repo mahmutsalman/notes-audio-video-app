@@ -71,24 +71,41 @@
     }
 
     #startButton {
-      position: absolute;
-      background: #dc2626;
-      color: white;
+      width: 28px;
+      height: 28px;
+      min-width: 28px;
+      min-height: 28px;
+      background: #dc2626 !important;
       border: none;
-      padding: 6px 16px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 600;
+      border-radius: 50%;
       cursor: pointer;
-      display: none;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-      transition: background 0.2s;
-      z-index: 1002;
+      display: inline-block !important;
+      box-shadow: 0 2px 6px rgba(220, 38, 38, 0.4);
+      transition: all 0.2s;
       pointer-events: auto;
+      margin: 0;
+      flex-shrink: 0;
+      position: relative;
+      opacity: 1 !important;
+      visibility: visible !important;
+    }
+
+    #startButton::before {
+      content: '';
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: white;
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
     }
 
     #startButton:hover {
-      background: #b91c1c;
+      background: #b91c1c !important;
+      transform: scale(1.1);
+      box-shadow: 0 6px 16px rgba(220, 38, 38, 0.8);
     }
 
     #stopButton {
@@ -419,9 +436,12 @@
         <option value="60">60 FPS</option>
       </select>
     </div>
-  </div>
 
-  <button id="startButton">Start Recording</button>
+    <!-- Start Recording Button Row -->
+    <div class="control-group" style="justify-content: center; padding: 8px;">
+      <button id="startButton"></button>
+    </div>
+  </div>
   <button id="stopButton">Stop Recording</button>
   <div id="recordingIndicator">Recording</div>
 
@@ -537,26 +557,23 @@
 
     // Position constants for intelligent control placement
     const POSITION_CONSTANTS = {
-      PANEL_HEIGHT: 120,        // Control panel approximate height
+      PANEL_HEIGHT: 168,        // Control panel height (includes integrated button)
       PANEL_WIDTH: 220,         // Control panel width
-      BUTTON_HEIGHT: 28,        // Start button height (smaller, more compact)
-      GAP_ELEMENTS: 8,          // Gap between panel and button (tighter spacing)
       GAP_RECTANGLE: 12,        // Gap between rectangle and controls
-      MARGIN_SCREEN: 10,        // Minimum margin from screen edges
-      TOTAL_HEIGHT: 156         // Panel + button + gaps (120 + 28 + 8)
+      MARGIN_SCREEN: 10         // Minimum margin from screen edges
     };
 
     // Helper: Select best position based on available space
     function selectBestPosition(spaceBelow, spaceAbove, spaceRight, spaceLeft) {
-      const { TOTAL_HEIGHT, PANEL_WIDTH, GAP_RECTANGLE } = POSITION_CONSTANTS;
+      const { PANEL_HEIGHT, PANEL_WIDTH, GAP_RECTANGLE } = POSITION_CONSTANTS;
 
       // Priority 1: Below (default)
-      if (spaceBelow >= TOTAL_HEIGHT + GAP_RECTANGLE) {
+      if (spaceBelow >= PANEL_HEIGHT + GAP_RECTANGLE) {
         return 'below';
       }
 
       // Priority 2: Above
-      if (spaceAbove >= TOTAL_HEIGHT + GAP_RECTANGLE) {
+      if (spaceAbove >= PANEL_HEIGHT + GAP_RECTANGLE) {
         return 'above';
       }
 
@@ -577,41 +594,33 @@
 
     // Helper: Calculate coordinates based on selected position
     function calculatePosition(position) {
-      const { PANEL_HEIGHT, PANEL_WIDTH, TOTAL_HEIGHT, GAP_ELEMENTS, GAP_RECTANGLE, MARGIN_SCREEN } = POSITION_CONSTANTS;
+      const { PANEL_HEIGHT, PANEL_WIDTH, GAP_RECTANGLE, MARGIN_SCREEN } = POSITION_CONSTANTS;
 
-      let panelLeft, panelTop, buttonLeft, buttonTop;
+      let panelLeft, panelTop;
 
       switch (position) {
         case 'below':
           // Center horizontally, positioned below rectangle
           panelLeft = rect.x + (rect.width / 2) - (PANEL_WIDTH / 2);
           panelTop = rect.y + rect.height + GAP_RECTANGLE;
-          buttonLeft = rect.x + (rect.width / 2);
-          buttonTop = panelTop + PANEL_HEIGHT + GAP_ELEMENTS;
           break;
 
         case 'above':
           // Center horizontally, positioned above rectangle
           panelLeft = rect.x + (rect.width / 2) - (PANEL_WIDTH / 2);
-          panelTop = rect.y - TOTAL_HEIGHT - GAP_RECTANGLE;
-          buttonLeft = rect.x + (rect.width / 2);
-          buttonTop = panelTop + PANEL_HEIGHT + GAP_ELEMENTS;
+          panelTop = rect.y - PANEL_HEIGHT - GAP_RECTANGLE;
           break;
 
         case 'right':
           // Positioned to right, vertically centered relative to rectangle
           panelLeft = rect.x + rect.width + GAP_RECTANGLE;
-          panelTop = rect.y + (rect.height / 2) - (TOTAL_HEIGHT / 2);
-          buttonLeft = panelLeft + (PANEL_WIDTH / 2);
-          buttonTop = panelTop + PANEL_HEIGHT + GAP_ELEMENTS;
+          panelTop = rect.y + (rect.height / 2) - (PANEL_HEIGHT / 2);
           break;
 
         case 'left':
           // Positioned to left, vertically centered relative to rectangle
           panelLeft = rect.x - PANEL_WIDTH - GAP_RECTANGLE;
-          panelTop = rect.y + (rect.height / 2) - (TOTAL_HEIGHT / 2);
-          buttonLeft = panelLeft + (PANEL_WIDTH / 2);
-          buttonTop = panelTop + PANEL_HEIGHT + GAP_ELEMENTS;
+          panelTop = rect.y + (rect.height / 2) - (PANEL_HEIGHT / 2);
           break;
 
         case 'below-forced':
@@ -619,10 +628,8 @@
           panelLeft = rect.x + (rect.width / 2) - (PANEL_WIDTH / 2);
           panelTop = Math.min(
             rect.y + rect.height + GAP_RECTANGLE,
-            window.innerHeight - TOTAL_HEIGHT - MARGIN_SCREEN
+            window.innerHeight - PANEL_HEIGHT - MARGIN_SCREEN
           );
-          buttonLeft = rect.x + (rect.width / 2);
-          buttonTop = panelTop + PANEL_HEIGHT + GAP_ELEMENTS;
           break;
       }
 
@@ -630,43 +637,29 @@
       panelLeft = Math.max(MARGIN_SCREEN, Math.min(panelLeft, window.innerWidth - PANEL_WIDTH - MARGIN_SCREEN));
 
       // Apply vertical bounds checking
-      panelTop = Math.max(MARGIN_SCREEN, Math.min(panelTop, window.innerHeight - TOTAL_HEIGHT - MARGIN_SCREEN));
+      panelTop = Math.max(MARGIN_SCREEN, Math.min(panelTop, window.innerHeight - PANEL_HEIGHT - MARGIN_SCREEN));
 
       return {
-        panel: { left: panelLeft, top: panelTop },
-        button: { left: buttonLeft, top: buttonTop }
+        panel: { left: panelLeft, top: panelTop }
       };
     }
 
     // Helper: Apply calculated position to DOM elements
     function applyPosition(coords) {
-      const { GAP_ELEMENTS } = POSITION_CONSTANTS;
-
       // Position control panel
       controlPanel.style.left = coords.panel.left + 'px';
       controlPanel.style.top = coords.panel.top + 'px';
       controlPanel.style.display = 'flex';
 
-      // Calculate button position using ACTUAL panel height after rendering
-      // This ensures accurate positioning regardless of panel content
-      const actualPanelBottom = coords.panel.top + controlPanel.offsetHeight;
-      const buttonTop = actualPanelBottom + GAP_ELEMENTS;
-
-      // Position start button (always below panel with centered alignment)
-      startButton.style.left = coords.button.left + 'px';
-      startButton.style.top = buttonTop + 'px';
-      startButton.style.transform = 'translateX(-50%)'; // Center button horizontally
-
       console.log('[RegionSelector] Control panel positioned at:', coords.panel);
       console.log('[RegionSelector] Panel actual height:', controlPanel.offsetHeight);
-      console.log('[RegionSelector] Start button positioned at:', { left: coords.button.left, top: buttonTop });
     }
 
     // Position control panel with intelligent fallback (below → above → right → left)
     function positionControlPanel() {
       console.log('[RegionSelector] Positioning control panel with intelligent fallback');
 
-      const { PANEL_HEIGHT, PANEL_WIDTH, TOTAL_HEIGHT, GAP_RECTANGLE, MARGIN_SCREEN } = POSITION_CONSTANTS;
+      const { PANEL_HEIGHT, PANEL_WIDTH, GAP_RECTANGLE, MARGIN_SCREEN } = POSITION_CONSTANTS;
 
       // Calculate available space in each direction
       const spaceBelow = window.innerHeight - (rect.y + rect.height) - MARGIN_SCREEN;
@@ -994,15 +987,12 @@
 
       // Show control panel and start button if rectangle is big enough
       if (rect && rect.width > 20 && rect.height > 20) {
-        console.log('[RegionSelector] Rectangle is big enough, showing control panel and button');
+        console.log('[RegionSelector] Rectangle is big enough, showing control panel');
 
-        // Position and show control panel (also positions start button)
+        // Position and show control panel (button is inside panel)
         positionControlPanel();
 
-        // Show start button (position already set by positionControlPanel)
-        startButton.style.display = 'block';
-
-        console.log('[RegionSelector] Control panel and button shown');
+        console.log('[RegionSelector] Control panel shown');
       } else {
         // Rectangle too small, reset
         rectangleEl.style.display = 'none';
