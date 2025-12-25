@@ -1,5 +1,7 @@
 #import "ScreenCaptureKit.h"
 
+static void *ScreenCaptureManagerCaptureQueueKey = &ScreenCaptureManagerCaptureQueueKey;
+
 @implementation ScreenCaptureManager {
     SCStream *_stream;
     SCStreamConfiguration *_config;
@@ -30,6 +32,14 @@
     // Timestamp normalization for video duration
     CMTime _firstFrameTime;
     CMTime _lastNormalizedTime;
+    CMTime _lastAdjustedTime;  // Last timestamp actually written to file (after pause adjustment)
+
+    // Pause/Resume support
+    BOOL _isPaused;
+    CMTime _pauseStartTime;
+    CMTime _totalPausedDuration;
+    BOOL _wasJustResumed;
+    int _pausedFrameCount;
 
     // Callbacks
     void (^_completionCallback)(NSString *, NSError *);
@@ -78,9 +88,16 @@
         _isCapturing = NO;
         _isWriting = NO;
         _captureQueue = dispatch_queue_create("com.app.screencapture", DISPATCH_QUEUE_SERIAL);
+        dispatch_queue_set_specific(_captureQueue, ScreenCaptureManagerCaptureQueueKey, ScreenCaptureManagerCaptureQueueKey, NULL);
         _writerQueue = dispatch_queue_create("com.app.assetwriter", DISPATCH_QUEUE_SERIAL);
         _firstFrameTime = kCMTimeZero;
         _lastNormalizedTime = kCMTimeZero;
+        _lastAdjustedTime = kCMTimeZero;
+        _isPaused = NO;
+        _pauseStartTime = kCMTimeZero;
+        _totalPausedDuration = kCMTimeZero;
+        _wasJustResumed = NO;
+        _pausedFrameCount = 0;
     }
     return self;
 }
@@ -326,6 +343,23 @@
 
     NSLog(@"[ScreenCaptureKit] ⏹️  Stopping capture...");
 
+    // If we're paused when stopping, finalize the pause duration
+    if (_isPaused && !CMTIME_COMPARE_INLINE(_pauseStartTime, ==, kCMTimeZero)) {
+        // Calculate final pause interval from pause start to last normalized time
+        // Since we're stopping while paused, we use the pause start time as the endpoint
+        // The pause duration is implicitly "from pause start until now"
+        // We don't add this to _totalPausedDuration because no frames were written during pause
+        NSLog(@"[ScreenCaptureKit] ⚠️  Stopping while PAUSED - pause state: %.2fs",
+              CMTimeGetSeconds(_pauseStartTime));
+        NSLog(@"[ScreenCaptureKit] 📊 Total paused duration: %.2fs",
+              CMTimeGetSeconds(_totalPausedDuration));
+
+        // Reset pause state
+        _isPaused = NO;
+        _pauseStartTime = kCMTimeZero;
+        _wasJustResumed = NO;
+    }
+
     _isCapturing = NO;
 
     // Stop stream
@@ -348,6 +382,8 @@
 - (void)finishWriting {
     if (!_isWriting || !_assetWriter || !_assetWriterInput) {
         NSLog(@"[ScreenCaptureKit] ⚠️  Not writing, nothing to finish");
+        NSLog(@"[ScreenCaptureKit] Debug: _isWriting=%d, _assetWriter=%@, _assetWriterInput=%@",
+              _isWriting, _assetWriter ? @"YES" : @"NO", _assetWriterInput ? @"YES" : @"NO");
         if (_completionCallback) {
             _completionCallback(nil, [NSError errorWithDomain:@"ScreenCaptureKit" code:500 userInfo:@{NSLocalizedDescriptionKey: @"Writer not active"}]);
         }
@@ -362,9 +398,26 @@
               CMTimeGetSeconds(_lastNormalizedTime));
         NSLog(@"[ScreenCaptureKit] 📊 Recording duration: %.2f seconds",
               CMTimeGetSeconds(_lastNormalizedTime));
+        NSLog(@"[ScreenCaptureKit] 📊 Total paused duration: %.2f seconds",
+              CMTimeGetSeconds(_totalPausedDuration));
+        NSLog(@"[ScreenCaptureKit] 📊 Actual video duration: %.2f seconds",
+              CMTimeGetSeconds(CMTimeSubtract(_lastNormalizedTime, _totalPausedDuration)));
     }
 
     NSLog(@"[ScreenCaptureKit] 📝 Finishing asset writer...");
+    NSLog(@"[ScreenCaptureKit] 📝 Writer status before finish: %ld", (long)_assetWriter.status);
+
+    // Check if writer is in valid state for finishing
+    if (_assetWriter.status != AVAssetWriterStatusWriting) {
+        NSLog(@"[ScreenCaptureKit] ⚠️ WARNING: Writer not in Writing status! Status: %ld", (long)_assetWriter.status);
+        if (_assetWriter.status == AVAssetWriterStatusFailed) {
+            NSLog(@"[ScreenCaptureKit] ❌ Writer already failed: %@", _assetWriter.error);
+            if (_completionCallback) {
+                _completionCallback(nil, _assetWriter.error);
+            }
+            return;
+        }
+    }
 
     // Mark input as finished
     [_assetWriterInput markAsFinished];
@@ -388,20 +441,125 @@
                 strongSelf->_completionCallback(strongSelf->_outputPath, nil);
             }
         } else {
-            NSLog(@"[ScreenCaptureKit] ❌ Writing failed: %@", strongSelf->_assetWriter.error);
+            NSError *writerError = strongSelf->_assetWriter.error;
+            AVAssetWriterStatus writerStatus = strongSelf->_assetWriter.status;
+
+            NSLog(@"[ScreenCaptureKit] ❌ Writing failed!");
+            NSLog(@"[ScreenCaptureKit] ❌ Writer status: %ld", (long)writerStatus);
+            NSLog(@"[ScreenCaptureKit] ❌ Writer error: %@", writerError);
+            NSLog(@"[ScreenCaptureKit] ❌ Error domain: %@", writerError.domain);
+            NSLog(@"[ScreenCaptureKit] ❌ Error code: %ld", (long)writerError.code);
+            NSLog(@"[ScreenCaptureKit] ❌ Error description: %@", writerError.localizedDescription);
+
             if (strongSelf->_completionCallback) {
-                strongSelf->_completionCallback(nil, strongSelf->_assetWriter.error);
+                strongSelf->_completionCallback(nil, writerError);
             }
         }
 
         strongSelf->_assetWriter = nil;
         strongSelf->_assetWriterInput = nil;
         strongSelf->_pixelBufferAdaptor = nil;
+
+        // Reset timestamp tracking for next recording session
+        strongSelf->_firstFrameTime = kCMTimeZero;
+        strongSelf->_lastNormalizedTime = kCMTimeZero;
+        strongSelf->_lastAdjustedTime = kCMTimeZero;
+        strongSelf->_totalPausedDuration = kCMTimeZero;
+        strongSelf->_pauseStartTime = kCMTimeZero;
+        strongSelf->_isPaused = NO;
+        strongSelf->_wasJustResumed = NO;
+        strongSelf->_pausedFrameCount = 0;
     }];
 }
 
 - (BOOL)isCapturing {
     return _isCapturing;
+}
+
+- (void)performSyncOnCaptureQueue:(dispatch_block_t)block {
+    if (dispatch_get_specific(ScreenCaptureManagerCaptureQueueKey)) {
+        block();
+    } else {
+        dispatch_sync(_captureQueue, block);
+    }
+}
+
+- (void)pauseCapture {
+    __block BOOL shouldLogCannotPause = NO;
+    __block CMTime pauseStartTime = kCMTimeZero;
+    __block CMTime totalPausedDuration = kCMTimeZero;
+
+    [self performSyncOnCaptureQueue:^{
+        if (!_isCapturing || _isPaused) {
+            shouldLogCannotPause = YES;
+            return;
+        }
+
+        // Check if we have an unfinalized pause (pausing again before getting a frame after previous resume)
+        if (!CMTIME_COMPARE_INLINE(_pauseStartTime, ==, kCMTimeZero)) {
+            NSLog(@"[ScreenCaptureKit] ⚠️ WARNING: Pausing again before first frame after resume!");
+            NSLog(@"[ScreenCaptureKit] ⚠️ Previous pause start: %.2fs, current normalized: %.2fs",
+                  CMTimeGetSeconds(_pauseStartTime), CMTimeGetSeconds(_lastNormalizedTime));
+
+            // Calculate and add the previous pause interval immediately
+            if (CMTIME_COMPARE_INLINE(_lastNormalizedTime, >, _pauseStartTime)) {
+                CMTime previousPauseInterval = CMTimeSubtract(_lastNormalizedTime, _pauseStartTime);
+                _totalPausedDuration = CMTimeAdd(_totalPausedDuration, previousPauseInterval);
+                NSLog(@"[ScreenCaptureKit] ✅ Finalized previous pause interval: %.2fs",
+                      CMTimeGetSeconds(previousPauseInterval));
+            }
+        }
+
+        _isPaused = YES;
+
+        // Record pause start time (use last normalized time as reference)
+        // This ensures we track pause duration relative to the video timeline, not system uptime
+        _pauseStartTime = _lastNormalizedTime;
+        _wasJustResumed = NO; // Reset resume flag when pausing
+        _pausedFrameCount = 0;
+        pauseStartTime = _pauseStartTime;
+        totalPausedDuration = _totalPausedDuration;
+    }];
+
+    if (shouldLogCannotPause) {
+        NSLog(@"[ScreenCaptureKit] ⚠️ Cannot pause - not capturing or already paused");
+        return;
+    }
+
+    NSLog(@"[ScreenCaptureKit] ⏸️ Recording PAUSED");
+    NSLog(@"[ScreenCaptureKit] 📍 Pause at video time: %.2f seconds", CMTimeGetSeconds(pauseStartTime));
+    NSLog(@"[ScreenCaptureKit] ⏱️ Total paused duration so far: %.2f seconds", CMTimeGetSeconds(totalPausedDuration));
+}
+
+- (void)resumeCapture {
+    __block BOOL shouldLogCannotResume = NO;
+    __block CMTime totalPausedDuration = kCMTimeZero;
+
+    [self performSyncOnCaptureQueue:^{
+        if (!_isCapturing || !_isPaused) {
+            shouldLogCannotResume = YES;
+            return;
+        }
+
+        // Note: We don't calculate pause duration here because we need the actual
+        // presentation timestamp of the next frame to accurately measure the pause interval.
+        // The pause duration will be calculated when the first frame after resume arrives.
+        _isPaused = NO;
+        totalPausedDuration = _totalPausedDuration;
+    }];
+
+    if (shouldLogCannotResume) {
+        NSLog(@"[ScreenCaptureKit] ⚠️ Cannot resume - not capturing or not paused");
+        return;
+    }
+
+    NSLog(@"[ScreenCaptureKit] ▶️ Recording RESUMED");
+    NSLog(@"[ScreenCaptureKit] 📍 Pause duration will be calculated on next frame");
+    NSLog(@"[ScreenCaptureKit] ⏱️ Current total paused duration: %.2f seconds", CMTimeGetSeconds(totalPausedDuration));
+}
+
+- (BOOL)isPaused {
+    return _isPaused;
 }
 
 #pragma mark - SCStreamDelegate
@@ -437,18 +595,46 @@
             return;
         }
 
-        // Log every 10th frame to track activity
-        if (frameCount % 10 == 0 || frameCount <= 5) {
-            NSLog(@"[ScreenCaptureKit] 📹 Frame %d received and processing", frameCount);
-        }
-
-        // Get presentation timestamp
+        // Get presentation timestamp early for pause duration calculation
         CMTime presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
 
         // Validate timestamp
         if (!CMTIME_IS_VALID(presentationTime)) {
             NSLog(@"[ScreenCaptureKit] ⚠️ Invalid timestamp, dropping frame");
             return;
+        }
+
+        // Handle pause state - skip writing but continue processing
+        if (_isPaused) {
+            if (++_pausedFrameCount % 30 == 1) { // Log every ~1 second at 30fps
+                NSLog(@"[ScreenCaptureKit] ⏸️ Frame %d: PAUSED - skipping write (paused frames: %d)", frameCount, _pausedFrameCount);
+            }
+            return;
+        }
+
+        // Detect first frame after resume and calculate pause duration
+        if (!CMTIME_COMPARE_INLINE(_pauseStartTime, ==, kCMTimeZero) && !_wasJustResumed) {
+            // Calculate pause interval: (current normalized time - pause start time)
+            CMTime normalizedTimeBefore = CMTimeSubtract(presentationTime, _firstFrameTime);
+            CMTime pauseInterval = CMTimeSubtract(normalizedTimeBefore, _pauseStartTime);
+
+            // Accumulate pause duration
+            _totalPausedDuration = CMTimeAdd(_totalPausedDuration, pauseInterval);
+
+            NSLog(@"[ScreenCaptureKit] 🔄 First frame after resume detected");
+            NSLog(@"[ScreenCaptureKit] ⏱️ Pause interval: %.2f seconds", CMTimeGetSeconds(pauseInterval));
+            NSLog(@"[ScreenCaptureKit] ⏱️ Total paused duration: %.2f seconds", CMTimeGetSeconds(_totalPausedDuration));
+
+            // Reset pause start time
+            _pauseStartTime = kCMTimeZero;
+            _wasJustResumed = YES;
+        } else if (_isPaused == NO && _wasJustResumed) {
+            _wasJustResumed = NO; // Reset flag after first frame
+        }
+
+        // Log every 10th frame to track activity
+        if (frameCount % 10 == 0 || frameCount <= 5) {
+            NSLog(@"[ScreenCaptureKit] 📹 Frame %d received and processing", frameCount);
         }
 
         CFArrayRef attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, false);
@@ -510,6 +696,37 @@
         // Calculate normalized time (relative to first frame, starting from zero)
         CMTime normalizedTime = CMTimeSubtract(presentationTime, _firstFrameTime);
 
+        // Subtract total paused duration from normalized time
+        // This removes all pause intervals from the final video timeline
+        CMTime adjustedTime = CMTimeSubtract(normalizedTime, _totalPausedDuration);
+
+        // Ensure adjusted time is not negative (should never happen, but safety check)
+        if (CMTIME_COMPARE_INLINE(adjustedTime, <, kCMTimeZero)) {
+            NSLog(@"[ScreenCaptureKit] ⚠️ Negative adjusted time detected, clamping to zero");
+            adjustedTime = kCMTimeZero;
+        }
+
+        // Ensure strictly monotonically increasing timestamps
+        // AVAssetWriter requires each timestamp to be strictly greater than the previous
+        if (!CMTIME_COMPARE_INLINE(_lastAdjustedTime, ==, kCMTimeZero)) {
+            if (CMTIME_COMPARE_INLINE(adjustedTime, <=, _lastAdjustedTime)) {
+                // Timestamp not increasing - add one frame duration to maintain continuity
+                CMTime frameDuration = CMTimeMake(1, _frameRate);
+                CMTime minimumTime = CMTimeAdd(_lastAdjustedTime, frameDuration);
+
+                NSLog(@"[ScreenCaptureKit] ⚠️ Timestamp discontinuity detected!");
+                NSLog(@"[ScreenCaptureKit] 📊 Frame %d: normalized=%.2fs, adjusted=%.2fs, last=%.2fs",
+                      frameCount,
+                      CMTimeGetSeconds(normalizedTime),
+                      CMTimeGetSeconds(adjustedTime),
+                      CMTimeGetSeconds(_lastAdjustedTime));
+                NSLog(@"[ScreenCaptureKit] ✅ Correcting to minimum time: %.2fs",
+                      CMTimeGetSeconds(minimumTime));
+
+                adjustedTime = minimumTime;
+            }
+        }
+
         // Check if encoder is ready
         if (!_assetWriterInput.readyForMoreMediaData) {
             static int dropCount = 0;
@@ -519,9 +736,9 @@
             return;
         }
 
-        // Append pixel buffer with normalized timing
+        // Append pixel buffer with adjusted timing (paused duration removed)
         BOOL success = [_pixelBufferAdaptor appendPixelBuffer:pixelBuffer
-                                        withPresentationTime:normalizedTime];
+                                        withPresentationTime:adjustedTime];
 
         if (!success) {
             NSLog(@"[ScreenCaptureKit] ❌ Failed to append pixel buffer");
@@ -529,8 +746,20 @@
                 NSLog(@"[ScreenCaptureKit] ❌ Writer failed: %@", _assetWriter.error);
             }
         } else {
-            // Track last normalized time for duration logging
+            // Track last normalized time (before pause adjustment) for pause duration calculation
             _lastNormalizedTime = normalizedTime;
+
+            // Track last adjusted time (after pause adjustment) to ensure monotonicity
+            _lastAdjustedTime = adjustedTime;
+
+            // Log timestamp adjustment for debugging (every 30 frames)
+            if (frameCount % 30 == 0 && !CMTIME_COMPARE_INLINE(_totalPausedDuration, ==, kCMTimeZero)) {
+                NSLog(@"[ScreenCaptureKit] ⏱️ Frame %d: normalized=%.2fs, adjusted=%.2fs, paused=%.2fs",
+                      frameCount,
+                      CMTimeGetSeconds(normalizedTime),
+                      CMTimeGetSeconds(adjustedTime),
+                      CMTimeGetSeconds(_totalPausedDuration));
+            }
         }
     }
 }

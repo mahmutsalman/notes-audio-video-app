@@ -957,9 +957,46 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     });
   }, [pendingMarkStart, pendingMarkNote]);
 
-  const pauseRecording = useCallback(() => {
+  const pauseRecording = useCallback(async () => {
+    console.log('[useScreenRecorder] pauseRecording() called');
+
+    // Check if we're using file-based recording
+    const isFileBased = (window as any).__isFileBased;
+    if (isFileBased) {
+      console.log('[useScreenRecorder] 🎬 File-based recording - calling native pause');
+      try {
+        await window.electronAPI.screenCaptureKit.pauseCapture();
+
+        const audioRecorder = audioRecorderRef.current;
+        if (audioRecorder && audioRecorder.state === 'recording') {
+          try {
+            audioRecorder.pause();
+            console.log('[useScreenRecorder] 🔇 Audio recorder paused (file-based)');
+          } catch (error) {
+            console.warn('[useScreenRecorder] ⚠️ Failed to pause audio recorder (file-based):', error);
+          }
+        }
+
+        // Pause the timer
+        accumulatedTimeRef.current += Date.now() - startTimeRef.current;
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        setState(prev => ({ ...prev, isPaused: true }));
+        console.log('[useScreenRecorder] ✅ Native recording paused');
+      } catch (error) {
+        console.error('[useScreenRecorder] ❌ Failed to pause native recording:', error);
+      }
+      return;
+    }
+
+    // Legacy MediaRecorder pause
     const mediaRecorder = mediaRecorderRef.current;
+    console.log('[useScreenRecorder] MediaRecorder state:', mediaRecorder?.state);
+
     if (mediaRecorder && mediaRecorder.state === 'recording') {
+      console.log('[useScreenRecorder] Calling mediaRecorder.pause()');
       mediaRecorder.pause();
       accumulatedTimeRef.current += Date.now() - startTimeRef.current;
       if (timerRef.current) {
@@ -967,12 +1004,52 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         timerRef.current = null;
       }
       setState(prev => ({ ...prev, isPaused: true }));
+      console.log('[useScreenRecorder] Recording paused successfully');
+    } else {
+      console.warn('[useScreenRecorder] Cannot pause - invalid state:', mediaRecorder?.state);
     }
   }, []);
 
-  const resumeRecording = useCallback(() => {
+  const resumeRecording = useCallback(async () => {
+    console.log('[useScreenRecorder] resumeRecording() called');
+
+    // Check if we're using file-based recording
+    const isFileBased = (window as any).__isFileBased;
+    if (isFileBased) {
+      console.log('[useScreenRecorder] 🎬 File-based recording - calling native resume');
+      try {
+        await window.electronAPI.screenCaptureKit.resumeCapture();
+
+        const audioRecorder = audioRecorderRef.current;
+        if (audioRecorder && audioRecorder.state === 'paused') {
+          try {
+            audioRecorder.resume();
+            console.log('[useScreenRecorder] 🔊 Audio recorder resumed (file-based)');
+          } catch (error) {
+            console.warn('[useScreenRecorder] ⚠️ Failed to resume audio recorder (file-based):', error);
+          }
+        }
+
+        // Resume the timer
+        startTimeRef.current = Date.now();
+        timerRef.current = setInterval(() => {
+          const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+          setState(prev => ({ ...prev, duration: Math.floor(elapsed / 1000) }));
+        }, 100);
+        setState(prev => ({ ...prev, isPaused: false }));
+        console.log('[useScreenRecorder] ✅ Native recording resumed');
+      } catch (error) {
+        console.error('[useScreenRecorder] ❌ Failed to resume native recording:', error);
+      }
+      return;
+    }
+
+    // Legacy MediaRecorder resume
     const mediaRecorder = mediaRecorderRef.current;
+    console.log('[useScreenRecorder] MediaRecorder state:', mediaRecorder?.state);
+
     if (mediaRecorder && mediaRecorder.state === 'paused') {
+      console.log('[useScreenRecorder] Calling mediaRecorder.resume()');
       mediaRecorder.resume();
       startTimeRef.current = Date.now();
       timerRef.current = setInterval(() => {
@@ -980,6 +1057,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         setState(prev => ({ ...prev, duration: Math.floor(elapsed / 1000) }));
       }, 100);
       setState(prev => ({ ...prev, isPaused: false }));
+      console.log('[useScreenRecorder] Recording resumed successfully');
+    } else {
+      console.warn('[useScreenRecorder] Cannot resume - invalid state:', mediaRecorder?.state);
     }
   }, []);
 
