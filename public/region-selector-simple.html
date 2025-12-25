@@ -1171,6 +1171,28 @@
       }
     });
 
+    // Listen for pause state updates from React modal
+    window.electronAPI.region.onPauseStateUpdate((paused) => {
+      console.log('[RegionSelector] Pause state update received from modal:', paused);
+
+      // Update local state
+      isPaused = paused;
+
+      // Update pause button UI
+      pauseButton.textContent = paused ? '▶' : '⏸';
+
+      // Update recording indicator
+      if (paused) {
+        recordingIndicator.textContent = 'Paused';
+        recordingIndicator.style.background = 'rgba(234, 179, 8, 0.9)';
+      } else {
+        recordingIndicator.textContent = 'Recording';
+        recordingIndicator.style.background = 'rgba(220, 38, 38, 0.9)';
+      }
+
+      console.log('[RegionSelector] Overlay UI updated to reflect pause state:', paused);
+    });
+
     // Listen for cmd+h input field toggle
     window.electronAPI.region.onInputFieldToggle(() => {
       if (!isRecording) return;
@@ -1214,9 +1236,11 @@
     // Pause button handler
     pauseButton.addEventListener('click', (e) => {
       e.stopPropagation();
+      console.log('[RegionSelector] Pause button clicked, current isPaused:', isPaused);
 
       if (isPaused) {
         // Resume recording
+        console.log('[RegionSelector] Calling resumeRecording()');
         window.electronAPI.region.resumeRecording();
         pauseButton.textContent = '⏸';
         isPaused = false;
@@ -1226,6 +1250,7 @@
         recordingIndicator.style.background = 'rgba(220, 38, 38, 0.9)';
       } else {
         // Pause recording
+        console.log('[RegionSelector] Calling pauseRecording()');
         window.electronAPI.region.pauseRecording();
         pauseButton.textContent = '▶';
         isPaused = true;

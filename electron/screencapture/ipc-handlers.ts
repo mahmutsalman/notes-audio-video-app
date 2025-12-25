@@ -42,6 +42,14 @@ export function registerScreenCaptureHandlers(mainWindow: BrowserWindow) {
         captureManager.on('stopped', () => {
           console.log('[ScreenCaptureKit] IPC: capture stopped event');
         });
+
+        captureManager.on('paused', () => {
+          console.log('[ScreenCaptureKit] IPC: capture paused event');
+        });
+
+        captureManager.on('resumed', () => {
+          console.log('[ScreenCaptureKit] IPC: capture resumed event');
+        });
       }
 
       await captureManager.startCapture(config);
@@ -72,10 +80,48 @@ export function registerScreenCaptureHandlers(mainWindow: BrowserWindow) {
     }
   });
 
+  // Pause capture
+  ipcMain.handle('screencapturekit:pause', async () => {
+    console.log('[ScreenCaptureKit] IPC: pause capture request');
+
+    try {
+      if (captureManager) {
+        captureManager.pauseCapture();
+      }
+      return { success: true };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('[ScreenCaptureKit] IPC: pause capture failed:', errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Resume capture
+  ipcMain.handle('screencapturekit:resume', async () => {
+    console.log('[ScreenCaptureKit] IPC: resume capture request');
+
+    try {
+      if (captureManager) {
+        captureManager.resumeCapture();
+      }
+      return { success: true };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('[ScreenCaptureKit] IPC: resume capture failed:', errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  });
+
   // Check if capturing
   ipcMain.handle('screencapturekit:isCapturing', async () => {
     const isCapturing = captureManager ? captureManager.isCurrentlyCapturing() : false;
     return { isCapturing };
+  });
+
+  // Check if paused
+  ipcMain.handle('screencapturekit:isPaused', async () => {
+    const isPaused = captureManager ? captureManager.isPaused() : false;
+    return { isPaused };
   });
 
   // Get display dimensions for a given display ID
@@ -132,7 +178,10 @@ export function unregisterScreenCaptureHandlers() {
 
   ipcMain.removeHandler('screencapturekit:start');
   ipcMain.removeHandler('screencapturekit:stop');
+  ipcMain.removeHandler('screencapturekit:pause');
+  ipcMain.removeHandler('screencapturekit:resume');
   ipcMain.removeHandler('screencapturekit:isCapturing');
+  ipcMain.removeHandler('screencapturekit:isPaused');
   ipcMain.removeHandler('screencapturekit:getDisplayDimensions');
 
   if (captureManager) {

@@ -445,6 +445,8 @@ export interface ElectronAPI {
     onInputFieldToggle: (callback: () => void) => () => void;
     sendInputFieldToggle: () => void;
     setWindowLevel: (level: 'floating' | 'screen-saver') => void;
+    sendPauseStateUpdate: (isPaused: boolean) => void;
+    onPauseStateUpdate: (callback: (isPaused: boolean) => void) => () => void;
   };
   video: {
     generateThumbnail: (videoPath: string) => Promise<{ success: boolean; thumbnailPath: string | null }>;
@@ -463,7 +465,8 @@ export interface ElectronAPI {
       extensionSource: ArrayBuffer | string,
       originalDurationMs: number,
       extensionDurationMs: number,
-      compressionOptions?: VideoCompressionOptions
+      compressionOptions?: VideoCompressionOptions,
+      audioOffsetMs?: number
     ) => Promise<VideoMergeResult>;
   };
   settings: {
@@ -500,7 +503,10 @@ export interface ElectronAPI {
       outputPath?: string;
     }) => Promise<{ success: boolean; error?: string }>;
     stopCapture: () => Promise<{ success: boolean; error?: string }>;
+    pauseCapture: () => Promise<{ success: boolean; error?: string }>;
+    resumeCapture: () => Promise<{ success: boolean; error?: string }>;
     isCapturing: () => Promise<{ isCapturing: boolean }>;
+    isPaused: () => Promise<{ isPaused: boolean }>;
     onComplete: (callback: (data: { filePath: string }) => void) => void;
     onError: (callback: (data: { error: string }) => void) => void;
     removeAllListeners: () => void;

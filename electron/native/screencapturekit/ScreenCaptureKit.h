@@ -28,6 +28,11 @@
 - (void)stopCapture;
 - (BOOL)isCapturing;
 
+// Pause/Resume control
+- (void)pauseCapture;
+- (void)resumeCapture;
+- (BOOL)isPaused;
+
 // SCStreamDelegate methods
 - (void)stream:(SCStream *)stream didStopWithError:(NSError *)error;
 

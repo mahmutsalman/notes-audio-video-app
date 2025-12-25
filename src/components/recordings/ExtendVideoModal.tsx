@@ -148,10 +148,14 @@ export default function ExtendVideoModal({
     if (phase !== 'recording') return;
 
     const cleanupPause = window.electronAPI.region.onPauseRecording(() => {
+      console.log('[ExtendVideoModal] Received pause event from overlay');
+      console.log('[ExtendVideoModal] Calling recorder.pauseRecording()');
       recorder.pauseRecording();
     });
 
     const cleanupResume = window.electronAPI.region.onResumeRecording(() => {
+      console.log('[ExtendVideoModal] Received resume event from overlay');
+      console.log('[ExtendVideoModal] Calling recorder.resumeRecording()');
       recorder.resumeRecording();
     });
 
@@ -160,6 +164,14 @@ export default function ExtendVideoModal({
       cleanupResume();
     };
   }, [phase, recorder]);
+
+  // Broadcast pause state to overlay whenever it changes
+  useEffect(() => {
+    if (phase !== 'recording') return;
+
+    console.log('[ExtendVideoModal] Pause state changed, broadcasting to overlay:', recorder.isPaused);
+    window.electronAPI.region.sendPauseStateUpdate(recorder.isPaused);
+  }, [phase, recorder.isPaused]);
 
   // Listen for stop recording from overlay
   useEffect(() => {

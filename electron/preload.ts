@@ -339,10 +339,12 @@ const electronAPI = {
       ipcRenderer.send('region:updateDuration', duration);
     },
     pauseRecording: (): Promise<void> => {
+      console.log('[Preload] Sending region:pauseRecording to IPC');
       ipcRenderer.send('region:pauseRecording');
       return Promise.resolve();
     },
     resumeRecording: (): Promise<void> => {
+      console.log('[Preload] Sending region:resumeRecording to IPC');
       ipcRenderer.send('region:resumeRecording');
       return Promise.resolve();
     },
@@ -399,6 +401,19 @@ const electronAPI = {
     setWindowLevel: (level: 'floating' | 'screen-saver') => {
       ipcRenderer.send('region:setWindowLevel', level);
     },
+    // Pause state synchronization (modal → overlay broadcast)
+    sendPauseStateUpdate: (isPaused: boolean): void => {
+      console.log('[Preload] Broadcasting pause state to overlays:', isPaused);
+      ipcRenderer.send('region:pauseStateUpdate', isPaused);
+    },
+    onPauseStateUpdate: (callback: (isPaused: boolean) => void) => {
+      const listener = (_event: any, isPaused: boolean) => {
+        console.log('[Preload] Received pause state update:', isPaused);
+        callback(isPaused);
+      };
+      ipcRenderer.on('region:pauseStateUpdate', listener);
+      return () => ipcRenderer.removeListener('region:pauseStateUpdate', listener);
+    },
   },
 
   // Settings
@@ -450,8 +465,17 @@ const electronAPI = {
     stopCapture: (): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('screencapturekit:stop'),
 
+    pauseCapture: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('screencapturekit:pause'),
+
+    resumeCapture: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('screencapturekit:resume'),
+
     isCapturing: (): Promise<{ isCapturing: boolean }> =>
       ipcRenderer.invoke('screencapturekit:isCapturing'),
+
+    isPaused: (): Promise<{ isPaused: boolean }> =>
+      ipcRenderer.invoke('screencapturekit:isPaused'),
 
     onComplete: (callback: (data: { filePath: string }) => void) => {
       ipcRenderer.on('screencapturekit:complete', (_event, data) => callback(data));

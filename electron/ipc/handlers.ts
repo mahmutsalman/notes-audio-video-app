@@ -823,16 +823,28 @@ export function setupIpcHandlers(): void {
 
   // Pause recording (Overlay → React main window)
   ipcMain.on('region:pauseRecording', () => {
+    console.log('[IPC Handler] Received region:pauseRecording from overlay');
     const { BrowserWindow } = require('electron');
     const mainWindow = BrowserWindow.getAllWindows().find((w: any) => !('displayId' in w));
-    if (mainWindow) mainWindow.webContents.send('recording:pause');
+    if (mainWindow) {
+      console.log('[IPC Handler] Sending recording:pause to main window');
+      mainWindow.webContents.send('recording:pause');
+    } else {
+      console.error('[IPC Handler] CRITICAL: Main window not found!');
+    }
   });
 
   // Resume recording (Overlay → React main window)
   ipcMain.on('region:resumeRecording', () => {
+    console.log('[IPC Handler] Received region:resumeRecording from overlay');
     const { BrowserWindow } = require('electron');
     const mainWindow = BrowserWindow.getAllWindows().find((w: any) => !('displayId' in w));
-    if (mainWindow) mainWindow.webContents.send('recording:resume');
+    if (mainWindow) {
+      console.log('[IPC Handler] Sending recording:resume to main window');
+      mainWindow.webContents.send('recording:resume');
+    } else {
+      console.error('[IPC Handler] CRITICAL: Main window not found!');
+    }
   });
 
   // Duration mark synchronization handlers
@@ -865,6 +877,27 @@ export function setupIpcHandlers(): void {
 
     if (recordingOverlays.length === 0) {
       console.error('[IPC Handler] CRITICAL: No recording overlays found - marking state not sent!');
+    }
+  });
+
+  // Pause state update (React main window → All overlay windows)
+  ipcMain.on('region:pauseStateUpdate', (_event, isPaused: boolean) => {
+    console.log('[IPC Handler] region:pauseStateUpdate received:', { isPaused });
+
+    // Send to all region selector overlay windows
+    const { BrowserWindow } = require('electron');
+    const allWindows = BrowserWindow.getAllWindows();
+    const recordingOverlays = allWindows.filter((w: any) => 'displayId' in w && !w.isDestroyed());
+
+    console.log(`[IPC Handler] Found ${recordingOverlays.length} recording overlay(s) to send pause state`);
+
+    recordingOverlays.forEach((win, idx) => {
+      console.log(`[IPC Handler] Sending pauseStateUpdate to overlay ${idx + 1} (isPaused: ${isPaused})`);
+      win.webContents.send('region:pauseStateUpdate', isPaused);
+    });
+
+    if (recordingOverlays.length === 0) {
+      console.warn('[IPC Handler] No recording overlays found - pause state not sent!');
     }
   });
 

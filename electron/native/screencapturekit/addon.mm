@@ -256,11 +256,57 @@ Napi::Value IsCapturing(const Napi::CallbackInfo& info) {
     return Napi::Boolean::New(env, false);
 }
 
+// Pause capture
+Napi::Value PauseCapture(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    NSLog(@"[ScreenCaptureKit Native] PauseCapture called");
+
+    if (manager) {
+        [manager pauseCapture];
+        NSLog(@"[ScreenCaptureKit Native] Recording paused");
+    } else {
+        NSLog(@"[ScreenCaptureKit Native] ⚠️ No active recording to pause");
+    }
+
+    return env.Null();
+}
+
+// Resume capture
+Napi::Value ResumeCapture(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    NSLog(@"[ScreenCaptureKit Native] ResumeCapture called");
+
+    if (manager) {
+        [manager resumeCapture];
+        NSLog(@"[ScreenCaptureKit Native] Recording resumed");
+    } else {
+        NSLog(@"[ScreenCaptureKit Native] ⚠️ No active recording to resume");
+    }
+
+    return env.Null();
+}
+
+// Check if paused
+Napi::Value IsPaused(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (manager) {
+        return Napi::Boolean::New(env, [manager isPaused]);
+    }
+
+    return Napi::Boolean::New(env, false);
+}
+
 // Initialize addon
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("startCapture", Napi::Function::New(env, StartCapture));
     exports.Set("stopCapture", Napi::Function::New(env, StopCapture));
     exports.Set("isCapturing", Napi::Function::New(env, IsCapturing));
+    exports.Set("pauseCapture", Napi::Function::New(env, PauseCapture));
+    exports.Set("resumeCapture", Napi::Function::New(env, ResumeCapture));
+    exports.Set("isPaused", Napi::Function::New(env, IsPaused));
     return exports;
 }
 

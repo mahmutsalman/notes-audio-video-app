@@ -172,10 +172,14 @@ export default function ScreenRecordingModal({
     if (step !== 'recording') return;
 
     const cleanupPause = window.electronAPI.region.onPauseRecording(() => {
+      console.log('[ScreenRecordingModal] Received pause event from overlay');
+      console.log('[ScreenRecordingModal] Calling recorder.pauseRecording()');
       recorder.pauseRecording();
     });
 
     const cleanupResume = window.electronAPI.region.onResumeRecording(() => {
+      console.log('[ScreenRecordingModal] Received resume event from overlay');
+      console.log('[ScreenRecordingModal] Calling recorder.resumeRecording()');
       recorder.resumeRecording();
     });
 
@@ -184,6 +188,14 @@ export default function ScreenRecordingModal({
       cleanupResume();
     };
   }, [step, recorder]);
+
+  // Broadcast pause state to overlay whenever it changes
+  useEffect(() => {
+    if (step !== 'recording') return;
+
+    console.log('[ScreenRecordingModal] Pause state changed, broadcasting to overlay:', recorder.isPaused);
+    window.electronAPI.region.sendPauseStateUpdate(recorder.isPaused);
+  }, [step, recorder.isPaused]);
 
   // Duration mark synchronization: Broadcast marking state to overlay
   useEffect(() => {

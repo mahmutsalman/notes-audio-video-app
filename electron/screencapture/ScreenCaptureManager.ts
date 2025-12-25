@@ -224,6 +224,32 @@ export class ScreenCaptureKitManager extends EventEmitter {
     console.log('[ScreenCaptureKit] ✅ Capture stopped');
   }
 
+  pauseCapture(): void {
+    if (!this.isCapturing) {
+      console.warn('[ScreenCaptureKit] ⚠️ Cannot pause - not capturing');
+      return;
+    }
+
+    this.native.pauseCapture();
+    this.emit('paused');
+    console.log('[ScreenCaptureKit] ⏸️ Capture paused');
+  }
+
+  resumeCapture(): void {
+    if (!this.isCapturing) {
+      console.warn('[ScreenCaptureKit] ⚠️ Cannot resume - not capturing');
+      return;
+    }
+
+    this.native.resumeCapture();
+    this.emit('resumed');
+    console.log('[ScreenCaptureKit] ▶️ Capture resumed');
+  }
+
+  isPaused(): boolean {
+    return this.native.isPaused && this.native.isPaused();
+  }
+
   isCurrentlyCapturing(): boolean {
     return this.isCapturing && this.native.isCapturing();
   }
