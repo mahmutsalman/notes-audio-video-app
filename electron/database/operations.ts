@@ -182,6 +182,10 @@ export const RecordingsOperations = {
       fields.push('audio_duration = ?');
       values.push(updates.audio_duration);
     }
+    if (updates.audio_size !== undefined) {
+      fields.push('audio_size = ?');
+      values.push(updates.audio_size);
+    }
     if (updates.video_path !== undefined) {
       fields.push('video_path = ?');
       values.push(updates.video_path);

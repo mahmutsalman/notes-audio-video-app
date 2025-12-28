@@ -297,7 +297,7 @@ export default function ExtendRecordingModal({
 
       // 3. Merge audio files using native FFmpeg (fast!)
       console.log('[Extend] Merging audio files with native FFmpeg...');
-      const result = await window.electronAPI.audio.mergeExtension(
+      const result: { success: boolean; totalDurationMs: number; totalSizeBytes?: number; error?: string } = await window.electronAPI.audio.mergeExtension(
         recording.id,
         extensionBuffer,
         originalDurationMs,
@@ -309,9 +309,10 @@ export default function ExtendRecordingModal({
       }
       console.log('[Extend] Audio merged successfully');
 
-      // 4. Update recording duration in database
+      // 4. Update recording duration and audio size in database
       await window.electronAPI.recordings.update(recording.id, {
-        audio_duration: Math.floor(result.totalDurationMs / 1000)
+        audio_duration: Math.floor(result.totalDurationMs / 1000),
+        audio_size: result.totalSizeBytes ?? null
       });
 
       // 5. Save duration marks with offset timestamps (adjusted for original duration)

@@ -421,7 +421,8 @@ export default function ExtendVideoModal({
       });
 
       await window.electronAPI.recordings.update(recording.id, {
-        video_duration: durationToSave
+        video_duration: durationToSave,
+        video_size: result.totalSizeBytes ?? null
       });
 
       console.log('[ExtendVideo] Database update completed for recording ID:', recording.id);

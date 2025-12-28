@@ -93,11 +93,15 @@ export function setupIpcHandlers(): void {
 
   // ============ Audio ============
   ipcMain.handle('audio:save', async (_, recordingId: number, audioBuffer: ArrayBuffer, filename: string) => {
+    const buffer = Buffer.from(audioBuffer);
     const filePath = await saveAudioFile(recordingId, audioBuffer, filename);
 
-    // Get audio duration if possible (would need additional library)
-    // For now, we'll update the recording with the path
-    RecordingsOperations.update(recordingId, { audio_path: filePath });
+    // Update recording with audio path and size
+    const fileSizeBytes = buffer.byteLength;
+    await RecordingsOperations.update(recordingId, {
+      audio_path: filePath,
+      audio_size: fileSizeBytes
+    });
 
     return filePath;
   });
@@ -565,6 +569,14 @@ export function setupIpcHandlers(): void {
         console.warn('[IPC] Using fallback duration:', result.duration, 's');
       }
 
+      // Update recording with video path, duration, and size
+      // Note: This handler is only used for NEW screen recordings, never for extensions
+      await RecordingsOperations.update(recordingId, {
+        video_path: result.filePath,
+        video_duration: result.duration !== null ? Math.floor(result.duration * 1000) : null,
+        video_size: result.fileSize ?? null
+      });
+
       return {
         filePath: result.filePath,
         duration: result.duration,
@@ -614,6 +626,11 @@ export function setupIpcHandlers(): void {
       if (result.usedFallback) {
         console.warn('[IPC] Using fallback duration:', result.duration, 's');
       }
+
+      // NOTE: We don't update the database here because this handler is used in two contexts:
+      // 1. New recordings (QuickScreenRecord) - caller will update database after this returns
+      // 2. Extensions (ExtendVideoModal) - the extension file is temporary; only merge updates DB
+      // Each caller is responsible for database updates based on their specific needs
 
       return {
         filePath: result.filePath,

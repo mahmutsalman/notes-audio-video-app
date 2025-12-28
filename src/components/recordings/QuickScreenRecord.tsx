@@ -71,6 +71,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
         name: formatTimestampName(),
         audio_path: null,
         audio_duration: null,
+        audio_size: null,
         video_path: null, // Will be updated after saving file
         video_duration: null, // Will be updated with actual duration from video metadata
         video_resolution: resolution,

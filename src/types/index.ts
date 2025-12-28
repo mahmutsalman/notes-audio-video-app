@@ -22,6 +22,7 @@ export interface Recording {
   name: string | null;
   audio_path: string | null;
   audio_duration: number | null;
+  audio_size: number | null;
   video_path: string | null;
   video_duration: number | null;
   video_resolution: string | null;
@@ -267,6 +268,7 @@ export interface VideoMergeResult {
   success: boolean;
   totalDurationMs: number;
   outputFormat: 'webm' | 'mp4';
+  totalSizeBytes?: number;
   outputPath?: string;
   error?: string;
 }

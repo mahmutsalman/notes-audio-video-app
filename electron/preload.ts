@@ -48,7 +48,7 @@ const electronAPI = {
       extensionBuffer: ArrayBuffer,
       originalDurationMs: number,
       extensionDurationMs: number
-    ): Promise<{ success: boolean; totalDurationMs: number; error?: string }> =>
+    ): Promise<{ success: boolean; totalDurationMs: number; totalSizeBytes?: number; error?: string }> =>
       ipcRenderer.invoke('audio:mergeExtension', recordingId, extensionBuffer, originalDurationMs, extensionDurationMs),
   },
 

@@ -56,6 +56,7 @@ function runMigrations(db: Database.Database): void {
       topic_id INTEGER NOT NULL,
       audio_path TEXT,
       audio_duration INTEGER,
+      audio_size INTEGER,
       notes_content TEXT,
       video_size INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

@@ -39,6 +39,7 @@ export interface VideoMergeResult {
   success: boolean;
   totalDurationMs: number;
   outputFormat: 'webm' | 'mp4';
+  totalSizeBytes?: number;
   outputPath?: string;
   error?: string;
 }
@@ -842,6 +843,11 @@ export async function mergeVideoFiles(
     await fs.copyFile(outputPath, originalPath);
     await appendExtendLog('merge:replace', { outputFile: path.basename(originalPath) });
 
+    // Step 4.5: Get final file size
+    const finalStat = await fs.stat(originalPath);
+    const totalSizeBytes = finalStat.size;
+    console.log(`[VideoMerger] Final file size: ${(totalSizeBytes / 1024 / 1024).toFixed(2)} MB`);
+
     // Step 5: Extract actual duration from merged file
     console.log('[VideoMerger] Step 5: Extracting actual duration...');
     const metadata = await getVideoMetadata(originalPath);
@@ -928,6 +934,7 @@ export async function mergeVideoFiles(
         success: true,
         totalDurationMs: fallbackDurationMs,
         outputFormat,
+        totalSizeBytes,
         outputPath: originalPath
       };
     }
@@ -947,6 +954,7 @@ export async function mergeVideoFiles(
       success: true,
       totalDurationMs: actualDurationMs, // Use actual duration instead of calculated
       outputFormat,
+      totalSizeBytes,
       outputPath: originalPath
     };
   } catch (error) {

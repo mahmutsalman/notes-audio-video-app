@@ -1033,6 +1033,11 @@ export default function RecordingPage() {
             <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
               ({formatDuration(isVideoRecording ? recording.video_duration : recording.audio_duration)})
             </span>
+            {!isVideoRecording && recording.audio_size !== null && (
+              <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                • {formatFileSize(recording.audio_size)}
+              </span>
+            )}
             {isVideoRecording && recording.video_resolution && recording.video_fps && (
               <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
                 • {recording.video_resolution} @ {recording.video_fps}fps
@@ -1045,15 +1050,7 @@ export default function RecordingPage() {
             )}
           </h2>
           <div className="flex items-center gap-2">
-            {!isVideoRecording && (
-              <button
-                onClick={() => setIsScreenRecording(true)}
-                className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-              >
-                <span>🎬</span>
-                Record Screen
-              </button>
-            )}
+            {/* Record Screen button removed - use Cmd+D shortcut or FAB on TopicDetailPage to create new screen recordings */}
           </div>
         </div>
         {isVideoRecording ? (

@@ -33,6 +33,7 @@ function getFFmpegPath(): string {
 export interface MergeResult {
   success: boolean;
   totalDurationMs: number;
+  totalSizeBytes?: number;
   error?: string;
 }
 
@@ -101,6 +102,11 @@ file '${extensionPath.replace(/'/g, "'\\''")}'
     console.log('[AudioMerger] Step 4: Replacing original file...');
     await fs.copyFile(outputPath, originalPath);
 
+    // Step 4.5: Get final file size
+    const finalStat = await fs.stat(originalPath);
+    const totalSizeBytes = finalStat.size;
+    console.log(`[AudioMerger] Final file size: ${(totalSizeBytes / 1024 / 1024).toFixed(2)} MB`);
+
     // Step 5: Cleanup temp files
     console.log('[AudioMerger] Step 5: Cleaning up...');
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -114,6 +120,7 @@ file '${extensionPath.replace(/'/g, "'\\''")}'
     return {
       success: true,
       totalDurationMs,
+      totalSizeBytes,
     };
   } catch (error) {
     console.error('[AudioMerger] Merge failed:', error);
