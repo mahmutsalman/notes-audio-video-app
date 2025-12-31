@@ -312,8 +312,15 @@ const electronAPI = {
       return Promise.resolve();
     },
     stopRecording: (): Promise<void> => {
-      ipcRenderer.send('region:stopRecording');
-      return Promise.resolve();
+      return new Promise((resolve) => {
+        // Listen for cleanup confirmation
+        const listener = () => {
+          ipcRenderer.removeListener('recording:stop', listener);
+          resolve();
+        };
+        ipcRenderer.once('recording:stop', listener);
+        ipcRenderer.send('region:stopRecording');
+      });
     },
     onRecordingStop: (callback: () => void) => {
       const listener = () => callback();

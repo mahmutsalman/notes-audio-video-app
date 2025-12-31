@@ -38,6 +38,7 @@ export default function ScreenRecordingModal({
   const noteInputRef = useRef<HTMLInputElement>(null);
   const processedRegionIdRef = useRef<number | null>(null); // Track processed region to prevent duplicate starts
   const wasOpenRef = useRef(false); // Track previous isOpen state to detect true open events
+  const isStoppingRef = useRef(false); // Prevent double-call to handleStopRecording
 
   // Component lifecycle cleanup
   useEffect(() => {
@@ -50,36 +51,52 @@ export default function ScreenRecordingModal({
   const handleClose = useCallback(() => {
     recorder.resetRecording();
     setStep('source-selection');
+    isStoppingRef.current = false; // Reset stopping flag
     onClose();
   }, [recorder, onClose]);
 
   const handleStopRecording = useCallback(async () => {
-    setStep('saving');
+    // Prevent re-entrant calls (can be triggered by both button click and IPC event)
+    if (isStoppingRef.current) {
+      console.log('[ScreenRecordingModal] Already stopping, ignoring duplicate call');
+      return;
+    }
 
-    // Close overlay windows (region selector with blue rectangle)
-    // This IPC call closes the overlay and sends recording:stop event back,
-    // but the listener will be cleaned up by then since step changed to 'saving'
-    window.electronAPI.region.stopRecording();
+    isStoppingRef.current = true;
 
-    const result = await recorder.stopRecording();
+    try {
+      // CRITICAL FIX: Wait for overlay windows to close BEFORE changing state
+      // This prevents the race condition where setStep('saving') would remove
+      // the listener before the IPC handler sends the recording:stop event back
+      await window.electronAPI.region.stopRecording();
 
-    if (result) {
-      try {
-        // Pass duration in milliseconds as third parameter
-        await onSave(
-          result.blob,
-          recorder.completedMarks,
-          result.durationMs,
-          result.filePath,
-          result.audioBlob,
-          result.audioConfig,
-          result.audioOffsetMs
-        );
-        handleClose();
-      } catch (error) {
-        console.error('Failed to save recording:', error);
-        // TODO: Show error message
+      // Now safe to transition to saving state (overlay is confirmed closed)
+      setStep('saving');
+
+      // Overlay windows are now confirmed closed - safe to proceed with save
+      const result = await recorder.stopRecording();
+
+      if (result) {
+        try {
+          // Pass duration in milliseconds as third parameter
+          await onSave(
+            result.blob,
+            recorder.completedMarks,
+            result.durationMs,
+            result.filePath,
+            result.audioBlob,
+            result.audioConfig,
+            result.audioOffsetMs
+          );
+          handleClose();
+        } catch (error) {
+          console.error('Failed to save recording:', error);
+          // TODO: Show error message
+        }
       }
+    } finally {
+      // Reset flag when complete (or on error)
+      isStoppingRef.current = false;
     }
   }, [recorder, onSave, handleClose]);
 
@@ -109,9 +126,11 @@ export default function ScreenRecordingModal({
       recorder.resetRecording();
       // Reset processed region ID when modal opens
       processedRegionIdRef.current = null;
+      isStoppingRef.current = false; // Reset stopping flag
     } else if (justClosed) {
       // Clear processed region ID when modal closes
       processedRegionIdRef.current = null;
+      isStoppingRef.current = false; // Reset stopping flag
     }
 
     // Update ref for next comparison
