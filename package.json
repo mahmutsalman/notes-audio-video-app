@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
+    "build:ci": "tsc && vite build && electron-builder --publish never",
     "build:dmg": "tsc && vite build && electron-builder -m dmg",
     "backfill:video-size": "node scripts/backfill-video-size.js",
     "preview": "vite preview",
