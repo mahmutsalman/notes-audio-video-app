@@ -55,8 +55,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Rebuild native modules
-        run: npm run rebuild
+      - name: Rebuild SQLite only (skip native ScreenCaptureKit in CI)
+        run: npx electron-rebuild -f -w better-sqlite3
         continue-on-error: true
 
       - name: Build macOS application
