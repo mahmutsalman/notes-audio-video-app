@@ -1081,6 +1081,8 @@
       // Update rectangle to thin border (CleanShot X style)
       rectangleEl.style.border = '1.5px solid rgba(59, 130, 246, 0.8)';
       rectangleEl.style.background = 'transparent';
+      rectangleEl.style.display = 'block'; // Ensure rectangle stays visible during recording
+      console.log('[RegionSelector] Rectangle display set to:', rectangleEl.style.display);
 
       // Hide old standalone stop button
       stopButton.style.display = 'none';
