@@ -1,0 +1,58 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native modules
+        run: npm run rebuild
+        continue-on-error: true
+
+      - name: Build application
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.os }}
+          path: release/**/*
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload build summary
+        if: always()
+        run: |
+          echo "## Build Summary for ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -d "release" ]; then
+            echo "### Generated Artifacts:" >> $GITHUB_STEP_SUMMARY
+            ls -lh release/ >> $GITHUB_STEP_SUMMARY 2>&1 || echo "No files in release/" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No release directory created" >> $GITHUB_STEP_SUMMARY
+          fi
+        shell: bash

@@ -22,8 +22,16 @@
     "notes",
     "sqlite"
   ],
-  "author": "",
+  "author": "Mahmut Salman <csmahmutsalman@gmail.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mahmutsalman/notes-with-audio-and-video.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mahmutsalman/notes-with-audio-and-video/issues"
+  },
+  "homepage": "https://github.com/mahmutsalman/notes-with-audio-and-video#readme",
   "dependencies": {
     "@fix-webm-duration/fix": "^1.0.1",
     "@monaco-editor/react": "^4.7.0",
@@ -66,6 +74,11 @@
   "build": {
     "appId": "com.noteswithaudioandvideo.app",
     "productName": "Notes With Audio And Video",
+    "publish": {
+      "provider": "github",
+      "owner": "mahmutsalman",
+      "repo": "notes-with-audio-and-video"
+    },
     "directories": {
       "output": "release"
     },
@@ -92,17 +105,23 @@
       "icon": "resources/icons/icon.icns",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "category": "public.app-category.productivity",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "This app needs microphone access to record audio notes"
       }
     },
     "win": {
       "target": "nsis",
-      "icon": "resources/icons/icon.ico"
+      "icon": "resources/icons/icon.ico",
+      "publisherName": "SignPath Foundation",
+      "verifyUpdateCodeSignature": false
     },
     "linux": {
       "target": "AppImage",
-      "icon": "resources/icons"
+      "icon": "resources/icons",
+      "category": "Office"
     }
   }
 }
