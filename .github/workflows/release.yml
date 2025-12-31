@@ -1,0 +1,190 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native modules
+        run: npm run rebuild
+        continue-on-error: true
+
+      - name: Build Windows application
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: release/*.exe
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native modules
+        run: npm run rebuild
+        continue-on-error: true
+
+      - name: Build macOS application
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: release/*.zip
+          if-no-files-found: error
+
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native modules
+        run: npm run rebuild
+        continue-on-error: true
+
+      - name: Build Linux application
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: release/*.AppImage
+          if-no-files-found: error
+
+  create-release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display artifact structure
+        run: ls -R artifacts/
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.AppImage" \) -exec cp {} release-assets/ \;
+          ls -lh release-assets/
+
+      - name: Generate release notes
+        run: |
+          cat > release-notes.md << 'EOF'
+          ## 🎉 Test Release v${{ github.ref_name }}
+
+          This is an unsigned test release for workflow validation.
+
+          ### 📦 Downloads
+
+          - **Windows** - Download the `.exe` installer
+            - ⚠️ SmartScreen warning expected (unsigned binary)
+            - Click "More info" → "Run anyway"
+
+          - **macOS** - Download the `.zip` file
+            - ⚠️ "Unidentified developer" warning expected
+            - Right-click → "Open" on first launch
+
+          - **Linux** - Download the `.AppImage` file
+            - Make executable: `chmod +x *.AppImage`
+            - Run: `./Notes-With-Audio-And-Video-*.AppImage`
+
+          ### 📝 Release Notes
+
+          - First test release
+          - Validates GitHub Actions release workflow
+          - Multi-platform build verification
+          - **Note:** Binaries are unsigned (SignPath integration pending)
+
+          ### 🔒 Code Signing Status
+
+          Code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org) (integration pending approval).
+
+          Currently all binaries are **unsigned**. Production releases will include signed Windows binaries after SignPath Foundation approval.
+
+          ### 📚 Documentation
+
+          - [README](https://github.com/mahmutsalman/notes-audio-video-app#readme)
+          - [Security Policy](https://github.com/mahmutsalman/notes-audio-video-app/blob/main/SECURITY.md)
+          - [Contributing Guide](https://github.com/mahmutsalman/notes-audio-video-app/blob/main/CONTRIBUTING.md)
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-assets/*
+          body_path: release-notes.md
+          draft: false
+          prerelease: true
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release summary
+        run: |
+          echo "## ✅ Release Created Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Release URL:** https://github.com/mahmutsalman/notes-audio-video-app/releases/tag/${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Attached Assets:" >> $GITHUB_STEP_SUMMARY
+          ls -lh release-assets/ >> $GITHUB_STEP_SUMMARY
