@@ -1007,5 +1007,18 @@ export function setupIpcHandlers(): void {
     return screen.getCursorScreenPoint();
   });
 
+  // ============ App Control ============
+  ipcMain.handle('app:quit', async () => {
+    console.log('[IPC] Quit requested from renderer process');
+    const { app } = await import('electron');
+    app.quit();
+  });
+
+  ipcMain.handle('app:forceQuit', async () => {
+    console.log('[IPC] Force quit requested from renderer process');
+    const { app } = await import('electron');
+    app.exit(0);
+  });
+
   console.log('IPC handlers registered');
 }

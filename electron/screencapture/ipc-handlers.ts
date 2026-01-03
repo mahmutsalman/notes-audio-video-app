@@ -63,14 +63,19 @@ export function registerScreenCaptureHandlers(mainWindow: BrowserWindow) {
 
   // Stop capture
   ipcMain.handle('screencapturekit:stop', async () => {
-    console.log('[ScreenCaptureKit] IPC: stop capture request');
+    console.log('[ScreenCaptureKit] IPC: ===== STOP CAPTURE REQUEST RECEIVED =====');
+    console.log('[ScreenCaptureKit] IPC: captureManager exists:', !!captureManager);
 
     try {
       if (captureManager) {
+        console.log('[ScreenCaptureKit] IPC: Calling captureManager.stopCapture()...');
         captureManager.stopCapture();
+        console.log('[ScreenCaptureKit] IPC: captureManager.stopCapture() completed');
         // DO NOT removeAllListeners or set to null here!
         // The completion event needs to be forwarded to renderer
         // Cleanup will happen after completion callback fires
+      } else {
+        console.warn('[ScreenCaptureKit] IPC: ⚠️ No captureManager - cannot stop (indicator may stay!)');
       }
       return { success: true };
     } catch (error) {

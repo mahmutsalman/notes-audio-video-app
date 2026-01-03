@@ -214,14 +214,18 @@ export class ScreenCaptureKitManager extends EventEmitter {
   }
 
   stopCapture(): void {
+    console.log('[ScreenCaptureKit] 🛑 stopCapture() called, isCapturing:', this.isCapturing);
+
     if (!this.isCapturing) {
+      console.warn('[ScreenCaptureKit] ⚠️ stopCapture() called but not capturing - this might indicate the indicator bug!');
       return;
     }
 
+    console.log('[ScreenCaptureKit] 📞 Calling native stopCapture()...');
     this.native.stopCapture();
     this.isCapturing = false;
     this.emit('stopped');
-    console.log('[ScreenCaptureKit] ✅ Capture stopped');
+    console.log('[ScreenCaptureKit] ✅ Capture stopped, indicator should be removed now');
   }
 
   pauseCapture(): void {

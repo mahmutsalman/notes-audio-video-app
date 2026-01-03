@@ -5,9 +5,9 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && electron-builder",
-    "build:ci": "tsc && vite build && electron-builder --publish never",
-    "build:dmg": "tsc && vite build && electron-builder -m dmg",
+    "build": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder",
+    "build:ci": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder --publish never",
+    "build:dmg": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder -m dmg",
     "backfill:video-size": "node scripts/backfill-video-size.js",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5174 && electron .\"",

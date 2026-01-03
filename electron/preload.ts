@@ -497,6 +497,12 @@ const electronAPI = {
       ipcRenderer.removeAllListeners('screencapturekit:error');
     },
   },
+
+  // App Control
+  app: {
+    quit: (): Promise<void> => ipcRenderer.invoke('app:quit'),
+    forceQuit: (): Promise<void> => ipcRenderer.invoke('app:forceQuit'),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

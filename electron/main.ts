@@ -99,6 +99,15 @@ async function createWindow(): Promise<void> {
   // Register ScreenCaptureKit IPC handlers
   registerScreenCaptureHandlers(mainWindow);
 
+  // Handle window close button - quit app instead of just hiding window
+  mainWindow.on('close', (event) => {
+    if (process.platform === 'darwin') {
+      // On macOS, when user clicks close button, quit the entire app
+      console.log('[Main] Window close requested - quitting app');
+      app.quit();
+    }
+  });
+
   mainWindow.on('closed', () => {
     // Cleanup ScreenCaptureKit handlers
     unregisterScreenCaptureHandlers();
@@ -206,6 +215,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// Add Cmd+Q (macOS standard quit) handler
+app.on('will-quit', (event) => {
+  console.log('[App] will-quit event triggered - cleaning up resources');
 });
 
 app.on('activate', () => {

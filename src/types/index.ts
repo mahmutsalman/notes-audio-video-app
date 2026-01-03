@@ -513,6 +513,10 @@ export interface ElectronAPI {
     onError: (callback: (data: { error: string }) => void) => void;
     removeAllListeners: () => void;
   };
+  app: {
+    quit: () => Promise<void>;
+    forceQuit: () => Promise<void>;
+  };
 }
 
 declare global {
