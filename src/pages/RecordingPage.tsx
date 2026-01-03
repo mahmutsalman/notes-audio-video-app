@@ -9,6 +9,7 @@ import AudioPlayer, { AudioPlayerHandle } from '../components/audio/AudioPlayer'
 import SimpleAudioRecordModal from '../components/audio/SimpleAudioRecordModal';
 import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
 import DurationList from '../components/recordings/DurationList';
+import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import NotesEditor from '../components/common/NotesEditor';
@@ -433,6 +434,17 @@ export default function RecordingPage() {
       console.log(`[RecordingPage] Duration ${duration.id} media fetched - Images: ${images.length}, Videos: ${videos.length}, Audios: ${audios.length}`);
 
       setIsSeekingDuration(false);
+    }
+  };
+
+  // Sidebar state and handlers
+  const durationsWithNotes = durations.filter(d => d.note && d.note.trim() !== '');
+  const hasSidebar = durationsWithNotes.length > 0;
+
+  const handleSidebarDurationClick = (durationId: number) => {
+    const duration = durations.find(d => d.id === durationId);
+    if (duration) {
+      handleDurationClick(duration);
     }
   };
 
@@ -967,7 +979,13 @@ export default function RecordingPage() {
       onMouseUp={() => setIsContentPressed(false)}
       onMouseLeave={() => setIsContentPressed(false)}
     >
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="flex">
+        <DurationNotesSidebar
+          durations={durations}
+          activeDurationId={activeDurationId}
+          onDurationSelect={handleSidebarDurationClick}
+        />
+        <div className={`flex-1 p-6 transition-all duration-300 ${hasSidebar ? 'lg:ml-80' : 'max-w-4xl mx-auto'}`}>
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
@@ -2237,6 +2255,7 @@ export default function RecordingPage() {
         />
       )}
 
+        </div>
       </div>
     </div>
   );
