@@ -391,8 +391,9 @@
 
   <!-- Control Panel (CleanShot X Style - Compact & Stacked) -->
   <div id="controlPanel">
-    <!-- Microphone Row -->
+    <!-- Top Row: Start Recording Button + Microphone Controls -->
     <div class="control-group">
+      <button id="startButton"></button>
       <button id="micToggle" class="icon-button" title="Toggle Microphone">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
           <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
@@ -441,11 +442,6 @@
         <option value="30">30 FPS</option>
         <option value="60">60 FPS</option>
       </select>
-    </div>
-
-    <!-- Start Recording Button Row -->
-    <div class="control-group" style="justify-content: center; padding: 8px;">
-      <button id="startButton"></button>
     </div>
   </div>
   <button id="stopButton">Stop Recording</button>
@@ -569,7 +565,7 @@
 
     // Position constants for intelligent control placement
     const POSITION_CONSTANTS = {
-      PANEL_HEIGHT: 168,        // Control panel height (includes integrated button)
+      PANEL_HEIGHT: 130,        // Control panel height (start button moved to top row)
       PANEL_WIDTH: 220,         // Control panel width
       GAP_RECTANGLE: 12,        // Gap between rectangle and controls
       MARGIN_SCREEN: 10         // Minimum margin from screen edges
