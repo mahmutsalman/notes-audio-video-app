@@ -467,6 +467,23 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
             }
           }
 
+          // Validate audio streams were created successfully
+          if (audioStreams.length === 0) {
+            const audioSources = [];
+            if (region.audioSettings?.microphoneEnabled) audioSources.push('Microphone');
+            if (region.audioSettings?.desktopAudioEnabled) audioSources.push('Desktop Audio');
+
+            console.error('[useScreenRecorder] Audio validation failed: No audio streams created');
+            console.error('[useScreenRecorder] Expected sources:', audioSources.join(', '));
+
+            throw new Error(
+              `Failed to initialize audio recording. Please check:\n` +
+              `• ${region.audioSettings?.microphoneEnabled ? 'Microphone is connected and permissions granted\n' : ''}` +
+              `• ${region.audioSettings?.desktopAudioEnabled ? 'BlackHole audio device is installed and running\n' : ''}` +
+              `• Audio settings are correctly configured`
+            );
+          }
+
           if (audioStreams.length > 0) {
             audioStreamsRef.current = audioStreams;
             let audioStream: MediaStream;

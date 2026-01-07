@@ -404,6 +404,12 @@
       </select>
     </div>
 
+    <!-- Audio Status Indicator (Always Visible) -->
+    <div id="audioStatusIndicator" class="control-group" style="padding: 8px; background: rgba(239, 68, 68, 0.2); border-radius: 4px; border-left: 3px solid #ef4444;">
+      <span id="audioStatusIcon" style="font-size: 14px; margin-right: 6px;">❌</span>
+      <span id="audioStatusText" style="font-size: 12px; color: #ef4444; font-weight: 500;">Audio: OFF</span>
+    </div>
+
     <!-- Microphone Level Indicator -->
     <div id="levelIndicatorGroup" class="control-group" style="display: none;">
       <span style="font-size: 11px; color: rgba(255, 255, 255, 0.6); width: 45px; white-space: nowrap;">Level:</span>
@@ -851,6 +857,36 @@
       animationFrameId = requestAnimationFrame(updateLevelMeter);
     }
 
+    // Update audio status indicator (always visible)
+    function updateAudioStatusIndicator() {
+      const statusIndicator = document.getElementById('audioStatusIndicator');
+      const statusIcon = document.getElementById('audioStatusIcon');
+      const statusText = document.getElementById('audioStatusText');
+
+      if (!statusIndicator || !statusIcon || !statusText) return;
+
+      if (micEnabled || desktopAudioEnabled) {
+        // Audio is ON - show green success state
+        statusIndicator.style.background = 'rgba(34, 197, 94, 0.2)';
+        statusIndicator.style.borderLeftColor = '#22c55e';
+        statusIcon.textContent = '✅';
+        statusText.style.color = '#22c55e';
+
+        // Build status text
+        let audioSources = [];
+        if (micEnabled) audioSources.push('Microphone');
+        if (desktopAudioEnabled) audioSources.push('Desktop');
+        statusText.textContent = `Audio: ${audioSources.join(' + ')}`;
+      } else {
+        // Audio is OFF - show red warning state
+        statusIndicator.style.background = 'rgba(239, 68, 68, 0.2)';
+        statusIndicator.style.borderLeftColor = '#ef4444';
+        statusIcon.textContent = '❌';
+        statusText.style.color = '#ef4444';
+        statusText.textContent = 'Audio: OFF';
+      }
+    }
+
     // Load saved settings from Electron (Phase 6)
     async function loadSettings() {
       console.log('[RegionSelector] Loading saved settings');
@@ -909,6 +945,9 @@
             startMicrophoneMonitoring();
           }, 500);  // Small delay to ensure UI is ready
         }
+
+        // Update audio status indicator after loading settings
+        updateAudioStatusIndicator();
       } catch (error) {
         console.error('[RegionSelector] Failed to load settings:', error);
         // Use defaults on error
@@ -931,6 +970,12 @@
 
     // Mouse down - start drawing
     document.body.addEventListener('mousedown', (e) => {
+      // Don't handle selection drawing during recording
+      if (isRecording) {
+        console.log('[RegionSelector] Mouse down ignored - recording in progress');
+        return;
+      }
+
       console.log('[RegionSelector] Mouse down:', e.clientX, e.clientY);
       isDrawing = true;
       startX = e.clientX;
@@ -953,6 +998,9 @@
 
     // Mouse move - update rectangle
     document.body.addEventListener('mousemove', (e) => {
+      // Don't handle selection drawing during recording
+      if (isRecording) return;
+
       if (!isDrawing) return;
 
       const currentX = e.clientX;
@@ -980,6 +1028,12 @@
 
     // Mouse up - finish drawing
     document.body.addEventListener('mouseup', (e) => {
+      // Don't handle selection drawing during recording
+      if (isRecording) {
+        console.log('[RegionSelector] Mouse up ignored - recording in progress');
+        return;
+      }
+
       if (!isDrawing) return;
 
       console.log('[RegionSelector] Mouse up, rectangle:', rect);
@@ -1355,6 +1409,9 @@
         stopMicrophoneMonitoring();
       }
 
+      // Update audio status indicator
+      updateAudioStatusIndicator();
+
       console.log('[RegionSelector] Microphone enabled:', micEnabled);
     });
 
@@ -1413,6 +1470,9 @@
       } catch (error) {
         console.error('[RegionSelector] Failed to save desktop audio enabled:', error);
       }
+
+      // Update audio status indicator
+      updateAudioStatusIndicator();
     });
 
     // Quality select
