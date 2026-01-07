@@ -544,8 +544,7 @@
       setTimeout(() => {
         noteInput.focus();
         console.log('[RegionSelector] Input field focused and ready for typing');
-        // Notify React that input has focus (for auto-pause)
-        window.electronAPI.region.sendMarkInputFocus();
+        // Focus event listener will send focus notification to React
       }, 100);
     }
 

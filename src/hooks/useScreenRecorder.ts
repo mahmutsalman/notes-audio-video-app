@@ -1013,7 +1013,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         }
 
         // Pause the timer
-        accumulatedTimeRef.current += Date.now() - startTimeRef.current;
+        const timeBeforePause = Date.now() - startTimeRef.current;
+        accumulatedTimeRef.current += timeBeforePause;
+        console.log('[useScreenRecorder] ⏸️ PAUSE TIMING:');
+        console.log('[useScreenRecorder]   - Time elapsed this session:', Math.floor(timeBeforePause / 1000), 'seconds');
+        console.log('[useScreenRecorder]   - Total accumulated time:', Math.floor(accumulatedTimeRef.current / 1000), 'seconds');
         if (timerRef.current) {
           clearInterval(timerRef.current);
           timerRef.current = null;
@@ -1036,7 +1040,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     if (mediaRecorder && mediaRecorder.state === 'recording') {
       console.log('[useScreenRecorder] Calling mediaRecorder.pause()');
       mediaRecorder.pause();
-      accumulatedTimeRef.current += Date.now() - startTimeRef.current;
+      const timeBeforePause = Date.now() - startTimeRef.current;
+      accumulatedTimeRef.current += timeBeforePause;
+      console.log('[useScreenRecorder] ⏸️ PAUSE TIMING:');
+      console.log('[useScreenRecorder]   - Time elapsed this session:', Math.floor(timeBeforePause / 1000), 'seconds');
+      console.log('[useScreenRecorder]   - Total accumulated time:', Math.floor(accumulatedTimeRef.current / 1000), 'seconds');
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -1072,7 +1080,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         }
 
         // Resume the timer
+        console.log('[useScreenRecorder] ▶️ RESUME TIMING:');
+        console.log('[useScreenRecorder]   - Accumulated time before resume:', Math.floor(accumulatedTimeRef.current / 1000), 'seconds');
         startTimeRef.current = Date.now();
+        console.log('[useScreenRecorder]   - Starting new timer from:', new Date(startTimeRef.current).toISOString());
         timerRef.current = setInterval(() => {
           const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
           setState(prev => ({ ...prev, duration: Math.floor(elapsed / 1000) }));
@@ -1094,7 +1105,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     if (mediaRecorder && mediaRecorder.state === 'paused') {
       console.log('[useScreenRecorder] Calling mediaRecorder.resume()');
       mediaRecorder.resume();
+      console.log('[useScreenRecorder] ▶️ RESUME TIMING:');
+      console.log('[useScreenRecorder]   - Accumulated time before resume:', Math.floor(accumulatedTimeRef.current / 1000), 'seconds');
       startTimeRef.current = Date.now();
+      console.log('[useScreenRecorder]   - Starting new timer from:', new Date(startTimeRef.current).toISOString());
       timerRef.current = setInterval(() => {
         const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
         setState(prev => ({ ...prev, duration: Math.floor(elapsed / 1000) }));
@@ -1117,6 +1131,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
     if (!isPausedRef.current) {
       console.log('[useScreenRecorder] ✅ Not paused - pausing now with source: marking');
+      // Update ref IMMEDIATELY to prevent race condition with duplicate calls
+      isPausedRef.current = true;
       pauseRecording('marking');
       console.log('[useScreenRecorder] ✅ Auto-paused for marking input');
     } else {
@@ -1134,9 +1150,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
     if (isPausedRef.current && pauseSourceRef.current === 'marking') {
       console.log('[useScreenRecorder] ✅ Conditions met - calling resumeRecording()');
+      // Update refs IMMEDIATELY to prevent race condition with duplicate calls
+      isPausedRef.current = false;
+      pauseSourceRef.current = null;
       resumeRecording();
-      setPauseSource(null); // Clear pause source
-      pauseSourceRef.current = null; // Update ref immediately
+      setPauseSource(null); // Clear pause source in state too
       console.log('[useScreenRecorder] ✅ Auto-resumed from marking input');
     } else if (pauseSourceRef.current === 'manual') {
       console.log('[useScreenRecorder] ⚠️ Respecting manual pause, not resuming');
