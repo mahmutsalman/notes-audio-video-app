@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import type { Duration } from '../../types';
-import { formatDuration } from '../../utils/formatters';
+import { formatDuration, formatDurationLength } from '../../utils/formatters';
 import { DURATION_COLORS } from '../../utils/durationColors';
 
 interface DurationNotesSidebarProps {
@@ -67,6 +67,9 @@ export default function DurationNotesSidebar({
                 <span>{formatDuration(Math.floor(duration.start_time))}</span>
                 <span className="text-gray-400 dark:text-gray-500">→</span>
                 <span>{formatDuration(Math.floor(duration.end_time))}</span>
+                <span className="ml-1.5 text-[10px] text-cyan-600 dark:text-cyan-400">
+                  ({formatDurationLength(Math.floor(duration.start_time), Math.floor(duration.end_time))})
+                </span>
                 {colorConfig && (
                   <span
                     className="w-2 h-2 rounded-full ml-1"

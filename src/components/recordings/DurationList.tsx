@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Duration, DurationColor, DurationImage, DurationVideo } from '../../types';
-import { formatDuration } from '../../utils/formatters';
+import { formatDuration, formatDurationLength } from '../../utils/formatters';
 import { DURATION_COLORS, getNextDurationColor } from '../../utils/durationColors';
 import NotesEditor from '../common/NotesEditor';
 
@@ -107,9 +107,14 @@ export default function DurationList({
                   />
                 )}
                 {isActive && <span className="animate-pulse">🔁</span>}
-                <span>{formatDuration(Math.floor(duration.start_time))}</span>
-                <span className="text-gray-400 dark:text-gray-500">→</span>
-                <span>{formatDuration(Math.floor(duration.end_time))}</span>
+                <span className="text-xs font-medium">
+                  {formatDuration(Math.floor(duration.start_time))}
+                  <span className={`mx-1 ${isActive ? 'text-white/60' : 'text-gray-400 dark:text-gray-500'}`}>→</span>
+                  {formatDuration(Math.floor(duration.end_time))}
+                  <span className={`ml-1.5 text-[10px] font-normal ${isActive ? 'text-cyan-100' : 'text-cyan-600 dark:text-cyan-400'}`}>
+                    ({formatDurationLength(Math.floor(duration.start_time), Math.floor(duration.end_time))})
+                  </span>
+                </span>
                 {/* Image indicator */}
                 {imageCount > 0 && (
                   <span className={`text-xs ${isActive ? 'text-white/80' : 'text-gray-500 dark:text-gray-400'}`}>

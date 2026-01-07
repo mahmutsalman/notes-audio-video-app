@@ -18,6 +18,17 @@ export function formatDuration(seconds: number | null | undefined): string {
 }
 
 /**
+ * Format the length of a duration (end - start) in a compact way
+ * @param startSeconds - The start time in seconds
+ * @param endSeconds - The end time in seconds
+ * @returns Formatted duration length (e.g., "2:30", "15:45", "1:02:30")
+ */
+export function formatDurationLength(startSeconds: number, endSeconds: number): string {
+  const length = endSeconds - startSeconds;
+  return formatDuration(length);
+}
+
+/**
  * Format date to relative time (e.g., "2 hours ago", "Yesterday")
  */
 export function formatRelativeTime(dateString: string): string {
