@@ -934,11 +934,16 @@ export function setupIpcHandlers(): void {
 
   // Input field toggle (React main window → All overlay windows, or Overlay → React)
   ipcMain.on('region:inputFieldToggle', () => {
+    console.log('[IPC Handler] Received region:inputFieldToggle - broadcasting to all windows');
     const { BrowserWindow } = require('electron');
 
+    const allWindows = BrowserWindow.getAllWindows();
+    console.log(`[IPC Handler] Broadcasting to ${allWindows.length} windows`);
+
     // Send to all windows (both React main window and overlays)
-    BrowserWindow.getAllWindows().forEach((win: any) => {
+    allWindows.forEach((win: any, idx) => {
       if (win && !win.isDestroyed()) {
+        console.log(`[IPC Handler] Sending recording:inputFieldToggle to window ${idx + 1} (id: ${win.id}, hasDisplayId: ${'displayId' in win})`);
         win.webContents.send('recording:inputFieldToggle');
       }
     });

@@ -267,8 +267,28 @@ export default function ScreenRecordingModal({
     if (step !== 'recording') return;
 
     const cleanup = window.electronAPI.region.onInputFieldToggle(() => {
-      console.log('[ScreenRecordingModal] Cmd+H pressed - toggling duration mark');
-      recorder.handleMarkToggle();
+      console.log('[ScreenRecordingModal] Cmd+H pressed');
+
+      // Only toggle if not already marking
+      if (!recorder.isMarking) {
+        console.log('[ScreenRecordingModal] Starting new duration mark');
+        recorder.handleMarkToggle();
+      } else {
+        console.log('[ScreenRecordingModal] Already marking - refocusing input');
+
+        // If fullscreen recording (no captureArea), input is in React modal - refocus it here
+        if (!recorder.captureArea && noteInputRef.current) {
+          console.log('[ScreenRecordingModal] Fullscreen mode - refocusing React modal input');
+          noteInputRef.current.focus();
+
+          // Move cursor to end of text
+          const length = noteInputRef.current.value.length;
+          noteInputRef.current.setSelectionRange(length, length);
+        } else {
+          console.log('[ScreenRecordingModal] Region mode - overlay will handle refocus');
+          // In region mode, overlay will handle refocus via its own listener
+        }
+      }
     });
 
     return () => cleanup();

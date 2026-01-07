@@ -1267,7 +1267,13 @@
 
     // Listen for cmd+h input field toggle
     window.electronAPI.region.onInputFieldToggle(() => {
-      if (!isRecording) return;
+      console.log('[RegionSelector] ===== onInputFieldToggle RECEIVED =====');
+      console.log('[RegionSelector] isRecording:', isRecording);
+
+      if (!isRecording) {
+        console.log('[RegionSelector] Not recording - ignoring toggle');
+        return;
+      }
 
       console.log('[RegionSelector] Cmd+H pressed');
 
@@ -1279,12 +1285,22 @@
         const isVisible = durationMarkInputEl.style.display === 'flex';
 
         if (isVisible) {
-          console.log('[RegionSelector] Input already visible, focusing and moving cursor to end');
-          markNoteInputEl.focus();
+          console.log('[RegionSelector] Input already visible, refocusing with window level adjustment');
 
-          // Move cursor to end of text
-          const length = markNoteInputEl.value.length;
-          markNoteInputEl.setSelectionRange(length, length);
+          // Lower window to 'floating' to accept keyboard input (same as showMarkInput)
+          console.log('[RegionSelector] Lowering window level to floating for keyboard input');
+          window.electronAPI.region.setWindowLevel('floating');
+
+          // Focus after window level change
+          setTimeout(() => {
+            markNoteInputEl.focus();
+
+            // Move cursor to end of text
+            const length = markNoteInputEl.value.length;
+            markNoteInputEl.setSelectionRange(length, length);
+
+            console.log('[RegionSelector] Input refocused at cursor position:', length);
+          }, 100);
 
           // Don't toggle marking state
           return;
