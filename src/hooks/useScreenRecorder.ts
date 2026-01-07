@@ -46,8 +46,10 @@ export interface ScreenRecorderControls {
     audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 };
     audioOffsetMs?: number;
   } | null>;
-  pauseRecording: () => void;
+  pauseRecording: (source?: 'manual' | 'marking') => void;
   resumeRecording: () => void;
+  pauseForMarking: () => void;
+  resumeFromMarking: () => void;
   resetRecording: () => void;
   handleMarkToggle: () => void;
   setMarkNote: (note: string) => void;
@@ -58,6 +60,7 @@ export interface UseScreenRecorderReturn extends ScreenRecorderState, ScreenReco
   pendingMarkNote: string;
   completedMarks: DurationMark[];
   isMarking: boolean;
+  pauseSource: 'manual' | 'marking' | null;
   memoryAlert: MemoryAlert | null;
 }
 
@@ -108,6 +111,21 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   const [pendingMarkStart, setPendingMarkStart] = useState<number | null>(null);
   const [pendingMarkNote, setPendingMarkNote] = useState<string>('');
   const [completedMarks, setCompletedMarks] = useState<DurationMark[]>([]);
+
+  // Pause source tracking (manual vs marking)
+  const [pauseSource, setPauseSource] = useState<'manual' | 'marking' | null>(null);
+
+  // Refs for stable callbacks (avoid recreating callbacks on every state change)
+  const pauseSourceRef = useRef<'manual' | 'marking' | null>(null);
+  const isPausedRef = useRef(false);
+  const isRecordingRef = useRef(false);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    pauseSourceRef.current = pauseSource;
+    isPausedRef.current = state.isPaused;
+    isRecordingRef.current = state.isRecording;
+  }, [pauseSource, state.isPaused, state.isRecording]);
 
   // Phase 6: Memory monitoring state
   const [memoryAlert, setMemoryAlert] = useState<MemoryAlert | null>(null);
@@ -974,8 +992,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     });
   }, [pendingMarkStart, pendingMarkNote]);
 
-  const pauseRecording = useCallback(async () => {
-    console.log('[useScreenRecorder] pauseRecording() called');
+  const pauseRecording = useCallback(async (source: 'manual' | 'marking' = 'manual') => {
+    console.log('[useScreenRecorder] pauseRecording() called with source:', source);
 
     // Check if we're using file-based recording
     const isFileBased = (window as any).__isFileBased;
@@ -1002,6 +1020,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         }
         setState(prev => ({ ...prev, isPaused: true }));
         console.log('[useScreenRecorder] ✅ Native recording paused');
+        // Set pause source
+        setPauseSource(source);
+        pauseSourceRef.current = source;
       } catch (error) {
         console.error('[useScreenRecorder] ❌ Failed to pause native recording:', error);
       }
@@ -1022,6 +1043,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       }
       setState(prev => ({ ...prev, isPaused: true }));
       console.log('[useScreenRecorder] Recording paused successfully');
+      // Set pause source
+      setPauseSource(source);
+      pauseSourceRef.current = source;
     } else {
       console.warn('[useScreenRecorder] Cannot pause - invalid state:', mediaRecorder?.state);
     }
@@ -1055,6 +1079,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         }, 100);
         setState(prev => ({ ...prev, isPaused: false }));
         console.log('[useScreenRecorder] ✅ Native recording resumed');
+        // Clear pause source
+        setPauseSource(null);
       } catch (error) {
         console.error('[useScreenRecorder] ❌ Failed to resume native recording:', error);
       }
@@ -1075,10 +1101,65 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       }, 100);
       setState(prev => ({ ...prev, isPaused: false }));
       console.log('[useScreenRecorder] Recording resumed successfully');
+      // Clear pause source
+      setPauseSource(null);
     } else {
       console.warn('[useScreenRecorder] Cannot resume - invalid state:', mediaRecorder?.state);
     }
   }, []);
+
+  // Auto-pause for marking input (doesn't override manual pause)
+  const pauseForMarking = useCallback(() => {
+    console.log('[useScreenRecorder] ===== pauseForMarking() called =====');
+    console.log('[useScreenRecorder] Current state:');
+    console.log('[useScreenRecorder]   - isPaused:', isPausedRef.current);
+    console.log('[useScreenRecorder]   - pauseSource:', pauseSourceRef.current);
+
+    if (!isPausedRef.current) {
+      console.log('[useScreenRecorder] ✅ Not paused - pausing now with source: marking');
+      pauseRecording('marking');
+      console.log('[useScreenRecorder] ✅ Auto-paused for marking input');
+    } else {
+      console.log('[useScreenRecorder] ⚠️ Already paused, keeping existing pause source:', pauseSourceRef.current);
+    }
+  }, [pauseRecording]); // Only depends on pauseRecording, which is stable
+
+  // Auto-resume from marking (only if pause was caused by marking)
+  const resumeFromMarking = useCallback(() => {
+    console.log('[useScreenRecorder] ===== resumeFromMarking() called =====');
+    console.log('[useScreenRecorder] Current state:');
+    console.log('[useScreenRecorder]   - isPaused:', isPausedRef.current);
+    console.log('[useScreenRecorder]   - pauseSource:', pauseSourceRef.current);
+    console.log('[useScreenRecorder]   - isRecording:', isRecordingRef.current);
+
+    if (isPausedRef.current && pauseSourceRef.current === 'marking') {
+      console.log('[useScreenRecorder] ✅ Conditions met - calling resumeRecording()');
+      resumeRecording();
+      setPauseSource(null); // Clear pause source
+      pauseSourceRef.current = null; // Update ref immediately
+      console.log('[useScreenRecorder] ✅ Auto-resumed from marking input');
+    } else if (pauseSourceRef.current === 'manual') {
+      console.log('[useScreenRecorder] ⚠️ Respecting manual pause, not resuming');
+    } else if (!isPausedRef.current) {
+      console.log('[useScreenRecorder] ⚠️ Not paused, nothing to resume');
+    } else if (!pauseSourceRef.current) {
+      console.log('[useScreenRecorder] ⚠️ No pause source set');
+    } else {
+      console.log('[useScreenRecorder] ⚠️ Unknown condition - isPaused:', isPausedRef.current, 'pauseSource:', pauseSourceRef.current);
+    }
+  }, [resumeRecording]); // Only depends on resumeRecording, which is stable
+
+  // Helper to get current elapsed time (respects pause state)
+  const getCurrentElapsedTime = useCallback(() => {
+    if (!state.isRecording) return 0;
+    if (state.isPaused) {
+      // When paused: return only accumulated time, don't add current elapsed
+      return Math.floor(accumulatedTimeRef.current / 1000);
+    }
+    // When recording: add elapsed since last resume
+    const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+    return Math.floor(elapsed / 1000);
+  }, [state.isRecording, state.isPaused]);
 
   const resetRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -1152,8 +1233,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   const handleMarkToggle = useCallback(() => {
     if (!state.isRecording) return;
 
-    const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
-    const currentTime = Math.floor(elapsed / 1000);
+    // Use pause-aware time calculation
+    const currentTime = getCurrentElapsedTime();
 
     if (pendingMarkStart === null) {
       // Start new mark
@@ -1171,7 +1252,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       setPendingMarkStart(null);
       setPendingMarkNote('');
     }
-  }, [state.isRecording, pendingMarkStart, pendingMarkNote]);
+  }, [state.isRecording, pendingMarkStart, pendingMarkNote, getCurrentElapsedTime]);
 
   const setMarkNote = useCallback((note: string) => {
     setPendingMarkNote(note);
@@ -1184,6 +1265,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     stopRecording,
     pauseRecording,
     resumeRecording,
+    pauseForMarking,
+    resumeFromMarking,
     resetRecording,
     handleMarkToggle,
     setMarkNote,
@@ -1191,6 +1274,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     pendingMarkNote,
     completedMarks,
     isMarking: pendingMarkStart !== null,
+    pauseSource, // Expose for debugging
     memoryAlert, // Phase 6: Memory monitoring alerts
   };
 }

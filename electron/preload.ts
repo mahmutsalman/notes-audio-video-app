@@ -405,6 +405,25 @@ const electronAPI = {
       ipcRenderer.on('recording:inputFieldToggle', listener);
       return () => ipcRenderer.removeListener('recording:inputFieldToggle', listener);
     },
+    // Mark input focus/blur events
+    sendMarkInputFocus: (): Promise<void> => {
+      ipcRenderer.send('region:markInputFocus');
+      return Promise.resolve();
+    },
+    onMarkInputFocus: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('recording:markInputFocus', listener);
+      return () => ipcRenderer.removeListener('recording:markInputFocus', listener);
+    },
+    sendMarkInputBlur: (): Promise<void> => {
+      ipcRenderer.send('region:markInputBlur');
+      return Promise.resolve();
+    },
+    onMarkInputBlur: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('recording:markInputBlur', listener);
+      return () => ipcRenderer.removeListener('recording:markInputBlur', listener);
+    },
     setWindowLevel: (level: 'floating' | 'screen-saver') => {
       ipcRenderer.send('region:setWindowLevel', level);
     },

@@ -516,6 +516,7 @@
     const pauseButton = document.getElementById('pauseButton');
     const stopButtonNew = document.getElementById('stopButtonNew');
     let isPaused = false;
+    let isBlurEventInProgress = false; // Prevent double blur events
 
     // Format duration helper (MM:SS)
     function formatDuration(seconds) {
@@ -529,6 +530,9 @@
       const inputField = document.getElementById('durationMarkInput');
       const noteInput = document.getElementById('markNoteInput');
 
+      // Reset blur tracking
+      isBlurEventInProgress = false;
+
       // Lower window to 'floating' to accept keyboard
       console.log('[RegionSelector] Lowering window level to floating for keyboard input');
       window.electronAPI.region.setWindowLevel('floating');
@@ -540,6 +544,8 @@
       setTimeout(() => {
         noteInput.focus();
         console.log('[RegionSelector] Input field focused and ready for typing');
+        // Notify React that input has focus (for auto-pause)
+        window.electronAPI.region.sendMarkInputFocus();
       }, 100);
     }
 
@@ -1268,9 +1274,30 @@
     window.electronAPI.region.onInputFieldToggle(() => {
       if (!isRecording) return;
 
-      // Don't send mark toggle back to React - the React modal already handles it!
-      // The overlay will receive the marking state update and show/hide the input field
-      console.log('[RegionSelector] Cmd+H pressed - waiting for marking state from React');
+      console.log('[RegionSelector] Cmd+H pressed');
+
+      const durationMarkInputEl = document.getElementById('durationMarkInput');
+      const markNoteInputEl = document.getElementById('markNoteInput');
+
+      // If input field is already visible, just focus it
+      if (durationMarkInputEl && markNoteInputEl) {
+        const isVisible = durationMarkInputEl.style.display === 'flex';
+
+        if (isVisible) {
+          console.log('[RegionSelector] Input already visible, focusing and moving cursor to end');
+          markNoteInputEl.focus();
+
+          // Move cursor to end of text
+          const length = markNoteInputEl.value.length;
+          markNoteInputEl.setSelectionRange(length, length);
+
+          // Don't toggle marking state
+          return;
+        }
+      }
+
+      // Input not visible, proceed with normal toggle
+      console.log('[RegionSelector] Waiting for marking state from React');
     });
 
     // Mark note input change handler
@@ -1282,6 +1309,32 @@
           console.log('[RegionSelector] Click fallback - re-lowering window level');
           window.electronAPI.region.setWindowLevel('floating');
           setTimeout(() => markNoteInputEl.focus(), 50);
+        }
+      });
+
+      // Send focus event to React for auto-pause
+      markNoteInputEl.addEventListener('focus', () => {
+        console.log('[RegionSelector] Mark input focused - sending focus event');
+        window.electronAPI.region.sendMarkInputFocus();
+      });
+
+      // Send blur event to React for auto-resume
+      markNoteInputEl.addEventListener('blur', (e) => {
+        console.log('[RegionSelector] ===== INPUT FIELD BLUR DETECTED =====');
+        console.log('[RegionSelector] Blur event target:', e.target);
+        console.log('[RegionSelector] Related target (where focus went):', e.relatedTarget);
+        console.log('[RegionSelector] isBlurEventInProgress:', isBlurEventInProgress);
+
+        if (!isBlurEventInProgress) {
+          console.log('[RegionSelector] ✅ Sending blur event to React');
+          isBlurEventInProgress = true;
+          window.electronAPI.region.sendMarkInputBlur();
+          setTimeout(() => {
+            isBlurEventInProgress = false;
+            console.log('[RegionSelector] Blur flag reset');
+          }, 100);
+        } else {
+          console.log('[RegionSelector] ⚠️ Blur event already in progress, skipping');
         }
       });
 

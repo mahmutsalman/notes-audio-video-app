@@ -944,6 +944,32 @@ export function setupIpcHandlers(): void {
     });
   });
 
+  // Mark input focus (Overlay → React main window)
+  ipcMain.on('region:markInputFocus', (event) => {
+    console.log('[IPC Handler] Received region:markInputFocus from overlay');
+    const { BrowserWindow } = require('electron');
+    const mainWindow = BrowserWindow.getAllWindows().find((w: any) => !('displayId' in w));
+    if (mainWindow) {
+      console.log('[IPC Handler] Sending recording:markInputFocus to main window');
+      mainWindow.webContents.send('recording:markInputFocus');
+    } else {
+      console.error('[IPC Handler] Main window not found for markInputFocus!');
+    }
+  });
+
+  // Mark input blur (Overlay → React main window)
+  ipcMain.on('region:markInputBlur', (event) => {
+    console.log('[IPC Handler] Received region:markInputBlur from overlay');
+    const { BrowserWindow } = require('electron');
+    const mainWindow = BrowserWindow.getAllWindows().find((w: any) => !('displayId' in w));
+    if (mainWindow) {
+      console.log('[IPC Handler] Sending recording:markInputBlur to main window');
+      mainWindow.webContents.send('recording:markInputBlur');
+    } else {
+      console.error('[IPC Handler] Main window not found for markInputBlur!');
+    }
+  });
+
   // Enable/disable click-through for overlay window
   ipcMain.on('region:setClickThrough', (event, enabled: boolean) => {
     // Find the region selector window that sent this event

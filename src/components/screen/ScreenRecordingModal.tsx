@@ -274,6 +274,45 @@ export default function ScreenRecordingModal({
     return () => cleanup();
   }, [step, recorder]);
 
+  // Listen for mark input focus (auto-pause for marking)
+  useEffect(() => {
+    console.log('[ScreenRecordingModal] Setting up mark input focus listener, step:', step);
+    if (step !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onMarkInputFocus(() => {
+      console.log('[ScreenRecordingModal] ===== MARK INPUT GAINED FOCUS =====');
+      console.log('[ScreenRecordingModal] isPaused:', recorder.isPaused);
+      console.log('[ScreenRecordingModal] Calling pauseForMarking()');
+      recorder.pauseForMarking();
+    });
+
+    console.log('[ScreenRecordingModal] ✅ Focus listener registered');
+    return () => {
+      console.log('[ScreenRecordingModal] Cleaning up mark input focus listener');
+      cleanup();
+    };
+  }, [step, recorder.pauseForMarking]);
+
+  // Listen for mark input blur (auto-resume from marking)
+  useEffect(() => {
+    console.log('[ScreenRecordingModal] Setting up mark input blur listener, step:', step);
+    if (step !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onMarkInputBlur(() => {
+      console.log('[ScreenRecordingModal] ===== MARK INPUT LOST FOCUS =====');
+      console.log('[ScreenRecordingModal] isPaused:', recorder.isPaused);
+      console.log('[ScreenRecordingModal] pauseSource:', (recorder as any).pauseSource);
+      console.log('[ScreenRecordingModal] Calling resumeFromMarking()');
+      recorder.resumeFromMarking();
+    });
+
+    console.log('[ScreenRecordingModal] ✅ Blur listener registered');
+    return () => {
+      console.log('[ScreenRecordingModal] Cleaning up mark input blur listener');
+      cleanup();
+    };
+  }, [step, recorder.resumeFromMarking]);
+
   // Keyboard shortcuts during recording
   useEffect(() => {
     if (step !== 'recording') return;
@@ -298,9 +337,15 @@ export default function ScreenRecordingModal({
       } else if (e.code === 'Enter') {
         e.preventDefault();
         recorder.handleMarkToggle();
-      } else if (e.code === 'Escape' && !isTypingNote) {
+      } else if (e.code === 'Escape') {
         e.preventDefault();
-        handleClose();
+        // If marking is active, cancel it (auto-resume will happen via blur event)
+        if (recorder.isMarking) {
+          console.log('[ScreenRecordingModal] Escape pressed - canceling marking');
+          recorder.handleMarkToggle(); // Cancel marking
+        } else if (!isTypingNote) {
+          handleClose(); // Close modal
+        }
       }
     };
 
@@ -477,7 +522,7 @@ export default function ScreenRecordingModal({
                 {/* Controls */}
                 <div className="flex items-center justify-center gap-4">
                   <button
-                    onClick={recorder.isPaused ? recorder.resumeRecording : recorder.pauseRecording}
+                    onClick={recorder.isPaused ? recorder.resumeRecording : () => recorder.pauseRecording()}
                     className="w-16 h-16 bg-yellow-500 hover:bg-yellow-600 text-white rounded-full flex items-center justify-center text-2xl transition-colors"
                     title={recorder.isPaused ? 'Resume' : 'Pause'}
                   >

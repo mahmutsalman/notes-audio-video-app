@@ -449,6 +449,10 @@ export interface ElectronAPI {
     setWindowLevel: (level: 'floating' | 'screen-saver') => void;
     sendPauseStateUpdate: (isPaused: boolean) => void;
     onPauseStateUpdate: (callback: (isPaused: boolean) => void) => () => void;
+    sendMarkInputFocus: () => Promise<void>;
+    onMarkInputFocus: (callback: () => void) => () => void;
+    sendMarkInputBlur: () => Promise<void>;
+    onMarkInputBlur: (callback: () => void) => () => void;
   };
   video: {
     generateThumbnail: (videoPath: string) => Promise<{ success: boolean; thumbnailPath: string | null }>;
