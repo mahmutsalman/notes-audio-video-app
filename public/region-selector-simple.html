@@ -502,6 +502,7 @@
     let isMarking = false;
     let markStartTime = 0;
     let markNoteText = '';
+    let currentDuration = 0; // Track current duration for elapsed calculation
 
     const rectangleEl = document.getElementById('rectangle');
     const dimensionsEl = document.getElementById('dimensions');
@@ -1187,7 +1188,14 @@
 
     // Listen for duration updates from React
     window.electronAPI.region.onDurationUpdate((duration) => {
+      currentDuration = duration; // Store current duration
       durationDisplay.textContent = formatDuration(duration);
+
+      // Update recording indicator with elapsed time if marking
+      if (isMarking && !isPaused) {
+        const elapsed = duration - markStartTime;
+        recordingIndicator.textContent = `Recording ${formatDuration(elapsed)}`;
+      }
     });
 
     // Duration mark IPC listeners
@@ -1201,8 +1209,19 @@
         console.log('[RegionSelector] Started marking at', startTime);
         updateMarkingIndicator(markStartTime);
         showMarkInput();
+
+        // Update recording indicator with initial elapsed time
+        if (!isPaused) {
+          const elapsed = currentDuration - markStartTime;
+          recordingIndicator.textContent = `Recording ${formatDuration(elapsed)}`;
+        }
       } else {
         hideMarkInput();
+
+        // Restore recording indicator to default
+        if (!isPaused) {
+          recordingIndicator.textContent = 'Recording';
+        }
       }
     });
 
@@ -1232,7 +1251,13 @@
         recordingIndicator.textContent = 'Paused';
         recordingIndicator.style.background = 'rgba(234, 179, 8, 0.9)';
       } else {
-        recordingIndicator.textContent = 'Recording';
+        // Show elapsed time if marking, otherwise just "Recording"
+        if (isMarking) {
+          const elapsed = currentDuration - markStartTime;
+          recordingIndicator.textContent = `Recording ${formatDuration(elapsed)}`;
+        } else {
+          recordingIndicator.textContent = 'Recording';
+        }
         recordingIndicator.style.background = 'rgba(220, 38, 38, 0.9)';
       }
 
