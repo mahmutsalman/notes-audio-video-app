@@ -11,6 +11,31 @@ Audio notes organized by topics with image and video attachments built with Elec
 - **SQLite Database** - Local storage using SQLite for fast, reliable data persistence
 - **Cross-Platform** - Available for macOS, Windows, and Linux
 
+## 📸 Screenshots
+
+<div align="center">
+
+### Audio Recording Note
+<img src=".github/media/screenshots/audio-recording-note.png" alt="Audio Recording Interface" width="800"/>
+
+*Record audio notes with real-time waveform visualization and playback controls*
+
+---
+
+### Video Recording Note
+<img src=".github/media/screenshots/video-recording-note.png" alt="Video Recording Interface" width="800"/>
+
+*Capture screen recordings with synchronized note-taking and video preview*
+
+---
+
+### Topic Recordings List
+<img src=".github/media/screenshots/topic-recordings-list.png" alt="Topic Recordings Overview" width="800"/>
+
+*Organize and manage all your audio and video recordings by topic*
+
+</div>
+
 ## Installation
 
 ### macOS

@@ -43,7 +43,8 @@ yarn-error.log*
 *.db-wal
 
 # Media files (stored in user data, not project)
-media/
+# Note: .github/media/ contains documentation assets and should be tracked
+/media/
 
 # Testing
 coverage/
