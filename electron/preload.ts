@@ -14,7 +14,8 @@ import type {
   ScreenSource,
   VideoCompressionOptions,
   VideoCompressionResult,
-  CompressionProgress
+  CompressionProgress,
+  DurationGroupColor
 } from '../src/types';
 
 // Type-safe API exposed to renderer
@@ -35,6 +36,16 @@ const electronAPI = {
     create: (recording: CreateRecording): Promise<Recording> => ipcRenderer.invoke('recordings:create', recording),
     update: (id: number, updates: UpdateRecording): Promise<Recording> => ipcRenderer.invoke('recordings:update', id, updates),
     delete: (id: number): Promise<void> => ipcRenderer.invoke('recordings:delete', id),
+    // Group color state management
+    getGroupColorState: (id: number): Promise<{
+      lastGroupColor: DurationGroupColor;
+      toggleActive: boolean;
+    }> => ipcRenderer.invoke('recordings:getGroupColorState', id),
+    updateGroupColorState: (
+      id: number,
+      lastGroupColor: DurationGroupColor,
+      toggleActive: boolean
+    ): Promise<Recording> => ipcRenderer.invoke('recordings:updateGroupColorState', id, lastGroupColor, toggleActive),
   },
 
   // Audio
@@ -154,6 +165,8 @@ const electronAPI = {
       ipcRenderer.invoke('durations:create', duration),
     update: (id: number, updates: UpdateDuration): Promise<Duration> =>
       ipcRenderer.invoke('durations:update', id, updates),
+    updateGroupColor: (id: number, groupColor: DurationGroupColor): Promise<Duration> =>
+      ipcRenderer.invoke('durations:updateGroupColor', id, groupColor),
     delete: (id: number): Promise<void> =>
       ipcRenderer.invoke('durations:delete', id),
   },
@@ -423,6 +436,28 @@ const electronAPI = {
       const listener = () => callback();
       ipcRenderer.on('recording:markInputBlur', listener);
       return () => ipcRenderer.removeListener('recording:markInputBlur', listener);
+    },
+    // Group color toggle (for color grouping duration marks)
+    sendGroupColorToggle: (isActive: boolean, currentColor: DurationGroupColor): void => {
+      console.log('[Preload] Broadcasting group color toggle:', { isActive, currentColor });
+      ipcRenderer.send('region:groupColorToggle', isActive, currentColor);
+    },
+    onGroupColorToggle: (callback: (isActive: boolean, currentColor: DurationGroupColor) => void) => {
+      const listener = (_event: any, isActive: boolean, currentColor: DurationGroupColor) => {
+        console.log('[Preload] Received group color toggle:', { isActive, currentColor });
+        callback(isActive, currentColor);
+      };
+      ipcRenderer.on('region:groupColorToggle', listener);
+      return () => ipcRenderer.removeListener('region:groupColorToggle', listener);
+    },
+    // Group color toggle request (overlay UI → main window state)
+    sendGroupColorToggleRequest: (): void => {
+      ipcRenderer.send('region:groupColorToggleRequest');
+    },
+    onGroupColorToggleRequest: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('recording:groupColorToggleRequest', listener);
+      return () => ipcRenderer.removeListener('recording:groupColorToggleRequest', listener);
     },
     setWindowLevel: (level: 'floating' | 'screen-saver') => {
       ipcRenderer.send('region:setWindowLevel', level);

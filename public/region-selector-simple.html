@@ -399,6 +399,48 @@
       background: rgba(59, 130, 246, 0.3);
       border: 1px solid rgba(59, 130, 246, 0.6);
     }
+
+    /* Group color toggle button styling */
+    #groupColorToggle {
+      min-width: 36px;
+      padding: 8px;
+      transition: all 0.2s ease;
+      background: rgba(255, 255, 255, 0.1);
+      position: relative;
+    }
+
+    #groupColorToggle:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: scale(1.05);
+    }
+
+    #groupColorToggle:active {
+      transform: scale(0.95);
+    }
+
+    /* When toggle is active, show current group color as background */
+    #groupColorToggle.group-color-active {
+      background: var(--group-color) !important;
+      border: 2px solid rgba(255, 255, 255, 0.5);
+    }
+
+    /* Add subtle pulse animation when active */
+    #groupColorToggle.group-color-active::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.2);
+      animation: pulse 2s ease-in-out infinite;
+      z-index: 0;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0; transform: scale(0.95); }
+      50% { opacity: 1; transform: scale(1); }
+    }
   </style>
 </head>
 <body>
@@ -482,14 +524,27 @@
     <div id="markingIndicator">
       <span>Marking from <span id="markStartTime">0:00</span>...</span>
     </div>
-    <!-- Input field + pause toggle button in flex container -->
+    <!-- Input field with group color toggle (LEFT) and pause toggle (RIGHT) -->
     <div style="display: flex; gap: 8px; align-items: center;">
+      <!-- Group Color Toggle Button (LEFT) -->
+      <button
+        id="groupColorToggle"
+        class="control-button"
+        title="Toggle color grouping for related duration marks"
+        style="width: 36px; height: 36px; font-size: 18px; flex-shrink: 0; position: relative; overflow: hidden;"
+      >
+        <span style="position: relative; z-index: 1;">🎨</span>
+      </button>
+
+      <!-- Input Field (CENTER) -->
       <input
         id="markNoteInput"
         type="text"
         placeholder="Type a note (optional) - Press Enter to end mark"
         style="flex: 1;"
       />
+
+      <!-- Pause Toggle Button (RIGHT) -->
       <button
         id="markPauseToggle"
         class="control-button"
@@ -547,6 +602,10 @@
     let isPaused = false;
     let pauseSource = null; // Track pause source: 'manual', 'marking', or null
     let isBlurEventInProgress = false; // Prevent double blur events
+
+    // Group color toggle state
+    let groupColorToggleActive = false;
+    let currentGroupColor = 'purple'; // Default to first color
 
     // Format duration helper (MM:SS)
     function formatDuration(seconds) {
@@ -1321,6 +1380,47 @@
       }
     });
 
+    // Listen for group color toggle updates from React
+    window.electronAPI.region.onGroupColorToggle((isActive, color) => {
+      console.log('[RegionSelector] Group color toggle update received:', { isActive, color });
+
+      groupColorToggleActive = isActive;
+      currentGroupColor = color;
+
+      const toggleButton = document.getElementById('groupColorToggle');
+      if (!toggleButton) return;
+
+      // Color hex values map
+      const colorMap = {
+        purple: '#a855f7',
+        pink: '#ec4899',
+        emerald: '#10b981',
+        teal: '#14b8a6',
+        indigo: '#6366f1',
+        orange: '#f97316',
+        lime: '#84cc16',
+        cyan: '#06b6d4',
+        fuchsia: '#d946ef',
+        rose: '#f43f5e',
+      };
+
+      if (isActive && color) {
+        // Toggle is ON: show current color as background
+        toggleButton.classList.add('group-color-active');
+        toggleButton.style.setProperty('--group-color', colorMap[color]);
+        console.log('[RegionSelector] Group color toggle activated with color:', color);
+      } else {
+        // Toggle is OFF: show next color with reduced opacity
+        toggleButton.classList.remove('group-color-active');
+        if (color) {
+          // Show next color preview with low opacity
+          const nextColorHex = colorMap[color];
+          toggleButton.style.background = `linear-gradient(135deg, rgba(255,255,255,0.1) 0%, ${nextColorHex}40 100%)`;
+        }
+        console.log('[RegionSelector] Group color toggle deactivated, next color:', color);
+      }
+    });
+
     // Listen for cmd+h input field toggle
     window.electronAPI.region.onInputFieldToggle(() => {
       console.log('[RegionSelector] ===== onInputFieldToggle RECEIVED =====');
@@ -1501,6 +1601,26 @@
           console.log('[RegionSelector] Triggering manual pause');
           window.electronAPI.region.pauseRecording();
         }
+      });
+    }
+
+    // Group color toggle button (left of duration mark input)
+    const groupColorToggle = document.getElementById('groupColorToggle');
+    if (groupColorToggle) {
+      // Prevent event propagation
+      groupColorToggle.addEventListener('mousedown', (e) => e.stopPropagation());
+      groupColorToggle.addEventListener('mouseup', (e) => e.stopPropagation());
+
+      groupColorToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        console.log('[RegionSelector] Group color toggle clicked');
+        console.log('[RegionSelector] Current state:', {
+          groupColorToggleActive,
+          currentGroupColor
+        });
+
+        // Request a toggle from the main window (main window is the source of truth)
+        window.electronAPI.region.sendGroupColorToggleRequest();
       });
     }
 

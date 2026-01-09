@@ -12,6 +12,7 @@ interface QuickScreenRecordProps {
 export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRegion = null }: QuickScreenRecordProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [recordingId, setRecordingId] = useState<number | null>(null);
 
   const normalizeResolution = (value?: string) => {
     if (value === '480p' || value === '720p' || value === '1080p') {
@@ -30,17 +31,49 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
 
   // Auto-open modal when pendingRegion is set (from Cmd+D)
   useEffect(() => {
-    if (pendingRegion) {
-      setIsOpen(true);
+    if (pendingRegion && !recordingId) {
+      console.log('[QuickScreenRecord] Auto-opening from pendingRegion');
+      handleOpen();
     }
-  }, [pendingRegion]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingRegion, recordingId]);
 
-  const handleOpen = () => {
-    setIsOpen(true);
+  const handleOpen = async () => {
+    try {
+      // Get settings to determine resolution and FPS for the recording record
+      const settings = await window.electronAPI.settings.getAll();
+      const resolution = normalizeResolution(settings['screen_recording_resolution']);
+      const fps = normalizeFPS(settings['screen_recording_fps']);
+
+      // Create the recording record first so we have an ID for group color state
+      const recording = await window.electronAPI.recordings.create({
+        topic_id: topicId,
+        name: formatTimestampName(),
+        audio_path: null,
+        audio_duration: null,
+        audio_size: null,
+        video_path: null, // Will be updated after recording
+        video_duration: null, // Will be updated after recording
+        video_resolution: resolution,
+        video_fps: fps,
+        video_size: null,
+        notes_content: null,
+      });
+
+      console.log('[QuickScreenRecord] Created recording with ID:', recording.id);
+
+      setRecordingId(recording.id);
+      setIsOpen(true);
+    } catch (error) {
+      console.error('[QuickScreenRecord] Failed to create recording:', error);
+      alert('Failed to create recording. Please try again.');
+    }
   };
 
   const handleClose = () => {
+    console.log('[QuickScreenRecord] Closing modal, recording ID:', recordingId);
     setIsOpen(false);
+    setRecordingId(null); // Reset recording ID when closing
   };
 
   const handleSave = async (
@@ -52,9 +85,21 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
     audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 },
     audioOffsetMs?: number
   ) => {
+    if (!recordingId) {
+      console.error('[QuickScreenRecord] No recording ID available');
+      alert('Recording ID not found. Please try again.');
+      return;
+    }
+
     setIsSaving(true);
 
     try {
+      console.log('[QuickScreenRecord] handleSave called with:', {
+        recordingId,
+        marksCount: marks.length,
+        marksWithGroupColor: marks.map((m, i) => ({ index: i, groupColor: m.group_color }))
+      });
+
       // Get settings to extract resolution and FPS
       const settings = await window.electronAPI.settings.getAll();
       const resolution = normalizeResolution(settings['screen_recording_resolution']);
@@ -65,22 +110,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
           ? { bitrate: '64k' as const, channels: 2 as const }
           : { bitrate: '128k' as const, channels: 2 as const });
 
-      // Create the recording record first
-      const recording = await window.electronAPI.recordings.create({
-        topic_id: topicId,
-        name: formatTimestampName(),
-        audio_path: null,
-        audio_duration: null,
-        audio_size: null,
-        video_path: null, // Will be updated after saving file
-        video_duration: null, // Will be updated with actual duration from video metadata
-        video_resolution: resolution,
-        video_fps: fps,
-        video_size: null,
-        notes_content: null,
-      });
-
-      console.log('[QuickScreenRecord] Recording created with ID:', recording.id);
+      console.log('[QuickScreenRecord] Saving video for recording ID:', recordingId);
 
       let result: { filePath: string; duration: number | null; _debug?: any };
 
@@ -89,7 +119,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
           ? await audioBlob.arrayBuffer()
           : undefined;
         result = await window.electronAPI.screenRecording.finalizeFile(
-          recording.id,
+          recordingId,
           filePath,
           resolution,
           fps,
@@ -103,7 +133,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
         // Save the video file with client-calculated duration as fallback
         const arrayBuffer = await videoBlob.arrayBuffer();
         result = await window.electronAPI.screenRecording.saveFile(
-          recording.id,
+          recordingId,
           arrayBuffer,
           resolution,
           fps,
@@ -131,7 +161,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
       }
 
       // Update the recording with the actual video path and duration
-      await window.electronAPI.recordings.update(recording.id, {
+      await window.electronAPI.recordings.update(recordingId, {
         video_path: result.filePath,
         video_duration: result.duration,
         video_size: result._debug?.fileSize ?? null,
@@ -139,13 +169,15 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
 
       console.log('[QuickScreenRecord] Recording updated with duration:', result.duration);
 
-      // Save duration marks
+      // Save duration marks with group colors
       for (const mark of marks) {
+        console.log('[QuickScreenRecord] Saving mark with group_color:', mark.group_color);
         await window.electronAPI.durations.create({
-          recording_id: recording.id,
+          recording_id: recordingId,
           start_time: mark.start,
           end_time: mark.end,
           note: mark.note ?? null,
+          group_color: mark.group_color ?? null,
         });
       }
 
@@ -175,11 +207,11 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
       </button>
 
       {/* Screen Recording Modal */}
-      {isOpen && (
+      {isOpen && recordingId && (
         <ScreenRecordingModal
           isOpen={isOpen}
           onClose={handleClose}
-          recordingId={0} // Not used in standalone mode
+          recordingId={recordingId}
           onSave={handleSave}
           pendingRegion={pendingRegion}
         />

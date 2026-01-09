@@ -10,7 +10,8 @@ import type {
   DurationVideo, CreateDurationVideo,
   DurationAudio, CreateDurationAudio,
   CodeSnippet, CreateCodeSnippet, UpdateCodeSnippet,
-  DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet
+  DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
+  DurationGroupColor
 } from '../../src/types';
 
 // Helper to parse tags from JSON string
@@ -248,6 +249,35 @@ export const RecordingsOperations = {
       `).run(recording.topic_id);
     }
   },
+
+  updateGroupColorState(
+    id: number,
+    lastGroupColor: DurationGroupColor,
+    toggleActive: boolean
+  ): Recording {
+    const db = getDatabase();
+    db.prepare(`
+      UPDATE recordings
+      SET last_group_color = ?, group_toggle_active = ?
+      WHERE id = ?
+    `).run(lastGroupColor, toggleActive ? 1 : 0, id);
+
+    return this.getById(id)!;
+  },
+
+  getGroupColorState(id: number): {
+    lastGroupColor: DurationGroupColor;
+    toggleActive: boolean;
+  } {
+    const recording = this.getById(id);
+    if (!recording) {
+      throw new Error(`Recording ${id} not found`);
+    }
+    return {
+      lastGroupColor: recording.last_group_color,
+      toggleActive: Boolean(recording.group_toggle_active),
+    };
+  },
 };
 
 // Images Operations
@@ -372,15 +402,16 @@ export const DurationsOperations = {
   create(duration: CreateDuration): Duration {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO durations (recording_id, start_time, end_time, note)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO durations (recording_id, start_time, end_time, note, group_color)
+      VALUES (?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       duration.recording_id,
       duration.start_time,
       duration.end_time,
-      duration.note ?? null
+      duration.note ?? null,
+      duration.group_color ?? null
     );
 
     return this.getById(result.lastInsertRowid as number)!;
@@ -398,6 +429,10 @@ export const DurationsOperations = {
     if (updates.color !== undefined) {
       fields.push('color = ?');
       values.push(updates.color);
+    }
+    if (updates.group_color !== undefined) {
+      fields.push('group_color = ?');
+      values.push(updates.group_color);
     }
 
     if (fields.length > 0) {

@@ -352,6 +352,26 @@ function runMigrations(db: Database.Database): void {
     console.log('Created app_settings table with default values');
   }
 
+  // Migration: Add group_color column to durations table if it doesn't exist
+  const hasGroupColorColumn = durationsColumns.some(col => col.name === 'group_color');
+  if (!hasGroupColorColumn) {
+    db.exec(`ALTER TABLE durations ADD COLUMN group_color TEXT`);
+    console.log('Added group_color column to durations table');
+  }
+
+  // Migration: Add last_group_color and group_toggle_active columns to recordings table if they don't exist
+  const hasLastGroupColorColumn = recordingsColumns.some(col => col.name === 'last_group_color');
+  if (!hasLastGroupColorColumn) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN last_group_color TEXT`);
+    console.log('Added last_group_color column to recordings table');
+  }
+
+  const hasGroupToggleActiveColumn = recordingsColumns.some(col => col.name === 'group_toggle_active');
+  if (!hasGroupToggleActiveColumn) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN group_toggle_active INTEGER DEFAULT 0`);
+    console.log('Added group_toggle_active column to recordings table');
+  }
+
   // Create the stats view (drop and recreate to handle schema changes)
   db.exec(`
     DROP VIEW IF EXISTS topic_stats;

@@ -2,7 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import ScreenSourceSelector from './ScreenSourceSelector';
 import { useScreenRecorder } from '../../hooks/useScreenRecorder';
 import { useScreenRecordingSettings, QUALITY_PRESETS } from '../../context/ScreenRecordingSettingsContext';
+import { useGroupColorToggle } from '../../hooks/useGroupColorToggle';
 import type { ScreenSource, CaptureArea } from '../../types';
+import type { DurationGroupColor } from '../../utils/durationGroupColors';
 
 interface ScreenRecordingModalProps {
   isOpen: boolean;
@@ -26,7 +28,7 @@ type Step = 'source-selection' | 'recording' | 'saving';
 export default function ScreenRecordingModal({
   isOpen,
   onClose,
-  recordingId: _recordingId, // Not used in component, but passed from parent
+  recordingId,
   onSave,
   autoStartRegionSelection = false,
   pendingRegion = null,
@@ -35,10 +37,12 @@ export default function ScreenRecordingModal({
   const [step, setStep] = useState<Step>('source-selection');
   const recorder = useScreenRecorder();
   const { settings, getResolutionDimensions, updatePreset, loading } = useScreenRecordingSettings();
+  const groupColorToggle = useGroupColorToggle(recordingId);
   const noteInputRef = useRef<HTMLInputElement>(null);
   const processedRegionIdRef = useRef<number | null>(null); // Track processed region to prevent duplicate starts
   const wasOpenRef = useRef(false); // Track previous isOpen state to detect true open events
   const isStoppingRef = useRef(false); // Prevent double-call to handleStopRecording
+  const markGroupColorsRef = useRef<Map<number, DurationGroupColor>>(new Map()); // Track group color for each mark
 
   // Component lifecycle cleanup
   useEffect(() => {
@@ -78,10 +82,21 @@ export default function ScreenRecordingModal({
 
       if (result) {
         try {
+          // Add group_color to each mark based on tracked colors
+          const marksWithGroupColor = recorder.completedMarks.map((mark, index) => ({
+            ...mark,
+            group_color: markGroupColorsRef.current.get(index) ?? null,
+          }));
+
+          console.log('[ScreenRecordingModal] Saving marks with group colors:', marksWithGroupColor);
+
+          // Save group color toggle state to database
+          await groupColorToggle.saveState();
+
           // Pass duration in milliseconds as third parameter
           await onSave(
             result.blob,
-            recorder.completedMarks,
+            marksWithGroupColor,
             result.durationMs,
             result.filePath,
             result.audioBlob,
@@ -127,10 +142,12 @@ export default function ScreenRecordingModal({
       // Reset processed region ID when modal opens
       processedRegionIdRef.current = null;
       isStoppingRef.current = false; // Reset stopping flag
+      markGroupColorsRef.current.clear(); // Clear mark group color tracking
     } else if (justClosed) {
       // Clear processed region ID when modal closes
       processedRegionIdRef.current = null;
       isStoppingRef.current = false; // Reset stopping flag
+      markGroupColorsRef.current.clear(); // Clear mark group color tracking
     }
 
     // Update ref for next comparison
@@ -223,6 +240,46 @@ export default function ScreenRecordingModal({
     console.log('[ScreenRecordingModal] Pause source changed, broadcasting to overlay:', recorder.pauseSource);
     window.electronAPI.region.sendPauseSourceUpdate(recorder.pauseSource);
   }, [step, recorder.pauseSource]);
+
+  // Broadcast group color toggle state to overlay
+  useEffect(() => {
+    if (step !== 'recording') return;
+
+    console.log('[ScreenRecordingModal] Group color state changed, broadcasting to overlay:', {
+      isActive: groupColorToggle.isActive,
+      currentColor: groupColorToggle.currentColor
+    });
+    window.electronAPI.region.sendGroupColorToggle(groupColorToggle.isActive, groupColorToggle.currentColor);
+  }, [step, groupColorToggle.isActive, groupColorToggle.currentColor]);
+
+  // Handle group color toggle requests from overlay UI (source of truth lives here)
+  useEffect(() => {
+    if (step !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onGroupColorToggleRequest(() => {
+      console.log('[ScreenRecordingModal] Group color toggle requested from overlay');
+      groupColorToggle.toggle();
+    });
+
+    return () => cleanup();
+  }, [step, groupColorToggle.toggle]);
+
+  // Track group color for each completed mark
+  useEffect(() => {
+    if (step !== 'recording') return;
+
+    const currentMarkCount = recorder.completedMarks.length;
+    const trackedMarkCount = markGroupColorsRef.current.size;
+
+    // New mark(s) completed - store current group color for them
+    if (currentMarkCount > trackedMarkCount) {
+      const groupColor = groupColorToggle.isActive ? groupColorToggle.currentColor : null;
+      for (let i = trackedMarkCount; i < currentMarkCount; i++) {
+        markGroupColorsRef.current.set(i, groupColor);
+        console.log(`[ScreenRecordingModal] Mark ${i} assigned group color:`, groupColor);
+      }
+    }
+  }, [step, recorder.completedMarks.length, groupColorToggle.isActive, groupColorToggle.currentColor]);
 
   // Duration mark synchronization: Broadcast marking state to overlay
   useEffect(() => {

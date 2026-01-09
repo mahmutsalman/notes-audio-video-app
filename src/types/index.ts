@@ -2,6 +2,7 @@
 
 export type ImportanceColor = 'emerald' | 'amber' | 'rose' | null;
 export type DurationColor = 'red' | 'amber' | 'sky' | null;
+export type DurationGroupColor = 'purple' | 'pink' | 'emerald' | 'teal' | 'indigo' | 'orange' | 'lime' | 'cyan' | 'fuchsia' | 'rose' | null;
 
 export interface Topic {
   id: number;
@@ -30,6 +31,8 @@ export interface Recording {
   video_size: number | null;
   notes_content: string | null;
   importance_color: ImportanceColor;
+  last_group_color: DurationGroupColor;
+  group_toggle_active: boolean;
   created_at: string;
   updated_at: string;
   // Relations (loaded separately)
@@ -78,7 +81,8 @@ export interface Duration {
   start_time: number;  // seconds
   end_time: number;    // seconds
   note: string | null; // optional note for this duration mark
-  color: DurationColor; // color indicator for categorizing duration marks
+  color: DurationColor; // color indicator for categorizing duration marks (priority colors - left/right bars)
+  group_color: DurationGroupColor; // group color for visually grouping related marks (top bar)
   created_at: string;
   // Media loaded separately
   images?: DurationImage[];
@@ -208,7 +212,7 @@ export interface DurationCodeSnippet {
   created_at: string;
 }
 
-export type UpdateDuration = Partial<Pick<Duration, 'note' | 'color'>>;
+export type UpdateDuration = Partial<Pick<Duration, 'note' | 'color' | 'group_color'>>;
 export type CreateDurationImage = Omit<DurationImage, 'id' | 'created_at'>;
 export type CreateDurationVideo = Omit<DurationVideo, 'id' | 'created_at'>;
 export type CreateDurationAudio = Omit<DurationAudio, 'id' | 'created_at'>;
@@ -241,12 +245,12 @@ export interface BackupResult {
 export type CreateTopic = Omit<Topic, 'id' | 'created_at' | 'updated_at' | 'total_recordings' | 'total_images' | 'total_videos'>;
 export type UpdateTopic = Partial<CreateTopic>;
 
-export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color' | 'name'> & { importance_color?: ImportanceColor; name?: string | null };
+export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color' | 'name' | 'last_group_color' | 'group_toggle_active'> & { importance_color?: ImportanceColor; name?: string | null };
 export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
 export type CreateVideo = Omit<Video, 'id' | 'created_at'>;
-export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color'> & { note?: string | null; color?: DurationColor };
+export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor };
 
 // Video Compression Types
 export interface VideoCompressionOptions {
@@ -294,6 +298,15 @@ export interface ElectronAPI {
     create: (recording: CreateRecording) => Promise<Recording>;
     update: (id: number, updates: UpdateRecording) => Promise<Recording>;
     delete: (id: number) => Promise<void>;
+    getGroupColorState: (id: number) => Promise<{
+      lastGroupColor: DurationGroupColor;
+      toggleActive: boolean;
+    }>;
+    updateGroupColorState: (
+      id: number,
+      lastGroupColor: DurationGroupColor,
+      toggleActive: boolean
+    ) => Promise<Recording>;
   };
   audio: {
     save: (recordingId: number, audioBuffer: ArrayBuffer, filename: string) => Promise<string>;
@@ -339,6 +352,7 @@ export interface ElectronAPI {
     getByRecording: (recordingId: number) => Promise<Duration[]>;
     create: (duration: CreateDuration) => Promise<Duration>;
     update: (id: number, updates: UpdateDuration) => Promise<Duration>;
+    updateGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<Duration>;
     delete: (id: number) => Promise<void>;
   };
   durationImages: {
@@ -455,6 +469,10 @@ export interface ElectronAPI {
     onMarkInputFocus: (callback: () => void) => () => void;
     sendMarkInputBlur: () => Promise<void>;
     onMarkInputBlur: (callback: () => void) => () => void;
+    sendGroupColorToggle: (isActive: boolean, currentColor: DurationGroupColor) => void;
+    onGroupColorToggle: (callback: (isActive: boolean, currentColor: DurationGroupColor) => void) => () => void;
+    sendGroupColorToggleRequest: () => void;
+    onGroupColorToggleRequest: (callback: () => void) => () => void;
   };
   video: {
     generateThumbnail: (videoPath: string) => Promise<{ success: boolean; thumbnailPath: string | null }>;

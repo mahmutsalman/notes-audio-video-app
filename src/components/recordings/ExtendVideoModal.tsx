@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useScreenRecorder } from '../../hooks/useScreenRecorder';
 import { useScreenRecordingSettings } from '../../context/ScreenRecordingSettingsContext';
+import { useGroupColorToggle } from '../../hooks/useGroupColorToggle';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
 import { formatDuration } from '../../utils/formatters';
 import type { Recording, VideoWithThumbnail, CaptureArea, VideoCompressionOptions } from '../../types';
+import type { DurationGroupColor } from '../../utils/durationGroupColors';
 
 interface ExtendVideoModalProps {
   isOpen: boolean;
@@ -59,8 +61,10 @@ export default function ExtendVideoModal({
 
   const recorder = useScreenRecorder();
   const { settings } = useScreenRecordingSettings();
+  const groupColorToggle = useGroupColorToggle(recording.id);
   const noteInputRef = useRef<HTMLInputElement>(null);
   const isStoppingRef = useRef(false);
+  const markGroupColorsRef = useRef<Map<number, DurationGroupColor>>(new Map()); // Track group color for each mark
 
   // Fetch fresh recording data when modal opens (prevents stale duration offset)
   const [currentRecording, setCurrentRecording] = useState(recording);
@@ -94,6 +98,7 @@ export default function ExtendVideoModal({
       setExtensionAudioConfig(null);
       setExtensionAudioOffsetMs(null);
       isStoppingRef.current = false; // Reset stopping flag
+      markGroupColorsRef.current.clear(); // Clear mark group color tracking
       recorder.resetRecording();
     }
   }, [isOpen]);
@@ -190,6 +195,46 @@ export default function ExtendVideoModal({
     console.log('[ExtendVideoModal] Pause source changed, broadcasting to overlay:', recorder.pauseSource);
     window.electronAPI.region.sendPauseSourceUpdate(recorder.pauseSource);
   }, [phase, recorder.pauseSource]);
+
+  // Broadcast group color toggle state to overlay
+  useEffect(() => {
+    if (phase !== 'recording') return;
+
+    console.log('[ExtendVideoModal] Group color state changed, broadcasting to overlay:', {
+      isActive: groupColorToggle.isActive,
+      currentColor: groupColorToggle.currentColor
+    });
+    window.electronAPI.region.sendGroupColorToggle(groupColorToggle.isActive, groupColorToggle.currentColor);
+  }, [phase, groupColorToggle.isActive, groupColorToggle.currentColor]);
+
+  // Handle group color toggle requests from overlay UI (source of truth lives here)
+  useEffect(() => {
+    if (phase !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onGroupColorToggleRequest(() => {
+      console.log('[ExtendVideoModal] Group color toggle requested from overlay');
+      groupColorToggle.toggle();
+    });
+
+    return () => cleanup();
+  }, [phase, groupColorToggle.toggle]);
+
+  // Track group color for each completed mark
+  useEffect(() => {
+    if (phase !== 'recording') return;
+
+    const currentMarkCount = recorder.completedMarks.length;
+    const trackedMarkCount = markGroupColorsRef.current.size;
+
+    // New mark(s) completed - store current group color for them
+    if (currentMarkCount > trackedMarkCount) {
+      const groupColor = groupColorToggle.isActive ? groupColorToggle.currentColor : null;
+      for (let i = trackedMarkCount; i < currentMarkCount; i++) {
+        markGroupColorsRef.current.set(i, groupColor);
+        console.log(`[ExtendVideoModal] Mark ${i} assigned group color:`, groupColor);
+      }
+    }
+  }, [phase, recorder.completedMarks.length, groupColorToggle.isActive, groupColorToggle.currentColor]);
 
   // Listen for stop recording from overlay
   useEffect(() => {
@@ -528,14 +573,20 @@ export default function ExtendVideoModal({
       console.log('[ExtendVideo] Database update completed for recording ID:', recording.id);
       console.log('[ExtendVideo] ===================================');
 
-      // 5. Save duration marks with offset timestamps (adjusted for original duration)
+      // 5. Save duration marks with offset timestamps (adjusted for original duration) and group colors
       const offsetSeconds = currentRecording.video_duration ?? 0;
-      for (const mark of recorder.completedMarks) {
+      for (let i = 0; i < recorder.completedMarks.length; i++) {
+        const mark = recorder.completedMarks[i];
+        const groupColor = markGroupColorsRef.current.get(i) ?? null;
+
+        console.log(`[ExtendVideoModal] Saving mark ${i} with group color:`, groupColor);
+
         await window.electronAPI.durations.create({
           recording_id: recording.id,
           start_time: mark.start + offsetSeconds,
           end_time: mark.end + offsetSeconds,
           note: mark.note ?? null,
+          group_color: groupColor,
         });
       }
 
@@ -546,6 +597,9 @@ export default function ExtendVideoModal({
       for (const video of selectedVideos) {
         await window.electronAPI.media.addVideo(recording.id, video.filePath);
       }
+
+      // 7. Save group color toggle state to database
+      await groupColorToggle.saveState();
 
       // Success - reset and close
       console.log('[ExtendVideo] Recording extended successfully');

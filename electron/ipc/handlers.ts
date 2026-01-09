@@ -39,7 +39,7 @@ import { mergeAudioFiles } from '../services/audioMerger';
 import type {
   CreateTopic, UpdateTopic, CreateRecording, UpdateRecording, CreateDuration, UpdateDuration,
   CreateCodeSnippet, UpdateCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
-  CreateScreenRecording
+  CreateScreenRecording, DurationGroupColor
 } from '../../src/types';
 
 export function setupIpcHandlers(): void {
@@ -90,6 +90,21 @@ export function setupIpcHandlers(): void {
     await deleteRecordingMedia(id);
     RecordingsOperations.delete(id);
   });
+
+  // Get recording group color state
+  ipcMain.handle('recordings:getGroupColorState', async (_, id: number) => {
+    console.log('[IPC] Getting recording group color state:', id);
+    return RecordingsOperations.getGroupColorState(id);
+  });
+
+  // Update recording group color state
+  ipcMain.handle(
+    'recordings:updateGroupColorState',
+    async (_, id: number, lastGroupColor: DurationGroupColor | null, toggleActive: boolean) => {
+      console.log('[IPC] Updating recording group color state:', { id, lastGroupColor, toggleActive });
+      return RecordingsOperations.updateGroupColorState(id, lastGroupColor, toggleActive);
+    }
+  );
 
   // ============ Audio ============
   ipcMain.handle('audio:save', async (_, recordingId: number, audioBuffer: ArrayBuffer, filename: string) => {
@@ -323,6 +338,12 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durations:update', async (_, id: number, updates: UpdateDuration) => {
     return DurationsOperations.update(id, updates);
+  });
+
+  // Update duration group color
+  ipcMain.handle('durations:updateGroupColor', async (_, id: number, groupColor: DurationGroupColor | null) => {
+    console.log('[IPC] Updating duration group color:', { id, groupColor });
+    return DurationsOperations.update(id, { group_color: groupColor });
   });
 
   ipcMain.handle('durations:delete', async (_, id: number) => {
@@ -993,6 +1014,33 @@ export function setupIpcHandlers(): void {
       mainWindow.webContents.send('recording:markInputBlur');
     } else {
       console.error('[IPC Handler] Main window not found for markInputBlur!');
+    }
+  });
+
+  // Group color toggle broadcast (React → All overlay windows)
+  ipcMain.on('region:groupColorToggle', (_event, isActive: boolean, currentColor: DurationGroupColor | null) => {
+    console.log('[IPC] Broadcasting group color toggle:', { isActive, currentColor });
+
+    const { BrowserWindow } = require('electron');
+    const allWindows = BrowserWindow.getAllWindows();
+    const recordingOverlays = allWindows.filter((w: any) => 'displayId' in w && !w.isDestroyed());
+
+    recordingOverlays.forEach((win) => {
+      console.log('[IPC] Sending group color toggle to overlay:', win.id);
+      win.webContents.send('region:groupColorToggle', isActive, currentColor);
+    });
+  });
+
+  // Group color toggle request (Overlay → React main window)
+  ipcMain.on('region:groupColorToggleRequest', (event) => {
+    console.log('[IPC Handler] Received region:groupColorToggleRequest from overlay');
+    const { BrowserWindow } = require('electron');
+    const mainWindow = BrowserWindow.getAllWindows().find((w: any) => !('displayId' in w));
+    if (mainWindow) {
+      console.log('[IPC Handler] Sending recording:groupColorToggleRequest to main window');
+      mainWindow.webContents.send('recording:groupColorToggleRequest');
+    } else {
+      console.error('[IPC Handler] Main window not found for groupColorToggleRequest!');
     }
   });
 

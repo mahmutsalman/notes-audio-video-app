@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Duration, DurationColor, DurationImage, DurationVideo } from '../../types';
 import { formatDuration, formatDurationLength } from '../../utils/formatters';
 import { DURATION_COLORS, getNextDurationColor } from '../../utils/durationColors';
+import { getGroupColorConfig } from '../../utils/durationGroupColors';
 import NotesEditor from '../common/NotesEditor';
 
 interface DurationListProps {
@@ -73,6 +74,15 @@ export default function DurationList({
         {durations.map((duration) => {
           const isActive = activeDurationId === duration.id;
           const colorConfig = duration.color ? DURATION_COLORS[duration.color] : null;
+          const groupColorConfig = getGroupColorConfig(duration.group_color);
+          if (import.meta.env.DEV && duration.group_color) {
+            // eslint-disable-next-line no-console
+            console.debug('[DurationList] Duration group color:', {
+              id: duration.id,
+              group_color: duration.group_color,
+              groupColorConfig,
+            });
+          }
           const imageCount = durationImagesCache?.[duration.id]?.length || 0;
           const videoCount = durationVideosCache?.[duration.id]?.length || 0;
           return (
@@ -99,6 +109,13 @@ export default function DurationList({
                            }`}
                 title={disabled ? 'Loading audio...' : undefined}
               >
+                {/* Top group color bar */}
+                {groupColorConfig && (
+                  <div
+                    className="absolute top-0 left-0 right-0 h-px rounded-t-lg"
+                    style={{ backgroundColor: groupColorConfig.color }}
+                  />
+                )}
                 {/* Left color indicator */}
                 {colorConfig && (
                   <div
