@@ -440,6 +440,19 @@ const electronAPI = {
       ipcRenderer.on('region:pauseStateUpdate', listener);
       return () => ipcRenderer.removeListener('region:pauseStateUpdate', listener);
     },
+    // Pause source synchronization (modal → overlay broadcast)
+    sendPauseSourceUpdate: (source: 'manual' | 'marking' | null): void => {
+      console.log('[Preload] Broadcasting pause source:', source);
+      ipcRenderer.send('region:pauseSourceUpdate', source);
+    },
+    onPauseSourceUpdate: (callback: (source: 'manual' | 'marking' | null) => void) => {
+      const listener = (_event: any, source: 'manual' | 'marking' | null) => {
+        console.log('[Preload] Received pause source update:', source);
+        callback(source);
+      };
+      ipcRenderer.on('region:pauseSourceUpdate', listener);
+      return () => ipcRenderer.removeListener('region:pauseSourceUpdate', listener);
+    },
   },
 
   // Settings

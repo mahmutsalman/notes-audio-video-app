@@ -216,6 +216,14 @@ export default function ScreenRecordingModal({
     window.electronAPI.region.sendPauseStateUpdate(recorder.isPaused);
   }, [step, recorder.isPaused]);
 
+  // Broadcast pause source to overlay whenever it changes
+  useEffect(() => {
+    if (step !== 'recording') return;
+
+    console.log('[ScreenRecordingModal] Pause source changed, broadcasting to overlay:', recorder.pauseSource);
+    window.electronAPI.region.sendPauseSourceUpdate(recorder.pauseSource);
+  }, [step, recorder.pauseSource]);
+
   // Duration mark synchronization: Broadcast marking state to overlay
   useEffect(() => {
     if (step !== 'recording') return;

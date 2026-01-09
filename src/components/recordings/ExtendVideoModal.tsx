@@ -183,6 +183,14 @@ export default function ExtendVideoModal({
     window.electronAPI.region.sendPauseStateUpdate(recorder.isPaused);
   }, [phase, recorder.isPaused]);
 
+  // Broadcast pause source to overlay whenever it changes
+  useEffect(() => {
+    if (phase !== 'recording') return;
+
+    console.log('[ExtendVideoModal] Pause source changed, broadcasting to overlay:', recorder.pauseSource);
+    window.electronAPI.region.sendPauseSourceUpdate(recorder.pauseSource);
+  }, [phase, recorder.pauseSource]);
+
   // Listen for stop recording from overlay
   useEffect(() => {
     if (phase !== 'recording') return;

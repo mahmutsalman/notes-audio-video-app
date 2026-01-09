@@ -918,6 +918,27 @@ export function setupIpcHandlers(): void {
     }
   });
 
+  // Pause source update (React main window → All overlay windows)
+  ipcMain.on('region:pauseSourceUpdate', (_event, source: 'manual' | 'marking' | null) => {
+    console.log('[IPC Handler] region:pauseSourceUpdate received:', { source });
+
+    // Send to all region selector overlay windows
+    const { BrowserWindow } = require('electron');
+    const allWindows = BrowserWindow.getAllWindows();
+    const recordingOverlays = allWindows.filter((w: any) => 'displayId' in w && !w.isDestroyed());
+
+    console.log(`[IPC Handler] Found ${recordingOverlays.length} recording overlay(s) to send pause source`);
+
+    recordingOverlays.forEach((win, idx) => {
+      console.log(`[IPC Handler] Sending pauseSourceUpdate to overlay ${idx + 1} (source: ${source})`);
+      win.webContents.send('region:pauseSourceUpdate', source);
+    });
+
+    if (recordingOverlays.length === 0) {
+      console.warn('[IPC Handler] No recording overlays found - pause source not sent!');
+    }
+  });
+
   // Mark note update (Bidirectional: React ↔ Overlay)
   ipcMain.on('region:markNote', (_event, note: string) => {
     const { BrowserWindow } = require('electron');

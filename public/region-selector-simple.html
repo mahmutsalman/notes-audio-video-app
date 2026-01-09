@@ -378,6 +378,27 @@
     #markNoteInput::placeholder {
       color: rgba(255, 255, 255, 0.5);
     }
+
+    /* Pause toggle button styling */
+    #markPauseToggle {
+      min-width: 36px;
+      padding: 8px;
+      transition: all 0.2s ease;
+    }
+
+    #markPauseToggle:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: scale(1.05);
+    }
+
+    #markPauseToggle:active {
+      transform: scale(0.95);
+    }
+
+    #markPauseToggle.manual-pause-active {
+      background: rgba(59, 130, 246, 0.3);
+      border: 1px solid rgba(59, 130, 246, 0.6);
+    }
   </style>
 </head>
 <body>
@@ -461,11 +482,23 @@
     <div id="markingIndicator">
       <span>Marking from <span id="markStartTime">0:00</span>...</span>
     </div>
-    <input
-      id="markNoteInput"
-      type="text"
-      placeholder="Type a note (optional) - Press Enter to end mark"
-    />
+    <!-- Input field + pause toggle button in flex container -->
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <input
+        id="markNoteInput"
+        type="text"
+        placeholder="Type a note (optional) - Press Enter to end mark"
+        style="flex: 1;"
+      />
+      <button
+        id="markPauseToggle"
+        class="control-button"
+        title="Toggle pause (keeps recording paused when clicking elsewhere)"
+        style="width: 36px; height: 36px; font-size: 16px; flex-shrink: 0;"
+      >
+        ⏸
+      </button>
+    </div>
   </div>
 
   <script>
@@ -512,6 +545,7 @@
     const pauseButton = document.getElementById('pauseButton');
     const stopButtonNew = document.getElementById('stopButtonNew');
     let isPaused = false;
+    let pauseSource = null; // Track pause source: 'manual', 'marking', or null
     let isBlurEventInProgress = false; // Prevent double blur events
 
     // Format duration helper (MM:SS)
@@ -1247,6 +1281,12 @@
       // Update pause button UI
       pauseButton.textContent = paused ? '▶' : '⏸';
 
+      // Update mark pause toggle button icon
+      const markPauseToggle = document.getElementById('markPauseToggle');
+      if (markPauseToggle) {
+        markPauseToggle.textContent = paused ? '▶' : '⏸';
+      }
+
       // Update recording indicator
       if (paused) {
         recordingIndicator.textContent = 'Paused';
@@ -1263,6 +1303,22 @@
       }
 
       console.log('[RegionSelector] Overlay UI updated to reflect pause state:', paused);
+    });
+
+    // Listen for pause source updates from React
+    window.electronAPI.region.onPauseSourceUpdate((source) => {
+      console.log('[RegionSelector] Pause source update received:', source);
+      pauseSource = source;
+
+      const markPauseToggle = document.getElementById('markPauseToggle');
+      if (markPauseToggle) {
+        // Add visual indicator when manual pause is active
+        if (source === 'manual') {
+          markPauseToggle.classList.add('manual-pause-active');
+        } else {
+          markPauseToggle.classList.remove('manual-pause-active');
+        }
+      }
     });
 
     // Listen for cmd+h input field toggle
@@ -1407,6 +1463,46 @@
       btn.addEventListener('mousedown', (e) => e.stopPropagation());
       btn.addEventListener('mouseup', (e) => e.stopPropagation());
     });
+
+    // Pause toggle button (next to duration mark input)
+    const markPauseToggle = document.getElementById('markPauseToggle');
+    if (markPauseToggle) {
+      // Prevent event propagation to avoid triggering body click handlers
+      markPauseToggle.addEventListener('mousedown', (e) => e.stopPropagation());
+      markPauseToggle.addEventListener('mouseup', (e) => e.stopPropagation());
+
+      markPauseToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        console.log('[RegionSelector] Mark pause toggle clicked');
+        console.log('[RegionSelector] Current state - isPaused:', isPaused, 'pauseSource:', pauseSource);
+
+        // If input field is hidden, show it first (user wants to mark + pause)
+        const durationMarkInputEl = document.getElementById('durationMarkInput');
+        if (durationMarkInputEl && durationMarkInputEl.style.display === 'none') {
+          console.log('[RegionSelector] Input hidden - triggering CMD+H to show it');
+          // Simulate CMD+H to show input field and start marking
+          window.electronAPI.region.sendInputFieldToggle();
+
+          // Then pause after input shows (wait for marking state to propagate)
+          setTimeout(() => {
+            console.log('[RegionSelector] Now pausing recording');
+            window.electronAPI.region.pauseRecording();
+          }, 150);
+          return;
+        }
+
+        // Input is already visible - just toggle pause
+        if (isPaused && pauseSource === 'manual') {
+          // Currently manually paused → Resume
+          console.log('[RegionSelector] Resuming from manual pause');
+          window.electronAPI.region.resumeRecording();
+        } else {
+          // Not paused or paused for marking → Manual pause
+          console.log('[RegionSelector] Triggering manual pause');
+          window.electronAPI.region.pauseRecording();
+        }
+      });
+    }
 
     // ESC key to cancel, Enter key for duration marks
     document.addEventListener('keydown', (e) => {

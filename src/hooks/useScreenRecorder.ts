@@ -17,6 +17,7 @@ export interface DurationMark {
 export interface ScreenRecorderState {
   isRecording: boolean;
   isPaused: boolean;
+  pauseSource: 'manual' | 'marking' | null;
   duration: number;
   videoBlob: Blob | null;
   videoUrl: string | null;
@@ -82,6 +83,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   const [state, setState] = useState<ScreenRecorderState>({
     isRecording: false,
     isPaused: false,
+    pauseSource: null,
     duration: 0,
     videoBlob: null,
     videoUrl: null,
@@ -1022,7 +1024,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
           clearInterval(timerRef.current);
           timerRef.current = null;
         }
-        setState(prev => ({ ...prev, isPaused: true }));
+        setState(prev => ({ ...prev, isPaused: true, pauseSource: source }));
         console.log('[useScreenRecorder] ✅ Native recording paused');
         // Set pause source
         setPauseSource(source);
@@ -1049,7 +1051,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
-      setState(prev => ({ ...prev, isPaused: true }));
+      setState(prev => ({ ...prev, isPaused: true, pauseSource: source }));
       console.log('[useScreenRecorder] Recording paused successfully');
       // Set pause source
       setPauseSource(source);
@@ -1088,7 +1090,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
           const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
           setState(prev => ({ ...prev, duration: Math.floor(elapsed / 1000) }));
         }, 100);
-        setState(prev => ({ ...prev, isPaused: false }));
+        setState(prev => ({ ...prev, isPaused: false, pauseSource: null }));
         console.log('[useScreenRecorder] ✅ Native recording resumed');
         // Clear pause source
         setPauseSource(null);
@@ -1113,7 +1115,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
         setState(prev => ({ ...prev, duration: Math.floor(elapsed / 1000) }));
       }, 100);
-      setState(prev => ({ ...prev, isPaused: false }));
+      setState(prev => ({ ...prev, isPaused: false, pauseSource: null }));
       console.log('[useScreenRecorder] Recording resumed successfully');
       // Clear pause source
       setPauseSource(null);
@@ -1227,6 +1229,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     setState({
       isRecording: false,
       isPaused: false,
+      pauseSource: null,
       duration: 0,
       videoBlob: null,
       videoUrl: null,
