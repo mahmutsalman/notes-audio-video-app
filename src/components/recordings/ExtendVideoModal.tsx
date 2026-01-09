@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useScreenRecorder } from '../../hooks/useScreenRecorder';
 import { useScreenRecordingSettings } from '../../context/ScreenRecordingSettingsContext';
 import Modal from '../common/Modal';
@@ -59,6 +59,8 @@ export default function ExtendVideoModal({
 
   const recorder = useScreenRecorder();
   const { settings } = useScreenRecordingSettings();
+  const noteInputRef = useRef<HTMLInputElement>(null);
+  const isStoppingRef = useRef(false);
 
   // Fetch fresh recording data when modal opens (prevents stale duration offset)
   const [currentRecording, setCurrentRecording] = useState(recording);
@@ -91,9 +93,17 @@ export default function ExtendVideoModal({
       setExtensionAudioBuffer(null);
       setExtensionAudioConfig(null);
       setExtensionAudioOffsetMs(null);
+      isStoppingRef.current = false; // Reset stopping flag
       recorder.resetRecording();
     }
   }, [isOpen]);
+
+  // Auto-focus note input when marking (fullscreen mode only)
+  useEffect(() => {
+    if (recorder.isMarking && noteInputRef.current && !recorder.captureArea) {
+      noteInputRef.current.focus();
+    }
+  }, [recorder.isMarking, recorder.captureArea]);
 
   // Set extension mode when modal opens
   useEffect(() => {
@@ -190,8 +200,28 @@ export default function ExtendVideoModal({
     if (phase !== 'recording') return;
 
     const cleanup = window.electronAPI.region.onInputFieldToggle(() => {
-      console.log('[ExtendVideoModal] Cmd+H pressed - toggling duration mark');
-      recorder.handleMarkToggle();
+      console.log('[ExtendVideoModal] Cmd+H pressed');
+
+      // Only toggle if not already marking
+      if (!recorder.isMarking) {
+        console.log('[ExtendVideoModal] Starting new duration mark');
+        recorder.handleMarkToggle();
+      } else {
+        console.log('[ExtendVideoModal] Already marking - refocusing input');
+
+        // If fullscreen recording (no captureArea), input is in React modal - refocus it here
+        if (!recorder.captureArea && noteInputRef.current) {
+          console.log('[ExtendVideoModal] Fullscreen mode - refocusing React modal input');
+          noteInputRef.current.focus();
+
+          // Move cursor to end of text
+          const length = noteInputRef.current.value.length;
+          noteInputRef.current.setSelectionRange(length, length);
+        } else {
+          console.log('[ExtendVideoModal] Region mode - overlay will handle refocus');
+          // In region mode, overlay will handle refocus via its own listener
+        }
+      }
     });
 
     return () => cleanup();
@@ -242,6 +272,45 @@ export default function ExtendVideoModal({
     return () => cleanup();
   }, [phase, recorder]);
 
+  // Listen for mark input focus (auto-pause for marking)
+  useEffect(() => {
+    console.log('[ExtendVideoModal] Setting up mark input focus listener, phase:', phase);
+    if (phase !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onMarkInputFocus(() => {
+      console.log('[ExtendVideoModal] ===== MARK INPUT GAINED FOCUS =====');
+      console.log('[ExtendVideoModal] isPaused:', recorder.isPaused);
+      console.log('[ExtendVideoModal] Calling pauseForMarking()');
+      recorder.pauseForMarking();
+    });
+
+    console.log('[ExtendVideoModal] ✅ Focus listener registered');
+    return () => {
+      console.log('[ExtendVideoModal] Cleaning up mark input focus listener');
+      cleanup();
+    };
+  }, [phase, recorder.pauseForMarking]);
+
+  // Listen for mark input blur (auto-resume from marking)
+  useEffect(() => {
+    console.log('[ExtendVideoModal] Setting up mark input blur listener, phase:', phase);
+    if (phase !== 'recording') return;
+
+    const cleanup = window.electronAPI.region.onMarkInputBlur(() => {
+      console.log('[ExtendVideoModal] ===== MARK INPUT LOST FOCUS =====');
+      console.log('[ExtendVideoModal] isPaused:', recorder.isPaused);
+      console.log('[ExtendVideoModal] pauseSource:', (recorder as any).pauseSource);
+      console.log('[ExtendVideoModal] Calling resumeFromMarking()');
+      recorder.resumeFromMarking();
+    });
+
+    console.log('[ExtendVideoModal] ✅ Blur listener registered');
+    return () => {
+      console.log('[ExtendVideoModal] Cleaning up mark input blur listener');
+      cleanup();
+    };
+  }, [phase, recorder.resumeFromMarking]);
+
   const handleClose = () => {
     if (isMerging) return; // Prevent closing during merge
 
@@ -256,22 +325,45 @@ export default function ExtendVideoModal({
     setExtensionAudioBuffer(null);
     setExtensionAudioConfig(null);
     setExtensionAudioOffsetMs(null);
+    isStoppingRef.current = false; // Reset stopping flag
     onClose();
   };
 
   const handleStopRecording = async () => {
-    const result = await recorder.stopRecording();
-    setExtensionFilePath(result?.filePath ?? null);
-    setExtensionAudioConfig(result?.audioConfig ?? null);
-    setExtensionAudioOffsetMs(result?.audioOffsetMs ?? null);
-
-    if (result?.audioBlob && result.audioBlob.size > 0) {
-      const audioBuffer = await result.audioBlob.arrayBuffer();
-      setExtensionAudioBuffer(audioBuffer);
-    } else {
-      setExtensionAudioBuffer(null);
+    // Prevent re-entrant calls (can be triggered by both button click and IPC event)
+    if (isStoppingRef.current) {
+      console.log('[ExtendVideoModal] Already stopping, ignoring duplicate call');
+      return;
     }
-    setPhase('compression');
+
+    isStoppingRef.current = true;
+
+    try {
+      // CRITICAL: Wait for overlay window to close BEFORE changing state
+      // This prevents race condition where setPhase('compression') removes listeners
+      // before the overlay can send back confirmation
+      await window.electronAPI.region.stopRecording();
+
+      // Now safe to transition to compression state (overlay is confirmed closed)
+      setPhase('compression');
+
+      // Overlay window is now confirmed closed - safe to proceed with cleanup
+      const result = await recorder.stopRecording();
+
+      setExtensionFilePath(result?.filePath ?? null);
+      setExtensionAudioConfig(result?.audioConfig ?? null);
+      setExtensionAudioOffsetMs(result?.audioOffsetMs ?? null);
+
+      if (result?.audioBlob && result.audioBlob.size > 0) {
+        const audioBuffer = await result.audioBlob.arrayBuffer();
+        setExtensionAudioBuffer(audioBuffer);
+      } else {
+        setExtensionAudioBuffer(null);
+      }
+    } finally {
+      // Reset flag when complete (or on error)
+      isStoppingRef.current = false;
+    }
   };
 
   const handlePickImages = async () => {
