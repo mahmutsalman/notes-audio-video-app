@@ -109,10 +109,10 @@ export default function DurationList({
                            }`}
                 title={disabled ? 'Loading audio...' : undefined}
               >
-                {/* Left group color bar */}
+                {/* Top group color bar */}
                 {groupColorConfig && (
                   <div
-                    className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg"
+                    className="absolute top-0 left-0 right-0 h-px rounded-t-lg"
                     style={{ backgroundColor: groupColorConfig.color }}
                   />
                 )}
