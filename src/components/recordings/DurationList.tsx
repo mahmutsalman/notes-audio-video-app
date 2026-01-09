@@ -99,20 +99,20 @@ export default function DurationList({
                 }}
                 onContextMenu={(e) => handleContextMenu(e, duration)}
                 disabled={disabled}
-                className={`relative overflow-hidden px-3 py-2 rounded-lg text-sm font-medium transition-all
+                className={`relative overflow-hidden px-3 py-2 rounded-lg text-sm font-medium transition-colors
                            flex items-center gap-2
                            ${disabled
                              ? 'opacity-50 cursor-wait bg-gray-100 dark:bg-dark-hover text-gray-500 dark:text-gray-500'
                              : isActive
-                               ? 'bg-primary-600 text-white shadow-md'
+                               ? 'bg-primary-600 text-white'
                                : 'bg-gray-100 dark:bg-dark-hover text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-dark-border'
                            }`}
                 title={disabled ? 'Loading audio...' : undefined}
               >
-                {/* Top group color bar */}
+                {/* Left group color bar */}
                 {groupColorConfig && (
                   <div
-                    className="absolute top-0 left-0 right-0 h-px rounded-t-lg"
+                    className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg"
                     style={{ backgroundColor: groupColorConfig.color }}
                   />
                 )}
@@ -123,7 +123,6 @@ export default function DurationList({
                     style={{ backgroundColor: colorConfig.borderColor }}
                   />
                 )}
-                {isActive && <span className="animate-pulse">🔁</span>}
                 <span className="text-xs font-medium">
                   {formatDuration(Math.floor(duration.start_time))}
                   <span className={`mx-1 ${isActive ? 'text-white/60' : 'text-gray-400 dark:text-gray-500'}`}>→</span>

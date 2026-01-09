@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import type { Duration } from '../../types';
 import { formatDuration, formatDurationLength } from '../../utils/formatters';
 import { DURATION_COLORS } from '../../utils/durationColors';
+import { getGroupColorConfig } from '../../utils/durationGroupColors';
 
 interface DurationNotesSidebarProps {
   durations: Duration[];
@@ -47,6 +48,7 @@ export default function DurationNotesSidebar({
         {durationsWithNotes.map(duration => {
           const isActive = activeDurationId === duration.id;
           const colorConfig = duration.color ? DURATION_COLORS[duration.color] : null;
+          const groupColorConfig = getGroupColorConfig(duration.group_color);
 
           return (
             <div
@@ -62,8 +64,11 @@ export default function DurationNotesSidebar({
               `}
               style={isActive && colorConfig ? { borderColor: colorConfig.borderColor } : undefined}
             >
-              {/* Time Range */}
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 flex items-center gap-1">
+              {/* Time Range with Group Color Left Line */}
+              <div
+                className={`text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 flex items-center gap-1 w-fit px-2 py-1 rounded-l-md ${groupColorConfig ? 'border-l-2' : ''}`}
+                style={groupColorConfig ? { borderColor: groupColorConfig.color } : undefined}
+              >
                 <span>{formatDuration(Math.floor(duration.start_time))}</span>
                 <span className="text-gray-400 dark:text-gray-500">→</span>
                 <span>{formatDuration(Math.floor(duration.end_time))}</span>
