@@ -83,7 +83,7 @@ export default function CodeSnippetCard({ snippet, onEdit, onDelete }: CodeSnipp
             code={snippet.code}
             language={snippet.language}
             readOnly={true}
-            height="300px"
+            height="1200px"
             showLanguageSelector={false}
           />
         </div>
