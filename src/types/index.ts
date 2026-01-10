@@ -399,26 +399,27 @@ export interface ElectronAPI {
     getPath: () => Promise<string>;
     openFolder: () => Promise<void>;
   };
-  screenRecording: {
-    getSources: () => Promise<ScreenSource[]>;
-    saveFile: (
-      recordingId: number,
-      videoBuffer: ArrayBuffer,
+	  screenRecording: {
+	    getSources: () => Promise<ScreenSource[]>;
+	    saveFile: (
+	      recordingId: number,
+	      videoBuffer: ArrayBuffer,
       resolution: string,
       fps: number,
       fallbackDurationMs?: number
     ) => Promise<{
       filePath: string;
       duration: number | null;
-      _debug?: {
-        usedFallback?: boolean;
-        extractionError?: string;
-        durationExtracted?: boolean;
-      };
-    }>;
-    finalizeFile: (
-      recordingId: number,
-      sourcePath: string,
+	      _debug?: {
+	        usedFallback?: boolean;
+	        extractionError?: string;
+	        durationExtracted?: boolean;
+	        debugLogPath?: string;
+		      };
+		    }>;
+	    finalizeFile: (
+	      recordingId: number,
+	      sourcePath: string,
       resolution: string,
       fps: number,
       fallbackDurationMs?: number,
@@ -429,13 +430,19 @@ export interface ElectronAPI {
     ) => Promise<{
       filePath: string;
       duration: number | null;
-      _debug?: {
-        usedFallback?: boolean;
-        extractionError?: string;
-        durationExtracted?: boolean;
-      };
-    }>;
-  };
+		      _debug?: {
+		        usedFallback?: boolean;
+		        extractionError?: string;
+		        durationExtracted?: boolean;
+		        debugLogPath?: string;
+		      };
+		    }>;
+	    logDebugEvent: (
+	      recordingId: number,
+	      event: { type: string; atMs?: number; origin?: string; payload?: any }
+	    ) => Promise<{ success: boolean; error?: string }>;
+	    getDebugLogPath: (recordingId: number) => Promise<string>;
+	  };
   region: {
     startSelection: () => Promise<void>;
     onRegionSelected: (callback: (region: CaptureArea | null) => void) => () => void;

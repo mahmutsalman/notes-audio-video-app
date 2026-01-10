@@ -43,6 +43,10 @@ async function createWindow(): Promise<void> {
   const { clearExtendLog } = await import('./services/extendLogger');
   await clearExtendLog();
 
+  // Clear per-recording timeline debug logs from previous session
+  const { clearAllRecordingDebugLogs } = await import('./services/recordingDebugLogger');
+  await clearAllRecordingDebugLogs();
+
   // Setup IPC handlers
   setupIpcHandlers();
 

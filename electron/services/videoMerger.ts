@@ -102,7 +102,7 @@ async function normalizeMergedOutput(
   const videoFilter = targetFrameRate
     ? `fps=${targetFrameRate},setpts=PTS-STARTPTS`
     : 'setpts=PTS-STARTPTS';
-  const audioFilter = 'asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0';
+  const audioFilter = 'asetpts=N/SR/TB,aresample=async=1:first_pts=0';
   const webmCrf = Math.min(63, Math.max(4, compressionOptions.crf));
 
   const args: string[] = ['-fflags', '+genpts', '-i', inputPath, '-map', '0:v:0'];
@@ -326,7 +326,7 @@ async function compressVideo(
         args.push('-ar', String(audioSampleRate));
       }
 
-      args.push('-af', 'asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0');
+      args.push('-af', 'asetpts=N/SR/TB,aresample=async=1:first_pts=0');
 
       if (isWebmTarget) {
         args.push('-c:a', 'libopus', '-b:a', options.audioBitrate);
@@ -375,7 +375,7 @@ async function compressVideo(
         args.push('-ar', String(audioSampleRate));
       }
 
-      args.push('-af', 'asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0');
+      args.push('-af', 'asetpts=N/SR/TB,aresample=async=1:first_pts=0');
 
       if (isWebmTarget) {
         args.push('-c:a', 'libopus', '-b:a', options.audioBitrate);
@@ -494,7 +494,7 @@ async function reencodeWithTimestampReset(
 
   // Audio filter: optional delay + timestamp reset + async
   const audioEnabled = audioMatch?.includeAudio !== false;
-  let audioFilter = 'asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0';
+  let audioFilter = 'asetpts=N/SR/TB,aresample=async=1:first_pts=0';
   if (audioEnabled && audioOffsetMs && audioOffsetMs > 0) {
     audioFilter = `adelay=${audioOffsetMs}:all=1,${audioFilter}`;
   }

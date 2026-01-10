@@ -302,6 +302,13 @@ const electronAPI = {
       ipcRenderer.invoke('screenRecording:getByRecording', recordingId),
     delete: (id: number): Promise<void> =>
       ipcRenderer.invoke('screenRecording:delete', id),
+    logDebugEvent: (
+      recordingId: number,
+      event: { type: string; atMs?: number; origin?: string; payload?: any }
+    ): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('screenRecording:logDebugEvent', recordingId, event),
+    getDebugLogPath: (recordingId: number): Promise<string> =>
+      ipcRenderer.invoke('screenRecording:getDebugLogPath', recordingId),
   },
 
   // Region Selection

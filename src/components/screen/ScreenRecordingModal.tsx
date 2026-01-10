@@ -119,15 +119,19 @@ export default function ScreenRecordingModal({
     setStep('recording');
 
     try {
+      const regionWithRecordingId: CaptureArea = {
+        ...region,
+        recordingId
+      };
       await recorder.startRecordingWithRegion(
-        region,
+        regionWithRecordingId,
         settings.fps
       );
     } catch (error) {
       console.error('[ScreenRecordingModal] Failed to start recording:', error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.fps]);
+  }, [recordingId, settings.fps]);
 
   // Reset ONLY when modal transitions from closed to open (false → true)
   // This prevents resetting during recording when isOpen changes
@@ -210,13 +214,13 @@ export default function ScreenRecordingModal({
     const cleanupPause = window.electronAPI.region.onPauseRecording(() => {
       console.log('[ScreenRecordingModal] Received pause event from overlay');
       console.log('[ScreenRecordingModal] Calling recorder.pauseRecording()');
-      recorder.pauseRecording();
+      recorder.pauseRecording('manual', 'overlay:pause');
     });
 
     const cleanupResume = window.electronAPI.region.onResumeRecording(() => {
       console.log('[ScreenRecordingModal] Received resume event from overlay');
       console.log('[ScreenRecordingModal] Calling recorder.resumeRecording()');
-      recorder.resumeRecording();
+      recorder.resumeRecording('overlay:resume');
     });
 
     return () => {
@@ -417,8 +421,8 @@ export default function ScreenRecordingModal({
 
       if (e.code === 'Space' && !isTypingNote) {
         e.preventDefault();
-        if (recorder.isPaused) recorder.resumeRecording();
-        else recorder.pauseRecording();
+        if (recorder.isPaused) recorder.resumeRecording('keyboard:space');
+        else recorder.pauseRecording('manual', 'keyboard:space');
       } else if (e.code === 'Enter') {
         e.preventDefault();
         recorder.handleMarkToggle();
@@ -607,7 +611,9 @@ export default function ScreenRecordingModal({
                 {/* Controls */}
                 <div className="flex items-center justify-center gap-4">
                   <button
-                    onClick={recorder.isPaused ? recorder.resumeRecording : () => recorder.pauseRecording()}
+                    onClick={recorder.isPaused
+                      ? () => recorder.resumeRecording('ui:button')
+                      : () => recorder.pauseRecording('manual', 'ui:button')}
                     className="w-16 h-16 bg-yellow-500 hover:bg-yellow-600 text-white rounded-full flex items-center justify-center text-2xl transition-colors"
                     title={recorder.isPaused ? 'Resume' : 'Pause'}
                   >

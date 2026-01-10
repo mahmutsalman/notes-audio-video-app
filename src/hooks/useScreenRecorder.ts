@@ -47,8 +47,8 @@ export interface ScreenRecorderControls {
     audioConfig?: { bitrate: '32k' | '64k' | '128k'; channels: 1 | 2 };
     audioOffsetMs?: number;
   } | null>;
-  pauseRecording: (source?: 'manual' | 'marking') => void;
-  resumeRecording: () => void;
+  pauseRecording: (source?: 'manual' | 'marking', origin?: string) => void;
+  resumeRecording: (origin?: string) => void;
   pauseForMarking: () => void;
   resumeFromMarking: () => void;
   resetRecording: () => void;
@@ -109,18 +109,66 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
   const spaceDetectorRef = useRef<SpaceDetector | null>(null);
   const updateSourceRef = useRef<((newSourceId: string, force?: boolean) => Promise<void>) | null>(null);
 
+  // Debug timeline logging (per recording)
+  const debugSessionIdRef = useRef<string | null>(null);
+  const debugWallStartRef = useRef<number>(0);
+  const debugPerfStartRef = useRef<number>(0);
+  const debugSeqRef = useRef<number>(0);
+  const pendingAudioCommandRef = useRef<{
+    id: string;
+    kind: 'pause' | 'resume';
+    requestedAtMs: number;
+    requestedAtPerf: number;
+  } | null>(null);
+
+  const logTimelineEvent = useCallback(async (
+    type: string,
+    origin: string,
+    payload?: Record<string, any>
+  ) => {
+    const recordingId = (window as any).__screenRecordingId as number | undefined;
+    const logger = window.electronAPI?.screenRecording?.logDebugEvent;
+    if (!recordingId || typeof logger !== 'function') return;
+
+    const nowMs = Date.now();
+    const nowPerf = typeof performance !== 'undefined' ? performance.now() : 0;
+    const sessionId = debugSessionIdRef.current;
+    const startedAtMs = debugWallStartRef.current;
+    const startedAtPerf = debugPerfStartRef.current;
+    const tFromStartMs = startedAtPerf ? Math.round(nowPerf - startedAtPerf) : undefined;
+
+    const seq = ++debugSeqRef.current;
+    await logger(recordingId, {
+      type,
+      atMs: nowMs,
+      origin,
+      payload: {
+        seq,
+        sessionId,
+        nowMs,
+        nowPerf,
+        startedAtMs,
+        startedAtPerf,
+        tFromStartMs,
+        ...payload
+      }
+    });
+  }, []);
+
   // Duration marking state (same pattern as audio)
   const [pendingMarkStart, setPendingMarkStart] = useState<number | null>(null);
   const [pendingMarkNote, setPendingMarkNote] = useState<string>('');
   const [completedMarks, setCompletedMarks] = useState<DurationMark[]>([]);
 
-  // Pause source tracking (manual vs marking)
-  const [pauseSource, setPauseSource] = useState<'manual' | 'marking' | null>(null);
+	  // Pause source tracking (manual vs marking)
+	  const [pauseSource, setPauseSource] = useState<'manual' | 'marking' | null>(null);
 
   // Refs for stable callbacks (avoid recreating callbacks on every state change)
   const pauseSourceRef = useRef<'manual' | 'marking' | null>(null);
   const isPausedRef = useRef(false);
   const isRecordingRef = useRef(false);
+  const pauseInFlightRef = useRef(false);
+  const resumeInFlightRef = useRef(false);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -128,6 +176,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     isPausedRef.current = state.isPaused;
     isRecordingRef.current = state.isRecording;
   }, [pauseSource, state.isPaused, state.isRecording]);
+
+  const getCurrentElapsedMs = useCallback(() => {
+    if (!isRecordingRef.current) return 0;
+    if (isPausedRef.current) return accumulatedTimeRef.current;
+    return accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+  }, []);
 
   // Phase 6: Memory monitoring state
   const [memoryAlert, setMemoryAlert] = useState<MemoryAlert | null>(null);
@@ -176,6 +230,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     if (!recorder || recorder.state === 'inactive') {
       audioRecorderRef.current = null;
       audioChunksRef.current = [];
+      void logTimelineEvent('audio.stop.skip', 'renderer:useScreenRecorder', {
+        reason: 'inactive',
+        hadRecorder: !!recorder
+      });
       return null;
     }
 
@@ -184,10 +242,20 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         const blob = audioChunksRef.current.length
           ? new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
           : null;
+        void logTimelineEvent('audio.stop.event', 'renderer:audioRecorder', {
+          state: recorder.state,
+          chunks: audioChunksRef.current.length,
+          blobBytes: blob?.size ?? 0,
+          mimeType: recorder.mimeType
+        });
         audioChunksRef.current = [];
         audioRecorderRef.current = null;
         resolve(blob);
       };
+      void logTimelineEvent('audio.stop.invoke', 'renderer:useScreenRecorder', {
+        state: recorder.state,
+        chunks: audioChunksRef.current.length
+      });
       recorder.stop();
     });
   };
@@ -414,20 +482,49 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       regionCleanupRef.current = captureResult.cleanup;
       updateSourceRef.current = captureResult.updateSource;
 
-      // Handle file-based recording (ScreenCaptureKit with AVAssetWriter)
-      if (captureResult.isFileBased && captureResult.filePath) {
-        console.log('[useScreenRecorder] ✅ File-based recording flow activated');
-        console.log('[useScreenRecorder] 📍 Recording start time:', new Date().toISOString());
-        console.log('[useScreenRecorder] 📂 RecordingId:', region.recordingId);
+	      // Handle file-based recording (ScreenCaptureKit with AVAssetWriter)
+	      if (captureResult.isFileBased && captureResult.filePath) {
+	        console.log('[useScreenRecorder] ✅ File-based recording flow activated');
+	        console.log('[useScreenRecorder] 📍 Recording start time:', new Date().toISOString());
+	        console.log('[useScreenRecorder] 📂 RecordingId:', region.recordingId);
 
-        // Store recordingId and start time for later use
-        (window as any).__screenRecordingId = region.recordingId;
-        (window as any).__screenRecordingStartTime = Date.now();
-        (window as any).__isFileBased = true; // Flag to prevent legacy flow
+	        // Store recordingId and start time for later use
+	        (window as any).__screenRecordingId = region.recordingId;
+	        (window as any).__screenRecordingStartTime = Date.now();
+	        (window as any).__isFileBased = true; // Flag to prevent legacy flow
 
-        // Start timer
-        startTimeRef.current = Date.now();
-        accumulatedTimeRef.current = 0;
+	        debugSessionIdRef.current = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+	          ? crypto.randomUUID()
+	          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+	        debugWallStartRef.current = Date.now();
+	        debugPerfStartRef.current = typeof performance !== 'undefined' ? performance.now() : 0;
+	        debugSeqRef.current = 0;
+	        await logTimelineEvent('rec.start', 'renderer:useScreenRecorder', {
+	          recordingId: region.recordingId,
+	          flow: 'file-based',
+	          fps,
+	          region: {
+	            displayId: region.displayId,
+	            x: region.x,
+	            y: region.y,
+	            width: region.width,
+	            height: region.height,
+	            scaleFactor: region.scaleFactor
+	          }
+	        });
+	        if (typeof region.recordingId === 'number') {
+	          try {
+	            const debugLogPath = await window.electronAPI.screenRecording.getDebugLogPath(region.recordingId);
+	            console.log('[useScreenRecorder] 🧾 Timeline debug log:', debugLogPath);
+	            void logTimelineEvent('rec.debugLogPath', 'renderer:useScreenRecorder', { debugLogPath });
+	          } catch {
+	            // Non-fatal
+	          }
+	        }
+
+	        // Start timer
+	        startTimeRef.current = Date.now();
+	        accumulatedTimeRef.current = 0;
 
         timerRef.current = setInterval(() => {
           const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
@@ -527,29 +624,88 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
               recorderOptions.mimeType = audioMimeType;
             }
 
-            try {
-              const audioRecorder = new MediaRecorder(audioStream, recorderOptions);
-              audioRecorderRef.current = audioRecorder;
-              audioChunksRef.current = [];
+	            try {
+	              const audioRecorder = new MediaRecorder(audioStream, recorderOptions);
+	              audioRecorderRef.current = audioRecorder;
+	              audioChunksRef.current = [];
+	              const audioSessionId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+	                ? crypto.randomUUID()
+	                : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+	              let audioChunkIndex = 0;
 
-              audioRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                  audioChunksRef.current.push(event.data);
-                }
-              };
+	              audioRecorder.ondataavailable = (event) => {
+	                if (event.data.size > 0) {
+	                  audioChunksRef.current.push(event.data);
+	                  audioChunkIndex += 1;
+	                  if (audioChunkIndex <= 5 || audioChunkIndex % 20 === 0) {
+	                    void logTimelineEvent('audio.data', 'renderer:audioRecorder', {
+	                      audioSessionId,
+	                      idx: audioChunkIndex,
+	                      size: event.data.size,
+	                      state: audioRecorder.state,
+	                      mimeType: audioRecorder.mimeType
+	                    });
+	                  }
+	                }
+	              };
 
-              audioRecorder.onerror = (event) => {
-                console.error('[useScreenRecorder] Audio recorder error (file-based):', event);
-              };
+	              audioRecorder.onerror = (event) => {
+	                console.error('[useScreenRecorder] Audio recorder error (file-based):', event);
+	                void logTimelineEvent('audio.error', 'renderer:audioRecorder', { audioSessionId });
+	              };
 
-              audioStartTimeRef.current = Date.now();
-              audioRecorder.start(100);
-              console.log('[useScreenRecorder] ✅ Audio recorder started (file-based)');
-            } catch (error) {
-              console.error('[useScreenRecorder] Failed to start audio recorder (file-based):', error);
-            }
-          }
-        }
+	              audioRecorder.onpause = () => {
+	                const pending = pendingAudioCommandRef.current;
+	                const nowMs = Date.now();
+	                const nowPerf = typeof performance !== 'undefined' ? performance.now() : 0;
+	                void logTimelineEvent('audio.pause.event', 'renderer:audioRecorder', {
+	                  audioSessionId,
+	                  state: audioRecorder.state,
+	                  pending,
+	                  deltaMs: pending?.kind === 'pause' ? (nowMs - pending.requestedAtMs) : undefined,
+	                  deltaPerfMs: pending?.kind === 'pause' ? Math.round(nowPerf - pending.requestedAtPerf) : undefined
+	                });
+	              };
+
+	              audioRecorder.onresume = () => {
+	                const pending = pendingAudioCommandRef.current;
+	                const nowMs = Date.now();
+	                const nowPerf = typeof performance !== 'undefined' ? performance.now() : 0;
+	                void logTimelineEvent('audio.resume.event', 'renderer:audioRecorder', {
+	                  audioSessionId,
+	                  state: audioRecorder.state,
+	                  pending,
+	                  deltaMs: pending?.kind === 'resume' ? (nowMs - pending.requestedAtMs) : undefined,
+	                  deltaPerfMs: pending?.kind === 'resume' ? Math.round(nowPerf - pending.requestedAtPerf) : undefined
+	                });
+	              };
+
+	              audioRecorder.onstart = () => {
+	                void logTimelineEvent('audio.start.event', 'renderer:audioRecorder', {
+	                  audioSessionId,
+	                  state: audioRecorder.state,
+	                  mimeType: audioRecorder.mimeType,
+	                  options: recorderOptions
+	                });
+	              };
+
+	              audioStartTimeRef.current = Date.now();
+	              audioRecorder.start(100);
+	              console.log('[useScreenRecorder] ✅ Audio recorder started (file-based)');
+	              void logTimelineEvent('audio.start.called', 'renderer:useScreenRecorder', {
+	                audioSessionId,
+	                atMs: audioStartTimeRef.current,
+	                mimeType: audioRecorder.mimeType,
+	                options: recorderOptions
+	              });
+	            } catch (error) {
+	              console.error('[useScreenRecorder] Failed to start audio recorder (file-based):', error);
+	              void logTimelineEvent('audio.start.error', 'renderer:useScreenRecorder', {
+	                error: error instanceof Error ? error.message : String(error)
+	              });
+	            }
+	          }
+	        }
 
         console.log('[useScreenRecorder] ✅ File-based recording started - MediaRecorder flow WILL NOT execute');
         console.log('[useScreenRecorder] 🚫 Preventing legacy WebM recording flow');
@@ -789,8 +945,19 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       const startTime = (window as any).__screenRecordingStartTime || startTimeRef.current;
       const endTime = Date.now();
       const actualDurationMs = endTime - startTime;
-      const durationMs = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+      const durationMs = getCurrentElapsedMs();
       const audioOffsetMs = audioStartTimeRef.current ? audioStartTimeRef.current - startTime : 0;
+
+      void logTimelineEvent('rec.stop.begin', 'renderer:useScreenRecorder', {
+        startTime,
+        endTime,
+        actualDurationMs,
+        durationMs,
+        accumulatedMs: accumulatedTimeRef.current,
+        audioOffsetMs,
+        isPaused: isPausedRef.current,
+        pauseSource: pauseSourceRef.current
+      });
 
       console.log('[useScreenRecorder] ⏱️ Recording duration:', {
         startTime: new Date(startTime).toISOString(),
@@ -828,15 +995,20 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
         // FIRST: Stop the native capture (but keep listeners alive)
         console.log('[useScreenRecorder] 📞 Calling native stopCapture');
+        void logTimelineEvent('video.stop.invoke', 'renderer:useScreenRecorder');
         await window.electronAPI.screenCaptureKit.stopCapture();
+        void logTimelineEvent('video.stop.resolved', 'renderer:useScreenRecorder');
         console.log('[useScreenRecorder] ✅ Native stopCapture completed');
 
         // SECOND: Wait for the completion event with the file path
         console.log('[useScreenRecorder] ⏳ Waiting for file path from native completion callback...');
+        void logTimelineEvent('video.complete.wait', 'renderer:useScreenRecorder');
         const filePath = await (window as any).__screenRecordingFilePromise;
+        void logTimelineEvent('video.complete.received', 'renderer:useScreenRecorder', { filePath });
         console.log('[useScreenRecorder] ✅ File path received:', filePath);
 
         const audioBlob = await audioBlobPromise;
+        void logTimelineEvent('audio.stop.resolved', 'renderer:useScreenRecorder', { audioBytes: audioBlob?.size ?? 0 });
         await cleanupAudioResources();
 
         // Clear all file-based recording state
@@ -856,6 +1028,14 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         console.log('[useScreenRecorder] ✅ File-based recording stopped successfully');
         console.log('[useScreenRecorder] 📁 Final file path:', filePath);
         console.log('[useScreenRecorder] ⏱️ Final duration:', (actualDurationMs / 1000).toFixed(2), 'seconds');
+
+        void logTimelineEvent('rec.stop.done', 'renderer:useScreenRecorder', {
+          filePath,
+          durationMs,
+          actualDurationMs,
+          audioOffsetMs,
+          audioBytes: audioBlob?.size ?? 0
+        });
 
         // For file-based recording, we don't have a blob
         // The file is already saved, so we set state with the file path
@@ -878,6 +1058,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         return { blob: null, durationMs, filePath, audioBlob, audioConfig, audioOffsetMs };
       } catch (error) {
         console.error('[useScreenRecorder] ❌ File-based recording failed:', error);
+        void logTimelineEvent('rec.stop.error', 'renderer:useScreenRecorder', {
+          error: error instanceof Error ? error.message : String(error)
+        });
 
         // Clean up on error
         if (regionCleanupRef.current) {
@@ -924,8 +1107,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
       // Auto-complete pending mark (same as audio)
       if (pendingMarkStart !== null) {
-        const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
-        const endTime = Math.floor(elapsed / 1000);
+        const endTime = Math.floor(getCurrentElapsedMs() / 1000);
         if (endTime > pendingMarkStart) {
           setCompletedMarks(prev => [...prev, {
             start: pendingMarkStart,
@@ -939,7 +1121,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
       mediaRecorder.onstop = async () => {
         const rawBlob = new Blob(videoChunksRef.current, { type: 'video/webm' });
-        const durationMs = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+        const durationMs = getCurrentElapsedMs();
 
         // Fix WebM metadata for seekability (same as audio)
         let blob: Blob;
@@ -994,29 +1176,103 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     });
   }, [pendingMarkStart, pendingMarkNote]);
 
-  const pauseRecording = useCallback(async (source: 'manual' | 'marking' = 'manual') => {
+  const pauseRecording = useCallback(async (
+    source: 'manual' | 'marking' = 'manual',
+    origin: string = 'unknown'
+  ) => {
     console.log('[useScreenRecorder] pauseRecording() called with source:', source);
+
+    if (!isRecordingRef.current) {
+      void logTimelineEvent('rec.pause.noop', `renderer:${origin}`, {
+        source,
+        reason: 'not-recording',
+      });
+      return;
+    }
+
+    if (pauseInFlightRef.current || isPausedRef.current) {
+      const previousSource = pauseSourceRef.current;
+      if (source === 'manual' && previousSource !== 'manual') {
+        pauseSourceRef.current = 'manual';
+        setPauseSource('manual');
+        setState(prev => ({ ...prev, pauseSource: 'manual' }));
+        void logTimelineEvent('rec.pause.upgradeSource', `renderer:${origin}`, {
+          from: previousSource,
+          to: 'manual'
+        });
+      }
+      void logTimelineEvent('rec.pause.noop', `renderer:${origin}`, {
+        source,
+        reason: pauseInFlightRef.current ? 'pause-in-flight' : 'already-paused',
+        pauseSource: pauseSourceRef.current
+      });
+      return;
+    }
+
+    pauseInFlightRef.current = true;
+    void logTimelineEvent('rec.pause.begin', `renderer:${origin}`, {
+      source,
+      isFileBased: !!(window as any).__isFileBased,
+      isPaused: isPausedRef.current,
+      isRecording: isRecordingRef.current,
+      timer: {
+        startTimeMs: startTimeRef.current,
+        accumulatedMs: accumulatedTimeRef.current
+      }
+    });
 
     // Check if we're using file-based recording
     const isFileBased = (window as any).__isFileBased;
     if (isFileBased) {
       console.log('[useScreenRecorder] 🎬 File-based recording - calling native pause');
       try {
+        const pauseInvokeAt = Date.now();
+        void logTimelineEvent('video.pause.invoke', `renderer:${origin}`, { source, pauseInvokeAt });
         await window.electronAPI.screenCaptureKit.pauseCapture();
+        void logTimelineEvent('video.pause.resolved', `renderer:${origin}`, {
+          source,
+          pauseInvokeAt,
+          deltaMs: Date.now() - pauseInvokeAt
+        });
 
         const audioRecorder = audioRecorderRef.current;
         if (audioRecorder && audioRecorder.state === 'recording') {
           try {
+            const commandId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+              ? crypto.randomUUID()
+              : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            const requestedAtMs = Date.now();
+            const requestedAtPerf = typeof performance !== 'undefined' ? performance.now() : 0;
+            pendingAudioCommandRef.current = { id: commandId, kind: 'pause', requestedAtMs, requestedAtPerf };
+            void logTimelineEvent('audio.pause.invoke', `renderer:${origin}`, {
+              source,
+              commandId,
+              state: audioRecorder.state
+            });
             audioRecorder.pause();
             console.log('[useScreenRecorder] 🔇 Audio recorder paused (file-based)');
+            void logTimelineEvent('audio.pause.called', `renderer:${origin}`, {
+              source,
+              commandId,
+              state: audioRecorder.state
+            });
           } catch (error) {
             console.warn('[useScreenRecorder] ⚠️ Failed to pause audio recorder (file-based):', error);
+            void logTimelineEvent('audio.pause.error', `renderer:${origin}`, {
+              source,
+              error: error instanceof Error ? error.message : String(error)
+            });
           }
         }
 
         // Pause the timer
         const timeBeforePause = Date.now() - startTimeRef.current;
         accumulatedTimeRef.current += timeBeforePause;
+        void logTimelineEvent('timer.pause', `renderer:${origin}`, {
+          source,
+          timeBeforePause,
+          accumulatedMs: accumulatedTimeRef.current
+        });
         console.log('[useScreenRecorder] ⏸️ PAUSE TIMING:');
         console.log('[useScreenRecorder]   - Time elapsed this session:', Math.floor(timeBeforePause / 1000), 'seconds');
         console.log('[useScreenRecorder]   - Total accumulated time:', Math.floor(accumulatedTimeRef.current / 1000), 'seconds');
@@ -1024,14 +1280,17 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
           clearInterval(timerRef.current);
           timerRef.current = null;
         }
-        setState(prev => ({ ...prev, isPaused: true, pauseSource: source }));
+        const effectivePauseSource = pauseSourceRef.current === 'manual' ? 'manual' : source;
+        setState(prev => ({ ...prev, isPaused: true, pauseSource: effectivePauseSource }));
         console.log('[useScreenRecorder] ✅ Native recording paused');
         // Set pause source
-        setPauseSource(source);
-        pauseSourceRef.current = source;
+        setPauseSource(effectivePauseSource);
+        pauseSourceRef.current = effectivePauseSource;
+        isPausedRef.current = true;
       } catch (error) {
         console.error('[useScreenRecorder] ❌ Failed to pause native recording:', error);
       }
+      pauseInFlightRef.current = false;
       return;
     }
 
@@ -1051,33 +1310,85 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
-      setState(prev => ({ ...prev, isPaused: true, pauseSource: source }));
+      const effectivePauseSource = pauseSourceRef.current === 'manual' ? 'manual' : source;
+      setState(prev => ({ ...prev, isPaused: true, pauseSource: effectivePauseSource }));
       console.log('[useScreenRecorder] Recording paused successfully');
       // Set pause source
-      setPauseSource(source);
-      pauseSourceRef.current = source;
+      setPauseSource(effectivePauseSource);
+      pauseSourceRef.current = effectivePauseSource;
+      isPausedRef.current = true;
     } else {
       console.warn('[useScreenRecorder] Cannot pause - invalid state:', mediaRecorder?.state);
     }
+    pauseInFlightRef.current = false;
   }, []);
 
-  const resumeRecording = useCallback(async () => {
+  const resumeRecording = useCallback(async (origin: string = 'unknown') => {
     console.log('[useScreenRecorder] resumeRecording() called');
+
+    if (!isRecordingRef.current) {
+      void logTimelineEvent('rec.resume.noop', `renderer:${origin}`, {
+        reason: 'not-recording'
+      });
+      return;
+    }
+
+    if (resumeInFlightRef.current || !isPausedRef.current) {
+      void logTimelineEvent('rec.resume.noop', `renderer:${origin}`, {
+        reason: resumeInFlightRef.current ? 'resume-in-flight' : 'not-paused',
+        pauseSource: pauseSourceRef.current
+      });
+      return;
+    }
+
+    resumeInFlightRef.current = true;
+    void logTimelineEvent('rec.resume.begin', `renderer:${origin}`, {
+      isFileBased: !!(window as any).__isFileBased,
+      isPaused: isPausedRef.current,
+      isRecording: isRecordingRef.current,
+      timer: {
+        startTimeMs: startTimeRef.current,
+        accumulatedMs: accumulatedTimeRef.current
+      }
+    });
 
     // Check if we're using file-based recording
     const isFileBased = (window as any).__isFileBased;
     if (isFileBased) {
       console.log('[useScreenRecorder] 🎬 File-based recording - calling native resume');
       try {
+        const resumeInvokeAt = Date.now();
+        void logTimelineEvent('video.resume.invoke', `renderer:${origin}`, { resumeInvokeAt });
         await window.electronAPI.screenCaptureKit.resumeCapture();
+        void logTimelineEvent('video.resume.resolved', `renderer:${origin}`, {
+          resumeInvokeAt,
+          deltaMs: Date.now() - resumeInvokeAt
+        });
 
         const audioRecorder = audioRecorderRef.current;
         if (audioRecorder && audioRecorder.state === 'paused') {
           try {
+            const commandId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+              ? crypto.randomUUID()
+              : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            const requestedAtMs = Date.now();
+            const requestedAtPerf = typeof performance !== 'undefined' ? performance.now() : 0;
+            pendingAudioCommandRef.current = { id: commandId, kind: 'resume', requestedAtMs, requestedAtPerf };
+            void logTimelineEvent('audio.resume.invoke', `renderer:${origin}`, {
+              commandId,
+              state: audioRecorder.state
+            });
             audioRecorder.resume();
             console.log('[useScreenRecorder] 🔊 Audio recorder resumed (file-based)');
+            void logTimelineEvent('audio.resume.called', `renderer:${origin}`, {
+              commandId,
+              state: audioRecorder.state
+            });
           } catch (error) {
             console.warn('[useScreenRecorder] ⚠️ Failed to resume audio recorder (file-based):', error);
+            void logTimelineEvent('audio.resume.error', `renderer:${origin}`, {
+              error: error instanceof Error ? error.message : String(error)
+            });
           }
         }
 
@@ -1085,6 +1396,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         console.log('[useScreenRecorder] ▶️ RESUME TIMING:');
         console.log('[useScreenRecorder]   - Accumulated time before resume:', Math.floor(accumulatedTimeRef.current / 1000), 'seconds');
         startTimeRef.current = Date.now();
+        void logTimelineEvent('timer.resume', `renderer:${origin}`, {
+          startTimeMs: startTimeRef.current,
+          accumulatedMs: accumulatedTimeRef.current
+        });
         console.log('[useScreenRecorder]   - Starting new timer from:', new Date(startTimeRef.current).toISOString());
         timerRef.current = setInterval(() => {
           const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
@@ -1094,9 +1409,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         console.log('[useScreenRecorder] ✅ Native recording resumed');
         // Clear pause source
         setPauseSource(null);
+        pauseSourceRef.current = null;
+        isPausedRef.current = false;
       } catch (error) {
         console.error('[useScreenRecorder] ❌ Failed to resume native recording:', error);
       }
+      resumeInFlightRef.current = false;
       return;
     }
 
@@ -1119,9 +1437,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       console.log('[useScreenRecorder] Recording resumed successfully');
       // Clear pause source
       setPauseSource(null);
+      pauseSourceRef.current = null;
+      isPausedRef.current = false;
     } else {
       console.warn('[useScreenRecorder] Cannot resume - invalid state:', mediaRecorder?.state);
     }
+    resumeInFlightRef.current = false;
   }, []);
 
   // Auto-pause for marking input (doesn't override manual pause)
@@ -1131,11 +1452,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     console.log('[useScreenRecorder]   - isPaused:', isPausedRef.current);
     console.log('[useScreenRecorder]   - pauseSource:', pauseSourceRef.current);
 
-    if (!isPausedRef.current) {
+    if (!isPausedRef.current && !pauseInFlightRef.current) {
       console.log('[useScreenRecorder] ✅ Not paused - pausing now with source: marking');
-      // Update ref IMMEDIATELY to prevent race condition with duplicate calls
-      isPausedRef.current = true;
-      pauseRecording('marking');
+      pauseRecording('marking', 'marking:focus');
       console.log('[useScreenRecorder] ✅ Auto-paused for marking input');
     } else {
       console.log('[useScreenRecorder] ⚠️ Already paused, keeping existing pause source:', pauseSourceRef.current);
@@ -1150,13 +1469,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     console.log('[useScreenRecorder]   - pauseSource:', pauseSourceRef.current);
     console.log('[useScreenRecorder]   - isRecording:', isRecordingRef.current);
 
-    if (isPausedRef.current && pauseSourceRef.current === 'marking') {
+    if (isPausedRef.current && pauseSourceRef.current === 'marking' && !resumeInFlightRef.current) {
       console.log('[useScreenRecorder] ✅ Conditions met - calling resumeRecording()');
-      // Update refs IMMEDIATELY to prevent race condition with duplicate calls
-      isPausedRef.current = false;
-      pauseSourceRef.current = null;
-      resumeRecording();
-      setPauseSource(null); // Clear pause source in state too
+      resumeRecording('marking:blur');
       console.log('[useScreenRecorder] ✅ Auto-resumed from marking input');
     } else if (pauseSourceRef.current === 'manual') {
       console.log('[useScreenRecorder] ⚠️ Respecting manual pause, not resuming');
@@ -1171,15 +1486,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
   // Helper to get current elapsed time (respects pause state)
   const getCurrentElapsedTime = useCallback(() => {
-    if (!state.isRecording) return 0;
-    if (state.isPaused) {
-      // When paused: return only accumulated time, don't add current elapsed
-      return Math.floor(accumulatedTimeRef.current / 1000);
-    }
-    // When recording: add elapsed since last resume
-    const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
-    return Math.floor(elapsed / 1000);
-  }, [state.isRecording, state.isPaused]);
+    return Math.floor(getCurrentElapsedMs() / 1000);
+  }, [getCurrentElapsedMs]);
 
   const resetRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -1259,16 +1567,28 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
     if (pendingMarkStart === null) {
       // Start new mark
+      void logTimelineEvent('mark.start', 'renderer:useScreenRecorder', {
+        atSeconds: currentTime
+      });
       setPendingMarkStart(currentTime);
       setPendingMarkNote('');
     } else {
       // Complete current mark
       if (currentTime > pendingMarkStart) {
+        void logTimelineEvent('mark.complete', 'renderer:useScreenRecorder', {
+          startSeconds: pendingMarkStart,
+          endSeconds: currentTime
+        });
         setCompletedMarks(prev => [...prev, {
           start: pendingMarkStart,
           end: currentTime,
           note: pendingMarkNote.trim() || undefined,
         }]);
+      } else {
+        void logTimelineEvent('mark.complete.skip', 'renderer:useScreenRecorder', {
+          startSeconds: pendingMarkStart,
+          endSeconds: currentTime
+        });
       }
       setPendingMarkStart(null);
       setPendingMarkNote('');

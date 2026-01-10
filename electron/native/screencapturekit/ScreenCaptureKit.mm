@@ -37,6 +37,7 @@ static void *ScreenCaptureManagerCaptureQueueKey = &ScreenCaptureManagerCaptureQ
     // Pause/Resume support
     BOOL _isPaused;
     CMTime _pauseStartTime;
+    CMTime _pauseStartHostTime;
     CMTime _totalPausedDuration;
     BOOL _wasJustResumed;
     int _pausedFrameCount;
@@ -95,6 +96,7 @@ static void *ScreenCaptureManagerCaptureQueueKey = &ScreenCaptureManagerCaptureQ
         _lastAdjustedTime = kCMTimeZero;
         _isPaused = NO;
         _pauseStartTime = kCMTimeZero;
+        _pauseStartHostTime = kCMTimeZero;
         _totalPausedDuration = kCMTimeZero;
         _wasJustResumed = NO;
         _pausedFrameCount = 0;
@@ -357,6 +359,7 @@ static void *ScreenCaptureManagerCaptureQueueKey = &ScreenCaptureManagerCaptureQ
         // Reset pause state
         _isPaused = NO;
         _pauseStartTime = kCMTimeZero;
+        _pauseStartHostTime = kCMTimeZero;
         _wasJustResumed = NO;
     }
 
@@ -466,6 +469,7 @@ static void *ScreenCaptureManagerCaptureQueueKey = &ScreenCaptureManagerCaptureQ
         strongSelf->_lastAdjustedTime = kCMTimeZero;
         strongSelf->_totalPausedDuration = kCMTimeZero;
         strongSelf->_pauseStartTime = kCMTimeZero;
+        strongSelf->_pauseStartHostTime = kCMTimeZero;
         strongSelf->_isPaused = NO;
         strongSelf->_wasJustResumed = NO;
         strongSelf->_pausedFrameCount = 0;
@@ -487,6 +491,7 @@ static void *ScreenCaptureManagerCaptureQueueKey = &ScreenCaptureManagerCaptureQ
 - (void)pauseCapture {
     __block BOOL shouldLogCannotPause = NO;
     __block CMTime pauseStartTime = kCMTimeZero;
+    __block CMTime pauseStartHostTime = kCMTimeZero;
     __block CMTime totalPausedDuration = kCMTimeZero;
 
     [self performSyncOnCaptureQueue:^{
@@ -495,29 +500,19 @@ static void *ScreenCaptureManagerCaptureQueueKey = &ScreenCaptureManagerCaptureQ
             return;
         }
 
-        // Check if we have an unfinalized pause (pausing again before getting a frame after previous resume)
-        if (!CMTIME_COMPARE_INLINE(_pauseStartTime, ==, kCMTimeZero)) {
-            NSLog(@"[ScreenCaptureKit] ⚠️ WARNING: Pausing again before first frame after resume!");
-            NSLog(@"[ScreenCaptureKit] ⚠️ Previous pause start: %.2fs, current normalized: %.2fs",
-                  CMTimeGetSeconds(_pauseStartTime), CMTimeGetSeconds(_lastNormalizedTime));
-
-            // Calculate and add the previous pause interval immediately
-            if (CMTIME_COMPARE_INLINE(_lastNormalizedTime, >, _pauseStartTime)) {
-                CMTime previousPauseInterval = CMTimeSubtract(_lastNormalizedTime, _pauseStartTime);
-                _totalPausedDuration = CMTimeAdd(_totalPausedDuration, previousPauseInterval);
-                NSLog(@"[ScreenCaptureKit] ✅ Finalized previous pause interval: %.2fs",
-                      CMTimeGetSeconds(previousPauseInterval));
-            }
-        }
-
         _isPaused = YES;
 
-        // Record pause start time (use last normalized time as reference)
-        // This ensures we track pause duration relative to the video timeline, not system uptime
+        // Record pause start time for logging (last written frame time on the unadjusted timeline)
         _pauseStartTime = _lastNormalizedTime;
+
+        // Record pause start time on the host time clock.
+        // This is used on resume to calculate pause duration without frame-boundary over-trimming.
+        _pauseStartHostTime = CMClockGetTime(CMClockGetHostTimeClock());
+
         _wasJustResumed = NO; // Reset resume flag when pausing
         _pausedFrameCount = 0;
         pauseStartTime = _pauseStartTime;
+        pauseStartHostTime = _pauseStartHostTime;
         totalPausedDuration = _totalPausedDuration;
     }];
 
@@ -528,12 +523,14 @@ static void *ScreenCaptureManagerCaptureQueueKey = &ScreenCaptureManagerCaptureQ
 
     NSLog(@"[ScreenCaptureKit] ⏸️ Recording PAUSED");
     NSLog(@"[ScreenCaptureKit] 📍 Pause at video time: %.2f seconds", CMTimeGetSeconds(pauseStartTime));
+    NSLog(@"[ScreenCaptureKit] 🕒 Pause at host time: %.2f seconds", CMTimeGetSeconds(pauseStartHostTime));
     NSLog(@"[ScreenCaptureKit] ⏱️ Total paused duration so far: %.2f seconds", CMTimeGetSeconds(totalPausedDuration));
 }
 
 - (void)resumeCapture {
     __block BOOL shouldLogCannotResume = NO;
     __block CMTime totalPausedDuration = kCMTimeZero;
+    __block CMTime pauseInterval = kCMTimeZero;
 
     [self performSyncOnCaptureQueue:^{
         if (!_isCapturing || !_isPaused) {
@@ -541,10 +538,22 @@ static void *ScreenCaptureManagerCaptureQueueKey = &ScreenCaptureManagerCaptureQ
             return;
         }
 
-        // Note: We don't calculate pause duration here because we need the actual
-        // presentation timestamp of the next frame to accurately measure the pause interval.
-        // The pause duration will be calculated when the first frame after resume arrives.
+        // Calculate pause duration from host-time at pause/resume requests.
+        // This avoids over-trimming (up to ~2 frames per pause) when measuring from last frame before pause
+        // to first frame after resume (especially noticeable at low FPS like 10fps).
+        if (!CMTIME_COMPARE_INLINE(_pauseStartHostTime, ==, kCMTimeZero)) {
+            CMTime resumeHostTime = CMClockGetTime(CMClockGetHostTimeClock());
+            pauseInterval = CMTimeSubtract(resumeHostTime, _pauseStartHostTime);
+            if (CMTIME_IS_VALID(pauseInterval) && CMTIME_COMPARE_INLINE(pauseInterval, >, kCMTimeZero)) {
+                _totalPausedDuration = CMTimeAdd(_totalPausedDuration, pauseInterval);
+            } else {
+                pauseInterval = kCMTimeZero;
+            }
+        }
+
         _isPaused = NO;
+        _pauseStartTime = kCMTimeZero;
+        _pauseStartHostTime = kCMTimeZero;
         totalPausedDuration = _totalPausedDuration;
     }];
 
@@ -554,7 +563,7 @@ static void *ScreenCaptureManagerCaptureQueueKey = &ScreenCaptureManagerCaptureQ
     }
 
     NSLog(@"[ScreenCaptureKit] ▶️ Recording RESUMED");
-    NSLog(@"[ScreenCaptureKit] 📍 Pause duration will be calculated on next frame");
+    NSLog(@"[ScreenCaptureKit] ⏱️ Pause interval: %.2f seconds", CMTimeGetSeconds(pauseInterval));
     NSLog(@"[ScreenCaptureKit] ⏱️ Current total paused duration: %.2f seconds", CMTimeGetSeconds(totalPausedDuration));
 }
 

@@ -329,7 +329,24 @@ export function setupIpcHandlers(): void {
 
   // ============ Durations (marked time segments) ============
   ipcMain.handle('durations:getByRecording', async (_, recordingId: number) => {
-    return DurationsOperations.getByRecording(recordingId);
+    const durations = DurationsOperations.getByRecording(recordingId);
+    const recording = RecordingsOperations.getById(recordingId);
+    const maxDuration = recording?.video_duration ?? recording?.audio_duration;
+
+    if (typeof maxDuration !== 'number' || !Number.isFinite(maxDuration) || maxDuration <= 0) {
+      return durations;
+    }
+
+    const clamp = (value: number) => Math.max(0, Math.min(value, maxDuration));
+    return durations
+      .map(duration => {
+        const start = clamp(duration.start_time);
+        const end = clamp(duration.end_time);
+        if (!(end > start)) return null;
+        if (start === duration.start_time && end === duration.end_time) return duration;
+        return { ...duration, start_time: start, end_time: end };
+      })
+      .filter((duration): duration is (typeof durations)[number] => duration !== null);
   });
 
   ipcMain.handle('durations:create', async (_, duration: CreateDuration) => {
@@ -660,13 +677,44 @@ export function setupIpcHandlers(): void {
           durationExtracted: result.durationSource === 'ffprobe',
           usedFallback: result.durationSource === 'fallback',
           extractionError: result.extractionError,
-          fileSize: result.fileSize
+          fileSize: result.fileSize,
+          debugLogPath: (await import('../services/recordingDebugLogger')).getRecordingDebugLogPath(recordingId)
         }
       };
     } catch (error) {
       console.error('[IPC] Error finalizing screen recording:', error);
       throw error;
     }
+  });
+
+  ipcMain.handle('screenRecording:logDebugEvent', async (
+    _,
+    recordingId: number,
+    event: { type: string; atMs?: number; origin?: string; payload?: any }
+  ) => {
+    try {
+      const { appendRecordingDebugEvent } = await import('../services/recordingDebugLogger');
+      await appendRecordingDebugEvent(recordingId, {
+        type: event.type,
+        atMs: event.atMs ?? Date.now(),
+        origin: event.origin,
+        payload: event.payload,
+        processType: 'renderer'
+      });
+      return { success: true };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.warn('[IPC] Failed to log debug event:', errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  ipcMain.handle('screenRecording:getDebugLogPath', async (
+    _,
+    recordingId: number
+  ) => {
+    const { getRecordingDebugLogPath } = await import('../services/recordingDebugLogger');
+    return getRecordingDebugLogPath(recordingId);
   });
 
   // ============ Video Compression ============

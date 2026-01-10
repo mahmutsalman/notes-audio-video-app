@@ -169,8 +169,55 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
 
       console.log('[QuickScreenRecord] Recording updated with duration:', result.duration);
 
+      const maxDurationSeconds = typeof result.duration === 'number' && Number.isFinite(result.duration) && result.duration > 0
+        ? result.duration
+        : durationMs / 1000;
+
+      const clampedMarks = marks
+        .map(mark => {
+          const start = typeof mark.start === 'number' ? mark.start : 0;
+          const end = typeof mark.end === 'number' ? mark.end : 0;
+          const clampedStart = Math.max(0, Math.min(start, maxDurationSeconds));
+          const clampedEnd = Math.max(0, Math.min(end, maxDurationSeconds));
+          return { ...mark, start: clampedStart, end: clampedEnd };
+        })
+        .filter(mark => Number.isFinite(mark.start) && Number.isFinite(mark.end) && mark.end > mark.start);
+
+      try {
+        const logDebugEvent = window.electronAPI.screenRecording?.logDebugEvent;
+        if (typeof logDebugEvent === 'function') {
+          await logDebugEvent(recordingId, {
+            type: 'marks.save',
+            origin: 'renderer:QuickScreenRecord',
+            payload: {
+              durationMs,
+              ffprobeDurationSeconds: result.duration,
+              maxDurationSeconds,
+              marksCount: marks.length,
+              clampedMarksCount: clampedMarks.length,
+              marks: marks.map((m, idx) => ({
+                idx,
+                start: m.start,
+                end: m.end,
+                group_color: m.group_color ?? null,
+                note: m.note ?? null,
+              })),
+              clampedMarks: clampedMarks.map((m, idx) => ({
+                idx,
+                start: m.start,
+                end: m.end,
+                group_color: m.group_color ?? null,
+                note: m.note ?? null,
+              })),
+            }
+          });
+        }
+      } catch {
+        // Non-fatal
+      }
+
       // Save duration marks with group colors
-      for (const mark of marks) {
+      for (const mark of clampedMarks) {
         console.log('[QuickScreenRecord] Saving mark with group_color:', mark.group_color);
         await window.electronAPI.durations.create({
           recording_id: recordingId,
@@ -181,7 +228,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
         });
       }
 
-      console.log('[QuickScreenRecord] Duration marks saved:', marks.length);
+      console.log('[QuickScreenRecord] Duration marks saved:', clampedMarks.length);
 
       // Notify parent to refresh list
       onRecordingSaved();

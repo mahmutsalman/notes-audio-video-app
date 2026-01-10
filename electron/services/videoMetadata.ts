@@ -101,6 +101,31 @@ export interface VideoCodecParams {
   height?: number;
 }
 
+export interface MediaStreamTimings {
+  format?: {
+    duration?: number;
+    startTime?: number;
+  };
+  video?: {
+    codec?: string;
+    startTime?: number;
+    duration?: number;
+    timeBase?: string;
+    frameRate?: string;
+    nbFrames?: number;
+    width?: number;
+    height?: number;
+  };
+  audio?: {
+    codec?: string;
+    startTime?: number;
+    duration?: number;
+    timeBase?: string;
+    sampleRate?: number;
+    channels?: number;
+  };
+}
+
 /**
  * Get FFprobe binary path for both development and production.
  * FFprobe has platform-specific subdirectories: bin/{platform}/{arch}/ffprobe
@@ -225,6 +250,52 @@ export async function getVideoCodecParams(filePath: string): Promise<VideoCodecP
       level: '4.0'
     };
   }
+}
+
+export async function getMediaStreamTimings(filePath: string): Promise<MediaStreamTimings> {
+  const ffprobePath = getFfprobePath();
+
+  const info = await retryWithBackoff(
+    () => ffprobe(filePath, { path: ffprobePath }),
+    { maxRetries: 2, initialDelayMs: 150 }
+  );
+
+  const parseNum = (value: any): number | undefined => {
+    const n = typeof value === 'string' ? parseFloat(value) : typeof value === 'number' ? value : NaN;
+    return Number.isFinite(n) ? n : undefined;
+  };
+
+  const videoStream = info.streams.find((s: any) => s.codec_type === 'video');
+  const audioStream = info.streams.find((s: any) => s.codec_type === 'audio');
+
+  return {
+    format: {
+      duration: parseNum(info.format?.duration),
+      startTime: parseNum(info.format?.start_time)
+    },
+    video: videoStream
+      ? {
+        codec: videoStream.codec_name,
+        startTime: parseNum(videoStream.start_time),
+        duration: parseNum(videoStream.duration),
+        timeBase: videoStream.time_base,
+        frameRate: videoStream.avg_frame_rate || videoStream.r_frame_rate,
+        nbFrames: videoStream.nb_frames ? parseInt(videoStream.nb_frames, 10) : undefined,
+        width: videoStream.width,
+        height: videoStream.height
+      }
+      : undefined,
+    audio: audioStream
+      ? {
+        codec: audioStream.codec_name,
+        startTime: parseNum(audioStream.start_time),
+        duration: parseNum(audioStream.duration),
+        timeBase: audioStream.time_base,
+        sampleRate: audioStream.sample_rate ? parseInt(audioStream.sample_rate, 10) : undefined,
+        channels: audioStream.channels
+      }
+      : undefined
+  };
 }
 
 export async function getVideoMetadata(

@@ -1,22 +1,64 @@
 import { ipcMain, BrowserWindow, screen } from 'electron';
 import { ScreenCaptureKitManager } from './ScreenCaptureManager';
+import { appendRecordingDebugEvent } from '../services/recordingDebugLogger';
 
 let captureManager: ScreenCaptureKitManager | null = null;
+let activeRecordingId: number | null = null;
 
 export function registerScreenCaptureHandlers(mainWindow: BrowserWindow) {
   console.log('[ScreenCaptureKit] Registering IPC handlers');
+
+  const log = async (event: { type: string; origin?: string; payload?: any }) => {
+    if (activeRecordingId == null) return;
+    await appendRecordingDebugEvent(activeRecordingId, {
+      type: event.type,
+      origin: event.origin,
+      payload: event.payload,
+      atMs: Date.now(),
+      processType: 'main'
+    });
+  };
 
   // Start capture
   ipcMain.handle('screencapturekit:start', async (event, config) => {
     console.log('[ScreenCaptureKit] IPC: start capture request', config);
 
     try {
+      activeRecordingId = typeof config?.recordingId === 'number' ? config.recordingId : null;
+      await log({
+        type: 'sck.start.request',
+        origin: 'ipc:screencapturekit:start',
+        payload: {
+          hasManager: !!captureManager,
+          recordingId: activeRecordingId,
+          config: {
+            displayId: config?.displayId,
+            width: config?.width,
+            height: config?.height,
+            frameRate: config?.frameRate,
+            regionX: config?.regionX,
+            regionY: config?.regionY,
+            regionWidth: config?.regionWidth,
+            regionHeight: config?.regionHeight,
+            outputWidth: config?.outputWidth,
+            outputHeight: config?.outputHeight,
+            bitsPerPixel: config?.bitsPerPixel,
+            outputPath: config?.outputPath
+          }
+        }
+      });
+
       if (!captureManager) {
         captureManager = new ScreenCaptureKitManager();
 
         // Forward completion to renderer with file path
         captureManager.on('complete', (filePath: string) => {
           console.log('[ScreenCaptureKit] IPC: forwarding completion with file path:', filePath);
+          void log({
+            type: 'sck.complete',
+            origin: 'native:complete',
+            payload: { filePath }
+          });
           mainWindow.webContents.send('screencapturekit:complete', { filePath });
 
           // Clean up after forwarding the completion event
@@ -25,38 +67,50 @@ export function registerScreenCaptureHandlers(mainWindow: BrowserWindow) {
             captureManager = null;
             console.log('[ScreenCaptureKit] IPC: captureManager cleaned up after completion');
           }
+          activeRecordingId = null;
         });
 
         // Forward errors to renderer
         captureManager.on('error', (error) => {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error('[ScreenCaptureKit] IPC: forwarding error:', errorMessage);
+          void log({
+            type: 'sck.error',
+            origin: 'native:error',
+            payload: { error: errorMessage }
+          });
           mainWindow.webContents.send('screencapturekit:error', { error: errorMessage });
         });
 
         // Log capture events
         captureManager.on('started', () => {
           console.log('[ScreenCaptureKit] IPC: capture started event');
+          void log({ type: 'sck.started', origin: 'native:started' });
         });
 
         captureManager.on('stopped', () => {
           console.log('[ScreenCaptureKit] IPC: capture stopped event');
+          void log({ type: 'sck.stopped', origin: 'native:stopped' });
         });
 
         captureManager.on('paused', () => {
           console.log('[ScreenCaptureKit] IPC: capture paused event');
+          void log({ type: 'sck.paused', origin: 'native:paused' });
         });
 
         captureManager.on('resumed', () => {
           console.log('[ScreenCaptureKit] IPC: capture resumed event');
+          void log({ type: 'sck.resumed', origin: 'native:resumed' });
         });
       }
 
       await captureManager.startCapture(config);
+      await log({ type: 'sck.start.success', origin: 'ipc:screencapturekit:start' });
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('[ScreenCaptureKit] IPC: start capture failed:', errorMessage);
+      await log({ type: 'sck.start.error', origin: 'ipc:screencapturekit:start', payload: { error: errorMessage } });
       return { success: false, error: errorMessage };
     }
   });
@@ -67,6 +121,7 @@ export function registerScreenCaptureHandlers(mainWindow: BrowserWindow) {
     console.log('[ScreenCaptureKit] IPC: captureManager exists:', !!captureManager);
 
     try {
+      await log({ type: 'sck.stop.request', origin: 'ipc:screencapturekit:stop', payload: { hasManager: !!captureManager } });
       if (captureManager) {
         console.log('[ScreenCaptureKit] IPC: Calling captureManager.stopCapture()...');
         captureManager.stopCapture();
@@ -77,10 +132,12 @@ export function registerScreenCaptureHandlers(mainWindow: BrowserWindow) {
       } else {
         console.warn('[ScreenCaptureKit] IPC: ⚠️ No captureManager - cannot stop (indicator may stay!)');
       }
+      await log({ type: 'sck.stop.return', origin: 'ipc:screencapturekit:stop' });
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('[ScreenCaptureKit] IPC: stop capture failed:', errorMessage);
+      await log({ type: 'sck.stop.error', origin: 'ipc:screencapturekit:stop', payload: { error: errorMessage } });
       return { success: false, error: errorMessage };
     }
   });
@@ -90,13 +147,16 @@ export function registerScreenCaptureHandlers(mainWindow: BrowserWindow) {
     console.log('[ScreenCaptureKit] IPC: pause capture request');
 
     try {
+      await log({ type: 'sck.pause.request', origin: 'ipc:screencapturekit:pause', payload: { hasManager: !!captureManager } });
       if (captureManager) {
         captureManager.pauseCapture();
       }
+      await log({ type: 'sck.pause.return', origin: 'ipc:screencapturekit:pause' });
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('[ScreenCaptureKit] IPC: pause capture failed:', errorMessage);
+      await log({ type: 'sck.pause.error', origin: 'ipc:screencapturekit:pause', payload: { error: errorMessage } });
       return { success: false, error: errorMessage };
     }
   });
@@ -106,13 +166,16 @@ export function registerScreenCaptureHandlers(mainWindow: BrowserWindow) {
     console.log('[ScreenCaptureKit] IPC: resume capture request');
 
     try {
+      await log({ type: 'sck.resume.request', origin: 'ipc:screencapturekit:resume', payload: { hasManager: !!captureManager } });
       if (captureManager) {
         captureManager.resumeCapture();
       }
+      await log({ type: 'sck.resume.return', origin: 'ipc:screencapturekit:resume' });
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('[ScreenCaptureKit] IPC: resume capture failed:', errorMessage);
+      await log({ type: 'sck.resume.error', origin: 'ipc:screencapturekit:resume', payload: { error: errorMessage } });
       return { success: false, error: errorMessage };
     }
   });

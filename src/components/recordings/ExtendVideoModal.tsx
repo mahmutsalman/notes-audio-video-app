@@ -165,13 +165,13 @@ export default function ExtendVideoModal({
     const cleanupPause = window.electronAPI.region.onPauseRecording(() => {
       console.log('[ExtendVideoModal] Received pause event from overlay');
       console.log('[ExtendVideoModal] Calling recorder.pauseRecording()');
-      recorder.pauseRecording();
+      recorder.pauseRecording('manual', 'overlay:pause');
     });
 
     const cleanupResume = window.electronAPI.region.onResumeRecording(() => {
       console.log('[ExtendVideoModal] Received resume event from overlay');
       console.log('[ExtendVideoModal] Calling recorder.resumeRecording()');
-      recorder.resumeRecording();
+      recorder.resumeRecording('overlay:resume');
     });
 
     return () => {
