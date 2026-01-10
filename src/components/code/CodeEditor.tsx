@@ -1,6 +1,7 @@
 import { Editor, loader } from '@monaco-editor/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import * as monaco from 'monaco-editor';
+import type { editor } from 'monaco-editor';
 
 // Import Monaco workers with Vite's ?worker suffix
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
@@ -73,6 +74,8 @@ export default function CodeEditor({
   showLanguageSelector = true,
 }: CodeEditorProps) {
   const [theme, setTheme] = useState<'light' | 'vs-dark'>('vs-dark');
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Detect system theme
@@ -87,6 +90,49 @@ export default function CodeEditor({
     mediaQuery.addEventListener('change', handler);
     return () => mediaQuery.removeEventListener('change', handler);
   }, []);
+
+  // Handle scroll passthrough when editor is at top/bottom
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+
+      const domNode = editor.getDomNode();
+      if (!domNode) return;
+
+      const scrollableElement = domNode.querySelector('.monaco-scrollable-element');
+      if (!scrollableElement) return;
+
+      const scrollTop = scrollableElement.scrollTop;
+      const scrollHeight = scrollableElement.scrollHeight;
+      const clientHeight = scrollableElement.clientHeight;
+
+      const isAtTop = scrollTop === 0;
+      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 1;
+
+      const isScrollingUp = e.deltaY < 0;
+      const isScrollingDown = e.deltaY > 0;
+
+      // Allow page scroll when at editor boundaries
+      if ((isAtTop && isScrollingUp) || (isAtBottom && isScrollingDown)) {
+        // Don't prevent default - let it bubble to page
+        return;
+      }
+
+      // Prevent page scroll when editor can still scroll
+      e.stopPropagation();
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  const handleEditorMount = (editor: editor.IStandaloneCodeEditor) => {
+    editorRef.current = editor;
+  };
 
   return (
     <div className="flex flex-col gap-2">
@@ -110,12 +156,13 @@ export default function CodeEditor({
           </select>
         </div>
       )}
-      <div className="border border-gray-700 rounded overflow-hidden">
+      <div ref={containerRef} className="border border-gray-700 rounded overflow-hidden">
         <Editor
           height={height}
           language={language}
           value={code}
           onChange={(value) => onChange?.(value || '')}
+          onMount={handleEditorMount}
           theme={theme}
           options={{
             readOnly,
@@ -126,6 +173,7 @@ export default function CodeEditor({
             automaticLayout: true,
             tabSize: 2,
             wordWrap: 'on',
+            alwaysConsumeMouseWheel: false,
           }}
         />
       </div>
