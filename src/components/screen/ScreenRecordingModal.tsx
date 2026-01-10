@@ -57,6 +57,7 @@ export default function ScreenRecordingModal({
     modalStartX: 0,
     modalStartY: 0,
   });
+  const rafRef = useRef<number | null>(null);
 
   // Component lifecycle cleanup
   useEffect(() => {
@@ -72,42 +73,56 @@ export default function ScreenRecordingModal({
     }
   }, [isOpen]);
 
-  // Handle drag events (only when recording)
+  // Handle drag events with requestAnimationFrame for smooth updates (only when recording)
   useEffect(() => {
     if (!isOpen || step !== 'recording') return;
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!dragState.current.isDragging) return;
 
-      const deltaX = e.clientX - dragState.current.startX;
-      const deltaY = e.clientY - dragState.current.startY;
-
-      let newX = dragState.current.modalStartX + deltaX;
-      let newY = dragState.current.modalStartY + deltaY;
-
-      // Apply boundary constraints
-      if (modalRef.current) {
-        const modalRect = modalRef.current.getBoundingClientRect();
-        const minVisiblePx = 50;
-
-        newX = Math.max(
-          minVisiblePx - modalRect.width,
-          Math.min(window.innerWidth - minVisiblePx, newX)
-        );
-
-        newY = Math.max(
-          0,
-          Math.min(window.innerHeight - minVisiblePx, newY)
-        );
+      // Cancel any pending animation frame
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
       }
 
-      setPosition({ x: newX, y: newY });
+      // Use requestAnimationFrame for smooth updates
+      rafRef.current = requestAnimationFrame(() => {
+        const deltaX = e.clientX - dragState.current.startX;
+        const deltaY = e.clientY - dragState.current.startY;
+
+        let newX = dragState.current.modalStartX + deltaX;
+        let newY = dragState.current.modalStartY + deltaY;
+
+        // Apply boundary constraints
+        if (modalRef.current) {
+          const modalRect = modalRef.current.getBoundingClientRect();
+          const minVisiblePx = 50;
+
+          newX = Math.max(
+            minVisiblePx - modalRect.width,
+            Math.min(window.innerWidth - minVisiblePx, newX)
+          );
+
+          newY = Math.max(
+            0,
+            Math.min(window.innerHeight - minVisiblePx, newY)
+          );
+        }
+
+        setPosition({ x: newX, y: newY });
+      });
     };
 
     const handleMouseUp = () => {
       dragState.current.isDragging = false;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
+
+      // Cancel any pending animation frame
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -116,6 +131,11 @@ export default function ScreenRecordingModal({
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+
+      // Cleanup animation frame on unmount
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
     };
   }, [isOpen, step]);
 
@@ -570,11 +590,19 @@ export default function ScreenRecordingModal({
           left: `${position.x}px`,
           top: `${position.y}px`,
           margin: 0,
+          pointerEvents: 'auto',
         }
+      : isDraggable
+      ? { pointerEvents: 'auto' }
       : {};
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50">
+    <div className="fixed inset-0 z-50" style={isDraggable ? { pointerEvents: 'none' } : {}}>
+      {/* Backdrop - non-blocking when draggable */}
+      <div
+        className={`fixed inset-0 ${isDraggable ? 'bg-black/20' : 'bg-black/50'}`}
+        style={isDraggable ? { pointerEvents: 'none' } : {}}
+      />
       <div className={isDraggable && position.x !== 'center' ? '' : 'flex items-center justify-center h-full'}>
         <div
           ref={modalRef}

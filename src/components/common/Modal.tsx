@@ -31,6 +31,7 @@ export default function Modal({
     modalStartX: 0,
     modalStartY: 0,
   });
+  const rafRef = useRef<number | null>(null);
 
   // Reset position when modal opens
   useEffect(() => {
@@ -58,44 +59,58 @@ export default function Modal({
     };
   }, [isOpen, onClose]);
 
-  // Handle drag events
+  // Handle drag events with requestAnimationFrame for smooth updates
   useEffect(() => {
     if (!draggable || !isOpen) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!dragState.current.isDragging) return;
 
-      const deltaX = e.clientX - dragState.current.startX;
-      const deltaY = e.clientY - dragState.current.startY;
-
-      let newX = dragState.current.modalStartX + deltaX;
-      let newY = dragState.current.modalStartY + deltaY;
-
-      // Apply boundary constraints
-      if (modalRef.current) {
-        const modalRect = modalRef.current.getBoundingClientRect();
-        const minVisiblePx = 50; // Keep at least 50px of header visible
-
-        // Constrain horizontal position
-        newX = Math.max(
-          minVisiblePx - modalRect.width,
-          Math.min(window.innerWidth - minVisiblePx, newX)
-        );
-
-        // Constrain vertical position
-        newY = Math.max(
-          0,
-          Math.min(window.innerHeight - minVisiblePx, newY)
-        );
+      // Cancel any pending animation frame
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
       }
 
-      setPosition({ x: newX, y: newY });
+      // Use requestAnimationFrame for smooth updates
+      rafRef.current = requestAnimationFrame(() => {
+        const deltaX = e.clientX - dragState.current.startX;
+        const deltaY = e.clientY - dragState.current.startY;
+
+        let newX = dragState.current.modalStartX + deltaX;
+        let newY = dragState.current.modalStartY + deltaY;
+
+        // Apply boundary constraints
+        if (modalRef.current) {
+          const modalRect = modalRef.current.getBoundingClientRect();
+          const minVisiblePx = 50; // Keep at least 50px of header visible
+
+          // Constrain horizontal position
+          newX = Math.max(
+            minVisiblePx - modalRect.width,
+            Math.min(window.innerWidth - minVisiblePx, newX)
+          );
+
+          // Constrain vertical position
+          newY = Math.max(
+            0,
+            Math.min(window.innerHeight - minVisiblePx, newY)
+          );
+        }
+
+        setPosition({ x: newX, y: newY });
+      });
     };
 
     const handleMouseUp = () => {
       dragState.current.isDragging = false;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
+
+      // Cancel any pending animation frame
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -104,6 +119,11 @@ export default function Modal({
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+
+      // Cleanup animation frame on unmount
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
     };
   }, [draggable, isOpen]);
 
@@ -156,15 +176,19 @@ export default function Modal({
           left: `${position.x}px`,
           top: `${position.y}px`,
           margin: 0,
+          pointerEvents: 'auto',
         }
+      : draggable
+      ? { pointerEvents: 'auto' }
       : {};
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
+    <div className="fixed inset-0 z-50 overflow-y-auto" style={draggable ? { pointerEvents: 'none' } : {}}>
+      {/* Backdrop - non-blocking when draggable */}
       <div
-        className="fixed inset-0 bg-black/50 transition-opacity"
-        onClick={onClose}
+        className={`fixed inset-0 transition-opacity ${draggable ? 'bg-black/20' : 'bg-black/50'}`}
+        onClick={draggable ? undefined : onClose}
+        style={draggable ? { pointerEvents: 'none' } : {}}
       />
 
       {/* Modal Container */}
