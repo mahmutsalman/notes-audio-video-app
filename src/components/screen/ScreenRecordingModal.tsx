@@ -44,12 +44,80 @@ export default function ScreenRecordingModal({
   const isStoppingRef = useRef(false); // Prevent double-call to handleStopRecording
   const markGroupColorsRef = useRef<Map<number, DurationGroupColor>>(new Map()); // Track group color for each mark
 
+  // Draggable modal state
+  const [position, setPosition] = useState<{ x: number | 'center'; y: number | 'center' }>({
+    x: 'center',
+    y: 'center'
+  });
+  const modalRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef({
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    modalStartX: 0,
+    modalStartY: 0,
+  });
+
   // Component lifecycle cleanup
   useEffect(() => {
     return () => {
       // Component unmounting - cleanup handled elsewhere
     };
   }, []);
+
+  // Reset position when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setPosition({ x: 'center', y: 'center' });
+    }
+  }, [isOpen]);
+
+  // Handle drag events (only when recording)
+  useEffect(() => {
+    if (!isOpen || step !== 'recording') return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dragState.current.isDragging) return;
+
+      const deltaX = e.clientX - dragState.current.startX;
+      const deltaY = e.clientY - dragState.current.startY;
+
+      let newX = dragState.current.modalStartX + deltaX;
+      let newY = dragState.current.modalStartY + deltaY;
+
+      // Apply boundary constraints
+      if (modalRef.current) {
+        const modalRect = modalRef.current.getBoundingClientRect();
+        const minVisiblePx = 50;
+
+        newX = Math.max(
+          minVisiblePx - modalRect.width,
+          Math.min(window.innerWidth - minVisiblePx, newX)
+        );
+
+        newY = Math.max(
+          0,
+          Math.min(window.innerHeight - minVisiblePx, newY)
+        );
+      }
+
+      setPosition({ x: newX, y: newY });
+    };
+
+    const handleMouseUp = () => {
+      dragState.current.isDragging = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isOpen, step]);
 
   // Handler functions (defined before useEffects to avoid temporal dead zone)
   const handleClose = useCallback(() => {
@@ -454,6 +522,37 @@ export default function ScreenRecordingModal({
     );
   };
 
+  // Handle mouse down on header to start dragging
+  const handleHeaderMouseDown = (e: React.MouseEvent) => {
+    // Only allow dragging when recording
+    if (step !== 'recording') return;
+
+    if (modalRef.current) {
+      const rect = modalRef.current.getBoundingClientRect();
+      let currentX: number;
+      let currentY: number;
+
+      if (position.x === 'center' || position.y === 'center') {
+        currentX = rect.left;
+        currentY = rect.top;
+      } else {
+        currentX = position.x;
+        currentY = position.y;
+      }
+
+      dragState.current = {
+        isDragging: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        modalStartX: currentX,
+        modalStartY: currentY,
+      };
+
+      document.body.style.cursor = 'move';
+      document.body.style.userSelect = 'none';
+    }
+  };
+
   const formatDuration = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -462,26 +561,51 @@ export default function ScreenRecordingModal({
 
   if (!isOpen) return null;
 
+  // Calculate modal style based on position (only when recording)
+  const isDraggable = step === 'recording';
+  const modalContainerStyle: React.CSSProperties =
+    isDraggable && position.x !== 'center' && position.y !== 'center'
+      ? {
+          position: 'fixed',
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          margin: 0,
+        }
+      : {};
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-            {step === 'source-selection' && 'Screen Recording'}
-            {step === 'recording' && `Recording: ${recorder.selectedSource?.name}`}
-            {step === 'saving' && 'Saving Recording...'}
-          </h2>
-          <button
-            onClick={handleClose}
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            disabled={step === 'saving'}
+    <div className="fixed inset-0 z-50 bg-black/50">
+      <div className={isDraggable && position.x !== 'center' ? '' : 'flex items-center justify-center h-full'}>
+        <div
+          ref={modalRef}
+          style={modalContainerStyle}
+          className={`bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto ${
+            isDraggable && position.x === 'center' ? 'mx-4' : ''
+          }`}
+        >
+          {/* Header */}
+          <div
+            className={`flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 ${
+              isDraggable ? 'cursor-move select-none' : ''
+            }`}
+            onMouseDown={handleHeaderMouseDown}
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+              {step === 'source-selection' && 'Screen Recording'}
+              {step === 'recording' && `Recording: ${recorder.selectedSource?.name}`}
+              {step === 'saving' && 'Saving Recording...'}
+            </h2>
+            <button
+              onClick={handleClose}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              disabled={step === 'saving'}
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
 
         {/* Content */}
         <div className="p-6">
@@ -662,6 +786,7 @@ export default function ScreenRecordingModal({
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

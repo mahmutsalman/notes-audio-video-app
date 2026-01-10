@@ -446,6 +446,7 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
         onClose={handleClose}
         title={phase === 'recording' ? 'New Recording' : 'Review Recording'}
         size="lg"
+        draggable={phase === 'recording'}
       >
         {phase === 'recording' ? (
           <div className="space-y-4">

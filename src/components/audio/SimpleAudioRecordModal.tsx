@@ -41,7 +41,7 @@ export default function SimpleAudioRecordModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title={title} size="md">
+    <Modal isOpen={isOpen} onClose={handleClose} title={title} size="md" draggable={true}>
       <div className="flex flex-col items-center py-8">
         {recorder.error && (
           <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg text-sm">

@@ -377,6 +377,7 @@ export default function ExtendRecordingModal({
       onClose={handleClose}
       title={phase === 'merging' ? 'Extending Recording...' : 'Extend Recording'}
       size="lg"
+      draggable={phase === 'recording'}
     >
       {/* Original recording info */}
       <div className="mb-4 p-3 bg-gray-100 dark:bg-dark-hover rounded-lg">
