@@ -35,6 +35,7 @@ export default function RecordingPage() {
     createDuration,
     deleteDuration,
     updateDuration,
+    reorderDurations,
     durationImagesCache,
     getDurationImages,
     addDurationImageFromClipboard,
@@ -1214,6 +1215,7 @@ export default function RecordingPage() {
           onUpdateNote={handleUpdateNote}
           onColorChange={handleColorChange}
           onGroupColorChange={handleGroupColorChange}
+          onReorder={reorderDurations}
           durationImagesCache={durationImagesCache}
           durationVideosCache={durationVideosCache}
           isAddingMark={isAddingMark}

@@ -86,6 +86,7 @@ export interface Duration {
   note: string | null; // optional note for this duration mark
   color: DurationColor; // color indicator for categorizing duration marks (priority colors - left/right bars)
   group_color: DurationGroupColor; // group color for visually grouping related marks (top bar)
+  sort_order: number; // order for drag-and-drop reordering
   created_at: string;
   // Media loaded separately
   images?: DurationImage[];
@@ -253,7 +254,7 @@ export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
 export type CreateVideo = Omit<Video, 'id' | 'created_at'>;
-export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor };
+export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color' | 'sort_order'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor };
 
 // Video Compression Types
 export interface VideoCompressionOptions {
@@ -357,6 +358,7 @@ export interface ElectronAPI {
     update: (id: number, updates: UpdateDuration) => Promise<Duration>;
     updateGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<Duration>;
     delete: (id: number) => Promise<void>;
+    reorder: (recordingId: number, orderedIds: number[]) => Promise<Duration[]>;
   };
   durationImages: {
     getByDuration: (durationId: number) => Promise<DurationImage[]>;

@@ -169,6 +169,8 @@ const electronAPI = {
       ipcRenderer.invoke('durations:updateGroupColor', id, groupColor),
     delete: (id: number): Promise<void> =>
       ipcRenderer.invoke('durations:delete', id),
+    reorder: (recordingId: number, orderedIds: number[]): Promise<Duration[]> =>
+      ipcRenderer.invoke('durations:reorder', recordingId, orderedIds),
   },
 
   // Duration Images (images attached to duration marks)

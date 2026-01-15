@@ -395,7 +395,7 @@ export const DurationsOperations = {
     return db.prepare(`
       SELECT * FROM durations
       WHERE recording_id = ?
-      ORDER BY start_time
+      ORDER BY sort_order, start_time
     `).all(recordingId) as Duration[];
   },
 
@@ -406,9 +406,16 @@ export const DurationsOperations = {
 
   create(duration: CreateDuration): Duration {
     const db = getDatabase();
+
+    // Get max sort_order for this recording
+    const maxOrder = db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) as max_order
+      FROM durations WHERE recording_id = ?
+    `).get(duration.recording_id) as { max_order: number };
+
     const stmt = db.prepare(`
-      INSERT INTO durations (recording_id, start_time, end_time, note, group_color)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO durations (recording_id, start_time, end_time, note, group_color, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -416,7 +423,8 @@ export const DurationsOperations = {
       duration.start_time,
       duration.end_time,
       duration.note ?? null,
-      duration.group_color ?? null
+      duration.group_color ?? null,
+      maxOrder.max_order + 1
     );
 
     return this.getById(result.lastInsertRowid as number)!;
@@ -453,6 +461,20 @@ export const DurationsOperations = {
   delete(id: number): void {
     const db = getDatabase();
     db.prepare('DELETE FROM durations WHERE id = ?').run(id);
+  },
+
+  reorder(recordingId: number, orderedIds: number[]): Duration[] {
+    const db = getDatabase();
+    const stmt = db.prepare('UPDATE durations SET sort_order = ? WHERE id = ? AND recording_id = ?');
+
+    const updateMany = db.transaction((ids: number[]) => {
+      ids.forEach((id, index) => {
+        stmt.run(index, id, recordingId);
+      });
+    });
+
+    updateMany(orderedIds);
+    return this.getByRecording(recordingId);
   },
 };
 

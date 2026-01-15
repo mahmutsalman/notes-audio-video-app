@@ -40,8 +40,25 @@ export function useDurations(recordingId: number | null) {
 
   const createDuration = async (duration: CreateDuration): Promise<Duration> => {
     const newDuration = await window.electronAPI.durations.create(duration);
-    setDurations(prev => [...prev, newDuration].sort((a, b) => a.start_time - b.start_time));
+    // New durations are added at the end (highest sort_order)
+    setDurations(prev => [...prev, newDuration]);
     return newDuration;
+  };
+
+  const reorderDurations = async (orderedIds: number[]): Promise<void> => {
+    if (recordingId === null) return;
+
+    // Optimistic update - reorder locally first for instant feedback
+    setDurations(prev => {
+      const durationMap = new Map(prev.map(d => [d.id, d]));
+      return orderedIds
+        .map(id => durationMap.get(id))
+        .filter((d): d is Duration => d !== undefined);
+    });
+
+    // Persist to database
+    const updatedDurations = await window.electronAPI.durations.reorder(recordingId, orderedIds);
+    setDurations(updatedDurations);
   };
 
   const updateDuration = async (id: number, updates: UpdateDuration): Promise<Duration> => {
@@ -355,6 +372,7 @@ export function useDurations(recordingId: number | null) {
     createDuration,
     updateDuration,
     deleteDuration,
+    reorderDurations,
     // Duration image functions
     durationImagesCache,
     getDurationImages,

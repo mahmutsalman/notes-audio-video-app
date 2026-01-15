@@ -388,6 +388,28 @@ function runMigrations(db: Database.Database): void {
     console.log('Added main_notes_content column to recordings table');
   }
 
+  // Migration: Add sort_order column to durations table for drag-and-drop reordering
+  // Re-fetch columns since we might have added columns earlier
+  const durationsColumnsUpdated = db.prepare("PRAGMA table_info(durations)").all() as { name: string }[];
+  const hasSortOrderColumn = durationsColumnsUpdated.some(col => col.name === 'sort_order');
+  if (!hasSortOrderColumn) {
+    db.exec(`ALTER TABLE durations ADD COLUMN sort_order INTEGER DEFAULT 0`);
+    // Backfill existing records: set sort_order based on current start_time ordering
+    db.exec(`
+      UPDATE durations
+      SET sort_order = (
+        SELECT COUNT(*)
+        FROM durations d2
+        WHERE d2.recording_id = durations.recording_id
+        AND d2.id < durations.id
+      )
+    `);
+    console.log('Added sort_order column to durations table');
+  }
+
+  // Create index for sort_order performance
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_durations_sort ON durations(recording_id, sort_order)`)
+
   // Create the stats view (drop and recreate to handle schema changes)
   db.exec(`
     DROP VIEW IF EXISTS topic_stats;

@@ -371,6 +371,10 @@ export function setupIpcHandlers(): void {
     DurationsOperations.delete(id);
   });
 
+  ipcMain.handle('durations:reorder', async (_, recordingId: number, orderedIds: number[]) => {
+    return DurationsOperations.reorder(recordingId, orderedIds);
+  });
+
   // ============ Duration Images ============
   ipcMain.handle('durationImages:getByDuration', async (_, durationId: number) => {
     return DurationImagesOperations.getByDuration(durationId);
