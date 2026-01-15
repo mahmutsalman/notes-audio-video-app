@@ -20,7 +20,7 @@ import CodeSnippetModal from '../components/code/CodeSnippetModal';
 import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
 import { getNextDurationColor, DURATION_COLORS } from '../utils/durationColors';
-import type { Duration, DurationColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea } from '../types';
+import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -836,9 +836,14 @@ export default function RecordingPage() {
     await updateDuration(durationId, { note });
   };
 
-  // Handle duration color change
+  // Handle duration color change (right-click: side colors)
   const handleColorChange = async (durationId: number, color: DurationColor) => {
     await updateDuration(durationId, { color });
+  };
+
+  // Handle duration group color change (shift+right-click: top bar)
+  const handleGroupColorChange = async (durationId: number, groupColor: DurationGroupColor) => {
+    await updateDuration(durationId, { group_color: groupColor });
   };
 
   // Keyboard navigation for image lightbox
@@ -1208,6 +1213,7 @@ export default function RecordingPage() {
           onAddMark={handleAddMark}
           onUpdateNote={handleUpdateNote}
           onColorChange={handleColorChange}
+          onGroupColorChange={handleGroupColorChange}
           durationImagesCache={durationImagesCache}
           durationVideosCache={durationVideosCache}
           isAddingMark={isAddingMark}
@@ -1220,6 +1226,7 @@ export default function RecordingPage() {
           onDeleteDuration={handleDeleteDuration}
           onUpdateNote={handleUpdateNote}
           onColorChange={handleColorChange}
+          onGroupColorChange={handleGroupColorChange}
           durationImagesCache={durationImagesCache}
           durationVideosCache={durationVideosCache}
           disabled={!mediaLoaded || isSeekingDuration}

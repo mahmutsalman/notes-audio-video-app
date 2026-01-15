@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import type { Duration, DurationColor, DurationImage, DurationVideo } from '../../types';
+import type { Duration, DurationColor, DurationGroupColor, DurationImage, DurationVideo } from '../../types';
 import { DURATION_COLORS, getNextDurationColor } from '../../utils/durationColors';
-import { getGroupColorConfig } from '../../utils/durationGroupColors';
+import { getGroupColorConfig, getNextGroupColorWithNull } from '../../utils/durationGroupColors';
 import { formatMarkLabel } from '../../utils/marks';
 import NotesEditor from '../common/NotesEditor';
 
@@ -13,6 +13,7 @@ interface MarkListProps {
   onAddMark: () => void;
   onUpdateNote: (id: number, note: string | null) => void;
   onColorChange?: (id: number, color: DurationColor) => void;
+  onGroupColorChange?: (id: number, groupColor: DurationGroupColor) => void;
   // Duration images support
   durationImagesCache?: Record<number, DurationImage[]>;
   // Duration videos support
@@ -29,6 +30,7 @@ export default function MarkList({
   onAddMark,
   onUpdateNote,
   onColorChange,
+  onGroupColorChange,
   durationImagesCache,
   durationVideosCache,
   isAddingMark = false,
@@ -56,7 +58,12 @@ export default function MarkList({
 
   const handleContextMenu = (e: React.MouseEvent, duration: Duration) => {
     e.preventDefault();
-    if (onColorChange) {
+    if (e.shiftKey && onGroupColorChange) {
+      // Shift+Right-click: cycle group colors (top bar)
+      const nextGroupColor = getNextGroupColorWithNull(duration.group_color);
+      onGroupColorChange(duration.id, nextGroupColor);
+    } else if (onColorChange) {
+      // Regular right-click: cycle side colors
       const nextColor = getNextDurationColor(duration.color);
       onColorChange(duration.id, nextColor);
     }
@@ -177,7 +184,7 @@ export default function MarkList({
         </button>
       </div>
       <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-        Click to select • Right-click to change color
+        Click to select • Right-click: priority • Shift+Right-click: group
       </p>
 
       {/* Note display for active mark */}

@@ -26,6 +26,15 @@ export function getNextGroupColor(current: DurationGroupColor): DurationGroupCol
   return DURATION_GROUP_COLOR_ORDER[(idx + 1) % DURATION_GROUP_COLOR_ORDER.length];
 }
 
+// Cycles through group colors INCLUDING null: null → purple → ... → rose → null
+export function getNextGroupColorWithNull(current: DurationGroupColor): DurationGroupColor {
+  if (current === null) return DURATION_GROUP_COLOR_ORDER[0];
+  const idx = DURATION_GROUP_COLOR_ORDER.indexOf(current);
+  if (idx === -1) return DURATION_GROUP_COLOR_ORDER[0];
+  if (idx === DURATION_GROUP_COLOR_ORDER.length - 1) return null;
+  return DURATION_GROUP_COLOR_ORDER[idx + 1];
+}
+
 export function getGroupColorConfig(color: DurationGroupColor) {
   return color ? DURATION_GROUP_COLORS[color] : null;
 }
