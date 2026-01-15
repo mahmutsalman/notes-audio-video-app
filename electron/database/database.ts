@@ -372,6 +372,22 @@ function runMigrations(db: Database.Database): void {
     console.log('Added group_toggle_active column to recordings table');
   }
 
+  // Migration: Add recording_type column to recordings table if it doesn't exist
+  // Values: 'audio' (default), 'video', 'written'
+  const hasRecordingTypeColumn = recordingsColumns.some(col => col.name === 'recording_type');
+  if (!hasRecordingTypeColumn) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN recording_type TEXT DEFAULT 'audio'`);
+    console.log('Added recording_type column to recordings table');
+  }
+
+  // Migration: Add main_notes_content column to recordings table if it doesn't exist
+  // This is separate from notes_content to allow independent "Main Notes" and "Notes" sections
+  const hasMainNotesContentColumn = recordingsColumns.some(col => col.name === 'main_notes_content');
+  if (!hasMainNotesContentColumn) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN main_notes_content TEXT`);
+    console.log('Added main_notes_content column to recordings table');
+  }
+
   // Create the stats view (drop and recreate to handle schema changes)
   db.exec(`
     DROP VIEW IF EXISTS topic_stats;

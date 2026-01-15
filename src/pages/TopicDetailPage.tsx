@@ -5,6 +5,7 @@ import { useRecordings } from '../hooks/useRecordings';
 import RecordingList from '../components/recordings/RecordingList';
 import QuickRecord from '../components/recordings/QuickRecord';
 import QuickScreenRecord from '../components/recordings/QuickScreenRecord';
+import QuickWrittenNote from '../components/recordings/QuickWrittenNote';
 import TopicForm from '../components/topics/TopicForm';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
@@ -194,6 +195,12 @@ export default function TopicDetailPage() {
         topicId={id!}
         onRecordingSaved={handleRecordingSavedWithClear}
         pendingRegion={pendingRegion}
+      />
+
+      {/* Quick Written Note FAB */}
+      <QuickWrittenNote
+        topicId={id!}
+        onRecordingSaved={handleRecordingSaved}
       />
 
       {/* Edit topic modal */}

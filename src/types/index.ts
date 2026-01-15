@@ -3,6 +3,7 @@
 export type ImportanceColor = 'emerald' | 'amber' | 'rose' | null;
 export type DurationColor = 'red' | 'amber' | 'sky' | null;
 export type DurationGroupColor = 'purple' | 'pink' | 'emerald' | 'teal' | 'indigo' | 'orange' | 'lime' | 'cyan' | 'fuchsia' | 'rose' | null;
+export type RecordingType = 'audio' | 'video' | 'written';
 
 export interface Topic {
   id: number;
@@ -21,6 +22,7 @@ export interface Recording {
   id: number;
   topic_id: number;
   name: string | null;
+  recording_type: RecordingType;
   audio_path: string | null;
   audio_duration: number | null;
   audio_size: number | null;
@@ -30,6 +32,7 @@ export interface Recording {
   video_fps: number | null;
   video_size: number | null;
   notes_content: string | null;
+  main_notes_content: string | null;
   importance_color: ImportanceColor;
   last_group_color: DurationGroupColor;
   group_toggle_active: boolean;
@@ -245,7 +248,7 @@ export interface BackupResult {
 export type CreateTopic = Omit<Topic, 'id' | 'created_at' | 'updated_at' | 'total_recordings' | 'total_images' | 'total_videos'>;
 export type UpdateTopic = Partial<CreateTopic>;
 
-export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color' | 'name' | 'last_group_color' | 'group_toggle_active'> & { importance_color?: ImportanceColor; name?: string | null };
+export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color' | 'name' | 'last_group_color' | 'group_toggle_active' | 'recording_type' | 'main_notes_content'> & { importance_color?: ImportanceColor; name?: string | null; recording_type?: RecordingType; main_notes_content?: string | null };
 export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;

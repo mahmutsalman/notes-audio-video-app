@@ -10,6 +10,8 @@ import SimpleAudioRecordModal from '../components/audio/SimpleAudioRecordModal';
 import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
 import DurationList from '../components/recordings/DurationList';
 import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
+import MarkList from '../components/recordings/MarkList';
+import { isWrittenNote, createMarkTimes, getNextMarkIndex } from '../utils/marks';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import NotesEditor from '../components/common/NotesEditor';
@@ -30,6 +32,7 @@ export default function RecordingPage() {
   const { recordings: topicRecordings } = useRecordings(recording?.topic_id ?? null);
   const {
     durations,
+    createDuration,
     deleteDuration,
     updateDuration,
     durationImagesCache,
@@ -74,6 +77,9 @@ export default function RecordingPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditingMainNotes, setIsEditingMainNotes] = useState(false);
+  const [mainNotes, setMainNotes] = useState('');
+  const [isSavingMainNotes, setIsSavingMainNotes] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -129,6 +135,7 @@ export default function RecordingPage() {
   const isScreenRecordingRef = useRef(isScreenRecording);
   const [autoTriggerRegionSelection, setAutoTriggerRegionSelection] = useState(false);
   const [pendingRegion, setPendingRegion] = useState<CaptureArea | null>(null);
+  const [isAddingMark, setIsAddingMark] = useState(false);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -257,6 +264,23 @@ export default function RecordingPage() {
     }
   };
 
+  const handleEditMainNotes = () => {
+    setMainNotes(recording?.main_notes_content ?? '');
+    setIsEditingMainNotes(true);
+  };
+
+  const handleSaveMainNotes = async () => {
+    if (!id) return;
+    setIsSavingMainNotes(true);
+    try {
+      await window.electronAPI.recordings.update(id, { main_notes_content: mainNotes || null });
+      await preserveScrollPosition(refetch);
+      setIsEditingMainNotes(false);
+    } finally {
+      setIsSavingMainNotes(false);
+    }
+  };
+
   const handleEditName = () => {
     setEditingName(recording?.name || '');
     setIsEditingName(true);
@@ -287,6 +311,28 @@ export default function RecordingPage() {
       navigate(`/topic/${recording.topic_id}`);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // Handler for adding marks to written notes
+  const handleAddMark = async () => {
+    if (!id || isAddingMark) return;
+    setIsAddingMark(true);
+    try {
+      const nextIndex = getNextMarkIndex(durations);
+      const { start_time, end_time } = createMarkTimes(nextIndex);
+      const newDuration = await createDuration({
+        recording_id: id,
+        start_time,
+        end_time,
+        note: null,
+      });
+      // Select the newly created mark
+      setActiveDurationId(newDuration.id);
+    } catch (error) {
+      console.error('Failed to add mark:', error);
+    } finally {
+      setIsAddingMark(false);
     }
   };
 
@@ -970,6 +1016,7 @@ export default function RecordingPage() {
   const videoMimeType = getVideoMimeType(recording.video_path);
 
   const isVideoRecording = !!recording.video_path;
+  const isWrittenNoteRecording = isWrittenNote(recording);
 
   return (
     <div
@@ -983,6 +1030,7 @@ export default function RecordingPage() {
         <DurationNotesSidebar
           durations={durations}
           activeDurationId={activeDurationId}
+          isWrittenNote={isWrittenNoteRecording}
           onDurationSelect={handleSidebarDurationClick}
         />
         <div className={`flex-1 p-6 transition-all duration-300 ${hasSidebar ? 'lg:ml-80' : 'max-w-4xl mx-auto'}`}>
@@ -1030,89 +1078,153 @@ export default function RecordingPage() {
         </Button>
       </div>
 
-      {/* Audio/Video player */}
-      <div
-        className={`mb-6 p-4 -mx-4 cursor-pointer rounded-xl
-                    bg-gray-50 dark:bg-dark-surface
-                    shadow-[0_4px_0_0_rgba(0,0,0,0.08)] dark:shadow-[0_4px_0_0_rgba(0,0,0,0.25)]
-                    transition-all duration-75
-                    ${isContentPressed ? 'translate-y-1 shadow-none' : ''}`}
-      >
-        <div className="flex items-center justify-between mb-2">
-          <h2
-            className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2 select-none"
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setShowDebug(prev => !prev);
-            }}
-          >
-            <span>{isVideoRecording ? '🎬' : '🎙️'}</span>
-            {isVideoRecording ? 'Screen Recording' : 'Audio'}
-            <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
-              ({formatDuration(isVideoRecording ? recording.video_duration : recording.audio_duration)})
-            </span>
-            {!isVideoRecording && recording.audio_size !== null && (
-              <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
-                • {formatFileSize(recording.audio_size)}
-              </span>
-            )}
-            {isVideoRecording && recording.video_resolution && recording.video_fps && (
-              <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
-                • {recording.video_resolution} @ {recording.video_fps}fps
-              </span>
-            )}
-            {isVideoRecording && recording.video_size !== null && (
-              <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
-                • {formatFileSize(recording.video_size)}
-              </span>
-            )}
-          </h2>
-          <div className="flex items-center gap-2">
-            {/* Record Screen button removed - use Cmd+D shortcut or FAB on TopicDetailPage to create new screen recordings */}
-          </div>
-        </div>
-        {isVideoRecording ? (
-          videoUrl ? (
-            <video
-              ref={videoPlayerRef}
-              controls
-              className="w-full rounded-lg bg-black"
-              onLoadedData={() => setMediaLoaded(true)}
+      {/* Audio/Video player - hidden for written notes */}
+      {!isWrittenNoteRecording && (
+        <div
+          className={`mb-6 p-4 -mx-4 cursor-pointer rounded-xl
+                      bg-gray-50 dark:bg-dark-surface
+                      shadow-[0_4px_0_0_rgba(0,0,0,0.08)] dark:shadow-[0_4px_0_0_rgba(0,0,0,0.25)]
+                      transition-all duration-75
+                      ${isContentPressed ? 'translate-y-1 shadow-none' : ''}`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <h2
+              className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2 select-none"
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setShowDebug(prev => !prev);
+              }}
             >
-              <source src={videoUrl} type={videoMimeType} />
-              Your browser does not support the video tag.
-            </video>
+              <span>{isVideoRecording ? '🎬' : '🎙️'}</span>
+              {isVideoRecording ? 'Screen Recording' : 'Audio'}
+              <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
+                ({formatDuration(isVideoRecording ? recording.video_duration : recording.audio_duration)})
+              </span>
+              {!isVideoRecording && recording.audio_size !== null && (
+                <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                  • {formatFileSize(recording.audio_size)}
+                </span>
+              )}
+              {isVideoRecording && recording.video_resolution && recording.video_fps && (
+                <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                  • {recording.video_resolution} @ {recording.video_fps}fps
+                </span>
+              )}
+              {isVideoRecording && recording.video_size !== null && (
+                <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                  • {formatFileSize(recording.video_size)}
+                </span>
+              )}
+            </h2>
+            <div className="flex items-center gap-2">
+              {/* Record Screen button removed - use Cmd+D shortcut or FAB on TopicDetailPage to create new screen recordings */}
+            </div>
+          </div>
+          {isVideoRecording ? (
+            videoUrl ? (
+              <video
+                ref={videoPlayerRef}
+                controls
+                className="w-full rounded-lg bg-black"
+                onLoadedData={() => setMediaLoaded(true)}
+              >
+                <source src={videoUrl} type={videoMimeType} />
+                Your browser does not support the video tag.
+              </video>
+            ) : (
+              <p className="text-gray-500 dark:text-gray-400">No video file available</p>
+            )
           ) : (
-            <p className="text-gray-500 dark:text-gray-400">No video file available</p>
-          )
-        ) : (
-          audioUrl ? (
-            <AudioPlayer
-              ref={audioPlayerRef}
-              src={audioUrl}
-              duration={recording.audio_duration ?? undefined}
-              onLoad={() => setMediaLoaded(true)}
-              onPlay={() => setIsSeekingDuration(false)}
-              showDebug={showDebug}
-            />
-          ) : (
-            <p className="text-gray-500 dark:text-gray-400">No audio file available</p>
-          )
-        )}
-      </div>
+            audioUrl ? (
+              <AudioPlayer
+                ref={audioPlayerRef}
+                src={audioUrl}
+                duration={recording.audio_duration ?? undefined}
+                onLoad={() => setMediaLoaded(true)}
+                onPlay={() => setIsSeekingDuration(false)}
+                showDebug={showDebug}
+              />
+            ) : (
+              <p className="text-gray-500 dark:text-gray-400">No audio file available</p>
+            )
+          )}
+        </div>
+      )}
 
-      {/* Duration markers */}
-      <DurationList
-        durations={durations}
-        activeDurationId={activeDurationId}
-        onDurationClick={handleDurationClick}
-        onDeleteDuration={handleDeleteDuration}
-        onUpdateNote={handleUpdateNote}
-        onColorChange={handleColorChange}
-        durationImagesCache={durationImagesCache}
-        durationVideosCache={durationVideosCache}
-        disabled={!mediaLoaded || isSeekingDuration}
-      />
+      {/* Main Notes section - shown for written notes (replaces audio/video player) */}
+      {isWrittenNoteRecording && (
+        <div className="mb-6 p-4 -mx-4 rounded-xl bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-teal-700 dark:text-teal-300 flex items-center gap-2">
+              <span>📝</span>
+              Main Notes
+            </h2>
+            {!isEditingMainNotes && (
+              <Button variant="ghost" size="sm" onClick={handleEditMainNotes}>
+                Edit
+              </Button>
+            )}
+          </div>
+          {isEditingMainNotes ? (
+            <div className="space-y-3">
+              <NotesEditor
+                value={mainNotes}
+                onChange={setMainNotes}
+                placeholder="Write your main notes here..."
+              />
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" size="sm" onClick={() => setIsEditingMainNotes(false)}>
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={handleSaveMainNotes} disabled={isSavingMainNotes}>
+                  {isSavingMainNotes ? 'Saving...' : 'Save'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 bg-white dark:bg-dark-surface rounded-lg">
+              {recording.main_notes_content ? (
+                <div
+                  className="notes-content text-gray-700 dark:text-gray-300"
+                  dangerouslySetInnerHTML={{ __html: recording.main_notes_content }}
+                />
+              ) : (
+                <p className="text-teal-500 dark:text-teal-400/70 italic">
+                  No main notes yet. Click Edit to add notes.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Duration markers / Marks */}
+      {isWrittenNoteRecording ? (
+        <MarkList
+          durations={durations}
+          activeDurationId={activeDurationId}
+          onMarkClick={(duration) => setActiveDurationId(activeDurationId === duration.id ? null : duration.id)}
+          onDeleteMark={handleDeleteDuration}
+          onAddMark={handleAddMark}
+          onUpdateNote={handleUpdateNote}
+          onColorChange={handleColorChange}
+          durationImagesCache={durationImagesCache}
+          durationVideosCache={durationVideosCache}
+          isAddingMark={isAddingMark}
+        />
+      ) : (
+        <DurationList
+          durations={durations}
+          activeDurationId={activeDurationId}
+          onDurationClick={handleDurationClick}
+          onDeleteDuration={handleDeleteDuration}
+          onUpdateNote={handleUpdateNote}
+          onColorChange={handleColorChange}
+          durationImagesCache={durationImagesCache}
+          durationVideosCache={durationVideosCache}
+          disabled={!mediaLoaded || isSeekingDuration}
+        />
+      )}
 
       {/* Duration Images - shown when a duration is active and has images */}
       {activeDurationId && activeDurationImages.length > 0 && (

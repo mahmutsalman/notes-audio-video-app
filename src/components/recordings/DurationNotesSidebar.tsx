@@ -3,17 +3,20 @@ import type { Duration } from '../../types';
 import { formatDuration, formatDurationLength } from '../../utils/formatters';
 import { DURATION_COLORS } from '../../utils/durationColors';
 import { getGroupColorConfig } from '../../utils/durationGroupColors';
+import { formatMarkLabel } from '../../utils/marks';
 
 interface DurationNotesSidebarProps {
   durations: Duration[];
   activeDurationId: number | null;
   onDurationSelect: (durationId: number) => void;
+  isWrittenNote?: boolean;
 }
 
 export default function DurationNotesSidebar({
   durations,
   activeDurationId,
   onDurationSelect,
+  isWrittenNote = false,
 }: DurationNotesSidebarProps) {
   // Filter durations that have notes
   const durationsWithNotes = durations.filter(d => d.note && d.note.trim() !== '');
@@ -64,17 +67,25 @@ export default function DurationNotesSidebar({
               `}
               style={isActive && colorConfig ? { borderColor: colorConfig.borderColor } : undefined}
             >
-              {/* Time Range with Group Color Left Line */}
+              {/* Time Range / Mark Label with Group Color Left Line */}
               <div
                 className={`text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 flex items-center gap-1 w-fit px-2 py-1 rounded-l-md ${groupColorConfig ? 'border-l-2' : ''}`}
                 style={groupColorConfig ? { borderColor: groupColorConfig.color } : undefined}
               >
-                <span>{formatDuration(Math.floor(duration.start_time))}</span>
-                <span className="text-gray-400 dark:text-gray-500">→</span>
-                <span>{formatDuration(Math.floor(duration.end_time))}</span>
-                <span className="ml-1.5 text-[10px] text-cyan-600 dark:text-cyan-400">
-                  ({formatDurationLength(Math.floor(duration.start_time), Math.floor(duration.end_time))})
-                </span>
+                {isWrittenNote ? (
+                  <span className="text-teal-600 dark:text-teal-400 font-medium">
+                    {formatMarkLabel(duration)}
+                  </span>
+                ) : (
+                  <>
+                    <span>{formatDuration(Math.floor(duration.start_time))}</span>
+                    <span className="text-gray-400 dark:text-gray-500">→</span>
+                    <span>{formatDuration(Math.floor(duration.end_time))}</span>
+                    <span className="ml-1.5 text-[10px] text-cyan-600 dark:text-cyan-400">
+                      ({formatDurationLength(Math.floor(duration.start_time), Math.floor(duration.end_time))})
+                    </span>
+                  </>
+                )}
                 {colorConfig && (
                   <span
                     className="w-2 h-2 rounded-full ml-1"
