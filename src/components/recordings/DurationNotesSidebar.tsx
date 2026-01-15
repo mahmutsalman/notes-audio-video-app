@@ -59,17 +59,17 @@ export default function DurationNotesSidebar({
               id={`sidebar-note-${duration.id}`}
               onClick={() => onDurationSelect(duration.id)}
               className={`
-                group relative px-4 py-3 cursor-pointer border-l-4 transition-all duration-150
+                group relative px-4 py-3 cursor-pointer border-l-4 border-gray-300 dark:border-gray-600 transition-all duration-150
                 ${isActive
-                  ? 'bg-amber-50 dark:bg-amber-900/20'
-                  : 'border-transparent hover:bg-gray-50 dark:hover:bg-dark-hover'
+                  ? 'bg-gray-100 dark:bg-gray-800/50'
+                  : 'hover:bg-gray-50 dark:hover:bg-dark-hover'
                 }
               `}
-              style={isActive && colorConfig ? { borderColor: colorConfig.borderColor } : undefined}
+              style={colorConfig ? { borderColor: colorConfig.borderColor } : undefined}
             >
               {/* Time Range / Mark Label with Group Color Left Line */}
               <div
-                className={`text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 flex items-center gap-1 w-fit px-2 py-1 rounded-l-md ${groupColorConfig ? 'border-l-2' : ''}`}
+                className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 flex items-center gap-1 w-fit px-2 py-1 rounded-l-md border-l-2 border-gray-400 dark:border-gray-500"
                 style={groupColorConfig ? { borderColor: groupColorConfig.color } : undefined}
               >
                 {isWrittenNote ? (
