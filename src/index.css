@@ -125,7 +125,7 @@
 }
 
 .notes-editor .ql-editor {
-  @apply text-gray-900 dark:text-gray-100;
+  @apply text-gray-900 dark:text-gray-100 text-sm;
   min-height: 150px;
 }
 
@@ -159,6 +159,10 @@
 }
 
 /* Notes content display styles */
+.notes-content {
+  @apply text-sm;
+}
+
 .notes-content ul {
   @apply list-disc list-inside ml-4 my-2;
 }
