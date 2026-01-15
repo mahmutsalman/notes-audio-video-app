@@ -173,6 +173,7 @@ export default function CodeEditor({
             automaticLayout: true,
             tabSize: 2,
             wordWrap: 'on',
+            mouseWheelZoom: true,
           }}
         />
       </div>
