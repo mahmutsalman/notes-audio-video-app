@@ -203,32 +203,32 @@
   @apply line-through;
 }
 
-/* Duration note editor - amber themed */
+/* Duration note editor - teal themed */
 .duration-note-editor .notes-editor .ql-toolbar {
-  @apply border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30 rounded-t-lg;
+  @apply border-teal-300 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30 rounded-t-lg;
 }
 
 .duration-note-editor .notes-editor .ql-container {
-  @apply border-amber-300 dark:border-amber-700 bg-white dark:bg-dark-bg rounded-b-lg;
+  @apply border-teal-300 dark:border-teal-700 bg-white dark:bg-dark-bg rounded-b-lg;
 }
 
-/* Duration note content - amber text colors */
+/* Duration note content - teal text colors */
 .duration-note-content {
-  @apply text-amber-700 dark:text-amber-300;
+  @apply text-teal-700 dark:text-teal-300;
 }
 
 .duration-note-content a {
-  @apply text-amber-600 dark:text-amber-400 underline;
+  @apply text-teal-600 dark:text-teal-400 underline;
 }
 
 .duration-note-content blockquote {
-  @apply border-amber-400 dark:border-amber-600 text-amber-600 dark:text-amber-400;
+  @apply border-teal-400 dark:border-teal-600 text-teal-600 dark:text-teal-400;
 }
 
 .duration-note-content code {
-  @apply bg-amber-100 dark:bg-amber-900/50;
+  @apply bg-teal-100 dark:bg-teal-900/50;
 }
 
 .duration-note-content pre {
-  @apply bg-amber-100 dark:bg-amber-900/50;
+  @apply bg-teal-100 dark:bg-teal-900/50;
 }
