@@ -1,14 +1,14 @@
 export const DURATION_GROUP_COLORS = {
   lime: { color: '#84cc16', label: 'Lime Group' },
-  cyan: { color: '#06b6d4', label: 'Cyan Group' },
-  orange: { color: '#f97316', label: 'Orange Group' },
-  teal: { color: '#14b8a6', label: 'Teal Group' },
-  rose: { color: '#f43f5e', label: 'Rose Group' },
   yellow: { color: '#eab308', label: 'Yellow Group' },
+  orange: { color: '#f97316', label: 'Orange Group' },
+  rose: { color: '#f43f5e', label: 'Rose Group' },
   pink: { color: '#ec4899', label: 'Pink Group' },
-  emerald: { color: '#10b981', label: 'Emerald Group' },
-  blue: { color: '#3b82f6', label: 'Blue Group' },
   fuchsia: { color: '#d946ef', label: 'Fuchsia Group' },
+  blue: { color: '#3b82f6', label: 'Blue Group' },
+  cyan: { color: '#06b6d4', label: 'Cyan Group' },
+  teal: { color: '#14b8a6', label: 'Teal Group' },
+  emerald: { color: '#10b981', label: 'Emerald Group' },
 } as const;
 
 export type DurationGroupColor = keyof typeof DURATION_GROUP_COLORS | null;
@@ -26,7 +26,7 @@ export function getNextGroupColor(current: DurationGroupColor): DurationGroupCol
   return DURATION_GROUP_COLOR_ORDER[(idx + 1) % DURATION_GROUP_COLOR_ORDER.length];
 }
 
-// Cycles through group colors INCLUDING null: null → lime → ... → fuchsia → null
+// Cycles through group colors INCLUDING null: null → lime → ... → emerald → null
 export function getNextGroupColorWithNull(current: DurationGroupColor): DurationGroupColor {
   if (current === null) return DURATION_GROUP_COLOR_ORDER[0];
   const idx = DURATION_GROUP_COLOR_ORDER.indexOf(current);
