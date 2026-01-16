@@ -88,6 +88,8 @@ const electronAPI = {
       ipcRenderer.invoke('media:updateVideoCaption', id, caption),
     updateVideoColor: (id: number, color: DurationColor): Promise<Video> =>
       ipcRenderer.invoke('media:updateVideoColor', id, color),
+    updateVideoGroupColor: (id: number, groupColor: DurationGroupColor): Promise<Video> =>
+      ipcRenderer.invoke('media:updateVideoGroupColor', id, groupColor),
     pickFiles: (type: 'image' | 'video' | 'both'): Promise<string[]> => ipcRenderer.invoke('media:pickFiles', type),
   },
 
@@ -206,6 +208,8 @@ const electronAPI = {
       ipcRenderer.invoke('durationVideos:updateCaption', id, caption),
     updateColor: (id: number, color: DurationColor): Promise<DurationVideo> =>
       ipcRenderer.invoke('durationVideos:updateColor', id, color),
+    updateGroupColor: (id: number, groupColor: DurationGroupColor): Promise<DurationVideo> =>
+      ipcRenderer.invoke('durationVideos:updateGroupColor', id, groupColor),
   },
 
   // Duration Audios (audio clips attached to duration marks)
@@ -218,6 +222,8 @@ const electronAPI = {
       ipcRenderer.invoke('durationAudios:delete', id),
     updateCaption: (id: number, caption: string | null): Promise<DurationAudio> =>
       ipcRenderer.invoke('durationAudios:updateCaption', id, caption),
+    updateGroupColor: (id: number, groupColor: DurationGroupColor): Promise<DurationAudio> =>
+      ipcRenderer.invoke('durationAudios:updateGroupColor', id, groupColor),
   },
 
   // Audios (audio clips attached to recordings)
@@ -230,6 +236,8 @@ const electronAPI = {
       ipcRenderer.invoke('audios:delete', id),
     updateCaption: (id: number, caption: string | null): Promise<Audio> =>
       ipcRenderer.invoke('audios:updateCaption', id, caption),
+    updateGroupColor: (id: number, groupColor: DurationGroupColor): Promise<Audio> =>
+      ipcRenderer.invoke('audios:updateGroupColor', id, groupColor),
   },
 
   // Code Snippets (code snippets attached to recordings)

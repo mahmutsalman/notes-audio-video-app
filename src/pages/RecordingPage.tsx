@@ -731,32 +731,33 @@ export default function RecordingPage() {
     setContextMenu({ type, item, x: e.clientX, y: e.clientY });
   };
 
-  // Handle group color cycling for images (top bar) via Shift+Right-Click
+  // Handle group color cycling for media (top bar) via Shift+Right-Click
   const handleColorCycle = async (
     type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio',
     item: Image | Video | DurationImage | DurationVideo | DurationAudio | Audio
   ) => {
-    // Only handle group colors for images and duration images
-    if (type !== 'image' && type !== 'durationImage') {
-      return;
-    }
-
     // Get current group color from override state or original item
     const overrideKey = `${type}-${item.id}`;
     const currentGroupColor = mediaGroupColorOverrides[overrideKey] ?? ('group_color' in item ? item.group_color : null);
     const nextGroupColor = getNextGroupColorWithNull(currentGroupColor);
 
     try {
+      // Update local state immediately for instant visual feedback (no scroll jump)
+      setMediaGroupColorOverrides(prev => ({ ...prev, [overrideKey]: nextGroupColor }));
+
+      // Update database in background based on type
       if (type === 'image') {
-        // Update local state immediately for instant visual feedback (no scroll jump)
-        setMediaGroupColorOverrides(prev => ({ ...prev, [overrideKey]: nextGroupColor }));
-        // Update database in background
         await window.electronAPI.media.updateImageGroupColor(item.id, nextGroupColor);
+      } else if (type === 'video') {
+        await window.electronAPI.media.updateVideoGroupColor(item.id, nextGroupColor);
       } else if (type === 'durationImage' && activeDurationId) {
-        // Update local state immediately for instant visual feedback
-        setMediaGroupColorOverrides(prev => ({ ...prev, [overrideKey]: nextGroupColor }));
-        // Update database in background
         await window.electronAPI.durationImages.updateGroupColor(item.id, nextGroupColor);
+      } else if (type === 'durationVideo' && activeDurationId) {
+        await window.electronAPI.durationVideos.updateGroupColor(item.id, nextGroupColor);
+      } else if (type === 'durationAudio' && activeDurationId) {
+        await window.electronAPI.durationAudios.updateGroupColor(item.id, nextGroupColor);
+      } else if (type === 'audio') {
+        await window.electronAPI.audios.updateGroupColor(item.id, nextGroupColor);
       }
     } catch (error) {
       console.error('Failed to update group color:', error);
@@ -1360,9 +1361,18 @@ export default function RecordingPage() {
             {activeDurationVideos.map((video, index) => {
               const effectiveColor = mediaColorOverrides[`durationVideo-${video.id}`] ?? video.color;
               const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
+              const effectiveGroupColor = mediaGroupColorOverrides[`durationVideo-${video.id}`] ?? video.group_color;
+              const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
               <div key={video.id} className="group">
                 <div className="relative">
+                  {/* Top group color indicator */}
+                  {groupColorConfig && (
+                    <div
+                      className="absolute top-0 left-0 right-0 h-1 rounded-t-lg z-10"
+                      style={{ backgroundColor: groupColorConfig.color }}
+                    />
+                  )}
                   {/* Number badge */}
                   <div className="absolute top-1 left-1 w-5 h-5 bg-black/70 text-white
                                   rounded-full flex items-center justify-center text-xs font-bold z-10">
@@ -1451,13 +1461,23 @@ export default function RecordingPage() {
             </button>
           </div>
           <div className="space-y-3">
-            {activeDurationAudios.map((audio, index) => (
+            {activeDurationAudios.map((audio, index) => {
+              const effectiveGroupColor = mediaGroupColorOverrides[`durationAudio-${audio.id}`] ?? audio.group_color;
+              const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
+              return (
               <div
                 key={audio.id}
                 className="group relative"
                 onContextMenu={(e) => handleContextMenu(e, 'durationAudio', audio)}
               >
-                <div className="flex items-start gap-2">
+                {/* Top group color indicator */}
+                {groupColorConfig && (
+                  <div
+                    className="absolute top-0 left-0 right-0 h-1 rounded-t-lg z-10"
+                    style={{ backgroundColor: groupColorConfig.color }}
+                  />
+                )}
+                <div className={`flex items-start gap-2 ${groupColorConfig ? 'pt-1' : ''}`}>
                   <span className="w-4 h-4 mt-2 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold">
                     {index + 1}
                   </span>
@@ -1482,7 +1502,8 @@ export default function RecordingPage() {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1683,12 +1704,21 @@ export default function RecordingPage() {
             {videos.map((video, index) => {
               const effectiveColor = mediaColorOverrides[`video-${video.id}`] ?? video.color;
               const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
+              const effectiveGroupColor = mediaGroupColorOverrides[`video-${video.id}`] ?? video.group_color;
+              const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
               <div key={video.id} className="group">
                 <div
                   className="relative"
                   onContextMenu={(e) => handleContextMenu(e, 'video', video)}
                 >
+                  {/* Top group color indicator */}
+                  {groupColorConfig && (
+                    <div
+                      className="absolute top-0 left-0 right-0 h-1 rounded-t-lg z-10"
+                      style={{ backgroundColor: groupColorConfig.color }}
+                    />
+                  )}
                   {/* Number badge */}
                   <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
                                   rounded-full flex items-center justify-center text-xs font-bold z-10">
@@ -1763,13 +1793,23 @@ export default function RecordingPage() {
         </div>
         {recordingAudios.length > 0 ? (
           <div className="space-y-3">
-            {recordingAudios.map((audio, index) => (
+            {recordingAudios.map((audio, index) => {
+              const effectiveGroupColor = mediaGroupColorOverrides[`audio-${audio.id}`] ?? audio.group_color;
+              const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
+              return (
               <div
                 key={audio.id}
                 className="group relative"
                 onContextMenu={(e) => handleContextMenu(e, 'audio', audio)}
               >
-                <div className="flex items-start gap-2">
+                {/* Top group color indicator */}
+                {groupColorConfig && (
+                  <div
+                    className="absolute top-0 left-0 right-0 h-1 rounded-t-lg z-10"
+                    style={{ backgroundColor: groupColorConfig.color }}
+                  />
+                )}
+                <div className={`flex items-start gap-2 ${groupColorConfig ? 'pt-1' : ''}`}>
                   <span className="w-4 h-4 mt-2 bg-violet-500/30 border border-violet-400/50 text-violet-300 rounded-full flex items-center justify-center text-[10px] font-bold">
                     {index + 1}
                   </span>
@@ -1794,7 +1834,8 @@ export default function RecordingPage() {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p className="text-violet-400 dark:text-violet-500 italic text-sm">No audio recordings attached</p>

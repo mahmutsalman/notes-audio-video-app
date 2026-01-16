@@ -64,6 +64,7 @@ export interface Video {
   thumbnail_path: string | null;
   caption: string | null;
   color: DurationColor;
+  group_color: DurationGroupColor;
   duration: number | null;
   sort_order: number;
   created_at: string;
@@ -74,6 +75,7 @@ export interface Audio {
   recording_id: number;
   file_path: string;
   caption: string | null;
+  group_color: DurationGroupColor;
   duration: number | null;
   sort_order: number;
   created_at: string;
@@ -115,6 +117,7 @@ export interface DurationVideo {
   thumbnail_path: string | null;
   caption: string | null;
   color: DurationColor;
+  group_color: DurationGroupColor;
   duration: number | null;
   sort_order: number;
   created_at: string;
@@ -125,6 +128,7 @@ export interface DurationAudio {
   duration_id: number;
   file_path: string;
   caption: string | null;
+  group_color: DurationGroupColor;
   duration: number | null;
   sort_order: number;
   created_at: string;
@@ -339,6 +343,7 @@ export interface ElectronAPI {
     updateImageGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<Image>;
     updateVideoCaption: (id: number, caption: string | null) => Promise<Video>;
     updateVideoColor: (id: number, color: DurationColor) => Promise<Video>;
+    updateVideoGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<Video>;
     pickFiles: (type: 'image' | 'video' | 'both') => Promise<string[]>;
   };
   paths: {
@@ -378,18 +383,21 @@ export interface ElectronAPI {
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<DurationVideo>;
     updateColor: (id: number, color: DurationColor) => Promise<DurationVideo>;
+    updateGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<DurationVideo>;
   };
   durationAudios: {
     getByDuration: (durationId: number) => Promise<DurationAudio[]>;
     addFromBuffer: (durationId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<DurationAudio>;
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<DurationAudio>;
+    updateGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<DurationAudio>;
   };
   audios: {
     getByRecording: (recordingId: number) => Promise<Audio[]>;
     addFromBuffer: (recordingId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<Audio>;
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<Audio>;
+    updateGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<Audio>;
   };
   codeSnippets: {
     getByRecording: (recordingId: number) => Promise<CodeSnippet[]>;

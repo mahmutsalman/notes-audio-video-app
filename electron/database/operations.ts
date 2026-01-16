@@ -393,6 +393,12 @@ export const VideosOperations = {
     db.prepare('UPDATE videos SET color = ? WHERE id = ?').run(color, id);
     return this.getById(id)!;
   },
+
+  updateGroupColor(id: number, groupColor: DurationGroupColor): Video {
+    const db = getDatabase();
+    db.prepare('UPDATE videos SET group_color = ? WHERE id = ?').run(groupColor, id);
+    return this.getById(id)!;
+  },
 };
 
 // Durations Operations (marked time segments within recordings)
@@ -603,6 +609,12 @@ export const DurationVideosOperations = {
     db.prepare('UPDATE duration_videos SET color = ? WHERE id = ?').run(color, id);
     return this.getById(id)!;
   },
+
+  updateGroupColor(id: number, groupColor: DurationGroupColor): DurationVideo {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_videos SET group_color = ? WHERE id = ?').run(groupColor, id);
+    return this.getById(id)!;
+  },
 };
 
 // Audios Operations (audio clips attached to recordings)
@@ -647,6 +659,12 @@ export const AudiosOperations = {
   updateCaption(id: number, caption: string | null): Audio {
     const db = getDatabase();
     db.prepare('UPDATE audios SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+
+  updateGroupColor(id: number, groupColor: DurationGroupColor): Audio {
+    const db = getDatabase();
+    db.prepare('UPDATE audios SET group_color = ? WHERE id = ?').run(groupColor, id);
     return this.getById(id)!;
   },
 };
@@ -698,6 +716,12 @@ export const DurationAudiosOperations = {
   updateCaption(id: number, caption: string | null): DurationAudio {
     const db = getDatabase();
     db.prepare('UPDATE duration_audios SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+
+  updateGroupColor(id: number, groupColor: DurationGroupColor): DurationAudio {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_audios SET group_color = ? WHERE id = ?').run(groupColor, id);
     return this.getById(id)!;
   },
 };

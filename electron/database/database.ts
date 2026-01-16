@@ -426,6 +426,38 @@ function runMigrations(db: Database.Database): void {
     console.log('Added group_color column to duration_images table');
   }
 
+  // Migration: Add group_color column to videos table if it doesn't exist
+  const videosColumnsUpdated = db.prepare("PRAGMA table_info(videos)").all() as { name: string }[];
+  const hasVideoGroupColorColumn = videosColumnsUpdated.some(col => col.name === 'group_color');
+  if (!hasVideoGroupColorColumn) {
+    db.exec(`ALTER TABLE videos ADD COLUMN group_color TEXT`);
+    console.log('Added group_color column to videos table');
+  }
+
+  // Migration: Add group_color column to duration_videos table if it doesn't exist
+  const durationVideosColumnsUpdated = db.prepare("PRAGMA table_info(duration_videos)").all() as { name: string }[];
+  const hasDurationVideoGroupColorColumn = durationVideosColumnsUpdated.some(col => col.name === 'group_color');
+  if (!hasDurationVideoGroupColorColumn) {
+    db.exec(`ALTER TABLE duration_videos ADD COLUMN group_color TEXT`);
+    console.log('Added group_color column to duration_videos table');
+  }
+
+  // Migration: Add group_color column to audios table if it doesn't exist
+  const audiosColumnsUpdated = db.prepare("PRAGMA table_info(audios)").all() as { name: string }[];
+  const hasAudioGroupColorColumn = audiosColumnsUpdated.some(col => col.name === 'group_color');
+  if (!hasAudioGroupColorColumn) {
+    db.exec(`ALTER TABLE audios ADD COLUMN group_color TEXT`);
+    console.log('Added group_color column to audios table');
+  }
+
+  // Migration: Add group_color column to duration_audios table if it doesn't exist
+  const durationAudiosColumnsUpdated = db.prepare("PRAGMA table_info(duration_audios)").all() as { name: string }[];
+  const hasDurationAudioGroupColorColumn = durationAudiosColumnsUpdated.some(col => col.name === 'group_color');
+  if (!hasDurationAudioGroupColorColumn) {
+    db.exec(`ALTER TABLE duration_audios ADD COLUMN group_color TEXT`);
+    console.log('Added group_color column to duration_audios table');
+  }
+
   // Create the stats view (drop and recreate to handle schema changes)
   db.exec(`
     DROP VIEW IF EXISTS topic_stats;

@@ -245,6 +245,10 @@ export function setupIpcHandlers(): void {
     return VideosOperations.updateColor(id, color);
   });
 
+  ipcMain.handle('media:updateVideoGroupColor', async (_, id: number, groupColor: DurationGroupColor | null) => {
+    return VideosOperations.updateGroupColor(id, groupColor);
+  });
+
   ipcMain.handle('media:pickFiles', async (_, type: 'image' | 'video' | 'both') => {
     const filters = type === 'image'
       ? [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }]
@@ -465,6 +469,10 @@ export function setupIpcHandlers(): void {
     return DurationVideosOperations.updateColor(id, color);
   });
 
+  ipcMain.handle('durationVideos:updateGroupColor', async (_, id: number, groupColor: DurationGroupColor | null) => {
+    return DurationVideosOperations.updateGroupColor(id, groupColor);
+  });
+
   // ============ Duration Audios ============
   ipcMain.handle('durationAudios:getByDuration', async (_, durationId: number) => {
     return DurationAudiosOperations.getByDuration(durationId);
@@ -493,6 +501,10 @@ export function setupIpcHandlers(): void {
     return DurationAudiosOperations.updateCaption(id, caption);
   });
 
+  ipcMain.handle('durationAudios:updateGroupColor', async (_, id: number, groupColor: DurationGroupColor | null) => {
+    return DurationAudiosOperations.updateGroupColor(id, groupColor);
+  });
+
   // ============ Audios (recording-level audio attachments) ============
   ipcMain.handle('audios:getByRecording', async (_, recordingId: number) => {
     return AudiosOperations.getByRecording(recordingId);
@@ -519,6 +531,10 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('audios:updateCaption', async (_, id: number, caption: string | null) => {
     return AudiosOperations.updateCaption(id, caption);
+  });
+
+  ipcMain.handle('audios:updateGroupColor', async (_, id: number, groupColor: DurationGroupColor | null) => {
+    return AudiosOperations.updateGroupColor(id, groupColor);
   });
 
   // ============ Code Snippets ============
