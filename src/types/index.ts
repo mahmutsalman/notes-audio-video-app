@@ -2,7 +2,7 @@
 
 export type ImportanceColor = 'emerald' | 'amber' | 'rose' | null;
 export type DurationColor = 'red' | 'amber' | 'sky' | null;
-export type DurationGroupColor = 'purple' | 'pink' | 'emerald' | 'teal' | 'indigo' | 'orange' | 'lime' | 'cyan' | 'fuchsia' | 'rose' | null;
+export type DurationGroupColor = 'lime' | 'cyan' | 'orange' | 'teal' | 'rose' | 'yellow' | 'pink' | 'emerald' | 'blue' | 'fuchsia' | null;
 export type RecordingType = 'audio' | 'video' | 'written';
 
 export interface Topic {

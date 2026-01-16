@@ -3,7 +3,7 @@ import { getNextGroupColor, type DurationGroupColor } from '../utils/durationGro
 
 export function useGroupColorToggle(recordingId: number | null) {
   const [isActive, setIsActive] = useState(false);
-  const [currentColor, setCurrentColor] = useState<DurationGroupColor>('purple');
+  const [currentColor, setCurrentColor] = useState<DurationGroupColor>('lime');
 
   // Load state from database when recording starts
   useEffect(() => {
@@ -13,13 +13,13 @@ export function useGroupColorToggle(recordingId: number | null) {
       try {
         const state = await window.electronAPI.recordings.getGroupColorState(recordingId);
         setIsActive(state.toggleActive);
-        setCurrentColor(state.lastGroupColor || 'purple');
+        setCurrentColor(state.lastGroupColor || 'lime');
         console.log('[useGroupColorToggle] Loaded state:', state);
       } catch (error) {
         console.error('[useGroupColorToggle] Failed to load state:', error);
         // Default to first color
         setIsActive(false);
-        setCurrentColor('purple');
+        setCurrentColor('lime');
       }
     };
 

@@ -741,7 +741,9 @@ export default function RecordingPage() {
   ) => {
     // Get current group color from override state or original item
     const overrideKey = `${type}-${item.id}`;
-    const currentGroupColor = mediaGroupColorOverrides[overrideKey] ?? ('group_color' in item ? item.group_color : null);
+    const currentGroupColor = overrideKey in mediaGroupColorOverrides
+      ? mediaGroupColorOverrides[overrideKey]
+      : ('group_color' in item ? item.group_color : null);
     const nextGroupColor = getNextGroupColorWithNull(currentGroupColor);
 
     try {
@@ -1272,7 +1274,8 @@ export default function RecordingPage() {
             {activeDurationImages.map((img, index) => {
               const effectiveColor = mediaColorOverrides[`durationImage-${img.id}`] ?? img.color;
               const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
-              const effectiveGroupColor = mediaGroupColorOverrides[`durationImage-${img.id}`] ?? img.group_color;
+              const durationImageKey = `durationImage-${img.id}`;
+              const effectiveGroupColor = durationImageKey in mediaGroupColorOverrides ? mediaGroupColorOverrides[durationImageKey] : img.group_color;
               const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
               <div key={img.id} className="group">
@@ -1364,7 +1367,8 @@ export default function RecordingPage() {
             {activeDurationVideos.map((video, index) => {
               const effectiveColor = mediaColorOverrides[`durationVideo-${video.id}`] ?? video.color;
               const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
-              const effectiveGroupColor = mediaGroupColorOverrides[`durationVideo-${video.id}`] ?? video.group_color;
+              const durationVideoKey = `durationVideo-${video.id}`;
+              const effectiveGroupColor = durationVideoKey in mediaGroupColorOverrides ? mediaGroupColorOverrides[durationVideoKey] : video.group_color;
               const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
               <div key={video.id} className="group">
@@ -1465,7 +1469,8 @@ export default function RecordingPage() {
           </div>
           <div className="space-y-3">
             {activeDurationAudios.map((audio, index) => {
-              const effectiveGroupColor = mediaGroupColorOverrides[`durationAudio-${audio.id}`] ?? audio.group_color;
+              const durationAudioKey = `durationAudio-${audio.id}`;
+              const effectiveGroupColor = durationAudioKey in mediaGroupColorOverrides ? mediaGroupColorOverrides[durationAudioKey] : audio.group_color;
               const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
               <div
@@ -1621,7 +1626,8 @@ export default function RecordingPage() {
               const effectiveColor = mediaColorOverrides[`image-${img.id}`] ?? img.color;
               const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
               // Use group color override if exists, otherwise use original group color
-              const effectiveGroupColor = mediaGroupColorOverrides[`image-${img.id}`] ?? img.group_color;
+              const imageKey = `image-${img.id}`;
+              const effectiveGroupColor = imageKey in mediaGroupColorOverrides ? mediaGroupColorOverrides[imageKey] : img.group_color;
               const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
               <div key={img.id} className="group">
@@ -1707,7 +1713,8 @@ export default function RecordingPage() {
             {videos.map((video, index) => {
               const effectiveColor = mediaColorOverrides[`video-${video.id}`] ?? video.color;
               const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
-              const effectiveGroupColor = mediaGroupColorOverrides[`video-${video.id}`] ?? video.group_color;
+              const videoKey = `video-${video.id}`;
+              const effectiveGroupColor = videoKey in mediaGroupColorOverrides ? mediaGroupColorOverrides[videoKey] : video.group_color;
               const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
               <div key={video.id} className="group">
@@ -1797,7 +1804,8 @@ export default function RecordingPage() {
         {recordingAudios.length > 0 ? (
           <div className="space-y-3">
             {recordingAudios.map((audio, index) => {
-              const effectiveGroupColor = mediaGroupColorOverrides[`audio-${audio.id}`] ?? audio.group_color;
+              const audioKey = `audio-${audio.id}`;
+              const effectiveGroupColor = audioKey in mediaGroupColorOverrides ? mediaGroupColorOverrides[audioKey] : audio.group_color;
               const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
               <div
