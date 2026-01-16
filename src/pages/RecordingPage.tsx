@@ -235,6 +235,21 @@ export default function RecordingPage() {
     }
   }, [activeDurationId, getDurationCodeSnippets]);
 
+  // Fetch duration media when active duration changes (for written notes)
+  // This ensures images/videos/audios are loaded from DB after navigation clears cache
+  useEffect(() => {
+    if (!activeDurationId || !recording || !isWrittenNote(recording)) return;
+
+    // Fetch all media types for the active duration
+    Promise.all([
+      getDurationImages(activeDurationId),
+      getDurationVideos(activeDurationId),
+      getDurationAudios(activeDurationId),
+    ]).then(([images, videos, audios]) => {
+      console.log(`[RecordingPage] Written note duration ${activeDurationId} media loaded - Images: ${images.length}, Videos: ${videos.length}, Audios: ${audios.length}`);
+    });
+  }, [activeDurationId, recording, getDurationImages, getDurationVideos, getDurationAudios]);
+
   // Handle clicks on empty page areas to toggle audio playback
   const handlePageClick = (e: React.MouseEvent) => {
     // Skip if clicking on interactive elements (including Quill editor)
