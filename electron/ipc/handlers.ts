@@ -39,7 +39,7 @@ import { mergeAudioFiles } from '../services/audioMerger';
 import type {
   CreateTopic, UpdateTopic, CreateRecording, UpdateRecording, CreateDuration, UpdateDuration,
   CreateCodeSnippet, UpdateCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
-  CreateScreenRecording, DurationGroupColor
+  CreateScreenRecording, DurationGroupColor, DurationColor
 } from '../../src/types';
 
 export function setupIpcHandlers(): void {
@@ -233,6 +233,10 @@ export function setupIpcHandlers(): void {
     return ImagesOperations.updateColor(id, color);
   });
 
+  ipcMain.handle('media:updateImageGroupColor', async (_, id: number, groupColor: DurationGroupColor | null) => {
+    return ImagesOperations.updateGroupColor(id, groupColor);
+  });
+
   ipcMain.handle('media:updateVideoCaption', async (_, id: number, caption: string | null) => {
     return VideosOperations.updateCaption(id, caption);
   });
@@ -407,6 +411,10 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationImages:updateColor', async (_, id: number, color: DurationColor) => {
     return DurationImagesOperations.updateColor(id, color);
+  });
+
+  ipcMain.handle('durationImages:updateGroupColor', async (_, id: number, groupColor: DurationGroupColor | null) => {
+    return DurationImagesOperations.updateGroupColor(id, groupColor);
   });
 
   // ============ Duration Videos ============

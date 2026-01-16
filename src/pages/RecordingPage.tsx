@@ -19,7 +19,8 @@ import CodeSnippetCard from '../components/code/CodeSnippetCard';
 import CodeSnippetModal from '../components/code/CodeSnippetModal';
 import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
-import { getNextDurationColor, DURATION_COLORS } from '../utils/durationColors';
+import { DURATION_COLORS } from '../utils/durationColors';
+import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
 import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea } from '../types';
 
 export default function RecordingPage() {
@@ -106,8 +107,10 @@ export default function RecordingPage() {
   const [selectedDurationVideoPath, setSelectedDurationVideoPath] = useState<string | null>(null);
   const [isRecordingDurationAudio, setIsRecordingDurationAudio] = useState(false);
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
-  // Local state to track media color changes for instant visual feedback
-  const [mediaColorOverrides, setMediaColorOverrides] = useState<Record<string, DurationColor>>({});
+  // Local state to track media color changes for rendering (priority colors - left/right bars)
+  const [mediaColorOverrides] = useState<Record<string, DurationColor>>({});
+  // Local state to track media group color changes for instant visual feedback (group colors - top bar)
+  const [mediaGroupColorOverrides, setMediaGroupColorOverrides] = useState<Record<string, DurationGroupColor>>({});
   const [durationAudioToDelete, setDurationAudioToDelete] = useState<{
     audioId: number;
     durationId: number;
@@ -728,44 +731,41 @@ export default function RecordingPage() {
     setContextMenu({ type, item, x: e.clientX, y: e.clientY });
   };
 
-  // Handle color cycling for images/videos
+  // Handle group color cycling for images (top bar) via Shift+Right-Click
   const handleColorCycle = async (
     type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio',
     item: Image | Video | DurationImage | DurationVideo | DurationAudio | Audio
   ) => {
-    // Get current color from override state or original item
+    // Only handle group colors for images and duration images
+    if (type !== 'image' && type !== 'durationImage') {
+      return;
+    }
+
+    // Get current group color from override state or original item
     const overrideKey = `${type}-${item.id}`;
-    const currentColor = mediaColorOverrides[overrideKey] ?? ('color' in item ? item.color : null);
-    const nextColor = getNextDurationColor(currentColor);
+    const currentGroupColor = mediaGroupColorOverrides[overrideKey] ?? ('group_color' in item ? item.group_color : null);
+    const nextGroupColor = getNextGroupColorWithNull(currentGroupColor);
 
     try {
       if (type === 'image') {
         // Update local state immediately for instant visual feedback (no scroll jump)
-        setMediaColorOverrides(prev => ({ ...prev, [overrideKey]: nextColor }));
+        setMediaGroupColorOverrides(prev => ({ ...prev, [overrideKey]: nextGroupColor }));
         // Update database in background
-        await window.electronAPI.media.updateImageColor(item.id, nextColor);
-      } else if (type === 'video') {
-        // Update local state immediately for instant visual feedback (no scroll jump)
-        setMediaColorOverrides(prev => ({ ...prev, [overrideKey]: nextColor }));
-        // Update database in background
-        await window.electronAPI.media.updateVideoColor(item.id, nextColor);
+        await window.electronAPI.media.updateImageGroupColor(item.id, nextGroupColor);
       } else if (type === 'durationImage' && activeDurationId) {
-        await window.electronAPI.durationImages.updateColor(item.id, nextColor);
-        await getDurationImages(activeDurationId, true);
-      } else if (type === 'durationVideo' && activeDurationId) {
-        await window.electronAPI.durationVideos.updateColor(item.id, nextColor);
-        await getDurationVideos(activeDurationId, true);
+        // Update local state immediately for instant visual feedback
+        setMediaGroupColorOverrides(prev => ({ ...prev, [overrideKey]: nextGroupColor }));
+        // Update database in background
+        await window.electronAPI.durationImages.updateGroupColor(item.id, nextGroupColor);
       }
     } catch (error) {
-      console.error('Failed to update color:', error);
+      console.error('Failed to update group color:', error);
       // Revert local state on error
-      if (type === 'image' || type === 'video') {
-        setMediaColorOverrides(prev => {
-          const updated = { ...prev };
-          delete updated[overrideKey];
-          return updated;
-        });
-      }
+      setMediaGroupColorOverrides(prev => {
+        const updated = { ...prev };
+        delete updated[overrideKey];
+        return updated;
+      });
     }
   };
 
@@ -1268,9 +1268,18 @@ export default function RecordingPage() {
             {activeDurationImages.map((img, index) => {
               const effectiveColor = mediaColorOverrides[`durationImage-${img.id}`] ?? img.color;
               const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
+              const effectiveGroupColor = mediaGroupColorOverrides[`durationImage-${img.id}`] ?? img.group_color;
+              const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
               <div key={img.id} className="group">
                 <div className="relative">
+                  {/* Top group color indicator */}
+                  {groupColorConfig && (
+                    <div
+                      className="absolute top-0 left-0 right-0 h-1 rounded-t-lg z-10"
+                      style={{ backgroundColor: groupColorConfig.color }}
+                    />
+                  )}
                   {/* Left color indicator */}
                   {colorConfig && (
                     <div
@@ -1587,12 +1596,22 @@ export default function RecordingPage() {
               // Use color override if exists, otherwise use original color
               const effectiveColor = mediaColorOverrides[`image-${img.id}`] ?? img.color;
               const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
+              // Use group color override if exists, otherwise use original group color
+              const effectiveGroupColor = mediaGroupColorOverrides[`image-${img.id}`] ?? img.group_color;
+              const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
               <div key={img.id} className="group">
                 <div
                   className="relative"
                   onContextMenu={(e) => handleContextMenu(e, 'image', img)}
                 >
+                  {/* Top group color indicator */}
+                  {groupColorConfig && (
+                    <div
+                      className="absolute top-0 left-0 right-0 h-1 rounded-t-lg z-10"
+                      style={{ backgroundColor: groupColorConfig.color }}
+                    />
+                  )}
                   {/* Number badge */}
                   <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
                                   rounded-full flex items-center justify-center text-xs font-bold z-10">

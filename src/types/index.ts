@@ -52,6 +52,7 @@ export interface Image {
   thumbnail_path: string | null;
   caption: string | null;
   color: DurationColor;
+  group_color: DurationGroupColor;
   sort_order: number;
   created_at: string;
 }
@@ -102,6 +103,7 @@ export interface DurationImage {
   thumbnail_path: string | null;
   caption: string | null;
   color: DurationColor;
+  group_color: DurationGroupColor;
   sort_order: number;
   created_at: string;
 }
@@ -334,6 +336,7 @@ export interface ElectronAPI {
     deleteVideo: (id: number) => Promise<void>;
     updateImageCaption: (id: number, caption: string | null) => Promise<Image>;
     updateImageColor: (id: number, color: DurationColor) => Promise<Image>;
+    updateImageGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<Image>;
     updateVideoCaption: (id: number, caption: string | null) => Promise<Video>;
     updateVideoColor: (id: number, color: DurationColor) => Promise<Video>;
     pickFiles: (type: 'image' | 'video' | 'both') => Promise<string[]>;
@@ -366,6 +369,7 @@ export interface ElectronAPI {
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<DurationImage>;
     updateColor: (id: number, color: DurationColor) => Promise<DurationImage>;
+    updateGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<DurationImage>;
   };
   durationVideos: {
     getByDuration: (durationId: number) => Promise<DurationVideo[]>;

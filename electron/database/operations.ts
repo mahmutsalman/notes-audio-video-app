@@ -11,7 +11,8 @@ import type {
   DurationAudio, CreateDurationAudio,
   CodeSnippet, CreateCodeSnippet, UpdateCodeSnippet,
   DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
-  DurationGroupColor
+  DurationGroupColor,
+  DurationColor
 } from '../../src/types';
 
 // Helper to parse tags from JSON string
@@ -334,6 +335,12 @@ export const ImagesOperations = {
     db.prepare('UPDATE images SET color = ? WHERE id = ?').run(color, id);
     return this.getById(id)!;
   },
+
+  updateGroupColor(id: number, groupColor: DurationGroupColor): Image {
+    const db = getDatabase();
+    db.prepare('UPDATE images SET group_color = ? WHERE id = ?').run(groupColor, id);
+    return this.getById(id)!;
+  },
 };
 
 // Videos Operations
@@ -530,6 +537,12 @@ export const DurationImagesOperations = {
   updateColor(id: number, color: DurationColor): DurationImage {
     const db = getDatabase();
     db.prepare('UPDATE duration_images SET color = ? WHERE id = ?').run(color, id);
+    return this.getById(id)!;
+  },
+
+  updateGroupColor(id: number, groupColor: DurationGroupColor): DurationImage {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_images SET group_color = ? WHERE id = ?').run(groupColor, id);
     return this.getById(id)!;
   },
 };

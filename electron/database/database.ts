@@ -410,6 +410,22 @@ function runMigrations(db: Database.Database): void {
   // Create index for sort_order performance
   db.exec(`CREATE INDEX IF NOT EXISTS idx_durations_sort ON durations(recording_id, sort_order)`)
 
+  // Migration: Add group_color column to images table if it doesn't exist
+  const imagesColumnsUpdated = db.prepare("PRAGMA table_info(images)").all() as { name: string }[];
+  const hasImageGroupColorColumn = imagesColumnsUpdated.some(col => col.name === 'group_color');
+  if (!hasImageGroupColorColumn) {
+    db.exec(`ALTER TABLE images ADD COLUMN group_color TEXT`);
+    console.log('Added group_color column to images table');
+  }
+
+  // Migration: Add group_color column to duration_images table if it doesn't exist
+  const durationImagesColumnsUpdated = db.prepare("PRAGMA table_info(duration_images)").all() as { name: string }[];
+  const hasDurationImageGroupColorColumn = durationImagesColumnsUpdated.some(col => col.name === 'group_color');
+  if (!hasDurationImageGroupColorColumn) {
+    db.exec(`ALTER TABLE duration_images ADD COLUMN group_color TEXT`);
+    console.log('Added group_color column to duration_images table');
+  }
+
   // Create the stats view (drop and recreate to handle schema changes)
   db.exec(`
     DROP VIEW IF EXISTS topic_stats;

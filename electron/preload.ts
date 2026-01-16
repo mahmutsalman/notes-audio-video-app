@@ -15,7 +15,8 @@ import type {
   VideoCompressionOptions,
   VideoCompressionResult,
   CompressionProgress,
-  DurationGroupColor
+  DurationGroupColor,
+  DurationColor
 } from '../src/types';
 
 // Type-safe API exposed to renderer
@@ -81,6 +82,8 @@ const electronAPI = {
       ipcRenderer.invoke('media:updateImageCaption', id, caption),
     updateImageColor: (id: number, color: DurationColor): Promise<Image> =>
       ipcRenderer.invoke('media:updateImageColor', id, color),
+    updateImageGroupColor: (id: number, groupColor: DurationGroupColor): Promise<Image> =>
+      ipcRenderer.invoke('media:updateImageGroupColor', id, groupColor),
     updateVideoCaption: (id: number, caption: string | null): Promise<Video> =>
       ipcRenderer.invoke('media:updateVideoCaption', id, caption),
     updateVideoColor: (id: number, color: DurationColor): Promise<Video> =>
@@ -185,6 +188,8 @@ const electronAPI = {
       ipcRenderer.invoke('durationImages:updateCaption', id, caption),
     updateColor: (id: number, color: DurationColor): Promise<DurationImage> =>
       ipcRenderer.invoke('durationImages:updateColor', id, color),
+    updateGroupColor: (id: number, groupColor: DurationGroupColor): Promise<DurationImage> =>
+      ipcRenderer.invoke('durationImages:updateGroupColor', id, groupColor),
   },
 
   // Duration Videos (videos attached to duration marks)
