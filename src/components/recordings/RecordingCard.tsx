@@ -18,7 +18,11 @@ export default function RecordingCard({ recording, onContextMenu, matchMetadata 
 
   const images = recording.images ?? [];
   const videos = recording.videos ?? [];
-  const truncatedNotes = truncateNotes(recording.notes_content);
+  // For written notes, show main_notes_content; for audio/video recordings, show notes_content
+  const isWrittenNoteRecording = isWrittenNote(recording);
+  const truncatedNotes = truncateNotes(
+    isWrittenNoteRecording ? recording.main_notes_content : recording.notes_content
+  );
 
   const handleContextMenu = (e: React.MouseEvent) => {
     if (onContextMenu) {

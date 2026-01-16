@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Recording, CreateRecording, UpdateRecording, Image, Video } from '../types';
+import { RECORDING_UPDATED_EVENT } from '../utils/events';
 
 export function useRecordings(topicId: number | null) {
   const [recordings, setRecordings] = useState<Recording[]>([]);
@@ -29,6 +30,25 @@ export function useRecordings(topicId: number | null) {
   useEffect(() => {
     fetchRecordings();
   }, [fetchRecordings]);
+
+  // Listen for recording updates from other components
+  useEffect(() => {
+    const handleRecordingUpdated = async (event: Event) => {
+      const customEvent = event as CustomEvent<{ id: number }>;
+      const updatedId = customEvent.detail.id;
+
+      // Fetch the updated recording and merge into local state
+      const updated = await window.electronAPI.recordings.getById(updatedId);
+      if (updated) {
+        setRecordings(prev => prev.map(r => r.id === updatedId ? updated : r));
+      }
+    };
+
+    window.addEventListener(RECORDING_UPDATED_EVENT, handleRecordingUpdated);
+    return () => {
+      window.removeEventListener(RECORDING_UPDATED_EVENT, handleRecordingUpdated);
+    };
+  }, []);
 
   const createRecording = async (recording: CreateRecording): Promise<Recording> => {
     const newRecording = await window.electronAPI.recordings.create(recording);

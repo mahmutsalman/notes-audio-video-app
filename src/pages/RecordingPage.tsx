@@ -12,6 +12,7 @@ import DurationList from '../components/recordings/DurationList';
 import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
 import MarkList from '../components/recordings/MarkList';
 import { isWrittenNote, createMarkTimes, getNextMarkIndex } from '../utils/marks';
+import { emitRecordingUpdated } from '../utils/events';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import NotesEditor from '../components/common/NotesEditor';
@@ -277,6 +278,7 @@ export default function RecordingPage() {
     try {
       await window.electronAPI.recordings.update(id, { notes_content: notes || null });
       await preserveScrollPosition(refetch);
+      emitRecordingUpdated(id);
       setIsEditing(false);
     } finally {
       setIsSaving(false);
@@ -294,6 +296,7 @@ export default function RecordingPage() {
     try {
       await window.electronAPI.recordings.update(id, { main_notes_content: mainNotes || null });
       await preserveScrollPosition(refetch);
+      emitRecordingUpdated(id);
       setIsEditingMainNotes(false);
     } finally {
       setIsSavingMainNotes(false);
