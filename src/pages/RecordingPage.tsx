@@ -1270,7 +1270,7 @@ export default function RecordingPage() {
               📋 Paste
             </button>
           </div>
-          <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
             {activeDurationImages.map((img, index) => {
               const effectiveColor = mediaColorOverrides[`durationImage-${img.id}`] ?? img.color;
               const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
@@ -1278,8 +1278,8 @@ export default function RecordingPage() {
               const effectiveGroupColor = durationImageKey in mediaGroupColorOverrides ? mediaGroupColorOverrides[durationImageKey] : img.group_color;
               const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
-              <div key={img.id} className="group">
-                <div className="relative">
+              <div key={img.id} className="group flex flex-col items-center">
+                <div className="relative w-full max-w-[160px]">
                   {/* Top group color indicator */}
                   {groupColorConfig && (
                     <div
@@ -1323,7 +1323,7 @@ export default function RecordingPage() {
                 </div>
                 {/* Caption */}
                 {img.caption && (
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 line-clamp-2 italic font-light leading-tight">
+                  <p className="w-full text-xs text-blue-600 dark:text-blue-400 mt-1 line-clamp-2 italic font-light leading-tight text-center">
                     {img.caption}
                   </p>
                 )}
@@ -1620,7 +1620,7 @@ export default function RecordingPage() {
           </button>
         </div>
         {images.length > 0 ? (
-          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {images.map((img, index) => {
               // Use color override if exists, otherwise use original color
               const effectiveColor = mediaColorOverrides[`image-${img.id}`] ?? img.color;
@@ -1630,9 +1630,9 @@ export default function RecordingPage() {
               const effectiveGroupColor = imageKey in mediaGroupColorOverrides ? mediaGroupColorOverrides[imageKey] : img.group_color;
               const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
-              <div key={img.id} className="group">
+              <div key={img.id} className="group flex flex-col items-center">
                 <div
-                  className="relative"
+                  className="relative w-full max-w-[160px]"
                   onContextMenu={(e) => handleContextMenu(e, 'image', img)}
                 >
                   {/* Top group color indicator */}
@@ -1682,7 +1682,7 @@ export default function RecordingPage() {
                 </div>
                 {/* Caption */}
                 {img.caption && (
-                  <p className="text-xs text-violet-600 dark:text-violet-400 mt-1 line-clamp-2 italic font-light leading-tight">
+                  <p className="w-full text-xs text-violet-600 dark:text-violet-400 mt-1 line-clamp-2 italic font-light leading-tight text-center">
                     {img.caption}
                   </p>
                 )}
