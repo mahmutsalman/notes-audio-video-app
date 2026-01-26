@@ -19,6 +19,7 @@ import NotesEditor from '../components/common/NotesEditor';
 import CodeSnippetCard from '../components/code/CodeSnippetCard';
 import CodeSnippetModal from '../components/code/CodeSnippetModal';
 import ImageLightbox from '../components/common/ImageLightbox';
+import SortableImageGrid from '../components/common/SortableImageGrid';
 import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
 import { DURATION_COLORS } from '../utils/durationColors';
@@ -42,6 +43,7 @@ export default function RecordingPage() {
     durationImagesCache,
     getDurationImages,
     addDurationImageFromClipboard,
+    reorderDurationImages,
     deleteDurationImage,
     durationVideosCache,
     getDurationVideos,
@@ -376,6 +378,24 @@ export default function RecordingPage() {
     }
   };
 
+  const handleReorderImages = async (orderedIds: number[]) => {
+    if (!id) return;
+
+    // Optimistic update — reorder locally for instant feedback
+    setRecording(prev => {
+      if (!prev?.images) return prev;
+      const imageMap = new Map(prev.images.map(img => [img.id, img]));
+      const reordered = orderedIds
+        .map(imgId => imageMap.get(imgId))
+        .filter((img): img is Image => img !== undefined);
+      return { ...prev, images: reordered };
+    });
+
+    // Persist to database
+    const persisted = await window.electronAPI.media.reorderImages(id, orderedIds);
+    setRecording(prev => prev ? { ...prev, images: persisted } : prev);
+  };
+
   const handleAddVideos = async () => {
     if (!id) return;
     try {
@@ -524,6 +544,12 @@ export default function RecordingPage() {
     if (!image) {
       alert('No image found in clipboard. Copy an image first, then click Paste.');
     }
+  };
+
+  // Handle reordering duration images
+  const handleReorderDurationImages = async (orderedIds: number[]) => {
+    if (!activeDurationId) return;
+    await reorderDurationImages(activeDurationId, orderedIds);
   };
 
   // Handle deleting a duration image
@@ -1232,83 +1258,35 @@ export default function RecordingPage() {
               📋 Paste
             </button>
           </div>
-          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-            {activeDurationImages.map((img, index) => {
-              const effectiveColor = mediaColorOverrides[`durationImage-${img.id}`] ?? img.color;
-              const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
-              const durationImageKey = `durationImage-${img.id}`;
-              const effectiveGroupColor = durationImageKey in mediaGroupColorOverrides ? mediaGroupColorOverrides[durationImageKey] : img.group_color;
-              const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
-              return (
-              <div key={img.id} className="group flex flex-col items-center">
+          <SortableImageGrid
+            images={activeDurationImages}
+            gridClassName="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2"
+            colorOverrides={mediaColorOverrides}
+            groupColorOverrides={mediaGroupColorOverrides}
+            colorKeyPrefix="durationImage"
+            captionColorClass="text-blue-600 dark:text-blue-400"
+            onImageClick={(index) => setSelectedDurationImageIndex(index)}
+            onContextMenu={(e, img) => handleContextMenu(e, 'durationImage', img as DurationImage)}
+            onDelete={handleDeleteDurationImage}
+            onReorder={handleReorderDurationImages}
+            pastePlaceholder={
+              <div className="flex flex-col items-center">
                 <div className="relative w-full max-w-[160px]">
-                  {/* Top group color indicator */}
-                  {groupColorConfig && (
-                    <div
-                      className="absolute top-0 left-0 right-0 h-1 rounded-t-lg z-10"
-                      style={{ backgroundColor: groupColorConfig.color }}
-                    />
-                  )}
-                  {/* Left color indicator */}
-                  {colorConfig && (
-                    <div
-                      className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg z-10"
-                      style={{ backgroundColor: colorConfig.borderColor }}
-                    />
-                  )}
                   <div
-                    className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
-                    onClick={() => setSelectedDurationImageIndex(index)}
-                    onContextMenu={(e) => handleContextMenu(e, 'durationImage', img)}
+                    className="aspect-square rounded-lg border-2 border-dashed border-blue-300 dark:border-blue-600
+                               bg-blue-50/50 dark:bg-blue-900/10 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500
+                               hover:bg-blue-100/50 dark:hover:bg-blue-900/20 transition-colors
+                               flex items-center justify-center"
+                    onClick={handleAddDurationImage}
                   >
-                    <img
-                      src={window.electronAPI.paths.getFileUrl(img.thumbnail_path || img.file_path)}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
+                    <svg className="w-8 h-8 text-blue-300 dark:text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
                   </div>
-                  {/* Right color indicator */}
-                  {colorConfig && (
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-1 rounded-r-lg z-10"
-                      style={{ backgroundColor: colorConfig.borderColor }}
-                    />
-                  )}
-                  <button
-                    onClick={() => handleDeleteDurationImage(img.id)}
-                    className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full
-                               opacity-0 group-hover:opacity-100 transition-opacity
-                               flex items-center justify-center text-sm z-20"
-                  >
-                    ×
-                  </button>
-                </div>
-                {/* Caption */}
-                {img.caption && (
-                  <p className="w-full text-xs text-blue-600 dark:text-blue-400 mt-1 line-clamp-2 italic font-light leading-tight text-center">
-                    {img.caption}
-                  </p>
-                )}
-              </div>
-              );
-            })}
-            {/* Inline paste placeholder */}
-            <div className="flex flex-col items-center">
-              <div className="relative w-full max-w-[160px]">
-                <div
-                  className="aspect-square rounded-lg border-2 border-dashed border-blue-300 dark:border-blue-600
-                             bg-blue-50/50 dark:bg-blue-900/10 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500
-                             hover:bg-blue-100/50 dark:hover:bg-blue-900/20 transition-colors
-                             flex items-center justify-center"
-                  onClick={handleAddDurationImage}
-                >
-                  <svg className="w-8 h-8 text-blue-300 dark:text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
                 </div>
               </div>
-            </div>
-          </div>
+            }
+          />
         </div>
       )}
 
@@ -1598,92 +1576,36 @@ export default function RecordingPage() {
           </button>
         </div>
         {images.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {images.map((img, index) => {
-              // Use color override if exists, otherwise use original color
-              const effectiveColor = mediaColorOverrides[`image-${img.id}`] ?? img.color;
-              const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
-              // Use group color override if exists, otherwise use original group color
-              const imageKey = `image-${img.id}`;
-              const effectiveGroupColor = imageKey in mediaGroupColorOverrides ? mediaGroupColorOverrides[imageKey] : img.group_color;
-              const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
-              return (
-              <div key={img.id} className="group flex flex-col items-center">
-                <div
-                  className="relative w-full max-w-[160px]"
-                  onContextMenu={(e) => handleContextMenu(e, 'image', img)}
-                >
-                  {/* Top group color indicator */}
-                  {groupColorConfig && (
-                    <div
-                      className="absolute top-0 left-0 right-0 h-1 rounded-t-lg z-10"
-                      style={{ backgroundColor: groupColorConfig.color }}
-                    />
-                  )}
-                  {/* Number badge */}
-                  <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
-                                  rounded-full flex items-center justify-center text-xs font-bold z-10">
-                    {index + 1}
-                  </div>
-                  {/* Left color indicator */}
-                  {colorConfig && (
-                    <div
-                      className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg z-10"
-                      style={{ backgroundColor: colorConfig.borderColor }}
-                    />
-                  )}
+          <SortableImageGrid
+            images={images}
+            gridClassName="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
+            showNumberBadge
+            colorOverrides={mediaColorOverrides}
+            groupColorOverrides={mediaGroupColorOverrides}
+            colorKeyPrefix="image"
+            captionColorClass="text-violet-600 dark:text-violet-400"
+            onImageClick={(index) => setSelectedImageIndex(index)}
+            onContextMenu={(e, img) => handleContextMenu(e, 'image', img as Image)}
+            onDelete={handleDeleteImage}
+            onReorder={handleReorderImages}
+            pastePlaceholder={
+              <div className="flex flex-col items-center">
+                <div className="relative w-full max-w-[160px]">
                   <div
-                    className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
-                    onClick={() => setSelectedImageIndex(index)}
+                    className="aspect-square rounded-lg border-2 border-dashed border-violet-300 dark:border-violet-600
+                               bg-violet-50/50 dark:bg-violet-900/10 cursor-pointer hover:border-violet-400 dark:hover:border-violet-500
+                               hover:bg-violet-100/50 dark:hover:bg-violet-900/20 transition-colors
+                               flex items-center justify-center"
+                    onClick={handleAddImages}
                   >
-                    <img
-                      src={window.electronAPI.paths.getFileUrl(img.thumbnail_path || img.file_path)}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
+                    <svg className="w-8 h-8 text-violet-300 dark:text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
                   </div>
-                  {/* Right color indicator */}
-                  {colorConfig && (
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-1 rounded-r-lg z-10"
-                      style={{ backgroundColor: colorConfig.borderColor }}
-                    />
-                  )}
-                  <button
-                    onClick={() => handleDeleteImage(img.id)}
-                    className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full
-                               opacity-0 group-hover:opacity-100 transition-opacity
-                               flex items-center justify-center text-sm z-20"
-                  >
-                    ×
-                  </button>
-                </div>
-                {/* Caption */}
-                {img.caption && (
-                  <p className="w-full text-xs text-violet-600 dark:text-violet-400 mt-1 line-clamp-2 italic font-light leading-tight text-center">
-                    {img.caption}
-                  </p>
-                )}
-              </div>
-              );
-            })}
-            {/* Inline paste placeholder */}
-            <div className="flex flex-col items-center">
-              <div className="relative w-full max-w-[160px]">
-                <div
-                  className="aspect-square rounded-lg border-2 border-dashed border-violet-300 dark:border-violet-600
-                             bg-violet-50/50 dark:bg-violet-900/10 cursor-pointer hover:border-violet-400 dark:hover:border-violet-500
-                             hover:bg-violet-100/50 dark:hover:bg-violet-900/20 transition-colors
-                             flex items-center justify-center"
-                  onClick={handleAddImages}
-                >
-                  <svg className="w-8 h-8 text-violet-300 dark:text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
                 </div>
               </div>
-            </div>
-          </div>
+            }
+          />
         ) : (
           <p className="text-violet-400 dark:text-violet-500 italic text-sm">No images attached</p>
         )}

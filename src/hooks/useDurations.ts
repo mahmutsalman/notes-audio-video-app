@@ -141,6 +141,24 @@ export function useDurations(recordingId: number | null) {
     }
   };
 
+  // Reorder duration images
+  const reorderDurationImages = async (durationId: number, orderedIds: number[]): Promise<void> => {
+    // Optimistic update — reorder locally for instant feedback
+    setDurationImagesCache(prev => {
+      const images = prev[durationId];
+      if (!images) return prev;
+      const imageMap = new Map(images.map(img => [img.id, img]));
+      const reordered = orderedIds
+        .map(id => imageMap.get(id))
+        .filter((img): img is DurationImage => img !== undefined);
+      return { ...prev, [durationId]: reordered };
+    });
+
+    // Persist to database
+    const persisted = await window.electronAPI.durationImages.reorder(durationId, orderedIds);
+    setDurationImagesCache(prev => ({ ...prev, [durationId]: persisted }));
+  };
+
   // Delete a duration image
   const deleteDurationImage = async (imageId: number, durationId: number): Promise<void> => {
     await window.electronAPI.durationImages.delete(imageId);
@@ -377,6 +395,7 @@ export function useDurations(recordingId: number | null) {
     durationImagesCache,
     getDurationImages,
     addDurationImageFromClipboard,
+    reorderDurationImages,
     deleteDurationImage,
     clearDurationImagesCache,
     // Duration video functions

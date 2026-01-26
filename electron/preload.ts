@@ -90,6 +90,8 @@ const electronAPI = {
       ipcRenderer.invoke('media:updateVideoColor', id, color),
     updateVideoGroupColor: (id: number, groupColor: DurationGroupColor): Promise<Video> =>
       ipcRenderer.invoke('media:updateVideoGroupColor', id, groupColor),
+    reorderImages: (recordingId: number, orderedIds: number[]): Promise<Image[]> =>
+      ipcRenderer.invoke('media:reorderImages', recordingId, orderedIds),
     pickFiles: (type: 'image' | 'video' | 'both'): Promise<string[]> => ipcRenderer.invoke('media:pickFiles', type),
   },
 
@@ -192,6 +194,8 @@ const electronAPI = {
       ipcRenderer.invoke('durationImages:updateColor', id, color),
     updateGroupColor: (id: number, groupColor: DurationGroupColor): Promise<DurationImage> =>
       ipcRenderer.invoke('durationImages:updateGroupColor', id, groupColor),
+    reorder: (durationId: number, orderedIds: number[]): Promise<DurationImage[]> =>
+      ipcRenderer.invoke('durationImages:reorder', durationId, orderedIds),
   },
 
   // Duration Videos (videos attached to duration marks)

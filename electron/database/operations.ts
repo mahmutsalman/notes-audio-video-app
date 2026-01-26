@@ -341,6 +341,20 @@ export const ImagesOperations = {
     db.prepare('UPDATE images SET group_color = ? WHERE id = ?').run(groupColor, id);
     return this.getById(id)!;
   },
+
+  reorder(recordingId: number, orderedIds: number[]): Image[] {
+    const db = getDatabase();
+    const stmt = db.prepare('UPDATE images SET sort_order = ? WHERE id = ? AND recording_id = ?');
+
+    const updateMany = db.transaction((ids: number[]) => {
+      ids.forEach((id, index) => {
+        stmt.run(index, id, recordingId);
+      });
+    });
+
+    updateMany(orderedIds);
+    return this.getByRecording(recordingId);
+  },
 };
 
 // Videos Operations
@@ -550,6 +564,20 @@ export const DurationImagesOperations = {
     const db = getDatabase();
     db.prepare('UPDATE duration_images SET group_color = ? WHERE id = ?').run(groupColor, id);
     return this.getById(id)!;
+  },
+
+  reorder(durationId: number, orderedIds: number[]): DurationImage[] {
+    const db = getDatabase();
+    const stmt = db.prepare('UPDATE duration_images SET sort_order = ? WHERE id = ? AND duration_id = ?');
+
+    const updateMany = db.transaction((ids: number[]) => {
+      ids.forEach((id, index) => {
+        stmt.run(index, id, durationId);
+      });
+    });
+
+    updateMany(orderedIds);
+    return this.getByDuration(durationId);
   },
 };
 

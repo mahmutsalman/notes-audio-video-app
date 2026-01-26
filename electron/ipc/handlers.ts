@@ -237,6 +237,10 @@ export function setupIpcHandlers(): void {
     return ImagesOperations.updateGroupColor(id, groupColor);
   });
 
+  ipcMain.handle('media:reorderImages', async (_, recordingId: number, orderedIds: number[]) => {
+    return ImagesOperations.reorder(recordingId, orderedIds);
+  });
+
   ipcMain.handle('media:updateVideoCaption', async (_, id: number, caption: string | null) => {
     return VideosOperations.updateCaption(id, caption);
   });
@@ -419,6 +423,10 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationImages:updateGroupColor', async (_, id: number, groupColor: DurationGroupColor | null) => {
     return DurationImagesOperations.updateGroupColor(id, groupColor);
+  });
+
+  ipcMain.handle('durationImages:reorder', async (_, durationId: number, orderedIds: number[]) => {
+    return DurationImagesOperations.reorder(durationId, orderedIds);
   });
 
   // ============ Duration Videos ============

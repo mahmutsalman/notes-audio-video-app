@@ -344,6 +344,7 @@ export interface ElectronAPI {
     updateVideoCaption: (id: number, caption: string | null) => Promise<Video>;
     updateVideoColor: (id: number, color: DurationColor) => Promise<Video>;
     updateVideoGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<Video>;
+    reorderImages: (recordingId: number, orderedIds: number[]) => Promise<Image[]>;
     pickFiles: (type: 'image' | 'video' | 'both') => Promise<string[]>;
   };
   paths: {
@@ -375,6 +376,7 @@ export interface ElectronAPI {
     updateCaption: (id: number, caption: string | null) => Promise<DurationImage>;
     updateColor: (id: number, color: DurationColor) => Promise<DurationImage>;
     updateGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<DurationImage>;
+    reorder: (durationId: number, orderedIds: number[]) => Promise<DurationImage[]>;
   };
   durationVideos: {
     getByDuration: (durationId: number) => Promise<DurationVideo[]>;
