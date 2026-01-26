@@ -129,5 +129,5 @@ export function useRecording(id: number | null) {
     fetchRecording();
   }, [fetchRecording]);
 
-  return { recording, loading, error, refetch: fetchRecording };
+  return { recording, loading, error, refetch: fetchRecording, setRecording };
 }

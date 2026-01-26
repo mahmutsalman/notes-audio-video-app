@@ -18,6 +18,7 @@ import Button from '../components/common/Button';
 import NotesEditor from '../components/common/NotesEditor';
 import CodeSnippetCard from '../components/code/CodeSnippetCard';
 import CodeSnippetModal from '../components/code/CodeSnippetModal';
+import ImageLightbox from '../components/common/ImageLightbox';
 import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
 import { DURATION_COLORS } from '../utils/durationColors';
@@ -29,7 +30,7 @@ export default function RecordingPage() {
   const navigate = useNavigate();
   const id = recordingId ? parseInt(recordingId, 10) : null;
 
-  const { recording, loading, refetch } = useRecording(id);
+  const { recording, loading, refetch, setRecording } = useRecording(id);
   const { topic } = useTopic(recording?.topic_id ?? null);
   const { recordings: topicRecordings } = useRecordings(recording?.topic_id ?? null);
   const {
@@ -364,8 +365,8 @@ export default function RecordingPage() {
       const result = await window.electronAPI.clipboard.readImage();
 
       if (result.success && result.buffer) {
-        await window.electronAPI.media.addImageFromClipboard(id, result.buffer, result.extension || 'png');
-        await preserveScrollPosition(refetch);
+        const newImage = await window.electronAPI.media.addImageFromClipboard(id, result.buffer, result.extension || 'png');
+        setRecording(prev => prev ? { ...prev, images: [...(prev.images || []), newImage] } : prev);
       } else {
         alert('No image found in clipboard. Copy an image first, then click Paste.');
       }
@@ -829,7 +830,7 @@ export default function RecordingPage() {
 
     if (imageToDelete.type === 'recording') {
       await window.electronAPI.media.deleteImage(imageToDelete.imageId);
-      await preserveScrollPosition(refetch);
+      setRecording(prev => prev ? { ...prev, images: (prev.images || []).filter(img => img.id !== imageToDelete.imageId) } : prev);
     } else if (imageToDelete.type === 'duration' && activeDurationId) {
       await deleteDurationImage(imageToDelete.imageId, activeDurationId);
     }
@@ -868,28 +869,8 @@ export default function RecordingPage() {
     await updateDuration(durationId, { group_color: groupColor });
   };
 
-  // Keyboard navigation for image lightbox
   const images = recording?.images ?? [];
-  useEffect(() => {
-    if (selectedImageIndex === null) return;
 
-    const imagesLength = images.length;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') {
-        setSelectedImageIndex(i => (i !== null && i > 0 ? i - 1 : i));
-      } else if (e.key === 'ArrowRight') {
-        setSelectedImageIndex(i => (i !== null && i < imagesLength - 1 ? i + 1 : i));
-      } else if (e.key === 'Escape') {
-        setSelectedImageIndex(null);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedImageIndex]);
-
-  // Keyboard navigation for duration image lightbox
   const activeDurationImages = activeDurationId ? durationImagesCache[activeDurationId] ?? [] : [];
   const activeDurationVideos = activeDurationId ? durationVideosCache[activeDurationId] ?? [] : [];
   const activeDurationAudios = activeDurationId ? durationAudiosCache[activeDurationId] ?? [] : [];
@@ -905,25 +886,6 @@ export default function RecordingPage() {
       });
     }
   }, [activeDurationId, activeDurationImages.length, activeDurationVideos.length, activeDurationAudios.length, durationImagesCache]);
-  useEffect(() => {
-    if (selectedDurationImageIndex === null) return;
-
-    const imagesLength = activeDurationImages.length;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') {
-        setSelectedDurationImageIndex(i => (i !== null && i > 0 ? i - 1 : i));
-      } else if (e.key === 'ArrowRight') {
-        setSelectedDurationImageIndex(i => (i !== null && i < imagesLength - 1 ? i + 1 : i));
-      } else if (e.key === 'Escape') {
-        setSelectedDurationImageIndex(null);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDurationImageIndex]);
-
   // ESC key handler for recording video lightbox
   useEffect(() => {
     if (!selectedVideo) return;
@@ -1916,66 +1878,12 @@ export default function RecordingPage() {
 
       {/* Image lightbox */}
       {selectedImageIndex !== null && images[selectedImageIndex] && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setSelectedImageIndex(null)}
-        >
-          {/* Close button */}
-          <button
-            className="absolute top-4 right-4 text-white text-2xl hover:text-gray-300 z-10"
-            onClick={() => setSelectedImageIndex(null)}
-          >
-            ×
-          </button>
-
-          {/* Image counter */}
-          <div className="absolute top-4 left-4 text-white text-lg font-medium">
-            {selectedImageIndex + 1} / {images.length}
-          </div>
-
-          {/* Previous button */}
-          {selectedImageIndex > 0 && (
-            <button
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-5xl
-                         hover:text-gray-300 transition-colors px-2"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedImageIndex(i => i! - 1);
-              }}
-            >
-              ‹
-            </button>
-          )}
-
-          {/* Image */}
-          <img
-            src={window.electronAPI.paths.getFileUrl(images[selectedImageIndex].file_path)}
-            alt=""
-            className="max-w-full max-h-full object-contain"
-            onClick={(e) => e.stopPropagation()}
-          />
-
-          {/* Caption */}
-          {images[selectedImageIndex].caption && (
-            <p className="absolute bottom-4 left-0 right-0 text-sm text-white/90 dark:text-white/80 text-center italic font-light max-w-2xl mx-auto px-4">
-              {images[selectedImageIndex].caption}
-            </p>
-          )}
-
-          {/* Next button */}
-          {selectedImageIndex < images.length - 1 && (
-            <button
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-5xl
-                         hover:text-gray-300 transition-colors px-2"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedImageIndex(i => i! + 1);
-              }}
-            >
-              ›
-            </button>
-          )}
-        </div>
+        <ImageLightbox
+          images={images}
+          selectedIndex={selectedImageIndex}
+          onClose={() => setSelectedImageIndex(null)}
+          onNavigate={(index) => setSelectedImageIndex(index)}
+        />
       )}
 
       {/* Video lightbox */}
@@ -2012,66 +1920,12 @@ export default function RecordingPage() {
 
       {/* Duration Image lightbox */}
       {selectedDurationImageIndex !== null && activeDurationImages[selectedDurationImageIndex] && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setSelectedDurationImageIndex(null)}
-        >
-          {/* Close button */}
-          <button
-            className="absolute top-4 right-4 text-white text-2xl hover:text-gray-300 z-10"
-            onClick={() => setSelectedDurationImageIndex(null)}
-          >
-            ×
-          </button>
-
-          {/* Image counter */}
-          <div className="absolute top-4 left-4 text-white text-lg font-medium">
-            {selectedDurationImageIndex + 1} / {activeDurationImages.length}
-          </div>
-
-          {/* Previous button */}
-          {selectedDurationImageIndex > 0 && (
-            <button
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-5xl
-                         hover:text-gray-300 transition-colors px-2"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedDurationImageIndex(i => i! - 1);
-              }}
-            >
-              ‹
-            </button>
-          )}
-
-          {/* Image */}
-          <img
-            src={window.electronAPI.paths.getFileUrl(activeDurationImages[selectedDurationImageIndex].file_path)}
-            alt=""
-            className="max-w-full max-h-full object-contain"
-            onClick={(e) => e.stopPropagation()}
-          />
-
-          {/* Caption */}
-          {activeDurationImages[selectedDurationImageIndex].caption && (
-            <p className="absolute bottom-4 left-0 right-0 text-sm text-white/90 dark:text-white/80 text-center italic font-light max-w-2xl mx-auto px-4">
-              {activeDurationImages[selectedDurationImageIndex].caption}
-            </p>
-          )}
-
-          {/* Next button */}
-          {selectedDurationImageIndex < activeDurationImages.length - 1 && (
-            <button
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-5xl
-                         hover:text-gray-300 transition-colors px-2"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedDurationImageIndex(i => i! + 1);
-              }}
-            >
-              ›
-            </button>
-          )}
-        </div>
+        <ImageLightbox
+          images={activeDurationImages}
+          selectedIndex={selectedDurationImageIndex}
+          onClose={() => setSelectedDurationImageIndex(null)}
+          onNavigate={(index) => setSelectedDurationImageIndex(index)}
+        />
       )}
 
       {/* Duration Video lightbox */}
