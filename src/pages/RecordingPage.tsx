@@ -1330,6 +1330,22 @@ export default function RecordingPage() {
               </div>
               );
             })}
+            {/* Inline paste placeholder */}
+            <div className="flex flex-col items-center">
+              <div className="relative w-full max-w-[160px]">
+                <div
+                  className="aspect-square rounded-lg border-2 border-dashed border-blue-300 dark:border-blue-600
+                             bg-blue-50/50 dark:bg-blue-900/10 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500
+                             hover:bg-blue-100/50 dark:hover:bg-blue-900/20 transition-colors
+                             flex items-center justify-center"
+                  onClick={handleAddDurationImage}
+                >
+                  <svg className="w-8 h-8 text-blue-300 dark:text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1689,6 +1705,22 @@ export default function RecordingPage() {
               </div>
               );
             })}
+            {/* Inline paste placeholder */}
+            <div className="flex flex-col items-center">
+              <div className="relative w-full max-w-[160px]">
+                <div
+                  className="aspect-square rounded-lg border-2 border-dashed border-violet-300 dark:border-violet-600
+                             bg-violet-50/50 dark:bg-violet-900/10 cursor-pointer hover:border-violet-400 dark:hover:border-violet-500
+                             hover:bg-violet-100/50 dark:hover:bg-violet-900/20 transition-colors
+                             flex items-center justify-center"
+                  onClick={handleAddImages}
+                >
+                  <svg className="w-8 h-8 text-violet-300 dark:text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
           <p className="text-violet-400 dark:text-violet-500 italic text-sm">No images attached</p>
