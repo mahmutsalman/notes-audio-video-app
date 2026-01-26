@@ -3,7 +3,6 @@ import type { Duration } from '../../types';
 import { formatDuration, formatDurationLength } from '../../utils/formatters';
 import { DURATION_COLORS } from '../../utils/durationColors';
 import { getGroupColorConfig } from '../../utils/durationGroupColors';
-import { formatMarkLabel } from '../../utils/marks';
 
 interface DurationNotesSidebarProps {
   durations: Duration[];
@@ -74,7 +73,7 @@ export default function DurationNotesSidebar({
               >
                 {isWrittenNote ? (
                   <span className="text-teal-600 dark:text-teal-400 font-medium">
-                    {formatMarkLabel(duration)}
+                    Mark {durations.indexOf(duration) + 1}
                   </span>
                 ) : (
                   <>
