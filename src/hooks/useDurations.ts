@@ -159,6 +159,16 @@ export function useDurations(recordingId: number | null) {
     setDurationImagesCache(prev => ({ ...prev, [durationId]: persisted }));
   };
 
+  // Update caption on a duration image (optimistic)
+  const updateDurationImageCaption = async (imageId: number, durationId: number, caption: string | null): Promise<DurationImage> => {
+    const updated = await window.electronAPI.durationImages.updateCaption(imageId, caption);
+    setDurationImagesCache(prev => ({
+      ...prev,
+      [durationId]: (prev[durationId] || []).map(img => img.id === imageId ? updated : img)
+    }));
+    return updated;
+  };
+
   // Delete a duration image
   const deleteDurationImage = async (imageId: number, durationId: number): Promise<void> => {
     await window.electronAPI.durationImages.delete(imageId);
@@ -227,6 +237,16 @@ export function useDurations(recordingId: number | null) {
     }
   };
 
+  // Update caption on a duration video (optimistic)
+  const updateDurationVideoCaption = async (videoId: number, durationId: number, caption: string | null): Promise<DurationVideo> => {
+    const updated = await window.electronAPI.durationVideos.updateCaption(videoId, caption);
+    setDurationVideosCache(prev => ({
+      ...prev,
+      [durationId]: (prev[durationId] || []).map(vid => vid.id === videoId ? updated : vid)
+    }));
+    return updated;
+  };
+
   // Delete a duration video
   const deleteDurationVideo = async (videoId: number, durationId: number): Promise<void> => {
     await window.electronAPI.durationVideos.delete(videoId);
@@ -273,6 +293,16 @@ export function useDurations(recordingId: number | null) {
     }));
 
     return newAudio;
+  };
+
+  // Update caption on a duration audio (optimistic)
+  const updateDurationAudioCaption = async (audioId: number, durationId: number, caption: string | null): Promise<DurationAudio> => {
+    const updated = await window.electronAPI.durationAudios.updateCaption(audioId, caption);
+    setDurationAudiosCache(prev => ({
+      ...prev,
+      [durationId]: (prev[durationId] || []).map(aud => aud.id === audioId ? updated : aud)
+    }));
+    return updated;
   };
 
   // Delete a duration audio
@@ -397,18 +427,21 @@ export function useDurations(recordingId: number | null) {
     addDurationImageFromClipboard,
     reorderDurationImages,
     deleteDurationImage,
+    updateDurationImageCaption,
     clearDurationImagesCache,
     // Duration video functions
     durationVideosCache,
     getDurationVideos,
     addDurationVideoFromClipboard,
     deleteDurationVideo,
+    updateDurationVideoCaption,
     clearDurationVideosCache,
     // Duration audio functions
     durationAudiosCache,
     getDurationAudios,
     addDurationAudioFromBuffer,
     deleteDurationAudio,
+    updateDurationAudioCaption,
     clearDurationAudiosCache,
     // Duration code snippet functions
     durationCodeSnippetsCache,

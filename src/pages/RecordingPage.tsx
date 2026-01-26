@@ -45,14 +45,17 @@ export default function RecordingPage() {
     addDurationImageFromClipboard,
     reorderDurationImages,
     deleteDurationImage,
+    updateDurationImageCaption,
     durationVideosCache,
     getDurationVideos,
     addDurationVideoFromClipboard,
     deleteDurationVideo,
+    updateDurationVideoCaption,
     durationAudiosCache,
     getDurationAudios,
     addDurationAudioFromBuffer,
     deleteDurationAudio,
+    updateDurationAudioCaption,
     getDurationCodeSnippets,
     addDurationCodeSnippet,
     updateDurationCodeSnippet,
@@ -816,20 +819,17 @@ export default function RecordingPage() {
 
     try {
       if (captionModal.type === 'image') {
-        await window.electronAPI.media.updateImageCaption(captionModal.id, trimmedCaption);
-        await preserveScrollPosition(refetch);
+        const updated = await window.electronAPI.media.updateImageCaption(captionModal.id, trimmedCaption);
+        setRecording(prev => prev ? { ...prev, images: (prev.images || []).map(img => img.id === captionModal.id ? updated : img) } : prev);
       } else if (captionModal.type === 'video') {
-        await window.electronAPI.media.updateVideoCaption(captionModal.id, trimmedCaption);
-        await preserveScrollPosition(refetch);
+        const updated = await window.electronAPI.media.updateVideoCaption(captionModal.id, trimmedCaption);
+        setRecording(prev => prev ? { ...prev, videos: (prev.videos || []).map(vid => vid.id === captionModal.id ? updated : vid) } : prev);
       } else if (captionModal.type === 'durationImage' && activeDurationId) {
-        await window.electronAPI.durationImages.updateCaption(captionModal.id, trimmedCaption);
-        await getDurationImages(activeDurationId, true);
+        await updateDurationImageCaption(captionModal.id, activeDurationId, trimmedCaption);
       } else if (captionModal.type === 'durationVideo' && activeDurationId) {
-        await window.electronAPI.durationVideos.updateCaption(captionModal.id, trimmedCaption);
-        await getDurationVideos(activeDurationId, true);
+        await updateDurationVideoCaption(captionModal.id, activeDurationId, trimmedCaption);
       } else if (captionModal.type === 'durationAudio' && activeDurationId) {
-        await window.electronAPI.durationAudios.updateCaption(captionModal.id, trimmedCaption);
-        await getDurationAudios(activeDurationId, true);
+        await updateDurationAudioCaption(captionModal.id, activeDurationId, trimmedCaption);
       } else if (captionModal.type === 'audio') {
         await updateAudioCaption(captionModal.id, trimmedCaption);
       }
