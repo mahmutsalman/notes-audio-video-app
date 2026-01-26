@@ -192,6 +192,8 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
         return;
       }
 
+      const wasPaused = mediaRecorder.state === 'paused';
+
       // Clear timer
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -201,7 +203,9 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
       // Auto-complete pending mark if recording is stopped while marking
       if (pendingMarkStart !== null) {
         // Calculate final elapsed time in seconds
-        const elapsed = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+        const elapsed = wasPaused
+          ? accumulatedTimeRef.current
+          : accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
         const endTime = Math.floor(elapsed / 1000);
 
         if (endTime > pendingMarkStart) {
@@ -224,7 +228,9 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
         const rawBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
 
         // Calculate final duration in milliseconds
-        const durationMs = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+        const durationMs = wasPaused
+          ? accumulatedTimeRef.current
+          : accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
 
         // Fix WebM metadata for seekability (adds Duration)
         let blob: Blob;

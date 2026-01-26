@@ -147,6 +147,8 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
         return;
       }
 
+      const wasPaused = mediaRecorder.state === 'paused';
+
       // Stop the timer
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -158,7 +160,9 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
         const rawBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
 
         // Calculate final duration
-        const durationMs = accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
+        const durationMs = wasPaused
+          ? accumulatedTimeRef.current
+          : accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
 
         // Fix WebM metadata for seekability
         let blob: Blob;
