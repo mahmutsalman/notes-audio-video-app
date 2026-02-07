@@ -75,3 +75,8 @@ localResources/
 
 # Backup folder (created by app backup feature)
 backup/
+
+# Personal infrastructure (local-only, never pushed)
+/sync/
+/server/
+/mobile/
