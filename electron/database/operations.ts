@@ -302,6 +302,15 @@ export const ImagesOperations = {
     return db.prepare('SELECT * FROM images WHERE id = ?').get(id) as Image | undefined ?? null;
   },
 
+  getMaxSortOrder(recordingId: number): number {
+    const db = getDatabase();
+    const result = db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) as max_order
+      FROM images WHERE recording_id = ?
+    `).get(recordingId) as { max_order: number };
+    return result.max_order;
+  },
+
   create(image: CreateImage): Image {
     const db = getDatabase();
     const stmt = db.prepare(`
@@ -371,6 +380,15 @@ export const VideosOperations = {
   getById(id: number): Video | null {
     const db = getDatabase();
     return db.prepare('SELECT * FROM videos WHERE id = ?').get(id) as Video | undefined ?? null;
+  },
+
+  getMaxSortOrder(recordingId: number): number {
+    const db = getDatabase();
+    const result = db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) as max_order
+      FROM videos WHERE recording_id = ?
+    `).get(recordingId) as { max_order: number };
+    return result.max_order;
   },
 
   create(video: CreateVideo): Video {
@@ -521,6 +539,15 @@ export const DurationImagesOperations = {
     return db.prepare('SELECT * FROM duration_images WHERE id = ?').get(id) as DurationImage | undefined ?? null;
   },
 
+  getMaxSortOrder(durationId: number): number {
+    const db = getDatabase();
+    const result = db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) as max_order
+      FROM duration_images WHERE duration_id = ?
+    `).get(durationId) as { max_order: number };
+    return result.max_order;
+  },
+
   create(image: CreateDurationImage): DurationImage {
     const db = getDatabase();
     const stmt = db.prepare(`
@@ -595,6 +622,15 @@ export const DurationVideosOperations = {
   getById(id: number): DurationVideo | null {
     const db = getDatabase();
     return db.prepare('SELECT * FROM duration_videos WHERE id = ?').get(id) as DurationVideo | undefined ?? null;
+  },
+
+  getMaxSortOrder(durationId: number): number {
+    const db = getDatabase();
+    const result = db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) as max_order
+      FROM duration_videos WHERE duration_id = ?
+    `).get(durationId) as { max_order: number };
+    return result.max_order;
   },
 
   create(video: CreateDurationVideo): DurationVideo {

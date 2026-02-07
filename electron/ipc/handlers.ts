@@ -154,22 +154,24 @@ export function setupIpcHandlers(): void {
   // ============ Media (Images & Videos) ============
   ipcMain.handle('media:addImage', async (_, recordingId: number, sourcePath: string) => {
     const { filePath, thumbnailPath } = await saveImageFile(recordingId, sourcePath);
+    const nextSortOrder = ImagesOperations.getMaxSortOrder(recordingId) + 1;
     return ImagesOperations.create({
       recording_id: recordingId,
       file_path: filePath,
       thumbnail_path: thumbnailPath,
-      sort_order: 0,
+      sort_order: nextSortOrder,
     });
   });
 
   ipcMain.handle('media:addVideo', async (_, recordingId: number, sourcePath: string) => {
     const { filePath, thumbnailPath, duration } = await saveVideoFile(recordingId, sourcePath);
+    const nextSortOrder = VideosOperations.getMaxSortOrder(recordingId) + 1;
     return VideosOperations.create({
       recording_id: recordingId,
       file_path: filePath,
       thumbnail_path: thumbnailPath,
       duration: duration,
-      sort_order: 0,
+      sort_order: nextSortOrder,
     });
   });
 
@@ -206,22 +208,24 @@ export function setupIpcHandlers(): void {
   // Clipboard-based media addition
   ipcMain.handle('media:addImageFromClipboard', async (_, recordingId: number, imageBuffer: ArrayBuffer, extension: string = 'png') => {
     const { filePath, thumbnailPath } = await saveImageFromBuffer(recordingId, imageBuffer, extension);
+    const nextSortOrder = ImagesOperations.getMaxSortOrder(recordingId) + 1;
     return ImagesOperations.create({
       recording_id: recordingId,
       file_path: filePath,
       thumbnail_path: thumbnailPath,
-      sort_order: 0,
+      sort_order: nextSortOrder,
     });
   });
 
   ipcMain.handle('media:addVideoFromClipboard', async (_, recordingId: number, videoBuffer: ArrayBuffer, extension: string = 'mp4') => {
     const { filePath, thumbnailPath, duration } = await saveVideoFromBuffer(recordingId, videoBuffer, extension);
+    const nextSortOrder = VideosOperations.getMaxSortOrder(recordingId) + 1;
     return VideosOperations.create({
       recording_id: recordingId,
       file_path: filePath,
       thumbnail_path: thumbnailPath,
       duration: duration,
-      sort_order: 0,
+      sort_order: nextSortOrder,
     });
   });
 
@@ -394,11 +398,12 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationImages:addFromClipboard', async (_, durationId: number, imageBuffer: ArrayBuffer, extension: string = 'png') => {
     const { filePath, thumbnailPath } = await saveDurationImageFromBuffer(durationId, imageBuffer, extension);
+    const nextSortOrder = DurationImagesOperations.getMaxSortOrder(durationId) + 1;
     return DurationImagesOperations.create({
       duration_id: durationId,
       file_path: filePath,
       thumbnail_path: thumbnailPath,
-      sort_order: 0,
+      sort_order: nextSortOrder,
     });
   });
 
@@ -436,25 +441,27 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationVideos:addFromClipboard', async (_, durationId: number, videoBuffer: ArrayBuffer, extension: string = 'mp4') => {
     const { filePath, thumbnailPath, duration } = await saveDurationVideoFromBuffer(durationId, videoBuffer, extension);
+    const nextSortOrder = DurationVideosOperations.getMaxSortOrder(durationId) + 1;
     return DurationVideosOperations.create({
       duration_id: durationId,
       file_path: filePath,
       thumbnail_path: thumbnailPath,
       caption: null,
       duration: duration,
-      sort_order: 0,
+      sort_order: nextSortOrder,
     });
   });
 
   ipcMain.handle('durationVideos:addFromFile', async (_, durationId: number, sourcePath: string) => {
     const { filePath, thumbnailPath, duration } = await saveDurationVideoFromFile(durationId, sourcePath);
+    const nextSortOrder = DurationVideosOperations.getMaxSortOrder(durationId) + 1;
     return DurationVideosOperations.create({
       duration_id: durationId,
       file_path: filePath,
       thumbnail_path: thumbnailPath,
       caption: null,
       duration: duration,
-      sort_order: 0,
+      sort_order: nextSortOrder,
     });
   });
 
