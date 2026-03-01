@@ -85,6 +85,14 @@ localResources/
 # Backup folder (created by app backup feature)
 backup/
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Claude Code
+/.claude/
+
 # Personal infrastructure (local-only, never pushed)
 /sync/
 /server/
