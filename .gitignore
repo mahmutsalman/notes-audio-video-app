@@ -93,4 +93,7 @@ __pycache__/
 # Claude Code
 /.claude/
 
-# personal-branch-only dirs are tracked there — no gitignore needed
+# Personal infrastructure (local-only, never pushed)
+/sync/
+/server/
+/mobile/
