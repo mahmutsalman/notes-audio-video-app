@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { fixWebmMetadata } from '../utils/webmFixer';
 
 export interface VoiceRecorderState {
   isRecording: boolean;
@@ -227,19 +226,16 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
         // Create blob from chunks
         const rawBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
 
-        // Calculate final duration in milliseconds
-        const durationMs = wasPaused
-          ? accumulatedTimeRef.current
-          : accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
-
-        // Fix WebM metadata for seekability (adds Duration)
+        // Convert WebM → M4A via ffmpeg for mobile seekability
         let blob: Blob;
         try {
-          blob = await fixWebmMetadata(rawBlob, durationMs);
-          console.log('[Recording] WebM metadata fixed for seekability');
+          const webmBuffer = await rawBlob.arrayBuffer();
+          const m4aBuffer = await window.electronAPI.audio.convertBuffer(webmBuffer);
+          blob = new Blob([m4aBuffer], { type: 'audio/mp4' });
+          console.log('[Recording] Converted WebM → M4A');
         } catch (error) {
-          console.warn('[Recording] Failed to fix WebM metadata, using raw blob:', error);
-          blob = rawBlob; // Fallback to raw blob if fixing fails
+          console.warn('[Recording] WebM→M4A conversion failed, using raw blob:', error);
+          blob = rawBlob;
         }
 
         const url = URL.createObjectURL(blob);

@@ -62,6 +62,10 @@ const electronAPI = {
       extensionDurationMs: number
     ): Promise<{ success: boolean; totalDurationMs: number; totalSizeBytes?: number; error?: string }> =>
       ipcRenderer.invoke('audio:mergeExtension', recordingId, extensionBuffer, originalDurationMs, extensionDurationMs),
+    convertAllWebm: (): Promise<{ converted: number; failed: number; errors: string[] }> =>
+      ipcRenderer.invoke('audio:convert-all-webm'),
+    convertBuffer: (webmBuffer: ArrayBuffer): Promise<ArrayBuffer> =>
+      ipcRenderer.invoke('audio:convert-buffer', webmBuffer),
   },
 
   // Media (Images & Videos)

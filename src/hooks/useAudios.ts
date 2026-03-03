@@ -29,7 +29,7 @@ export function useAudios(recordingId: number | null) {
     fetchAudios();
   }, [fetchAudios]);
 
-  const addAudioFromBuffer = async (audioBuffer: ArrayBuffer, extension: string = 'webm'): Promise<Audio | null> => {
+  const addAudioFromBuffer = async (audioBuffer: ArrayBuffer, extension: string = 'm4a'): Promise<Audio | null> => {
     if (!recordingId) return null;
 
     try {

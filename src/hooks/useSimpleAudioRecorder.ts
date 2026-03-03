@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { fixWebmMetadata } from '../utils/webmFixer';
 
 export interface SimpleAudioRecorderState {
   isRecording: boolean;
@@ -147,8 +146,6 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
         return;
       }
 
-      const wasPaused = mediaRecorder.state === 'paused';
-
       // Stop the timer
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -159,17 +156,15 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
         // Create blob from chunks
         const rawBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
 
-        // Calculate final duration
-        const durationMs = wasPaused
-          ? accumulatedTimeRef.current
-          : accumulatedTimeRef.current + (Date.now() - startTimeRef.current);
-
-        // Fix WebM metadata for seekability
+        // Convert WebM → M4A via ffmpeg for mobile seekability
         let blob: Blob;
         try {
-          blob = await fixWebmMetadata(rawBlob, durationMs);
+          const webmBuffer = await rawBlob.arrayBuffer();
+          const m4aBuffer = await window.electronAPI.audio.convertBuffer(webmBuffer);
+          blob = new Blob([m4aBuffer], { type: 'audio/mp4' });
+          console.log('[SimpleRecorder] Converted WebM → M4A');
         } catch (error) {
-          console.warn('Failed to fix WebM metadata:', error);
+          console.warn('[SimpleRecorder] WebM→M4A conversion failed, using raw blob:', error);
           blob = rawBlob;
         }
 

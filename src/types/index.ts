@@ -328,6 +328,8 @@ export interface ElectronAPI {
       originalDurationMs: number,
       extensionDurationMs: number
     ) => Promise<{ success: boolean; totalDurationMs: number; error?: string }>;
+    convertAllWebm: () => Promise<{ converted: number; failed: number; errors: string[] }>;
+    convertBuffer: (webmBuffer: ArrayBuffer) => Promise<ArrayBuffer>;
   };
   media: {
     addImage: (recordingId: number, filePath: string) => Promise<Image>;

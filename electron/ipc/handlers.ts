@@ -36,6 +36,7 @@ import {
 } from '../services/fileStorage';
 import { createBackup, getBackupDir } from '../services/backupService';
 import { mergeAudioFiles } from '../services/audioMerger';
+import { convertWebmToM4a, convertWebmBufferToM4a } from '../services/audioConverter';
 import type {
   CreateTopic, UpdateTopic, CreateRecording, UpdateRecording, CreateDuration, UpdateDuration,
   CreateCodeSnippet, UpdateCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
@@ -149,6 +150,63 @@ export function setupIpcHandlers(): void {
     );
 
     return result;
+  });
+
+  // ============ Audio: Batch .webm → .m4a Conversion ============
+  ipcMain.handle('audio:convert-all-webm', async () => {
+    const { app } = await import('electron');
+    const path = await import('path');
+    const fs = await import('fs');
+    const Database = (await import('better-sqlite3')).default;
+
+    const userDataPath = app.getPath('userData');
+    const localDb = path.join(userDataPath, 'NotesWithAudioAndVideo.db');
+    const db = new Database(localDb);
+
+    const results = { converted: 0, failed: 0, errors: [] as string[] };
+
+    // Table configs: [tableName, columnName]
+    const tables: [string, string][] = [
+      ['recordings', 'audio_path'],
+      ['audios', 'file_path'],
+      ['duration_audios', 'file_path'],
+    ];
+
+    for (const [table, column] of tables) {
+      const rows = db.prepare(
+        `SELECT id, ${column} AS path FROM ${table} WHERE ${column} LIKE '%.webm'`
+      ).all() as { id: number; path: string }[];
+
+      console.log(`[AudioConverter] ${table}: ${rows.length} .webm files`);
+
+      for (const row of rows) {
+        try {
+          if (!fs.existsSync(row.path)) {
+            console.warn(`[AudioConverter] File missing, skipping: ${row.path}`);
+            results.failed++;
+            results.errors.push(`Missing: ${row.path}`);
+            continue;
+          }
+          const newPath = await convertWebmToM4a(row.path);
+          db.prepare(`UPDATE ${table} SET ${column} = ? WHERE id = ?`).run(newPath, row.id);
+          results.converted++;
+        } catch (err) {
+          results.failed++;
+          results.errors.push(`${row.path}: ${(err as Error).message}`);
+          console.error(`[AudioConverter] Failed ${row.path}:`, (err as Error).message);
+        }
+      }
+    }
+
+    db.close();
+    console.log(`[AudioConverter] Done: ${results.converted} converted, ${results.failed} failed`);
+    return results;
+  });
+
+  // ============ Audio: Single buffer WebM → M4A conversion ============
+  ipcMain.handle('audio:convert-buffer', async (_, webmBuffer: ArrayBuffer) => {
+    const m4aBuffer = await convertWebmBufferToM4a(webmBuffer);
+    return m4aBuffer.buffer.slice(m4aBuffer.byteOffset, m4aBuffer.byteOffset + m4aBuffer.byteLength);
   });
 
   // ============ Media (Images & Videos) ============

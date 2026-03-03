@@ -279,7 +279,7 @@ export function useDurations(recordingId: number | null) {
   }, []); // Remove durationAudiosCache from dependencies
 
   // Add audio from buffer to a duration
-  const addDurationAudioFromBuffer = async (durationId: number, audioBuffer: ArrayBuffer, extension: string = 'webm'): Promise<DurationAudio> => {
+  const addDurationAudioFromBuffer = async (durationId: number, audioBuffer: ArrayBuffer, extension: string = 'm4a'): Promise<DurationAudio> => {
     const newAudio = await window.electronAPI.durationAudios.addFromBuffer(
       durationId,
       audioBuffer,
