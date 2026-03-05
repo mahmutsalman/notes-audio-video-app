@@ -111,6 +111,11 @@ export interface DurationImage {
   group_color: DurationGroupColor;
   sort_order: number;
   created_at: string;
+  page_number: number | null;
+  rect_x: number | null;
+  rect_y: number | null;
+  rect_w: number | null;
+  rect_h: number | null;
 }
 
 export interface DurationVideo {
@@ -377,6 +382,7 @@ export interface ElectronAPI {
   durationImages: {
     getByDuration: (durationId: number) => Promise<DurationImage[]>;
     addFromClipboard: (durationId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<DurationImage>;
+    addScreenshot: (durationId: number, imageBuffer: ArrayBuffer, pageNumber: number, rect: { x: number; y: number; w: number; h: number }) => Promise<DurationImage>;
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<DurationImage>;
     updateColor: (id: number, color: DurationColor) => Promise<DurationImage>;

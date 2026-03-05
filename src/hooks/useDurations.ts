@@ -141,6 +141,28 @@ export function useDurations(recordingId: number | null) {
     }
   };
 
+  // Add image from PDF screenshot to a duration
+  const addDurationImageFromScreenshot = async (
+    durationId: number,
+    imageBuffer: ArrayBuffer,
+    pageNumber: number,
+    rect: { x: number; y: number; w: number; h: number }
+  ): Promise<DurationImage | null> => {
+    try {
+      const newImage = await window.electronAPI.durationImages.addScreenshot(
+        durationId, imageBuffer, pageNumber, rect
+      );
+      setDurationImagesCache(prev => ({
+        ...prev,
+        [durationId]: [...(prev[durationId] || []), newImage]
+      }));
+      return newImage;
+    } catch (err) {
+      console.error('Failed to add screenshot image:', err);
+      return null;
+    }
+  };
+
   // Reorder duration images
   const reorderDurationImages = async (durationId: number, orderedIds: number[]): Promise<void> => {
     // Optimistic update — reorder locally for instant feedback
@@ -425,6 +447,7 @@ export function useDurations(recordingId: number | null) {
     durationImagesCache,
     getDurationImages,
     addDurationImageFromClipboard,
+    addDurationImageFromScreenshot,
     reorderDurationImages,
     deleteDurationImage,
     updateDurationImageCaption,

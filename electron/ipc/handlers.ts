@@ -466,6 +466,22 @@ export function setupIpcHandlers(): void {
     });
   });
 
+  ipcMain.handle('durationImages:addScreenshot', async (_, durationId: number, imageBuffer: ArrayBuffer, pageNumber: number, rect: { x: number; y: number; w: number; h: number }) => {
+    const { filePath, thumbnailPath } = await saveDurationImageFromBuffer(durationId, imageBuffer, 'png');
+    const nextSortOrder = DurationImagesOperations.getMaxSortOrder(durationId) + 1;
+    return DurationImagesOperations.create({
+      duration_id: durationId,
+      file_path: filePath,
+      thumbnail_path: thumbnailPath,
+      sort_order: nextSortOrder,
+      page_number: pageNumber,
+      rect_x: rect.x,
+      rect_y: rect.y,
+      rect_w: rect.w,
+      rect_h: rect.h,
+    });
+  });
+
   ipcMain.handle('durationImages:delete', async (_, id: number) => {
     const image = DurationImagesOperations.getById(id);
     if (image) {

@@ -44,6 +44,7 @@ export default function RecordingPage() {
     durationImagesCache,
     getDurationImages,
     addDurationImageFromClipboard,
+    addDurationImageFromScreenshot,
     reorderDurationImages,
     deleteDurationImage,
     updateDurationImageCaption,
@@ -556,6 +557,31 @@ export default function RecordingPage() {
     if (!image) {
       alert('No image found in clipboard. Copy an image first, then click Paste.');
     }
+  };
+
+  // Handle PDF screenshot capture
+  const handlePdfScreenshot = async (data: { imageData: ArrayBuffer; pageNumber: number; rect: { x: number; y: number; w: number; h: number } }) => {
+    if (!recording) return;
+    let targetId = activeDurationId;
+    if (!targetId && durations.length > 0) {
+      targetId = durations[0].id;
+      setActiveDurationId(targetId);
+    }
+    if (!targetId) {
+      // Create a new mark with current page
+      const nextIndex = getNextMarkIndex(durations);
+      const { start_time, end_time } = createMarkTimes(nextIndex);
+      const newDuration = await createDuration({
+        recording_id: recording.id,
+        start_time,
+        end_time,
+        note: null,
+        page_number: data.pageNumber,
+      });
+      targetId = newDuration.id;
+      setActiveDurationId(targetId);
+    }
+    await addDurationImageFromScreenshot(targetId, data.imageData, data.pageNumber, data.rect);
   };
 
   // Handle reordering duration images
@@ -1191,6 +1217,7 @@ export default function RecordingPage() {
               ref={pdfViewerRef}
               filePath={recording.pdf_path}
               pageOffset={recording.page_offset ?? 0}
+              onScreenshotCapture={handlePdfScreenshot}
               onCalibrateOffset={async (offset) => {
                 try {
                   const updated = await window.electronAPI.recordings.update(recording.id, { page_offset: offset });
@@ -1309,7 +1336,14 @@ export default function RecordingPage() {
             groupColorOverrides={mediaGroupColorOverrides}
             colorKeyPrefix="durationImage"
             captionColorClass="text-blue-600 dark:text-blue-400"
-            onImageClick={(index) => setSelectedDurationImageIndex(index)}
+            onImageClick={(index) => {
+              const img = activeDurationImages[index];
+              if (isBookNote(recording) && img?.page_number && pdfViewerRef.current) {
+                pdfViewerRef.current.goToPage(img.page_number);
+              } else {
+                setSelectedDurationImageIndex(index);
+              }
+            }}
             onContextMenu={(e, img) => handleContextMenu(e, 'durationImage', img as DurationImage)}
             onDelete={handleDeleteDurationImage}
             onReorder={handleReorderDurationImages}

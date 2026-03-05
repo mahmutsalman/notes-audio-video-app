@@ -561,15 +561,20 @@ export const DurationImagesOperations = {
   create(image: CreateDurationImage): DurationImage {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO duration_images (duration_id, file_path, thumbnail_path, sort_order)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO duration_images (duration_id, file_path, thumbnail_path, sort_order, page_number, rect_x, rect_y, rect_w, rect_h)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       image.duration_id,
       image.file_path,
       image.thumbnail_path ?? null,
-      image.sort_order ?? 0
+      image.sort_order ?? 0,
+      image.page_number ?? null,
+      image.rect_x ?? null,
+      image.rect_y ?? null,
+      image.rect_w ?? null,
+      image.rect_h ?? null
     );
 
     return this.getById(result.lastInsertRowid as number)!;

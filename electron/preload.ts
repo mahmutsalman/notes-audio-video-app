@@ -190,6 +190,8 @@ const electronAPI = {
       ipcRenderer.invoke('durationImages:getByDuration', durationId),
     addFromClipboard: (durationId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<DurationImage> =>
       ipcRenderer.invoke('durationImages:addFromClipboard', durationId, imageBuffer, extension),
+    addScreenshot: (durationId: number, imageBuffer: ArrayBuffer, pageNumber: number, rect: { x: number; y: number; w: number; h: number }): Promise<DurationImage> =>
+      ipcRenderer.invoke('durationImages:addScreenshot', durationId, imageBuffer, pageNumber, rect),
     delete: (id: number): Promise<void> =>
       ipcRenderer.invoke('durationImages:delete', id),
     updateCaption: (id: number, caption: string | null): Promise<DurationImage> =>
