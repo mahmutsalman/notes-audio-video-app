@@ -552,6 +552,21 @@ function runMigrations(db: Database.Database): void {
     console.log('Added page_number column to durations table');
   }
 
+  // Migration: Add screenshot metadata columns to duration_images table
+  const diColumns = db.prepare("PRAGMA table_info(duration_images)").all() as { name: string }[];
+  const diColumnNames = new Set(diColumns.map(c => c.name));
+  if (!diColumnNames.has('page_number')) {
+    db.exec(`ALTER TABLE duration_images ADD COLUMN page_number INTEGER`);
+    console.log('Added page_number column to duration_images table');
+  }
+  if (!diColumnNames.has('rect_x')) {
+    db.exec(`ALTER TABLE duration_images ADD COLUMN rect_x REAL`);
+    db.exec(`ALTER TABLE duration_images ADD COLUMN rect_y REAL`);
+    db.exec(`ALTER TABLE duration_images ADD COLUMN rect_w REAL`);
+    db.exec(`ALTER TABLE duration_images ADD COLUMN rect_h REAL`);
+    console.log('Added rect_x/y/w/h columns to duration_images table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

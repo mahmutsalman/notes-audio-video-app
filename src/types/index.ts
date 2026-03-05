@@ -488,7 +488,6 @@ export interface ElectronAPI {
   durationImages: {
     getByDuration: (durationId: number) => Promise<DurationImage[]>;
     addFromClipboard: (durationId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<DurationImage>;
-    replaceFromClipboard: (imageId: number, durationId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<DurationImage>;
     addScreenshot: (durationId: number, imageBuffer: ArrayBuffer, pageNumber: number, rect: { x: number; y: number; w: number; h: number }) => Promise<DurationImage>;
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<DurationImage>;
