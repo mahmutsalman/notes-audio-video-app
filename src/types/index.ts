@@ -3,7 +3,7 @@
 export type ImportanceColor = 'emerald' | 'amber' | 'rose' | null;
 export type DurationColor = 'red' | 'amber' | 'sky' | null;
 export type DurationGroupColor = 'lime' | 'cyan' | 'orange' | 'teal' | 'rose' | 'yellow' | 'pink' | 'emerald' | 'blue' | 'fuchsia' | null;
-export type RecordingType = 'audio' | 'video' | 'written' | 'book' | 'reader';
+export type RecordingType = 'audio' | 'video' | 'written' | 'book';
 
 export interface Topic {
   id: number;
@@ -35,12 +35,6 @@ export interface Recording {
   notes_content: string | null;
   main_notes_content: string | null;
   pdf_path: string | null;
-  page_offset: number;
-  book_data_path: string | null;
-  reading_progress: number;
-  character_offset: number;
-  total_pages: number | null;
-  total_words: number | null;
   importance_color: ImportanceColor;
   last_group_color: DurationGroupColor;
   group_toggle_active: boolean;
@@ -368,7 +362,7 @@ export interface BackupResult {
 export type CreateTopic = Omit<Topic, 'id' | 'created_at' | 'updated_at' | 'total_recordings' | 'total_images' | 'total_videos'>;
 export type UpdateTopic = Partial<CreateTopic>;
 
-export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color' | 'name' | 'last_group_color' | 'group_toggle_active' | 'recording_type' | 'main_notes_content' | 'pdf_path' | 'page_offset' | 'book_data_path' | 'reading_progress' | 'character_offset' | 'total_pages' | 'total_words'> & { importance_color?: ImportanceColor; name?: string | null; recording_type?: RecordingType; main_notes_content?: string | null; pdf_path?: string | null; page_offset?: number; book_data_path?: string | null; reading_progress?: number; character_offset?: number; total_pages?: number | null; total_words?: number | null };
+export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color' | 'name' | 'last_group_color' | 'group_toggle_active' | 'recording_type' | 'main_notes_content' | 'pdf_path'> & { importance_color?: ImportanceColor; name?: string | null; recording_type?: RecordingType; main_notes_content?: string | null; pdf_path?: string | null };
 export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
@@ -712,8 +706,6 @@ export interface ElectronAPI {
     pickFile: () => Promise<string | null>;
     copyToMedia: (recordingId: number, sourcePath: string) => Promise<string>;
     readFile: (filePath: string) => Promise<ArrayBuffer>;
-    saveBookData: (recordingId: number, bookData: BookData) => Promise<string>;
-    readBookData: (bookDataPath: string) => Promise<BookData>;
   };
   sync: {
     upload: () => Promise<{ success: boolean; output?: string; error?: string; stderr?: string }>;

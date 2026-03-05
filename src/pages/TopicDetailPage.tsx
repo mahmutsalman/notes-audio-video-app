@@ -9,7 +9,6 @@ import QuickRecord from '../components/recordings/QuickRecord';
 import QuickScreenRecord from '../components/recordings/QuickScreenRecord';
 import QuickWrittenNote from '../components/recordings/QuickWrittenNote';
 import QuickBookNote from '../components/recordings/QuickBookNote';
-import QuickReaderNote from '../components/recordings/QuickReaderNote';
 import TopicForm from '../components/topics/TopicForm';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
@@ -220,6 +219,12 @@ export default function TopicDetailPage() {
         topicId={id!}
         onRecordingSaved={handleRecordingSaved}
       />}
+
+      {/* Quick Book Note FAB */}
+      <QuickBookNote
+        topicId={id!}
+        onRecordingSaved={handleRecordingSaved}
+      />
 
       {/* Edit topic modal */}
       <Modal
