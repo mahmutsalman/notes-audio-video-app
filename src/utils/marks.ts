@@ -36,6 +36,14 @@ export function isWrittenNote(recording: Recording | null | undefined): boolean 
   return recording?.recording_type === 'written';
 }
 
+export function isBookNote(recording: Recording | null | undefined): boolean {
+  return recording?.recording_type === 'book';
+}
+
+export function isMarkBasedNote(recording: Recording | null | undefined): boolean {
+  return isWrittenNote(recording) || isBookNote(recording);
+}
+
 /**
  * Gets the next mark index based on existing marks (durations) for a written note.
  * @param durations - Array of existing durations/marks

@@ -3,7 +3,7 @@
 export type ImportanceColor = 'emerald' | 'amber' | 'rose' | null;
 export type DurationColor = 'red' | 'amber' | 'sky' | null;
 export type DurationGroupColor = 'lime' | 'cyan' | 'orange' | 'teal' | 'rose' | 'yellow' | 'pink' | 'emerald' | 'blue' | 'fuchsia' | null;
-export type RecordingType = 'audio' | 'video' | 'written';
+export type RecordingType = 'audio' | 'video' | 'written' | 'book';
 
 export interface Topic {
   id: number;
@@ -33,6 +33,7 @@ export interface Recording {
   video_size: number | null;
   notes_content: string | null;
   main_notes_content: string | null;
+  pdf_path: string | null;
   importance_color: ImportanceColor;
   last_group_color: DurationGroupColor;
   group_toggle_active: boolean;
@@ -89,6 +90,7 @@ export interface Duration {
   note: string | null; // optional note for this duration mark
   color: DurationColor; // color indicator for categorizing duration marks (priority colors - left/right bars)
   group_color: DurationGroupColor; // group color for visually grouping related marks (top bar)
+  page_number: number | null;
   sort_order: number; // order for drag-and-drop reordering
   created_at: string;
   // Media loaded separately
@@ -255,12 +257,12 @@ export interface BackupResult {
 export type CreateTopic = Omit<Topic, 'id' | 'created_at' | 'updated_at' | 'total_recordings' | 'total_images' | 'total_videos'>;
 export type UpdateTopic = Partial<CreateTopic>;
 
-export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color' | 'name' | 'last_group_color' | 'group_toggle_active' | 'recording_type' | 'main_notes_content'> & { importance_color?: ImportanceColor; name?: string | null; recording_type?: RecordingType; main_notes_content?: string | null };
+export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color' | 'name' | 'last_group_color' | 'group_toggle_active' | 'recording_type' | 'main_notes_content' | 'pdf_path'> & { importance_color?: ImportanceColor; name?: string | null; recording_type?: RecordingType; main_notes_content?: string | null; pdf_path?: string | null };
 export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
 export type CreateVideo = Omit<Video, 'id' | 'created_at'>;
-export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color' | 'sort_order'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor };
+export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color' | 'sort_order' | 'page_number'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor; page_number?: number | null };
 
 // Video Compression Types
 export interface VideoCompressionOptions {
@@ -568,6 +570,14 @@ export interface ElectronAPI {
   app: {
     quit: () => Promise<void>;
     forceQuit: () => Promise<void>;
+  };
+  pdf: {
+    pickFile: () => Promise<string | null>;
+    copyToMedia: (recordingId: number, sourcePath: string) => Promise<string>;
+    readFile: (filePath: string) => Promise<ArrayBuffer>;
+  };
+  sync: {
+    upload: () => Promise<{ success: boolean; output?: string; error?: string; stderr?: string }>;
   };
 }
 

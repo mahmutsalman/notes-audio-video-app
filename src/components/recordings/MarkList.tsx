@@ -122,6 +122,12 @@ function SortableMark({
         <span className="text-xs font-medium">
           Mark {index + 1}
         </span>
+        {/* Page number indicator */}
+        {duration.page_number != null && (
+          <span className={`text-xs ${isActive ? 'text-white/80' : 'text-indigo-400'}`}>
+            p.{duration.page_number}
+          </span>
+        )}
         {/* Image indicator */}
         {imageCount > 0 && (
           <span className={`text-xs ${isActive ? 'text-white/80' : 'text-gray-500 dark:text-gray-400'}`}>
@@ -205,6 +211,12 @@ function MarkOverlay({
         <span className="text-xs font-medium">
           Mark {index + 1}
         </span>
+        {/* Page number indicator */}
+        {duration.page_number != null && (
+          <span className="text-xs text-white/80">
+            p.{duration.page_number}
+          </span>
+        )}
         {/* Image indicator */}
         {imageCount > 0 && (
           <span className="text-xs text-white/80">

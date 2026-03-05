@@ -29,6 +29,7 @@ export async function ensureMediaDirs(): Promise<void> {
     path.join(mediaDir, 'duration_videos'),
     path.join(mediaDir, 'duration_audios'),  // duration-level audio attachments
     path.join(mediaDir, 'screen_recordings'), // screen recordings
+    path.join(mediaDir, 'pdfs'),               // PDF files for book notes
   ];
 
   for (const dir of dirs) {
@@ -831,7 +832,8 @@ export async function deleteRecordingMedia(recordingId: number): Promise<void> {
   const audiosDir = path.join(mediaDir, 'audios', String(recordingId)); // audio attachments
   const screenRecordingsDir = path.join(mediaDir, 'screen_recordings', String(recordingId)); // screen recordings
 
-  for (const dir of [audiDir, imagesDir, videosDir, audiosDir, screenRecordingsDir]) {
+  const pdfsDir = path.join(mediaDir, 'pdfs', String(recordingId)); // PDFs
+  for (const dir of [audiDir, imagesDir, videosDir, audiosDir, screenRecordingsDir, pdfsDir]) {
     try {
       await fs.rm(dir, { recursive: true, force: true });
       console.log('Deleted directory:', dir);
@@ -839,6 +841,23 @@ export async function deleteRecordingMedia(recordingId: number): Promise<void> {
       // Directory may not exist, ignore
     }
   }
+}
+
+export async function savePdfFile(
+  recordingId: number,
+  sourcePath: string
+): Promise<string> {
+  const dir = path.join(getMediaDir(), 'pdfs', String(recordingId));
+  await fs.mkdir(dir, { recursive: true });
+
+  const ext = path.extname(sourcePath) || '.pdf';
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}${ext}`);
+
+  await fs.copyFile(sourcePath, filePath);
+  console.log('PDF saved to:', filePath);
+
+  return filePath;
 }
 
 export function getFileUrl(filePath: string): string {

@@ -38,6 +38,9 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  optimizeDeps: {
+    include: ['pdfjs-dist'],
+  },
   server: {
     port: parseInt(process.env.VITE_DEV_PORT || '5174', 10),
   },

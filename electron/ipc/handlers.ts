@@ -33,6 +33,7 @@ import {
   deleteRecordingMedia,
   getMediaDir,
   getFileUrl,
+  savePdfFile,
 } from '../services/fileStorage';
 import { createBackup, getBackupDir } from '../services/backupService';
 import { mergeAudioFiles } from '../services/audioMerger';
@@ -1267,6 +1268,241 @@ export function setupIpcHandlers(): void {
     console.log('[IPC] Force quit requested from renderer process');
     const { app } = await import('electron');
     app.exit(0);
+  });
+
+  // ============ PDF ============
+  ipcMain.handle('pdf:pickFile', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+    });
+    return result.filePaths[0] ?? null;
+  });
+
+  ipcMain.handle('pdf:copyToMedia', async (_, recordingId: number, sourcePath: string) => {
+    return savePdfFile(recordingId, sourcePath);
+  });
+
+  ipcMain.handle('pdf:readFile', async (_, filePath: string) => {
+    const fs = await import('fs/promises');
+    const buffer = await fs.readFile(filePath);
+    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+  });
+
+  // ============ Cloud Sync ============
+  ipcMain.handle('sync:upload', async () => {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const { app } = await import('electron');
+    const path = await import('path');
+    const fs = await import('fs');
+    const execAsync = promisify(exec);
+
+    const userDataPath = app.getPath('userData');
+    const localDb = path.join(userDataPath, 'NotesWithAudioAndVideo.db');
+    const localMedia = path.join(userDataPath, 'media');
+
+    const vpsUser = 'root';
+    const vpsHost = 'mahmutsalman.cloud';
+    const vpsKey = path.join(process.env.HOME || '~', '.ssh', 'vps1_key');
+    const vpsDataDir = '/var/www/notes/data';
+    const vpsUploadsDir = `${vpsDataDir}/uploads`;
+
+    const sshOpts = `-i "${vpsKey}" -o StrictHostKeyChecking=accept-new`;
+
+    console.log('[IPC] Starting cloud sync...');
+    console.log('[IPC] DB:', localDb);
+    console.log('[IPC] Media:', localMedia);
+
+    const Database = (await import('better-sqlite3')).default;
+
+    try {
+      // Ensure remote directories
+      await execAsync(
+        `ssh ${sshOpts} ${vpsUser}@${vpsHost} "mkdir -p ${vpsDataDir}/media ${vpsUploadsDir}"`,
+        { timeout: 30000 }
+      );
+
+      // ── Phase 1: Pull Mobile Uploads ──
+      console.log('[IPC] Phase 1: Pulling mobile uploads...');
+
+      const { stdout: countOut } = await execAsync(
+        `ssh ${sshOpts} ${vpsUser}@${vpsHost} "find ${vpsUploadsDir} -name '*.json' 2>/dev/null | wc -l"`,
+        { timeout: 30000 }
+      );
+      const pendingCount = parseInt(countOut.trim(), 10) || 0;
+      console.log(`[IPC] Pending uploads on VPS: ${pendingCount}`);
+
+      if (pendingCount > 0) {
+        const localPending = path.join(userDataPath, 'pending_uploads');
+        fs.mkdirSync(localPending, { recursive: true });
+
+        // Download staging JSONs
+        await execAsync(
+          `rsync -avz -e "ssh ${sshOpts}" ${vpsUser}@${vpsHost}:${vpsUploadsDir}/ "${localPending}/"`,
+          { timeout: 60000 }
+        );
+
+        // Process each staging JSON
+        const jsonFiles = fs.readdirSync(localPending).filter((f: string) => f.endsWith('.json'));
+        const db = new Database(localDb);
+
+        for (const jsonFile of jsonFiles) {
+          try {
+            const raw = fs.readFileSync(path.join(localPending, jsonFile), 'utf-8');
+            const meta = JSON.parse(raw);
+            const { type } = meta;
+
+            if (type === 'image') {
+              const { duration_id, file_path: vpsFilePath, caption, sort_order, created_at } = meta;
+              const filename = path.basename(vpsFilePath);
+
+              // Check if file still exists on VPS (may have been deleted)
+              const { stdout: existsOut } = await execAsync(
+                `ssh ${sshOpts} ${vpsUser}@${vpsHost} "test -f '${vpsFilePath}' && echo yes || echo no"`,
+                { timeout: 15000 }
+              );
+              if (existsOut.trim() === 'no') {
+                console.log(`[IPC] SKIP: File deleted on VPS, cleaning stale staging JSON: ${filename}`);
+                await execAsync(
+                  `ssh ${sshOpts} ${vpsUser}@${vpsHost} "rm -f ${vpsUploadsDir}/${jsonFile}"`,
+                  { timeout: 15000 }
+                );
+                continue;
+              }
+
+              const localDir = path.join(localMedia, 'duration_images', String(duration_id));
+              fs.mkdirSync(localDir, { recursive: true });
+              const localFile = path.join(localDir, filename);
+
+              await execAsync(
+                `scp ${sshOpts} ${vpsUser}@${vpsHost}:"${vpsFilePath}" "${localFile}"`,
+                { timeout: 60000 }
+              );
+
+              db.prepare(
+                `INSERT INTO duration_images (duration_id, file_path, caption, sort_order, created_at)
+                 VALUES (?, ?, ?, ?, ?)`
+              ).run(duration_id, localFile, caption || null, sort_order, created_at);
+
+              console.log(`[IPC] Pulled image: ${filename} -> duration ${duration_id}`);
+
+            } else if (type === 'audio') {
+              const { duration_id, file_path: vpsFilePath, caption, sort_order, created_at } = meta;
+              const filename = path.basename(vpsFilePath);
+
+              // Check if file still exists on VPS (may have been deleted)
+              const { stdout: existsOut } = await execAsync(
+                `ssh ${sshOpts} ${vpsUser}@${vpsHost} "test -f '${vpsFilePath}' && echo yes || echo no"`,
+                { timeout: 15000 }
+              );
+              if (existsOut.trim() === 'no') {
+                console.log(`[IPC] SKIP: File deleted on VPS, cleaning stale staging JSON: ${filename}`);
+                await execAsync(
+                  `ssh ${sshOpts} ${vpsUser}@${vpsHost} "rm -f ${vpsUploadsDir}/${jsonFile}"`,
+                  { timeout: 15000 }
+                );
+                continue;
+              }
+
+              const localDir = path.join(localMedia, 'duration_audios', String(duration_id));
+              fs.mkdirSync(localDir, { recursive: true });
+              const localFile = path.join(localDir, filename);
+
+              await execAsync(
+                `scp ${sshOpts} ${vpsUser}@${vpsHost}:"${vpsFilePath}" "${localFile}"`,
+                { timeout: 60000 }
+              );
+
+              db.prepare(
+                `INSERT INTO duration_audios (duration_id, file_path, caption, duration, sort_order, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?)`
+              ).run(duration_id, localFile, caption || null, meta.duration || null, sort_order, created_at);
+
+              console.log(`[IPC] Pulled audio: ${filename} -> duration ${duration_id}`);
+
+            } else if (type === 'audio_delete') {
+              const { item_id, file_path: vpsFilePath } = meta;
+              db.prepare('DELETE FROM duration_audios WHERE id = ?').run(item_id);
+
+              // Delete local media file
+              if (vpsFilePath) {
+                const filename = path.basename(vpsFilePath);
+                const parentDir = path.basename(path.dirname(vpsFilePath));
+                const localFile = path.join(localMedia, 'duration_audios', parentDir, filename);
+                try {
+                  if (fs.existsSync(localFile)) fs.unlinkSync(localFile);
+                } catch {
+                  // file may not exist locally
+                }
+              }
+
+              console.log(`[IPC] Deleted audio: id=${item_id}`);
+
+            } else if (type === 'caption_update') {
+              const { table, item_id, caption: newCaption } = meta;
+              const allowedTables = ['duration_images', 'duration_audios'];
+              if (allowedTables.includes(table)) {
+                db.prepare(`UPDATE ${table} SET caption = ? WHERE id = ?`).run(newCaption, item_id);
+                console.log(`[IPC] Updated caption: ${table} id=${item_id}`);
+              } else {
+                console.warn(`[IPC] Unknown table '${table}' in caption_update, skipping`);
+              }
+            }
+
+            // Delete staging JSON on VPS
+            await execAsync(
+              `ssh ${sshOpts} ${vpsUser}@${vpsHost} "rm -f ${vpsUploadsDir}/${jsonFile}"`,
+              { timeout: 15000 }
+            );
+          } catch (fileErr) {
+            console.error(`[IPC] Failed to process upload ${jsonFile}:`, (fileErr as Error).message);
+          }
+        }
+
+        db.close();
+
+        // Clean up local temp
+        fs.rmSync(localPending, { recursive: true, force: true });
+        console.log('[IPC] Pull phase complete');
+      } else {
+        console.log('[IPC] No pending uploads');
+      }
+
+      // ── Phase 2: Push to VPS ──
+      console.log('[IPC] Phase 2: Pushing to VPS...');
+
+      // Checkpoint WAL to flush all writes into main DB file
+      const checkpointDb = new Database(localDb);
+      checkpointDb.pragma('wal_checkpoint(TRUNCATE)');
+      checkpointDb.close();
+      console.log('[IPC] WAL checkpointed');
+
+      // Sync database (full copy)
+      await execAsync(
+        `scp ${sshOpts} "${localDb}" ${vpsUser}@${vpsHost}:${vpsDataDir}/NotesWithAudioAndVideo.db`,
+        { timeout: 60000 }
+      );
+      console.log('[IPC] Database synced');
+
+      // Sync media (delta)
+      const { stdout } = await execAsync(
+        `rsync -avz -e "ssh ${sshOpts}" "${localMedia}/" ${vpsUser}@${vpsHost}:${vpsDataDir}/media/`,
+        { timeout: 300000 }
+      );
+      console.log('[IPC] Media synced');
+
+      return { success: true, output: stdout };
+    } catch (error) {
+      const err = error as Error & { stdout?: string; stderr?: string };
+      console.error('[IPC] Sync failed:', err.message);
+      return {
+        success: false,
+        error: err.message,
+        output: err.stdout || '',
+        stderr: err.stderr || '',
+      };
+    }
   });
 
   console.log('IPC handlers registered');

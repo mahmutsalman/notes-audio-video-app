@@ -142,8 +142,8 @@ export const RecordingsOperations = {
   create(recording: CreateRecording): Recording {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO recordings (topic_id, name, audio_path, audio_duration, video_path, video_duration, video_resolution, video_fps, video_size, notes_content, recording_type)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO recordings (topic_id, name, audio_path, audio_duration, video_path, video_duration, video_resolution, video_fps, video_size, notes_content, recording_type, pdf_path)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -157,7 +157,8 @@ export const RecordingsOperations = {
       recording.video_fps ?? null,
       recording.video_size ?? null,
       recording.notes_content,
-      recording.recording_type ?? 'audio'
+      recording.recording_type ?? 'audio',
+      recording.pdf_path ?? null
     );
 
     // Update topic's updated_at
@@ -220,6 +221,10 @@ export const RecordingsOperations = {
     if (updates.importance_color !== undefined) {
       fields.push('importance_color = ?');
       values.push(updates.importance_color);
+    }
+    if (updates.pdf_path !== undefined) {
+      fields.push('pdf_path = ?');
+      values.push(updates.pdf_path);
     }
 
     if (fields.length > 0) {
@@ -459,8 +464,8 @@ export const DurationsOperations = {
     `).get(duration.recording_id) as { max_order: number };
 
     const stmt = db.prepare(`
-      INSERT INTO durations (recording_id, start_time, end_time, note, group_color, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO durations (recording_id, start_time, end_time, note, group_color, sort_order, page_number)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -469,7 +474,8 @@ export const DurationsOperations = {
       duration.end_time,
       duration.note ?? null,
       duration.group_color ?? null,
-      maxOrder.max_order + 1
+      maxOrder.max_order + 1,
+      duration.page_number ?? null
     );
 
     return this.getById(result.lastInsertRowid as number)!;

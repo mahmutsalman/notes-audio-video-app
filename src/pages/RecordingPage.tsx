@@ -11,7 +11,8 @@ import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
 import DurationList from '../components/recordings/DurationList';
 import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
 import MarkList from '../components/recordings/MarkList';
-import { isWrittenNote, createMarkTimes, getNextMarkIndex } from '../utils/marks';
+import { isBookNote, isMarkBasedNote, createMarkTimes, getNextMarkIndex } from '../utils/marks';
+import PdfViewer, { PdfViewerHandle } from '../components/pdf/PdfViewer';
 import { emitRecordingUpdated } from '../utils/events';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
@@ -154,6 +155,7 @@ export default function RecordingPage() {
   }, [isScreenRecording]);
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
   const videoPlayerRef = useRef<HTMLVideoElement>(null);
+  const pdfViewerRef = useRef<PdfViewerHandle>(null);
   const videoLoopListenerRef = useRef<(() => void) | null>(null);
 
   // Helper to preserve scroll position across refetch
@@ -248,7 +250,7 @@ export default function RecordingPage() {
   // Fetch duration media when active duration changes (for written notes)
   // This ensures images/videos/audios are loaded from DB after navigation clears cache
   useEffect(() => {
-    if (!activeDurationId || !recording || !isWrittenNote(recording)) return;
+    if (!activeDurationId || !recording || !isMarkBasedNote(recording)) return;
 
     // Fetch all media types for the active duration
     Promise.all([
@@ -349,11 +351,15 @@ export default function RecordingPage() {
     try {
       const nextIndex = getNextMarkIndex(durations);
       const { start_time, end_time } = createMarkTimes(nextIndex);
+      const pageNumber = isBookNote(recording) && pdfViewerRef.current
+        ? pdfViewerRef.current.currentPage
+        : undefined;
       const newDuration = await createDuration({
         recording_id: id,
         start_time,
         end_time,
         note: null,
+        page_number: pageNumber ?? null,
       });
       // Select the newly created mark
       setActiveDurationId(newDuration.id);
@@ -1031,7 +1037,7 @@ export default function RecordingPage() {
   const videoMimeType = getVideoMimeType(recording.video_path);
 
   const isVideoRecording = !!recording.video_path;
-  const isWrittenNoteRecording = isWrittenNote(recording);
+  const isMarkBasedRecording = isMarkBasedNote(recording);
 
   return (
     <div
@@ -1045,7 +1051,7 @@ export default function RecordingPage() {
         <DurationNotesSidebar
           durations={durations}
           activeDurationId={activeDurationId}
-          isWrittenNote={isWrittenNoteRecording}
+          isWrittenNote={isMarkBasedRecording}
           onDurationSelect={handleSidebarDurationClick}
         />
         <div className={`flex-1 p-6 transition-all duration-300 ${hasSidebar ? 'lg:ml-80' : 'max-w-4xl mx-auto'}`}>
@@ -1094,7 +1100,7 @@ export default function RecordingPage() {
       </div>
 
       {/* Audio/Video player - hidden for written notes */}
-      {!isWrittenNoteRecording && (
+      {!isMarkBasedRecording && (
         <div
           className={`mb-6 p-4 -mx-4 cursor-pointer rounded-xl
                       bg-gray-50 dark:bg-dark-surface
@@ -1166,8 +1172,28 @@ export default function RecordingPage() {
         </div>
       )}
 
-      {/* Main Notes section - shown for written notes (replaces audio/video player) */}
-      {isWrittenNoteRecording && (
+      {/* PDF Viewer - shown for book notes */}
+      {isBookNote(recording) && recording.pdf_path && (
+        <div className="mb-6 -mx-4">
+          <div className="flex items-center justify-between px-4 mb-2">
+            <h2 className="text-lg font-semibold text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+              PDF Viewer
+            </h2>
+          </div>
+          <div style={{ height: '60vh' }} className="rounded-lg overflow-hidden border border-indigo-200 dark:border-indigo-800/50 mx-4">
+            <PdfViewer
+              ref={pdfViewerRef}
+              filePath={recording.pdf_path}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Main Notes section - shown for mark-based notes (replaces audio/video player) */}
+      {isMarkBasedRecording && (
         <div className="mb-6 p-4 -mx-4 rounded-xl bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-teal-700 dark:text-teal-300 flex items-center gap-2">
@@ -1214,11 +1240,16 @@ export default function RecordingPage() {
       )}
 
       {/* Duration markers / Marks */}
-      {isWrittenNoteRecording ? (
+      {isMarkBasedRecording ? (
         <MarkList
           durations={durations}
           activeDurationId={activeDurationId}
-          onMarkClick={(duration) => setActiveDurationId(activeDurationId === duration.id ? null : duration.id)}
+          onMarkClick={(duration) => {
+            setActiveDurationId(activeDurationId === duration.id ? null : duration.id);
+            if (isBookNote(recording) && duration.page_number && pdfViewerRef.current) {
+              pdfViewerRef.current.goToPage(duration.page_number);
+            }
+          }}
           onDeleteMark={handleDeleteDuration}
           onAddMark={handleAddMark}
           onUpdateNote={handleUpdateNote}

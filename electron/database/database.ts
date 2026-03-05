@@ -486,6 +486,22 @@ function runMigrations(db: Database.Database): void {
     GROUP BY t.id;
   `);
 
+  // Migration: Add pdf_path column to recordings table if it doesn't exist
+  const recordingsColumnsForPdf = db.prepare("PRAGMA table_info(recordings)").all() as { name: string }[];
+  const hasPdfPathColumn = recordingsColumnsForPdf.some(col => col.name === 'pdf_path');
+  if (!hasPdfPathColumn) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN pdf_path TEXT`);
+    console.log('Added pdf_path column to recordings table');
+  }
+
+  // Migration: Add page_number column to durations table if it doesn't exist
+  const durationsColumnsForPage = db.prepare("PRAGMA table_info(durations)").all() as { name: string }[];
+  const hasPageNumberColumn = durationsColumnsForPage.some(col => col.name === 'page_number');
+  if (!hasPageNumberColumn) {
+    db.exec(`ALTER TABLE durations ADD COLUMN page_number INTEGER`);
+    console.log('Added page_number column to durations table');
+  }
+
   console.log('Database migrations completed');
 }
 

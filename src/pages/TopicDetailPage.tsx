@@ -6,6 +6,7 @@ import RecordingList from '../components/recordings/RecordingList';
 import QuickRecord from '../components/recordings/QuickRecord';
 import QuickScreenRecord from '../components/recordings/QuickScreenRecord';
 import QuickWrittenNote from '../components/recordings/QuickWrittenNote';
+import QuickBookNote from '../components/recordings/QuickBookNote';
 import TopicForm from '../components/topics/TopicForm';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
@@ -199,6 +200,12 @@ export default function TopicDetailPage() {
 
       {/* Quick Written Note FAB */}
       <QuickWrittenNote
+        topicId={id!}
+        onRecordingSaved={handleRecordingSaved}
+      />
+
+      {/* Quick Book Note FAB */}
+      <QuickBookNote
         topicId={id!}
         onRecordingSaved={handleRecordingSaved}
       />

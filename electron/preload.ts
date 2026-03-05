@@ -600,6 +600,22 @@ const electronAPI = {
     quit: (): Promise<void> => ipcRenderer.invoke('app:quit'),
     forceQuit: (): Promise<void> => ipcRenderer.invoke('app:forceQuit'),
   },
+
+  // PDF
+  pdf: {
+    pickFile: (): Promise<string | null> =>
+      ipcRenderer.invoke('pdf:pickFile'),
+    copyToMedia: (recordingId: number, sourcePath: string): Promise<string> =>
+      ipcRenderer.invoke('pdf:copyToMedia', recordingId, sourcePath),
+    readFile: (filePath: string): Promise<ArrayBuffer> =>
+      ipcRenderer.invoke('pdf:readFile', filePath),
+  },
+
+  // Cloud Sync
+  sync: {
+    upload: (): Promise<{ success: boolean; output?: string; error?: string; stderr?: string }> =>
+      ipcRenderer.invoke('sync:upload'),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
