@@ -543,6 +543,9 @@ export default function RecordingPage() {
     const duration = durations.find(d => d.id === durationId);
     if (duration) {
       handleDurationClick(duration);
+      if (isBookNote(recording) && duration.page_number && pdfViewerRef.current) {
+        pdfViewerRef.current.goToPage(duration.page_number);
+      }
     }
   };
 
