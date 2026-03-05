@@ -1190,6 +1190,15 @@ export default function RecordingPage() {
             <PdfViewer
               ref={pdfViewerRef}
               filePath={recording.pdf_path}
+              pageOffset={recording.page_offset ?? 0}
+              onCalibrateOffset={async (offset) => {
+                try {
+                  const updated = await window.electronAPI.recordings.update(recording.id, { page_offset: offset });
+                  setRecording(updated);
+                } catch (err) {
+                  console.error('Failed to save page offset:', err);
+                }
+              }}
             />
           </div>
         </div>
@@ -1262,6 +1271,7 @@ export default function RecordingPage() {
           durationImagesCache={durationImagesCache}
           durationVideosCache={durationVideosCache}
           isAddingMark={isAddingMark}
+          pageOffset={isBookNote(recording) ? (recording.page_offset ?? 0) : undefined}
         />
       ) : (
         <DurationList

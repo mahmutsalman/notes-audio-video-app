@@ -10,12 +10,15 @@ interface PdfViewerProps {
   filePath: string;
   initialPage?: number;
   onPageChange?: (page: number) => void;
+  pageOffset?: number;
+  onCalibrateOffset?: (offset: number) => void;
 }
 
 export interface PdfViewerHandle {
   currentPage: number;
   totalPages: number;
   goToPage: (page: number) => void;
+  pageOffset: number;
 }
 
 interface PageDimension {
@@ -24,25 +27,49 @@ interface PageDimension {
   cumulativeOffset: number;
 }
 
-const SCALE = 1.5;
 const PAGE_GAP = 8;
 const BUFFER_PAGES = 1;
+const MIN_SCALE = 0.5;
+const MAX_SCALE = 3.0;
+const SCALE_STEP = 0.25;
+const DEFAULT_SCALE = 1.5;
 
 const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
-  ({ filePath, initialPage, onPageChange }, ref) => {
+  ({ filePath, initialPage, onPageChange, pageOffset = 0, onCalibrateOffset }, ref) => {
     const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
     const [currentPage, setCurrentPage] = useState(initialPage ?? 1);
     const [totalPages, setTotalPages] = useState(0);
     const [pageDimensions, setPageDimensions] = useState<PageDimension[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [scale, setScale] = useState(DEFAULT_SCALE);
     const [isEditingPage, setIsEditingPage] = useState(false);
     const [pageInput, setPageInput] = useState('');
+    const [showCalibration, setShowCalibration] = useState(false);
+    const [calibrationInput, setCalibrationInput] = useState('');
 
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
     const renderedPages = useRef<Set<number>>(new Set());
     const renderingPages = useRef<Set<number>>(new Set());
     const scrollingToPage = useRef(false);
+    const restorePageOnZoom = useRef<number | null>(null);
+    const calibrationRef = useRef<HTMLDivElement>(null);
+
+    // Offset conversion helpers
+    const toBookPage = (pdfPage: number) => pdfPage - pageOffset;
+    const toPdfPage = (bookPage: number) => bookPage + pageOffset;
+
+    // Close calibration popover on outside click
+    useEffect(() => {
+      if (!showCalibration) return;
+      const handleClick = (e: MouseEvent) => {
+        if (calibrationRef.current && !calibrationRef.current.contains(e.target as Node)) {
+          setShowCalibration(false);
+        }
+      };
+      document.addEventListener('mousedown', handleClick);
+      return () => document.removeEventListener('mousedown', handleClick);
+    }, [showCalibration]);
 
     // Load the PDF document via IPC (file:// URLs are blocked in Electron renderer)
     useEffect(() => {
@@ -52,28 +79,10 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
         if (cancelled) return;
         const data = new Uint8Array(arrayBuffer);
         return pdfjsLib.getDocument({ data }).promise;
-      }).then(async (doc) => {
+      }).then((doc) => {
         if (cancelled || !doc) return;
-        if (cancelled) return;
         setPdfDoc(doc);
         setTotalPages(doc.numPages);
-
-        // Pre-compute page dimensions
-        const dims: PageDimension[] = [];
-        let cumOffset = 0;
-        for (let i = 1; i <= doc.numPages; i++) {
-          const page = await doc.getPage(i);
-          const viewport = page.getViewport({ scale: SCALE });
-          dims.push({
-            width: viewport.width,
-            height: viewport.height,
-            cumulativeOffset: cumOffset,
-          });
-          cumOffset += viewport.height + PAGE_GAP;
-        }
-        if (!cancelled) {
-          setPageDimensions(dims);
-        }
       }).catch((err) => {
         if (!cancelled) {
           console.error('[PdfViewer] Failed to load PDF:', err);
@@ -85,6 +94,49 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
         cancelled = true;
       };
     }, [filePath]);
+
+    // Compute page dimensions whenever pdfDoc or scale changes
+    useEffect(() => {
+      if (!pdfDoc) return;
+      let cancelled = false;
+
+      (async () => {
+        const dims: PageDimension[] = [];
+        let cumOffset = 0;
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          const page = await pdfDoc.getPage(i);
+          const viewport = page.getViewport({ scale });
+          dims.push({
+            width: viewport.width,
+            height: viewport.height,
+            cumulativeOffset: cumOffset,
+          });
+          cumOffset += viewport.height + PAGE_GAP;
+        }
+        if (!cancelled) {
+          // Clear rendered pages so they re-render at the new scale
+          renderedPages.current.clear();
+          renderingPages.current.clear();
+          setPageDimensions(dims);
+
+          // Restore scroll position after zoom
+          const pageToRestore = restorePageOnZoom.current;
+          if (pageToRestore !== null && containerRef.current) {
+            restorePageOnZoom.current = null;
+            const offset = dims[pageToRestore - 1]?.cumulativeOffset;
+            if (offset !== undefined) {
+              requestAnimationFrame(() => {
+                containerRef.current?.scrollTo({ top: offset, behavior: 'instant' });
+              });
+            }
+          }
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [pdfDoc, scale]);
 
     // Navigate to initial page after dimensions are ready
     useEffect(() => {
@@ -107,7 +159,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
 
       try {
         const page = await pdfDoc.getPage(pageNum);
-        const viewport = page.getViewport({ scale: SCALE });
+        const viewport = page.getViewport({ scale });
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
@@ -121,7 +173,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       } finally {
         renderingPages.current.delete(pageNum);
       }
-    }, [pdfDoc]);
+    }, [pdfDoc, scale]);
 
     // Determine current page from scroll position using binary search
     const getCurrentPageFromScroll = useCallback((scrollTop: number): number => {
@@ -186,7 +238,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       return () => container.removeEventListener('scroll', handleScroll);
     }, [handleScroll]);
 
-    // goToPage method
+    // goToPage method (takes PDF page number)
     const goToPage = useCallback((page: number) => {
       if (page < 1 || page > pageDimensions.length || !containerRef.current) return;
 
@@ -203,12 +255,24 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       }, 500);
     }, [pageDimensions, onPageChange]);
 
+    // Zoom in/out while preserving current page position
+    const handleZoom = useCallback((direction: 'in' | 'out') => {
+      const newScale = direction === 'in'
+        ? Math.min(scale + SCALE_STEP, MAX_SCALE)
+        : Math.max(scale - SCALE_STEP, MIN_SCALE);
+      if (newScale === scale) return;
+
+      restorePageOnZoom.current = currentPage;
+      setScale(newScale);
+    }, [scale, currentPage]);
+
     // Expose imperative handle
     useImperativeHandle(ref, () => ({
       currentPage,
       totalPages,
       goToPage,
-    }), [currentPage, totalPages, goToPage]);
+      pageOffset,
+    }), [currentPage, totalPages, goToPage, pageOffset]);
 
     if (error) {
       return (
@@ -231,6 +295,10 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
     const lastDim = pageDimensions[pageDimensions.length - 1];
     const totalHeight = lastDim.cumulativeOffset + lastDim.height;
 
+    // Display values
+    const hasOffset = pageOffset !== 0;
+    const displayPage = hasOffset ? `p.${toBookPage(currentPage)}` : `Page ${currentPage}`;
+
     return (
       <div className="flex flex-col h-full">
         {/* Page indicator bar */}
@@ -246,18 +314,23 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                const page = parseInt(pageInput, 10);
-                if (page >= 1 && page <= totalPages) goToPage(page);
+                const inputVal = parseInt(pageInput, 10);
+                if (hasOffset) {
+                  // Input is book page, convert to PDF page
+                  const pdfPage = toPdfPage(inputVal);
+                  if (pdfPage >= 1 && pdfPage <= totalPages) goToPage(pdfPage);
+                } else {
+                  if (inputVal >= 1 && inputVal <= totalPages) goToPage(inputVal);
+                }
                 setIsEditingPage(false);
               }}
               className="flex items-center gap-1"
             >
-              <span className="text-sm text-gray-700 dark:text-gray-300">Page</span>
+              {hasOffset && <span className="text-sm text-gray-700 dark:text-gray-300">p.</span>}
+              {!hasOffset && <span className="text-sm text-gray-700 dark:text-gray-300">Page</span>}
               <input
                 autoFocus
                 type="number"
-                min={1}
-                max={totalPages}
                 value={pageInput}
                 onChange={(e) => setPageInput(e.target.value)}
                 onBlur={() => setIsEditingPage(false)}
@@ -268,10 +341,13 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
             </form>
           ) : (
             <button
-              onClick={() => { setPageInput(String(currentPage)); setIsEditingPage(true); }}
+              onClick={() => {
+                setPageInput(String(hasOffset ? toBookPage(currentPage) : currentPage));
+                setIsEditingPage(true);
+              }}
               className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer"
             >
-              Page {currentPage} / {totalPages}
+              {displayPage} / {totalPages}
             </button>
           )}
           <button
@@ -281,6 +357,101 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           >
             Next &rarr;
           </button>
+          <div className="flex items-center gap-1 ml-2 pl-2 border-l border-gray-300 dark:border-dark-border">
+            <button
+              onClick={() => handleZoom('out')}
+              disabled={scale <= MIN_SCALE}
+              className="w-6 h-6 flex items-center justify-center text-sm font-bold text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 disabled:opacity-30 rounded hover:bg-gray-200 dark:hover:bg-dark-bg"
+            >
+              &minus;
+            </button>
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 w-10 text-center">
+              {Math.round(scale * 100)}%
+            </span>
+            <button
+              onClick={() => handleZoom('in')}
+              disabled={scale >= MAX_SCALE}
+              className="w-6 h-6 flex items-center justify-center text-sm font-bold text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 disabled:opacity-30 rounded hover:bg-gray-200 dark:hover:bg-dark-bg"
+            >
+              +
+            </button>
+          </div>
+          {/* Calibration button */}
+          {onCalibrateOffset && (
+            <div className="relative ml-2 pl-2 border-l border-gray-300 dark:border-dark-border" ref={calibrationRef}>
+              <button
+                onClick={() => {
+                  setCalibrationInput('');
+                  setShowCalibration(!showCalibration);
+                }}
+                className={`px-1.5 py-0.5 text-xs font-medium rounded transition-colors ${
+                  hasOffset
+                    ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/60'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-dark-bg'
+                }`}
+                title="Calibrate page offset"
+              >
+                {hasOffset ? (
+                  <span>{`\u00B1${pageOffset}`}</span>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                )}
+              </button>
+              {/* Calibration popover */}
+              {showCalibration && (
+                <div className="absolute right-0 top-full mt-1 z-50 w-64 p-3 bg-white dark:bg-dark-surface rounded-lg shadow-lg border border-gray-200 dark:border-dark-border">
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
+                    What book page is this?
+                    <br />
+                    <span className="text-gray-400 dark:text-gray-500">
+                      (viewing PDF page {currentPage})
+                    </span>
+                  </p>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const bookPage = parseInt(calibrationInput, 10);
+                      if (!isNaN(bookPage)) {
+                        const newOffset = currentPage - bookPage;
+                        onCalibrateOffset(newOffset);
+                        setShowCalibration(false);
+                      }
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <input
+                      autoFocus
+                      type="number"
+                      value={calibrationInput}
+                      onChange={(e) => setCalibrationInput(e.target.value)}
+                      placeholder="Book page #"
+                      className="flex-1 px-2 py-1 text-sm bg-gray-50 dark:bg-dark-bg border border-gray-300 dark:border-dark-border rounded outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="submit"
+                      className="px-2 py-1 text-xs font-medium bg-indigo-500 text-white rounded hover:bg-indigo-600"
+                    >
+                      Set
+                    </button>
+                  </form>
+                  {hasOffset && (
+                    <button
+                      onClick={() => {
+                        onCalibrateOffset(0);
+                        setShowCalibration(false);
+                      }}
+                      className="mt-2 text-xs text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+                    >
+                      Reset offset
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Scrollable PDF container */}

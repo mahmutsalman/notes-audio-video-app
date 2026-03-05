@@ -494,6 +494,14 @@ function runMigrations(db: Database.Database): void {
     console.log('Added pdf_path column to recordings table');
   }
 
+  // Migration: Add page_offset column to recordings table if it doesn't exist
+  const recordingsColumnsForOffset = db.prepare("PRAGMA table_info(recordings)").all() as { name: string }[];
+  const hasPageOffsetColumn = recordingsColumnsForOffset.some(col => col.name === 'page_offset');
+  if (!hasPageOffsetColumn) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN page_offset INTEGER DEFAULT 0`);
+    console.log('Added page_offset column to recordings table');
+  }
+
   // Migration: Add page_number column to durations table if it doesn't exist
   const durationsColumnsForPage = db.prepare("PRAGMA table_info(durations)").all() as { name: string }[];
   const hasPageNumberColumn = durationsColumnsForPage.some(col => col.name === 'page_number');

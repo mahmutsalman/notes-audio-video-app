@@ -226,6 +226,10 @@ export const RecordingsOperations = {
       fields.push('pdf_path = ?');
       values.push(updates.pdf_path);
     }
+    if (updates.page_offset !== undefined) {
+      fields.push('page_offset = ?');
+      values.push(updates.page_offset);
+    }
 
     if (fields.length > 0) {
       fields.push('updated_at = CURRENT_TIMESTAMP');

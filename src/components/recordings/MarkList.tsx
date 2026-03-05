@@ -39,6 +39,8 @@ interface MarkListProps {
   durationVideosCache?: Record<number, DurationVideo[]>;
   // Loading state
   isAddingMark?: boolean;
+  // PDF page offset for book notes
+  pageOffset?: number;
 }
 
 interface SortableMarkProps {
@@ -52,6 +54,7 @@ interface SortableMarkProps {
   onMarkClick: (duration: Duration) => void;
   onContextMenu: (e: React.MouseEvent, duration: Duration) => void;
   onDeleteMark: (id: number) => void;
+  pageOffset?: number;
 }
 
 function SortableMark({
@@ -65,6 +68,7 @@ function SortableMark({
   onMarkClick,
   onContextMenu,
   onDeleteMark,
+  pageOffset,
 }: SortableMarkProps) {
   const {
     attributes,
@@ -125,7 +129,7 @@ function SortableMark({
         {/* Page number indicator */}
         {duration.page_number != null && (
           <span className={`text-xs ${isActive ? 'text-white/80' : 'text-indigo-400'}`}>
-            p.{duration.page_number}
+            p.{pageOffset ? duration.page_number - pageOffset : duration.page_number}
           </span>
         )}
         {/* Image indicator */}
@@ -179,6 +183,7 @@ function MarkOverlay({
   groupColorConfig,
   imageCount,
   videoCount,
+  pageOffset,
 }: {
   duration: Duration;
   index: number;
@@ -186,6 +191,7 @@ function MarkOverlay({
   groupColorConfig: ReturnType<typeof getGroupColorConfig>;
   imageCount: number;
   videoCount: number;
+  pageOffset?: number;
 }) {
   return (
     <div className="group relative">
@@ -214,7 +220,7 @@ function MarkOverlay({
         {/* Page number indicator */}
         {duration.page_number != null && (
           <span className="text-xs text-white/80">
-            p.{duration.page_number}
+            p.{pageOffset ? duration.page_number - pageOffset : duration.page_number}
           </span>
         )}
         {/* Image indicator */}
@@ -260,6 +266,7 @@ export default function MarkList({
   durationImagesCache,
   durationVideosCache,
   isAddingMark = false,
+  pageOffset,
 }: MarkListProps) {
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editNoteText, setEditNoteText] = useState('');
@@ -370,6 +377,7 @@ export default function MarkList({
                   onMarkClick={onMarkClick}
                   onContextMenu={handleContextMenu}
                   onDeleteMark={onDeleteMark}
+                  pageOffset={pageOffset}
                 />
               );
             })}
@@ -405,6 +413,7 @@ export default function MarkList({
               groupColorConfig={getGroupColorConfig(draggingDuration.group_color)}
               imageCount={durationImagesCache?.[draggingDuration.id]?.length || 0}
               videoCount={durationVideosCache?.[draggingDuration.id]?.length || 0}
+              pageOffset={pageOffset}
             />
           ) : null}
         </DragOverlay>
