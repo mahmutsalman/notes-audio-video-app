@@ -35,6 +35,8 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
     const [totalPages, setTotalPages] = useState(0);
     const [pageDimensions, setPageDimensions] = useState<PageDimension[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [isEditingPage, setIsEditingPage] = useState(false);
+    const [pageInput, setPageInput] = useState('');
 
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
@@ -240,9 +242,38 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           >
             &larr; Prev
           </button>
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Page {currentPage} / {totalPages}
-          </span>
+          {isEditingPage ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const page = parseInt(pageInput, 10);
+                if (page >= 1 && page <= totalPages) goToPage(page);
+                setIsEditingPage(false);
+              }}
+              className="flex items-center gap-1"
+            >
+              <span className="text-sm text-gray-700 dark:text-gray-300">Page</span>
+              <input
+                autoFocus
+                type="number"
+                min={1}
+                max={totalPages}
+                value={pageInput}
+                onChange={(e) => setPageInput(e.target.value)}
+                onBlur={() => setIsEditingPage(false)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setIsEditingPage(false); }}
+                className="w-14 px-1 py-0 text-sm text-center font-medium bg-white dark:bg-dark-bg border border-gray-300 dark:border-dark-border rounded outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">/ {totalPages}</span>
+            </form>
+          ) : (
+            <button
+              onClick={() => { setPageInput(String(currentPage)); setIsEditingPage(true); }}
+              className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer"
+            >
+              Page {currentPage} / {totalPages}
+            </button>
+          )}
           <button
             onClick={() => goToPage(currentPage + 1)}
             disabled={currentPage >= totalPages}
