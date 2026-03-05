@@ -172,6 +172,8 @@ const electronAPI = {
   durations: {
     getByRecording: (recordingId: number): Promise<Duration[]> =>
       ipcRenderer.invoke('durations:getByRecording', recordingId),
+    getWithAudio: (): Promise<Duration[]> =>
+      ipcRenderer.invoke('durations:getWithAudio'),
     create: (duration: CreateDuration): Promise<Duration> =>
       ipcRenderer.invoke('durations:create', duration),
     update: (id: number, updates: UpdateDuration): Promise<Duration> =>

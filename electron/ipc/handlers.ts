@@ -424,6 +424,10 @@ export function setupIpcHandlers(): void {
       .filter((duration): duration is (typeof durations)[number] => duration !== null);
   });
 
+  ipcMain.handle('durations:getWithAudio', async () => {
+    return DurationsOperations.getWithAudio();
+  });
+
   ipcMain.handle('durations:create', async (_, duration: CreateDuration) => {
     return DurationsOperations.create(duration);
   });

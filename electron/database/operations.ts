@@ -453,6 +453,19 @@ export const DurationsOperations = {
     `).all(recordingId) as Duration[];
   },
 
+  getWithAudio(): Duration[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT d.*, r.name as recording_name, r.recording_type, t.name as topic_name, t.id as topic_id
+      FROM durations d
+      INNER JOIN duration_audios da ON da.duration_id = d.id
+      INNER JOIN recordings r ON r.id = d.recording_id
+      INNER JOIN topics t ON t.id = r.topic_id
+      GROUP BY d.id
+      ORDER BY d.created_at DESC
+    `).all() as Duration[];
+  },
+
   getById(id: number): Duration | null {
     const db = getDatabase();
     return db.prepare('SELECT * FROM durations WHERE id = ?').get(id) as Duration | undefined ?? null;

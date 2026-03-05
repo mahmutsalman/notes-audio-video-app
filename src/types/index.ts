@@ -230,6 +230,13 @@ export interface DurationCodeSnippet {
   created_at: string;
 }
 
+export interface StudyDuration extends Duration {
+  recording_name: string | null;
+  recording_type: RecordingType;
+  topic_name: string;
+  topic_id: number;
+}
+
 export type UpdateDuration = Partial<Pick<Duration, 'note' | 'color' | 'group_color'>>;
 export type CreateDurationImage = Omit<DurationImage, 'id' | 'created_at'>;
 export type CreateDurationVideo = Omit<DurationVideo, 'id' | 'created_at'>;
@@ -373,6 +380,7 @@ export interface ElectronAPI {
   };
   durations: {
     getByRecording: (recordingId: number) => Promise<Duration[]>;
+    getWithAudio: () => Promise<StudyDuration[]>;
     create: (duration: CreateDuration) => Promise<Duration>;
     update: (id: number, updates: UpdateDuration) => Promise<Duration>;
     updateGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<Duration>;
