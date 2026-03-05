@@ -129,7 +129,7 @@ function SortableMark({
         {/* Page number indicator */}
         {duration.page_number != null && (
           <span className={`text-xs ${isActive ? 'text-white/80' : 'text-indigo-400'}`}>
-            p.{duration.page_number}
+            p.{pageOffset ? duration.page_number - pageOffset : duration.page_number}
           </span>
         )}
         {/* Image indicator */}
@@ -220,7 +220,7 @@ function MarkOverlay({
         {/* Page number indicator */}
         {duration.page_number != null && (
           <span className="text-xs text-white/80">
-            p.{duration.page_number}
+            p.{pageOffset ? duration.page_number - pageOffset : duration.page_number}
           </span>
         )}
         {/* Image indicator */}

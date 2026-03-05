@@ -35,6 +35,7 @@ export interface Recording {
   notes_content: string | null;
   main_notes_content: string | null;
   pdf_path: string | null;
+  page_offset: number;
   importance_color: ImportanceColor;
   last_group_color: DurationGroupColor;
   group_toggle_active: boolean;
@@ -362,7 +363,7 @@ export interface BackupResult {
 export type CreateTopic = Omit<Topic, 'id' | 'created_at' | 'updated_at' | 'total_recordings' | 'total_images' | 'total_videos'>;
 export type UpdateTopic = Partial<CreateTopic>;
 
-export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color' | 'name' | 'last_group_color' | 'group_toggle_active' | 'recording_type' | 'main_notes_content' | 'pdf_path'> & { importance_color?: ImportanceColor; name?: string | null; recording_type?: RecordingType; main_notes_content?: string | null; pdf_path?: string | null };
+export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color' | 'name' | 'last_group_color' | 'group_toggle_active' | 'recording_type' | 'main_notes_content' | 'pdf_path' | 'page_offset'> & { importance_color?: ImportanceColor; name?: string | null; recording_type?: RecordingType; main_notes_content?: string | null; pdf_path?: string | null; page_offset?: number };
 export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
