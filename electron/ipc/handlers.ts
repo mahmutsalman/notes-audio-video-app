@@ -51,9 +51,6 @@ import {
   getMediaDir,
   getFileUrl,
   savePdfFile,
-  saveQuickCaptureImage,
-  saveQuickCaptureAudio,
-  deleteQuickCaptureFiles,
 } from '../services/fileStorage';
 import { createBackup, getBackupDir } from '../services/backupService';
 import { mergeAudioFiles } from '../services/audioMerger';
@@ -1520,16 +1517,6 @@ export function setupIpcHandlers(): void {
     const fs = await import('fs/promises');
     const buffer = await fs.readFile(filePath);
     return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-  });
-
-  ipcMain.handle('pdf:saveBookData', async (_, recordingId: number, bookData: object) => {
-    const { saveBookData } = await import('../services/fileStorage');
-    return saveBookData(recordingId, bookData);
-  });
-
-  ipcMain.handle('pdf:readBookData', async (_, bookDataPath: string) => {
-    const { readBookData } = await import('../services/fileStorage');
-    return readBookData(bookDataPath);
   });
 
   // ============ Cloud Sync ============
