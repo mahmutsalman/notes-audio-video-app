@@ -12,6 +12,11 @@ interface PdfViewerProps {
   onPageChange?: (page: number) => void;
   pageOffset?: number;
   onCalibrateOffset?: (offset: number) => void;
+  onScreenshotCapture?: (data: {
+    imageData: ArrayBuffer;
+    pageNumber: number;
+    rect: { x: number; y: number; w: number; h: number };
+  }) => void;
 }
 
 export interface PdfViewerHandle {
@@ -35,7 +40,7 @@ const SCALE_STEP = 0.25;
 const DEFAULT_SCALE = 1.5;
 
 const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
-  ({ filePath, initialPage, onPageChange, pageOffset = 0, onCalibrateOffset }, ref) => {
+  ({ filePath, initialPage, onPageChange, pageOffset = 0, onCalibrateOffset, onScreenshotCapture }, ref) => {
     const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
     const [currentPage, setCurrentPage] = useState(initialPage ?? 1);
     const [totalPages, setTotalPages] = useState(0);
@@ -46,6 +51,10 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
     const [pageInput, setPageInput] = useState('');
     const [showCalibration, setShowCalibration] = useState(false);
     const [calibrationInput, setCalibrationInput] = useState('');
+    const [screenshotMode, setScreenshotMode] = useState(false);
+    const [isSelecting, setIsSelecting] = useState(false);
+    const [selectionStart, setSelectionStart] = useState<{ pageNum: number; x: number; y: number } | null>(null);
+    const [selectionEnd, setSelectionEnd] = useState<{ x: number; y: number } | null>(null);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
@@ -266,6 +275,116 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       setScale(newScale);
     }, [scale, currentPage]);
 
+    // Hit-test: given mouse event, find which page and normalized coords
+    const hitTestPage = useCallback((e: React.MouseEvent): { pageNum: number; normX: number; normY: number } | null => {
+      const container = containerRef.current;
+      if (!container || pageDimensions.length === 0) return null;
+
+      const containerRect = container.getBoundingClientRect();
+      const scrollTop = container.scrollTop;
+      const scrollLeft = container.scrollLeft;
+      // Y position in the total document space
+      const docY = e.clientY - containerRect.top + scrollTop;
+      // X position relative to container viewport
+      const viewX = e.clientX - containerRect.left + scrollLeft;
+
+      for (let i = 0; i < pageDimensions.length; i++) {
+        const dim = pageDimensions[i];
+        const pageTop = dim.cumulativeOffset;
+        const pageBottom = pageTop + dim.height;
+
+        if (docY >= pageTop && docY < pageBottom) {
+          // Pages are centered: left = containerScrollWidth/2 - dim.width/2
+          const containerScrollWidth = container.scrollWidth;
+          const pageLeft = containerScrollWidth / 2 - dim.width / 2;
+          const localX = viewX - pageLeft;
+          const localY = docY - pageTop;
+
+          if (localX < 0 || localX > dim.width || localY < 0 || localY > dim.height) return null;
+
+          return {
+            pageNum: i + 1,
+            normX: localX / dim.width,
+            normY: localY / dim.height,
+          };
+        }
+      }
+      return null;
+    }, [pageDimensions]);
+
+    // Screenshot mouse handlers
+    const handleScreenshotMouseDown = useCallback((e: React.MouseEvent) => {
+      if (!screenshotMode || e.button !== 0) return;
+      const hit = hitTestPage(e);
+      if (!hit || !renderedPages.current.has(hit.pageNum)) return;
+      e.preventDefault();
+      setSelectionStart({ pageNum: hit.pageNum, x: hit.normX, y: hit.normY });
+      setSelectionEnd({ x: hit.normX, y: hit.normY });
+      setIsSelecting(true);
+    }, [screenshotMode, hitTestPage]);
+
+    const handleScreenshotMouseMove = useCallback((e: React.MouseEvent) => {
+      if (!isSelecting || !selectionStart) return;
+      const hit = hitTestPage(e);
+      if (!hit || hit.pageNum !== selectionStart.pageNum) return;
+      setSelectionEnd({ x: hit.normX, y: hit.normY });
+    }, [isSelecting, selectionStart, hitTestPage]);
+
+    const handleScreenshotMouseUp = useCallback((_e: React.MouseEvent) => {
+      if (!isSelecting || !selectionStart || !selectionEnd || !onScreenshotCapture) {
+        setIsSelecting(false);
+        setSelectionStart(null);
+        setSelectionEnd(null);
+        return;
+      }
+
+      const x = Math.min(selectionStart.x, selectionEnd.x);
+      const y = Math.min(selectionStart.y, selectionEnd.y);
+      const w = Math.abs(selectionEnd.x - selectionStart.x);
+      const h = Math.abs(selectionEnd.y - selectionStart.y);
+
+      // Ignore tiny selections (likely accidental clicks)
+      if (w < 0.01 || h < 0.01) {
+        setIsSelecting(false);
+        setSelectionStart(null);
+        setSelectionEnd(null);
+        return;
+      }
+
+      const pageNum = selectionStart.pageNum;
+      const canvas = canvasRefs.current.get(pageNum);
+      if (!canvas) {
+        setIsSelecting(false);
+        setSelectionStart(null);
+        setSelectionEnd(null);
+        return;
+      }
+
+      // Crop from the canvas
+      const sx = x * canvas.width;
+      const sy = y * canvas.height;
+      const sw = w * canvas.width;
+      const sh = h * canvas.height;
+      const crop = document.createElement('canvas');
+      crop.width = sw;
+      crop.height = sh;
+      const ctx = crop.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+        crop.toBlob((blob) => {
+          if (blob) {
+            blob.arrayBuffer().then((buf) => {
+              onScreenshotCapture({ imageData: buf, pageNumber: pageNum, rect: { x, y, w, h } });
+            });
+          }
+        }, 'image/png');
+      }
+
+      setIsSelecting(false);
+      setSelectionStart(null);
+      setSelectionEnd(null);
+    }, [isSelecting, selectionStart, selectionEnd, onScreenshotCapture]);
+
     // Expose imperative handle
     useImperativeHandle(ref, () => ({
       currentPage,
@@ -376,6 +495,24 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
               +
             </button>
           </div>
+          {/* Screenshot toggle button */}
+          {onScreenshotCapture && (
+            <div className="ml-2 pl-2 border-l border-gray-300 dark:border-dark-border">
+              <button
+                onClick={() => setScreenshotMode(!screenshotMode)}
+                className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+                  screenshotMode
+                    ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-dark-bg'
+                }`}
+                title={screenshotMode ? 'Exit screenshot mode' : 'Screenshot region'}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </button>
+            </div>
+          )}
           {/* Calibration button */}
           {onCalibrateOffset && (
             <div className="relative ml-2 pl-2 border-l border-gray-300 dark:border-dark-border" ref={calibrationRef}>
@@ -458,7 +595,10 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
         <div
           ref={containerRef}
           className="flex-1 overflow-auto bg-gray-200 dark:bg-gray-800 rounded-b-lg"
-          style={{ position: 'relative' }}
+          style={{ position: 'relative', cursor: screenshotMode ? 'crosshair' : undefined }}
+          onMouseDown={screenshotMode ? handleScreenshotMouseDown : undefined}
+          onMouseMove={screenshotMode ? handleScreenshotMouseMove : undefined}
+          onMouseUp={screenshotMode ? handleScreenshotMouseUp : undefined}
         >
           <div style={{ height: totalHeight, position: 'relative' }}>
             {pageDimensions.map((dim, i) => (
@@ -478,11 +618,37 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
                     if (el) canvasRefs.current.set(i + 1, el);
                     else canvasRefs.current.delete(i + 1);
                   }}
-                  style={{ width: '100%', height: '100%' }}
+                  style={{ width: '100%', height: '100%', pointerEvents: screenshotMode ? 'none' : undefined }}
                   className="shadow-md"
                 />
               </div>
             ))}
+            {/* Selection overlay while dragging */}
+            {isSelecting && selectionStart && selectionEnd && (() => {
+              const dim = pageDimensions[selectionStart.pageNum - 1];
+              if (!dim) return null;
+              const containerScrollWidth = containerRef.current?.scrollWidth ?? 0;
+              const pageLeft = containerScrollWidth / 2 - dim.width / 2;
+              const x = Math.min(selectionStart.x, selectionEnd.x);
+              const y = Math.min(selectionStart.y, selectionEnd.y);
+              const w = Math.abs(selectionEnd.x - selectionStart.x);
+              const h = Math.abs(selectionEnd.y - selectionStart.y);
+              return (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: dim.cumulativeOffset + y * dim.height,
+                    left: pageLeft + x * dim.width,
+                    width: w * dim.width,
+                    height: h * dim.height,
+                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                    border: '2px solid rgba(59, 130, 246, 0.7)',
+                    pointerEvents: 'none',
+                    zIndex: 10,
+                  }}
+                />
+              );
+            })()}
           </div>
         </div>
       </div>

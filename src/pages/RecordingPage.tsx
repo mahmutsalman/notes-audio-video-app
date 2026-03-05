@@ -58,7 +58,6 @@ export default function RecordingPage() {
     durationImagesCache,
     getDurationImages,
     addDurationImageFromClipboard,
-    replaceDurationImageFromClipboard,
     addDurationImageFromScreenshot,
     reorderDurationImages,
     deleteDurationImage,
@@ -1864,6 +1863,7 @@ export default function RecordingPage() {
               ref={pdfViewerRef}
               filePath={recording.pdf_path}
               pageOffset={recording.page_offset ?? 0}
+              onScreenshotCapture={handlePdfScreenshot}
               onCalibrateOffset={async (offset) => {
                 try {
                   const updated = await window.electronAPI.recordings.update(recording.id, { page_offset: offset });
@@ -2020,11 +2020,6 @@ export default function RecordingPage() {
             groupColorOverrides={mediaGroupColorOverrides}
             colorKeyPrefix="durationImage"
             captionColorClass="text-blue-600 dark:text-blue-400"
-            highlightedId={
-              searchNav?.results[searchNav.currentIndex]?.content_type === 'duration_image'
-                ? searchNav.results[searchNav.currentIndex].source_id
-                : undefined
-            }
             onImageClick={(index) => {
               const img = activeDurationImages[index];
               if (isBookNote(recording) && img?.page_number && pdfViewerRef.current) {
