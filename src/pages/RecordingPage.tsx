@@ -694,8 +694,6 @@ export default function RecordingPage() {
       handleDurationClick(duration);
       if (isBookNote(recording) && duration.page_number && pdfViewerRef.current) {
         pdfViewerRef.current.goToPage(duration.page_number);
-      } else if (isReaderNote(recording) && duration.page_number && bookReaderRef.current) {
-        bookReaderRef.current.goToOriginalPage(duration.page_number);
       }
     }
   };
