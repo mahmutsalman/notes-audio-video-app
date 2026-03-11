@@ -156,50 +156,6 @@ export interface DurationImageAudio {
   created_at: string;
 }
 
-export interface ImageAudio {
-  id: number;
-  image_id: number;
-  file_path: string;
-  caption: string | null;
-  duration: number | null;
-  sort_order: number;
-  created_at: string;
-}
-
-export interface QuickCaptureImageAudio {
-  id: number;
-  capture_image_id: number;
-  file_path: string;
-  caption: string | null;
-  duration: number | null;
-  sort_order: number;
-  created_at: string;
-}
-
-export interface ImageChildAudio {
-  id: number;
-  image_child_id: number;
-  file_path: string;
-  caption: string | null;
-  duration: number | null;
-  sort_order: number;
-  created_at: string;
-}
-
-export interface ImageChild {
-  id: number;
-  parent_type: 'duration_image' | 'image' | 'quick_capture_image';
-  parent_id: number;
-  file_path: string;
-  thumbnail_path: string | null;
-  caption: string | null;
-  caption2: string | null;
-  sort_order: number;
-  created_at: string;
-}
-
-export type AnyImageAudio = DurationImageAudio | ImageAudio | QuickCaptureImageAudio | ImageChildAudio;
-
 // Screen Recording types
 
 export type ScreenResolution = '480p' | '720p' | '1080p';
@@ -509,18 +465,6 @@ export interface ElectronAPI {
     addFromBuffer: (durationImageId: number, durationId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<DurationImageAudio>;
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<DurationImageAudio>;
-  };
-  imageAudios: {
-    getByImage: (imageId: number) => Promise<ImageAudio[]>;
-    addFromBuffer: (imageId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<ImageAudio>;
-    delete: (id: number) => Promise<void>;
-    updateCaption: (id: number, caption: string | null) => Promise<ImageAudio>;
-  };
-  captureImageAudios: {
-    getByImage: (captureImageId: number) => Promise<QuickCaptureImageAudio[]>;
-    addFromBuffer: (captureImageId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<QuickCaptureImageAudio>;
-    delete: (id: number) => Promise<void>;
-    updateCaption: (id: number, caption: string | null) => Promise<QuickCaptureImageAudio>;
   };
   durationAudios: {
     getByDuration: (durationId: number) => Promise<DurationAudio[]>;

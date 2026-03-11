@@ -10,10 +10,6 @@ import {
   DurationVideosOperations,
   DurationAudiosOperations,
   DurationImageAudiosOperations,
-  ImageAudiosOperations,
-  CaptureImageAudiosOperations,
-  ImageChildrenOperations,
-  ImageChildAudiosOperations,
   CodeSnippetsOperations,
   DurationCodeSnippetsOperations,
   SettingsOperations,
@@ -38,10 +34,6 @@ import {
   saveDurationVideoFromFile,
   saveDurationAudioFromBuffer,
   saveDurationImageAudioFromBuffer,
-  saveImageAudioFromBuffer,
-  saveCaptureImageAudioFromBuffer,
-  saveImageChildFromBuffer,
-  saveImageChildAudioFromBuffer,
   saveAudioAttachmentFromBuffer,
   deleteDurationImages,
   deleteDurationVideos,
@@ -704,7 +696,7 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationImageAudios:addFromBuffer', async (_, durationImageId: number, durationId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
     const { filePath, duration } = await saveDurationImageAudioFromBuffer(durationImageId, audioBuffer, extension);
-    const result = DurationImageAudiosOperations.create({
+    return DurationImageAudiosOperations.create({
       duration_image_id: durationImageId,
       duration_id: durationId,
       file_path: filePath,
@@ -712,8 +704,6 @@ export function setupIpcHandlers(): void {
       duration: duration,
       sort_order: DurationImageAudiosOperations.getMaxSortOrder(durationImageId) + 1,
     });
-    scheduleSearchReindex();
-    return result;
   });
 
   ipcMain.handle('durationImageAudios:delete', async (_, id: number) => {
@@ -722,18 +712,6 @@ export function setupIpcHandlers(): void {
       await deleteFile(audio.file_path);
     }
     DurationImageAudiosOperations.delete(id);
-    scheduleSearchReindex();
-  });
-
-  ipcMain.handle('durationImageAudios:updateCaption', async (_, id: number, caption: string | null) => {
-    const result = DurationImageAudiosOperations.updateCaption(id, caption);
-    scheduleSearchReindex();
-    return result;
-  });
-
-  // ============ Image Audios (audio clips attached to recording-level images) =====  });
-
-  // ============ Capture Image Audios (audio clips attached to quick_capture_images) ============
   ipcMain.handle('captureImageAudios:getByImage', async (_, captureImageId: number) => {
     return CaptureImageAudiosOperations.getByImage(captureImageId);
   });
@@ -764,6 +742,11 @@ export function setupIpcHandlers(): void {
     const result = CaptureImageAudiosOperations.updateCaption(id, caption);
     scheduleSearchReindex();
     return result;
+=======
+  });
+
+  ipcMain.handle('durationImageAudios:updateCaption', async (_, id: number, caption: string | null) => {
+    return DurationImageAudiosOperations.updateCaption(id, caption);
   });
 
   // ============ Audios (recording-level audio attachments) ============

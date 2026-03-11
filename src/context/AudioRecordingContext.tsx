@@ -5,23 +5,7 @@ import type { AudioMarkerType } from '../types';
 export type RecordingTarget =
   | { type: 'duration'; durationId: number; recordingId: number; label: string }
   | { type: 'recording'; recordingId: number; label: string }
-  | { type: 'duration_image'; durationImageId: number; durationId: number; recordingId: number; label: string }
-  | { type: 'recording_image'; imageId: number; recordingId: number; label: string }
-  | { type: 'capture_image'; captureImageId: number; label: string }
-  | { type: 'capture'; label: string }
-  | { type: 'image_child'; imageChildId: number; label: string };
-
-export interface PendingMarker {
-  marker_type: AudioMarkerType;
-  start_time: number;
-  end_time: number | null;
-}
-
-export interface PendingMarker {
-  marker_type: AudioMarkerType;
-  start_time: number;
-  end_time: number | null;
-}
+  | { type: 'duration_image'; durationImageId: number; durationId: number; recordingId: number; label: string };
 
 interface AudioRecordingContextValue {
   // State
@@ -147,27 +131,9 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
           'webm'
         );
       } else if (target.type === 'duration_image') {
-        savedAudio = await window.electronAPI.durationImageAudios.addFromBuffer(
+        await window.electronAPI.durationImageAudios.addFromBuffer(
           target.durationImageId,
           target.durationId,
-          buffer,
-          'webm'
-        );
-      } else if (target.type === 'recording_image') {
-        savedAudio = await window.electronAPI.imageAudios.addFromBuffer(
-          target.imageId,
-          buffer,
-          'webm'
-        );
-      } else if (target.type === 'capture_image') {
-        savedAudio = await window.electronAPI.captureImageAudios.addFromBuffer(
-          target.captureImageId,
-          buffer,
-          'webm'
-        );
-      } else if (target.type === 'image_child') {
-        savedAudio = await window.electronAPI.imageChildAudios.addFromBuffer(
-          target.imageChildId,
           buffer,
           'webm'
         );

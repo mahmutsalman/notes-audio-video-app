@@ -8,8 +8,6 @@ import type {
   DurationVideo,
   DurationAudio,
   DurationImageAudio,
-  ImageAudio,
-  QuickCaptureImageAudio,
   CodeSnippet, CreateCodeSnippet, UpdateCodeSnippet,
   DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
   BackupResult,
@@ -245,30 +243,6 @@ const electronAPI = {
       ipcRenderer.invoke('durationImageAudios:delete', id),
     updateCaption: (id: number, caption: string | null): Promise<DurationImageAudio> =>
       ipcRenderer.invoke('durationImageAudios:updateCaption', id, caption),
-  },
-
-  // Image Audios (audio clips attached to recording-level images)
-  imageAudios: {
-    getByImage: (imageId: number): Promise<ImageAudio[]> =>
-      ipcRenderer.invoke('imageAudios:getByImage', imageId),
-    addFromBuffer: (imageId: number, audioBuffer: ArrayBuffer, extension?: string): Promise<ImageAudio> =>
-      ipcRenderer.invoke('imageAudios:addFromBuffer', imageId, audioBuffer, extension),
-    delete: (id: number): Promise<void> =>
-      ipcRenderer.invoke('imageAudios:delete', id),
-    updateCaption: (id: number, caption: string | null): Promise<ImageAudio> =>
-      ipcRenderer.invoke('imageAudios:updateCaption', id, caption),
-  },
-
-  // Capture Image Audios (audio clips attached to quick_capture_images)
-  captureImageAudios: {
-    getByImage: (captureImageId: number): Promise<QuickCaptureImageAudio[]> =>
-      ipcRenderer.invoke('captureImageAudios:getByImage', captureImageId),
-    addFromBuffer: (captureImageId: number, audioBuffer: ArrayBuffer, extension?: string): Promise<QuickCaptureImageAudio> =>
-      ipcRenderer.invoke('captureImageAudios:addFromBuffer', captureImageId, audioBuffer, extension),
-    delete: (id: number): Promise<void> =>
-      ipcRenderer.invoke('captureImageAudios:delete', id),
-    updateCaption: (id: number, caption: string | null): Promise<QuickCaptureImageAudio> =>
-      ipcRenderer.invoke('captureImageAudios:updateCaption', id, caption),
   },
 
   // Duration Audios (audio clips attached to duration marks)
