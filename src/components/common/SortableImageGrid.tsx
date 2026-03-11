@@ -83,6 +83,7 @@ function SortableImage({
   onDelete,
   audioCount = 0,
 }: SortableImageProps) {
+  const [captionExpanded, setCaptionExpanded] = useState(false);
   const {
     attributes,
     listeners,
@@ -179,7 +180,10 @@ function SortableImage({
       </div>
       {/* Caption */}
       {image.caption && (
-        <p className={`w-full text-xs ${captionColorClass} mt-1 line-clamp-2 italic font-light leading-tight text-center`}>
+        <p
+          className={`w-full text-xs ${captionColorClass} mt-1 italic font-light leading-tight text-center cursor-pointer ${captionExpanded ? '' : 'line-clamp-2'}`}
+          onClick={(e) => { e.stopPropagation(); setCaptionExpanded(v => !v); }}
+        >
           {image.caption}
         </p>
       )}
