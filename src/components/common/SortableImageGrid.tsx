@@ -142,8 +142,9 @@ function SortableImage({
         )}
         {/* Audio count badge */}
         {audioCount > 0 && (
-          <div className="absolute top-1 right-6 bg-blue-500 text-white text-[10px]
-                          rounded-full w-4 h-4 flex items-center justify-center font-bold z-10">
+          <div className="absolute top-1 right-1 bg-blue-500 text-white text-[10px]
+                          rounded-full w-4 h-4 flex items-center justify-center font-bold z-10
+                          group-hover:opacity-0 transition-opacity">
             {audioCount > 9 ? '9+' : audioCount}
           </div>
         )}
