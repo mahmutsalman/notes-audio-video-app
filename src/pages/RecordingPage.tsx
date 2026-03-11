@@ -69,6 +69,7 @@ export default function RecordingPage() {
     getDurationImageAudios,
     refreshDurationImageAudios,
     deleteDurationImageAudio,
+    updateDurationImageAudioCaption,
     getDurationCodeSnippets,
     addDurationCodeSnippet,
     updateDurationCodeSnippet,
@@ -1186,11 +1187,20 @@ export default function RecordingPage() {
   };
 
   const handlePlayImageAudio = (audio: DurationImageAudio, label: string) => {
-    imageAudioPlayer.play(audio, label);
+    imageAudioPlayer.play(
+      audio,
+      label,
+      (audioId, caption) => updateDurationImageAudioCaption(audioId, audio.duration_image_id, caption)
+    );
   };
 
   const handleDeleteImageAudio = async (audioId: number, imageId: number) => {
     await deleteDurationImageAudio(audioId, imageId);
+  };
+
+  const handleUpdateImageAudioCaption = async (audioId: number, imageId: number, caption: string | null) => {
+    const updated = await updateDurationImageAudioCaption(audioId, imageId, caption);
+    imageAudioPlayer.syncCurrentAudio(updated);
   };
 
   // Debug: Log cache updates
@@ -2406,6 +2416,7 @@ export default function RecordingPage() {
           onRecordForImage={handleRecordForImage}
           onDeleteImageAudio={handleDeleteImageAudio}
           onPlayImageAudio={handlePlayImageAudio}
+          onUpdateImageAudioCaption={handleUpdateImageAudioCaption}
         />
       )}
 
