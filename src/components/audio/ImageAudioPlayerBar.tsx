@@ -75,6 +75,25 @@ export default function ImageAudioPlayerBar() {
     cancelEditingMarker();
   };
 
+  const startEditing = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!canEditCaption) return;
+    setDraftCaption(currentAudio.caption ?? '');
+    setEditing(true);
+    setExpanded(true);
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+    setDraftCaption('');
+  };
+
+  const saveCaption = async () => {
+    await updateCurrentAudioCaption(draftCaption.trim() || null);
+    cancelEditing();
+  };
+
   return (
     <div className="fixed bottom-0 left-0 right-0 z-[60] bg-gray-900 dark:bg-gray-950 border-t border-blue-700/50 shadow-2xl">
       {/* Expanded marker panel */}
