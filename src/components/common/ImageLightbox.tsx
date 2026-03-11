@@ -22,12 +22,38 @@ interface ImageLightboxProps {
   onRecordForImage?: (imageId: number) => void;
   onDeleteImageAudio?: (audioId: number, imageId: number) => void;
   onPlayImageAudio?: (audio: DurationImageAudio, imageLabel: string) => void;
+  onUpdateImageAudioCaption?: (audioId: number, imageId: number, caption: string | null) => Promise<void>;
 }
 
 function fmtSecs(secs: number): string {
   const m = Math.floor(secs / 60);
   const s = Math.floor(secs % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function AudioCaptionText({ caption, onEdit }: { caption: string | null; onEdit: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!caption) {
+    return (
+      <span
+        onClick={(e) => { e.stopPropagation(); onEdit(); }}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
+        className="text-xs text-white/30 italic cursor-text hover:text-white/50 transition-colors"
+      >
+        add caption…
+      </span>
+    );
+  }
+  return (
+    <p
+      onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
+      title="Click to expand · Right-click to edit"
+      className={`text-xs text-white/70 italic cursor-pointer text-center max-w-[160px] leading-tight ${expanded ? '' : 'line-clamp-2'}`}
+    >
+      {caption}
+    </p>
+  );
 }
 
 export default function ImageLightbox({
@@ -39,11 +65,17 @@ export default function ImageLightbox({
   onRecordForImage,
   onDeleteImageAudio,
   onPlayImageAudio,
+  onUpdateImageAudioCaption,
 }: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [showZoomIndicator, setShowZoomIndicator] = useState(false);
   const [pendingDeleteAudio, setPendingDeleteAudio] = useState<{ audioId: number; imageId: number; index: number } | null>(null);
+  const [editingAudioCaptionId, setEditingAudioCaptionId] = useState<number | null>(null);
+  const [audioCaptionText, setAudioCaptionText] = useState('');
+  const [expandedPlayerCaption, setExpandedPlayerCaption] = useState(false);
+  const [editingPlayerCaption, setEditingPlayerCaption] = useState(false);
+  const [playerCaptionText, setPlayerCaptionText] = useState('');
 
   const imageRef = useRef<HTMLImageElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -70,7 +102,13 @@ export default function ImageLightbox({
   } = useAudioRecording();
 
   // Image audio player context — for embedded player bar
-  const { currentAudio, imageLabel: playerLabel, dismiss: dismissPlayer } = useImageAudioPlayer();
+  const {
+    currentAudio,
+    imageLabel: playerLabel,
+    canEditCaption: canEditPlayerCaption,
+    updateCurrentAudioCaption,
+    dismiss: dismissPlayer,
+  } = useImageAudioPlayer();
 
   // Only show embedded bars when lightbox is in "image audio" mode
   const imageAudioMode = onRecordForImage !== undefined;
@@ -79,6 +117,19 @@ export default function ImageLightbox({
 
   const image = images[selectedIndex];
   const currentImageAudios = (image?.id && imageAudiosMap) ? (imageAudiosMap[image.id] ?? []) : [];
+
+  const saveAudioCaption = async (audioId: number, imageId: number) => {
+    const trimmed = audioCaptionText.trim() || null;
+    await onUpdateImageAudioCaption?.(audioId, imageId, trimmed);
+    setEditingAudioCaptionId(null);
+    setAudioCaptionText('');
+  };
+
+  const savePlayerCaption = async () => {
+    await updateCurrentAudioCaption(playerCaptionText.trim() || null);
+    setEditingPlayerCaption(false);
+    setPlayerCaptionText('');
+  };
 
   // Keep scaleRef in sync with scale state
   useEffect(() => { scaleRef.current = scale; }, [scale]);
@@ -871,30 +922,65 @@ export default function ImageLightbox({
         {/* Audio buttons + caption — anchored to bottom of image area */}
         <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-2 px-4 pointer-events-none">
           {currentImageAudios.length > 0 && (
-            <div className="flex flex-wrap justify-center gap-2 pointer-events-auto">
+            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 pointer-events-auto">
               {currentImageAudios.map((audio, i) => (
-                <div key={audio.id} className="flex items-center gap-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const label = image.caption || `Image ${selectedIndex + 1}`;
-                      onPlayImageAudio?.(audio, label);
-                    }}
-                    className="bg-white/20 hover:bg-white/30 text-white rounded-full px-3 py-1 text-xs flex items-center gap-1 transition-colors"
-                  >
-                    🔊 {i + 1}{audio.duration ? ` (${fmtSecs(audio.duration)})` : ''}
-                  </button>
-                  {onDeleteImageAudio && image?.id && (
+                <div key={audio.id} className="flex flex-col items-center gap-0.5">
+                  <div className="flex items-center gap-1">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setPendingDeleteAudio({ audioId: audio.id, imageId: image.id!, index: i });
+                        const label = image.caption || `Image ${selectedIndex + 1}`;
+                        onPlayImageAudio?.(audio, label);
                       }}
-                      className="text-white/40 hover:text-red-400 text-xs transition-colors pointer-events-auto"
-                      title="Delete audio"
+                      className="bg-white/20 hover:bg-white/30 text-white rounded-full px-3 py-1 text-xs flex items-center gap-1 transition-colors"
                     >
-                      ×
+                      🔊 {i + 1}{audio.duration ? ` (${fmtSecs(audio.duration)})` : ''}
                     </button>
+                    {onDeleteImageAudio && image?.id && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPendingDeleteAudio({ audioId: audio.id, imageId: image.id!, index: i });
+                        }}
+                        className="text-white/40 hover:text-red-400 text-xs transition-colors"
+                        title="Delete audio"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  {/* Per-audio caption */}
+                  {onUpdateImageAudioCaption && image?.id && (
+                    editingAudioCaptionId === audio.id ? (
+                      <textarea
+                        autoFocus
+                        value={audioCaptionText}
+                        onChange={(e) => setAudioCaptionText(e.target.value)}
+                        onBlur={() => saveAudioCaption(audio.id, image.id!)}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            saveAudioCaption(audio.id, image.id!);
+                          } else if (e.key === 'Escape') {
+                            setEditingAudioCaptionId(null);
+                            setAudioCaptionText('');
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        rows={2}
+                        className="w-40 text-xs bg-black/60 text-white/90 rounded px-2 py-1 border border-white/30 focus:outline-none focus:border-white/60 resize-none italic"
+                        placeholder="Add caption…"
+                      />
+                    ) : (
+                      <AudioCaptionText
+                        caption={audio.caption}
+                        onEdit={() => {
+                          setEditingAudioCaptionId(audio.id);
+                          setAudioCaptionText(audio.caption ?? '');
+                        }}
+                      />
+                    )
                   )}
                 </div>
               ))}
@@ -927,12 +1013,45 @@ export default function ImageLightbox({
         >
           <div className="flex items-center gap-3 px-4 py-2">
             <span className="text-blue-400 text-base flex-shrink-0">🔊</span>
-            <span
-              className="text-sm text-blue-300 truncate flex-shrink-0 max-w-[180px]"
-              title={currentAudio.caption || playerLabel}
-            >
-              {currentAudio.caption || playerLabel}
-            </span>
+            {editingPlayerCaption ? (
+              <textarea
+                autoFocus
+                value={playerCaptionText}
+                onChange={(e) => setPlayerCaptionText(e.target.value)}
+                onBlur={() => { void savePlayerCaption(); }}
+                onClick={(e) => e.stopPropagation()}
+                onContextMenu={(e) => e.preventDefault()}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void savePlayerCaption();
+                  } else if (e.key === 'Escape') {
+                    setEditingPlayerCaption(false);
+                    setPlayerCaptionText('');
+                  }
+                }}
+                rows={2}
+                className="w-[180px] text-sm bg-blue-950/70 text-blue-100 rounded px-2 py-1 border border-blue-500/60 focus:outline-none focus:border-blue-300 resize-none italic"
+                placeholder="Add caption..."
+              />
+            ) : (
+              <span
+                className={`text-sm text-blue-300 flex-shrink-0 cursor-pointer ${expandedPlayerCaption ? 'max-w-xs whitespace-normal break-words' : 'truncate max-w-[180px]'}`}
+                title={expandedPlayerCaption ? undefined : (currentAudio.caption || playerLabel)}
+                onClick={(e) => { e.stopPropagation(); setExpandedPlayerCaption(v => !v); }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!canEditPlayerCaption) return;
+                  setPlayerCaptionText(currentAudio.caption ?? '');
+                  setEditingPlayerCaption(true);
+                  setExpandedPlayerCaption(true);
+                }}
+              >
+                {currentAudio.caption || playerLabel}
+              </span>
+            )}
             <div className="flex-1 min-w-0">
               <ThemedAudioPlayer
                 src={window.electronAPI.paths.getFileUrl(currentAudio.file_path)}
