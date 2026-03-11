@@ -1538,7 +1538,7 @@ export function setupIpcHandlers(): void {
 
       // Sync media (delta)
       const { stdout } = await execAsync(
-        `rsync -avz -e "ssh ${sshOpts}" "${localMedia}/" ${vpsUser}@${vpsHost}:${vpsDataDir}/media/`,
+        `rsync -avz --delete -e "ssh ${sshOpts}" "${localMedia}/" ${vpsUser}@${vpsHost}:${vpsDataDir}/media/`,
         { timeout: 300000 }
       );
       console.log('[IPC] Media synced');
