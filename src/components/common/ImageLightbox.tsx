@@ -43,6 +43,7 @@ export default function ImageLightbox({
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [showZoomIndicator, setShowZoomIndicator] = useState(false);
+  const [pendingDeleteAudio, setPendingDeleteAudio] = useState<{ audioId: number; imageId: number; index: number } | null>(null);
 
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -334,7 +335,7 @@ export default function ImageLightbox({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        onDeleteImageAudio(audio.id, image.id!);
+                        setPendingDeleteAudio({ audioId: audio.id, imageId: image.id!, index: i });
                       }}
                       className="text-white/40 hover:text-red-400 text-xs transition-colors pointer-events-auto"
                       title="Delete audio"
@@ -475,6 +476,38 @@ export default function ImageLightbox({
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete confirmation overlay ── */}
+      {pendingDeleteAudio && (
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl px-6 py-5 flex flex-col items-center gap-4 max-w-xs w-full mx-4">
+            <p className="text-white text-sm text-center">
+              Delete <span className="font-semibold text-red-400">Audio {pendingDeleteAudio.index + 1}</span>?<br />
+              <span className="text-gray-400 text-xs">This cannot be undone.</span>
+            </p>
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setPendingDeleteAudio(null)}
+                className="flex-1 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  onDeleteImageAudio?.(pendingDeleteAudio.audioId, pendingDeleteAudio.imageId);
+                  setPendingDeleteAudio(null);
+                }}
+                className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}
