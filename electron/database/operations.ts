@@ -143,8 +143,12 @@ export const RecordingsOperations = {
   create(recording: CreateRecording): Recording {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO recordings (topic_id, name, audio_path, audio_duration, video_path, video_duration, video_resolution, video_fps, video_size, notes_content, recording_type, pdf_path)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO recordings (
+        topic_id, name, audio_path, audio_duration, video_path, video_duration,
+        video_resolution, video_fps, video_size, notes_content, main_notes_content,
+        importance_color, recording_type, pdf_path, page_offset
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -158,8 +162,11 @@ export const RecordingsOperations = {
       recording.video_fps ?? null,
       recording.video_size ?? null,
       recording.notes_content,
+      recording.main_notes_content ?? null,
+      recording.importance_color ?? null,
       recording.recording_type ?? 'audio',
-      recording.pdf_path ?? null
+      recording.pdf_path ?? null,
+      recording.page_offset ?? 0
     );
 
     // Update topic's updated_at
@@ -324,14 +331,17 @@ export const ImagesOperations = {
   create(image: CreateImage): Image {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO images (recording_id, file_path, thumbnail_path, sort_order)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO images (recording_id, file_path, thumbnail_path, caption, color, group_color, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       image.recording_id,
       image.file_path,
       image.thumbnail_path,
+      image.caption ?? null,
+      image.color ?? null,
+      image.group_color ?? null,
       image.sort_order ?? 0
     );
 
@@ -404,14 +414,17 @@ export const VideosOperations = {
   create(video: CreateVideo): Video {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO videos (recording_id, file_path, thumbnail_path, duration, sort_order)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO videos (recording_id, file_path, thumbnail_path, caption, color, group_color, duration, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       video.recording_id,
       video.file_path,
       video.thumbnail_path,
+      video.caption ?? null,
+      video.color ?? null,
+      video.group_color ?? null,
       video.duration,
       video.sort_order ?? 0
     );
@@ -575,14 +588,20 @@ export const DurationImagesOperations = {
   create(image: CreateDurationImage): DurationImage {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO duration_images (duration_id, file_path, thumbnail_path, sort_order, page_number, rect_x, rect_y, rect_w, rect_h)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO duration_images (
+        duration_id, file_path, thumbnail_path, caption, color, group_color,
+        sort_order, page_number, rect_x, rect_y, rect_w, rect_h
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       image.duration_id,
       image.file_path,
       image.thumbnail_path ?? null,
+      image.caption ?? null,
+      image.color ?? null,
+      image.group_color ?? null,
       image.sort_order ?? 0,
       image.page_number ?? null,
       image.rect_x ?? null,
@@ -665,8 +684,8 @@ export const DurationVideosOperations = {
   create(video: CreateDurationVideo): DurationVideo {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO duration_videos (duration_id, file_path, thumbnail_path, caption, duration, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO duration_videos (duration_id, file_path, thumbnail_path, caption, color, group_color, duration, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -674,6 +693,8 @@ export const DurationVideosOperations = {
       video.file_path,
       video.thumbnail_path ?? null,
       video.caption ?? null,
+      video.color ?? null,
+      video.group_color ?? null,
       video.duration ?? null,
       video.sort_order ?? 0
     );
@@ -729,14 +750,15 @@ export const AudiosOperations = {
   create(audio: CreateAudio): Audio {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO audios (recording_id, file_path, caption, duration, sort_order)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO audios (recording_id, file_path, caption, group_color, duration, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       audio.recording_id,
       audio.file_path,
       audio.caption ?? null,
+      audio.group_color ?? null,
       audio.duration ?? null,
       audio.sort_order ?? 0
     );
@@ -781,14 +803,15 @@ export const DurationAudiosOperations = {
   create(audio: CreateDurationAudio): DurationAudio {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO duration_audios (duration_id, file_path, caption, duration, sort_order)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO duration_audios (duration_id, file_path, caption, group_color, duration, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       audio.duration_id,
       audio.file_path,
       audio.caption ?? null,
+      audio.group_color ?? null,
       audio.duration ?? null,
       audio.sort_order ?? 0
     );
