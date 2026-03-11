@@ -55,18 +55,6 @@ interface SortableImageGridProps {
   pastePlaceholder?: React.ReactNode;
   /** Map of imageId → audio count for showing badge */
   audioCountMap?: Record<number, number>;
-  /** Map of imageId → tag count for showing badge */
-  tagCountMap?: Record<number, number>;
-  /** Map of imageId → tag name array for showing above image */
-  tagNamesMap?: Record<number, string[]>;
-  /** Map of imageId → child image count for showing red badge */
-  childCountMap?: Record<number, number>;
-  /** Map of imageId → whether OCR text has been extracted */
-  ocrMap?: Record<number, boolean>;
-  /** Image ID to highlight (from search navigation) */
-  highlightedId?: number;
-  /** Disable drag-and-drop and hide the delete button (read-only display mode) */
-  readOnly?: boolean;
 }
 
 /* ── Sortable wrapper for a single image cell ─────────────────── */
@@ -82,11 +70,6 @@ interface SortableImageProps {
   onContextMenu?: (e: React.MouseEvent, image: SortableImageItem) => void;
   onDelete: (id: number) => void;
   audioCount?: number;
-  tagCount?: number;
-  tags?: string[];
-  childCount?: number;
-  hasOcr?: boolean;
-  isHighlighted?: boolean;
 }
 
 function SortableImage({
@@ -100,11 +83,6 @@ function SortableImage({
   onContextMenu,
   onDelete,
   audioCount = 0,
-  tagCount = 0,
-  tags = [],
-  childCount = 0,
-  hasOcr = false,
-  isHighlighted = false,
 }: SortableImageProps) {
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const {
@@ -164,42 +142,9 @@ function SortableImage({
         )}
         {/* Audio count badge */}
         {audioCount > 0 && (
-          <div className="absolute top-1 right-1 bg-blue-500 text-white text-[10px]
-                          rounded-full w-4 h-4 flex items-center justify-center font-bold z-10
-                          group-hover:opacity-0 transition-opacity">
+          <div className="absolute top-1 right-6 bg-blue-500 text-white text-[10px]
+                          rounded-full w-4 h-4 flex items-center justify-center font-bold z-10">
             {audioCount > 9 ? '9+' : audioCount}
-          </div>
-        )}
-        {/* Tag count badge — always visible, delete button (z-20) covers it on hover */}
-        {tagCount > 0 && audioCount === 0 && (
-          <div className="absolute top-1 right-1 bg-orange-500 text-white text-[10px]
-                          rounded-full w-4 h-4 flex items-center justify-center font-bold z-10
-                          group-hover:opacity-0 transition-opacity">
-            {tagCount > 9 ? '9+' : tagCount}
-          </div>
-        )}
-        {tagCount > 0 && audioCount > 0 && (
-          <div className="absolute top-6 right-1 bg-orange-500 text-white text-[10px]
-                          rounded-full w-4 h-4 flex items-center justify-center font-bold z-10
-                          group-hover:opacity-0 transition-opacity">
-            {tagCount > 9 ? '9+' : tagCount}
-          </div>
-        )}
-        {/* Child image count badge (red) */}
-        {childCount > 0 && (
-          <div className={`absolute right-1 bg-red-500 text-white text-[10px]
-                          rounded-full w-4 h-4 flex items-center justify-center font-bold z-10
-                          group-hover:opacity-0 transition-opacity
-                          ${audioCount > 0 && tagCount > 0 ? 'top-11' : audioCount > 0 || tagCount > 0 ? 'top-6' : 'top-1'}`}>
-            {childCount > 9 ? '9+' : childCount}
-          </div>
-        )}
-        {/* OCR badge — bottom-left, shows when caption2 has been extracted */}
-        {hasOcr && (
-          <div className="absolute bottom-1 left-1 bg-emerald-600/90 text-white text-[8px]
-                          rounded px-1 py-0.5 font-bold z-10 leading-none
-                          group-hover:opacity-0 transition-opacity">
-            OCR
           </div>
         )}
         {/* Left color indicator */}
@@ -470,12 +415,6 @@ export default function SortableImageGrid({
   onReorder,
   pastePlaceholder,
   audioCountMap,
-  tagCountMap,
-  tagNamesMap,
-  childCountMap,
-  ocrMap,
-  highlightedId,
-  readOnly = false,
 }: SortableImageGridProps) {
   const [activeId, setActiveId] = useState<number | null>(null);
 
@@ -572,11 +511,6 @@ export default function SortableImageGrid({
                 onContextMenu={onContextMenu}
                 onDelete={onDelete}
                 audioCount={audioCountMap?.[img.id] ?? 0}
-                tagCount={tagCountMap?.[img.id] ?? 0}
-                tags={tagNamesMap?.[img.id] ?? []}
-                childCount={childCountMap?.[img.id] ?? 0}
-                hasOcr={ocrMap?.[img.id] ?? false}
-                isHighlighted={highlightedId === img.id}
               />
             );
           })}

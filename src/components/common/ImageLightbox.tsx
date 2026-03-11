@@ -1,26 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation } from '../../types';
-import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
+import type { DurationImageAudio } from '../../types';
+import { useAudioRecording } from '../../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
 import WaveformVisualizer from '../audio/WaveformVisualizer';
+import ThemedAudioPlayer from '../audio/ThemedAudioPlayer';
 import { formatDuration } from '../../utils/formatters';
-import { TagModal } from './TagModal';
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-  DragOverlay,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  horizontalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 
 interface LightboxImage {
   file_path: string;
@@ -38,106 +22,12 @@ interface ImageLightboxProps {
   onRecordForImage?: (imageId: number) => void;
   onDeleteImageAudio?: (audioId: number, imageId: number) => void;
   onPlayImageAudio?: (audio: DurationImageAudio, imageLabel: string) => void;
-  onUpdateImageAudioCaption?: (audioId: number, imageId: number, caption: string | null) => Promise<void>;
-  // Replace feature
-  onReplaceWithClipboard?: () => void;
-  // Caption editing
-  onEditCaption?: () => void;
-  // Delete current image
-  onDelete?: () => void;
-  // Extract full-image OCR text into caption2
-  onExtractOcr?: () => Promise<void>;
-  // Tag editing
-  mediaType?: MediaTagType;
-  onTagsChanged?: (imageId: number, tagNames: string[]) => void;
-  // Disable child images (used by child lightbox to prevent recursion)
-  disableChildImages?: boolean;
 }
 
 function fmtSecs(secs: number): string {
   const m = Math.floor(secs / 60);
   const s = Math.floor(secs % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-const ANNOTATION_COLORS = [
-  '#ef4444', // red
-  '#f97316', // orange
-  '#eab308', // yellow
-  '#22c55e', // green
-  '#3b82f6', // blue
-  '#a855f7', // purple
-  '#ffffff',  // white
-  '#1a1a1a',  // black
-];
-
-const STROKE_WIDTH = 0.6; // SVG viewBox units (0 0 100 100)
-const HANDLE_SIZE = 1.8;  // handle square/circle radius in viewBox units
-
-/* ── Sortable thumbnail for the related-images strip ─────────────────────── */
-function SortableChildThumb({
-  child,
-  audioCount,
-  tagCount,
-  colors,
-  onOpen,
-  onDelete,
-}: {
-  child: ImageChild;
-  audioCount: number;
-  tagCount: number;
-  colors: string[];
-  onOpen: () => void;
-  onDelete: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: child.id });
-  return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.3 : 1 }}
-      className="relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden cursor-grab active:cursor-grabbing group border border-white/10 hover:border-white/40 transition-colors"
-      onClick={onOpen}
-      {...attributes}
-      {...listeners}
-    >
-      <img
-        src={window.electronAPI.paths.getFileUrl(child.thumbnail_path ?? child.file_path)}
-        alt={child.caption ?? ''}
-        className="w-full h-full object-cover pointer-events-none"
-      />
-      {audioCount > 0 && (
-        <span className="absolute top-0.5 right-0.5 bg-blue-500/80 text-white text-[9px] rounded px-0.5 leading-4 pointer-events-none">
-          {audioCount}
-        </span>
-      )}
-      {tagCount > 0 && (
-        <span className={`absolute right-0.5 bg-orange-500/90 text-white text-[9px] rounded px-0.5 leading-4 pointer-events-none ${
-          audioCount > 0 ? 'top-4' : 'top-0.5'
-        }`}>
-          {tagCount}
-        </span>
-      )}
-      {colors.length > 0 && (
-        <div className="absolute bottom-0.5 left-0 right-0 flex justify-center gap-0.5 pointer-events-none">
-          {colors.slice(0, 4).map(key => (
-            <span
-              key={key}
-              className="w-2 h-2 rounded-full border border-black/30"
-              style={{ backgroundColor: (IMAGE_COLORS as Record<string, { hex: string }>)[key]?.hex ?? '#888' }}
-            />
-          ))}
-        </div>
-      )}
-      <button
-        className="absolute top-0.5 left-0.5 w-4 h-4 bg-black/70 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity z-10"
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        title="Delete"
-      >
-        <span className="text-red-400 text-[11px] leading-none">×</span>
-      </button>
-    </div>
-  );
 }
 
 export default function ImageLightbox({
@@ -149,14 +39,6 @@ export default function ImageLightbox({
   onRecordForImage,
   onDeleteImageAudio,
   onPlayImageAudio,
-  onUpdateImageAudioCaption,
-  onReplaceWithClipboard,
-  onEditCaption,
-  onDelete,
-  onExtractOcr,
-  mediaType,
-  onTagsChanged,
-  disableChildImages = false,
 }: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
@@ -233,24 +115,6 @@ export default function ImageLightbox({
   const zoomIndicatorTimeout = useRef<ReturnType<typeof setTimeout>>();
   const scaleRef = useRef(1);
 
-  // Annotation drag refs
-  const isAnnDragging = useRef(false);
-  const annDragId = useRef<number | null>(null);
-  const annDragHandle = useRef<string | null>(null); // null=move body, 'tl','tr','bl','br','start','end'
-  const annAtStart = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
-  const annMouseStart = useRef<{ x: number; y: number } | null>(null);
-
-  // Draw refs
-  const isDrawingRef = useRef(false);
-  const drawStartRef = useRef<{ x: number; y: number } | null>(null);
-  // Refs that mirror state so global mouse handlers don't need to re-register on every state change
-  const annotationsRef = useRef<ImageAnnotation[]>([]);
-  const drawPreviewRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
-  const activeToolRef = useRef<'rect' | 'line'>('rect');
-  const activeColorRef = useRef(ANNOTATION_COLORS[0]);
-  const currentImageIdRef = useRef<number | undefined>(undefined);
-  const currentMediaTypeRef = useRef<string | undefined>(undefined);
-
   // Audio recording context — for embedded recording bar
   const {
     isRecording,
@@ -259,55 +123,22 @@ export default function ImageLightbox({
     analyserNode,
     target: recTarget,
     isSaving,
-    startRecording,
     pauseRecording,
     resumeRecording,
     stopAndSave,
     cancelRecording,
   } = useAudioRecording();
 
-  const { currentAudio: imagePlayerAudio } = useImageAudioPlayer();
-  const playerBarVisible = imagePlayerAudio !== null;
+  // Image audio player context — for embedded player bar
+  const { currentAudio, imageLabel: playerLabel, dismiss: dismissPlayer } = useImageAudioPlayer();
 
   // Only show embedded bars when lightbox is in "image audio" mode
   const imageAudioMode = onRecordForImage !== undefined;
-  const showRecordingBar = imageAudioMode && (isRecording || isSaving) &&
-    (recTarget?.type === 'duration_image' || recTarget?.type === 'recording_image' || recTarget?.type === 'image_child' || recTarget?.type === 'capture_image');
+  const showRecordingBar = imageAudioMode && (isRecording || isSaving) && recTarget?.type === 'duration_image';
+  const showPlayerBar = imageAudioMode && currentAudio !== null;
 
   const image = images[selectedIndex];
   const currentImageAudios = (image?.id && imageAudiosMap) ? (imageAudiosMap[image.id] ?? []) : [];
-
-  const saveAudioCaption = async (audioId: number, imageId: number) => {
-    const trimmed = audioCaptionText.trim() || null;
-    await onUpdateImageAudioCaption?.(audioId, imageId, trimmed);
-    setEditingAudioCaptionId(null);
-    setAudioCaptionText('');
-  };
-
-  const handleReplaceChildWithClipboard = useCallback(async () => {
-    if (selectedChildId == null) return;
-    const result = await window.electronAPI.clipboard.readImage();
-    if (!result.success || !result.buffer) {
-      alert('No image found in clipboard. Copy an image first.');
-      return;
-    }
-    const updated = await window.electronAPI.imageChildren.replaceFromClipboard(selectedChildId, result.buffer, result.extension || 'png');
-    setImageChildren(prev => prev.map(c => c.id === selectedChildId ? { ...c, file_path: updated.file_path, thumbnail_path: updated.thumbnail_path } : c));
-  }, [selectedChildId]);
-
-  const handleChildDragEnd = useCallback(async (event: DragEndEvent) => {
-    setDraggingChildId(null);
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = imageChildren.findIndex(c => c.id === active.id);
-    const newIndex = imageChildren.findIndex(c => c.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    const reordered = arrayMove(imageChildren, oldIndex, newIndex);
-    setImageChildren(reordered);
-    if (mediaType && image?.id) {
-      await window.electronAPI.imageChildren.reorder(mediaType, image.id, reordered.map(c => c.id));
-    }
-  }, [imageChildren, mediaType, image?.id]);
 
   // Keep scaleRef in sync with scale state
   useEffect(() => { scaleRef.current = scale; }, [scale]);
@@ -1028,12 +859,12 @@ export default function ImageLightbox({
   };
 
   return (
-    <div className={`fixed inset-0 z-50 bg-black/90 flex flex-col titlebar-no-drag${(playerBarVisible || showRecordingBar) ? ' pb-14' : ''}`}>
+    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
 
       {/* ── Image area (shrinks when bottom bars appear) ── */}
       <div
         ref={containerRef}
-        className="flex-1 relative flex items-center justify-center overflow-hidden px-16 py-4"
+        className="flex-1 relative flex items-center justify-center overflow-hidden p-4"
         onClick={handleBackdropClick}
       >
         {/* Close button */}
@@ -1055,46 +886,15 @@ export default function ImageLightbox({
           </button>
         )}
 
-        {/* Go to recording — shown only when navigating from search results */}
-        {onGoToRecording && (
-          <button
-            className="absolute top-4 left-4 z-10 flex items-center gap-1.5 bg-black/50 hover:bg-black/70 text-white/80 hover:text-white px-2 py-1 rounded text-xs transition-colors"
-            onClick={(e) => { e.stopPropagation(); onGoToRecording(); }}
-            title="Go to mark in recording"
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-            Go to mark
-          </button>
-        )}
-
         {/* Image counter */}
-        <div className="absolute top-3 left-20 bg-black/50 text-white text-sm font-medium z-10 px-2 py-0.5 rounded tabular-nums">
-          {selectedIndex + 1}/{images.length}
+        <div className="absolute top-4 left-4 text-white text-lg font-medium z-10">
+          {selectedIndex + 1} / {images.length}
         </div>
 
         {/* Zoom indicator */}
         {showZoomIndicator && scale !== 1 && (
           <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-black/70 text-white px-3 py-1 rounded-full text-sm font-medium z-10">
             {Math.round(scale * 100)}%
-          </div>
-        )}
-
-        {/* OCR caption2 extraction status */}
-        {ocrCaption2Status !== 'idle' && (
-          <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-black/80 text-white px-4 py-2 rounded-full text-sm font-medium z-20 flex items-center gap-2">
-            {ocrCaption2Status === 'running' && (
-              <>
-                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Extracting OCR text…
-              </>
-            )}
-            {ocrCaption2Status === 'done' && <><span>✓</span> OCR text saved</>}
-            {ocrCaption2Status === 'error' && <><span>✗</span> OCR extraction failed</>}
           </div>
         )}
 
@@ -1115,113 +915,57 @@ export default function ImageLightbox({
           src={window.electronAPI.paths.getFileUrl(image.file_path)}
           alt=""
           className="max-w-full max-h-full object-contain"
-          style={imgTransformStyle}
+          style={{
+            transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
+            transformOrigin: 'center center',
+            cursor: scale > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'default',
+            transition: isDragging.current ? 'none' : 'transform 0.1s ease-out',
+            userSelect: 'none',
+          }}
           draggable={false}
           onClick={handleImageClick}
-          onMouseDown={drawMode ? undefined : (e) => { handleOcrMouseDown(e); if (!e.shiftKey) handleMouseDown(e); }}
+          onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClick}
-          onLoad={handleImageLoad}
-          onContextMenu={(onReplaceWithClipboard || onEditCaption || onDelete || mediaType || onExtractOcr) ? (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setImageContextMenu({ x: e.clientX, y: e.clientY });
-          } : undefined}
         />
 
-        {/* SVG annotation overlay — same transform as img, covers image pixels exactly */}
-        {displayedSize && (annotations.length > 0 || drawMode || drawPreview !== null) && (
-          <svg
-            ref={svgRef}
-            style={{
-              position: 'absolute',
-              width: displayedSize.w,
-              height: displayedSize.h,
-              ...imgTransformStyle,
-              cursor: drawMode ? 'crosshair' : 'default',
-              pointerEvents: drawMode ? 'all' : (annotations.length > 0 ? 'all' : 'none'),
-            }}
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-            onMouseDown={drawMode ? handleSvgMouseDown : undefined}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!drawMode) setSelectedAnnId(null);
-            }}
-            onContextMenu={(onReplaceWithClipboard || onEditCaption || onDelete || mediaType || onExtractOcr) ? (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setImageContextMenu({ x: e.clientX, y: e.clientY });
-            } : undefined}
-          >
-            {/* Transparent background to catch clicks for deselect / draw start */}
-            <rect x="0" y="0" width="100" height="100" fill="transparent" />
-
-            {annotations.map(ann => renderAnnotation(ann))}
-
-            {drawPreview && (() => {
-              const p = drawPreview;
-              const fakeAnn: ImageAnnotation = {
-                id: -1, image_type: 'image', image_id: 0, ann_type: activeTool,
-                x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2,
-                color: activeColor, stroke_width: STROKE_WIDTH, created_at: '',
-              };
-              return renderAnnotation(fakeAnn, true);
-            })()}
-          </svg>
-        )}
-
-        {/* Tag chips — top-left */}
-        {currentImageTags.length > 0 && (
-          <div className="absolute top-12 left-20 flex flex-wrap gap-1 pointer-events-none">
-            {currentImageTags.map(tag => (
-              <span
-                key={tag.name}
-                className="bg-orange-500/80 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-              >
-                #{tag.name}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* OCR selection rectangle overlay */}
-        {ocrSelectStart && ocrSelectEnd && (() => {
-          const x = Math.min(ocrSelectStart.x, ocrSelectEnd.x);
-          const y = Math.min(ocrSelectStart.y, ocrSelectEnd.y);
-          const w = Math.abs(ocrSelectEnd.x - ocrSelectStart.x);
-          const h = Math.abs(ocrSelectEnd.y - ocrSelectStart.y);
-          return (
-            <div
-              style={{ position: 'fixed', left: x, top: y, width: w, height: h, pointerEvents: 'none', zIndex: 55 }}
-              className="border-2 border-dashed border-blue-400 bg-blue-400/15"
-            />
-          );
-        })()}
-
-        {/* OCR loading spinner */}
-        {isOcrLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-50">
-            <div className="text-white text-sm bg-black/70 px-4 py-2 rounded-lg">
-              Detecting text…
+        {/* Audio buttons + caption — anchored to bottom of image area */}
+        <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-2 px-4 pointer-events-none">
+          {currentImageAudios.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-2 pointer-events-auto">
+              {currentImageAudios.map((audio, i) => (
+                <div key={audio.id} className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const label = image.caption || `Image ${selectedIndex + 1}`;
+                      onPlayImageAudio?.(audio, label);
+                    }}
+                    className="bg-white/20 hover:bg-white/30 text-white rounded-full px-3 py-1 text-xs flex items-center gap-1 transition-colors"
+                  >
+                    🔊 {i + 1}{audio.duration ? ` (${fmtSecs(audio.duration)})` : ''}
+                  </button>
+                  {onDeleteImageAudio && image?.id && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteImageAudio(audio.id, image.id!);
+                      }}
+                      className="text-white/40 hover:text-red-400 text-xs transition-colors pointer-events-auto"
+                      title="Delete audio"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
-          </div>
-        )}
-
-        {/* Shift+drag hint */}
-        {!isOcrLoading && !ocrSelectStart && mediaType && image?.id && (
-          <div className="absolute bottom-2 right-2 text-[11px] text-white/25 pointer-events-none select-none">
-            Shift + drag to tag from text
-          </div>
-        )}
-
-        {/* Image caption — always floats at bottom */}
-        {image.caption && (
-          <div className="absolute bottom-4 left-0 right-0 flex justify-center px-4 pointer-events-none">
-            <p className="text-sm text-white/90 text-center italic font-light max-w-2xl">
+          )}
+          {image.caption && (
+            <p className="text-sm text-white/90 text-center italic font-light max-w-2xl pointer-events-none">
               {image.caption}
             </p>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Next button */}
         {selectedIndex < images.length - 1 && (
@@ -1233,458 +977,37 @@ export default function ImageLightbox({
             ›
           </button>
         )}
-
-        {/* Image context menu */}
-        {imageContextMenu && (
-          <div
-            style={{ position: 'fixed', top: imageContextMenu.y, left: imageContextMenu.x, zIndex: 60 }}
-            className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl py-1 min-w-[200px]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {onEditCaption && (
-              <button
-                className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
-                onClick={() => { onEditCaption(); setImageContextMenu(null); }}
-              >
-                <span>✏️</span> {image.caption ? 'Edit caption' : 'Add caption'}
-              </button>
-            )}
-            {onReplaceWithClipboard && onEditCaption && (
-              <div className="border-t border-gray-700 my-1" />
-            )}
-            {onReplaceWithClipboard && (
-              <button
-                className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
-                onClick={() => { onReplaceWithClipboard(); setImageContextMenu(null); }}
-              >
-                <span>📋</span> Replace with clipboard
-              </button>
-            )}
-            {mediaType && image?.id && (onEditCaption || onReplaceWithClipboard) && (
-              <div className="border-t border-gray-700 my-1" />
-            )}
-            {mediaType && image?.id && (
-              <button
-                className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
-                onClick={() => { setShowTagModal(true); setImageContextMenu(null); }}
-              >
-                <span>🏷️</span> Tags
-              </button>
-            )}
-            {onDelete && (mediaType || onEditCaption || onReplaceWithClipboard) && (
-              <div className="border-t border-gray-700 my-1" />
-            )}
-            {onDelete && (
-              <button
-                className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2"
-                onClick={() => { setImageContextMenu(null); onDelete(); }}
-              >
-                <span>🗑️</span> Delete
-              </button>
-            )}
-            {onExtractOcr && (onDelete || mediaType || onEditCaption || onReplaceWithClipboard) && (
-              <div className="border-t border-gray-700 my-1" />
-            )}
-            {onExtractOcr && (
-              <button
-                className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
-                onClick={async () => {
-                  setImageContextMenu(null);
-                  setOcrCaption2Status('running');
-                  try {
-                    await onExtractOcr();
-                    setOcrCaption2Status('done');
-                  } catch {
-                    setOcrCaption2Status('error');
-                  }
-                  setTimeout(() => setOcrCaption2Status('idle'), 3000);
-                }}
-              >
-                <span>🔍</span> Extract OCR text
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Tag modal */}
-        {showTagModal && mediaType && image?.id && (
-          <TagModal
-            mediaType={mediaType}
-            mediaId={image.id}
-            title={image.caption ?? undefined}
-            ocrSuggestion={ocrSuggestion ?? undefined}
-            onClose={() => {
-              setShowTagModal(false);
-              setOcrSuggestion(null);
-              window.electronAPI.tags.getByMedia(mediaType, image.id!).then(tags => {
-                setCurrentImageTags(tags);
-                onTagsChanged?.(image.id!, tags.map((t: { name: string }) => t.name));
-              });
-            }}
-          />
-        )}
-
-        {/* Audio tag modal */}
-        {audioTagModalId != null && audioTagMediaType && (
-          <TagModal
-            mediaType={audioTagMediaType as import('../../types').MediaTagType}
-            mediaId={audioTagModalId}
-            title="Audio Tags"
-            onClose={() => {
-              const closingId = audioTagModalId;
-              setAudioTagModalId(null);
-              setAudioTagMediaType(null);
-              onAudioTagsChanged?.(closingId);
-            }}
-          />
-        )}
       </div>
 
-      {/* ── Annotation toolbar (only when mediaType present so we can persist) ── */}
-      {mediaType && image?.id && (
+      {/* ── Embedded player bar ── */}
+      {showPlayerBar && currentAudio && (
         <div
-          className="flex-shrink-0 bg-black/70 border-t border-white/10 px-4 py-1.5 flex items-center gap-3"
+          className="flex-shrink-0 bg-gray-900 border-t border-blue-700/50"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Draw toggle */}
-          <button
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              drawMode
-                ? 'bg-blue-600 text-white'
-                : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
-            }`}
-            onClick={() => {
-              setDrawMode(d => !d);
-              setSelectedAnnId(null);
-              setDrawPreview(null);
-              isDrawingRef.current = false;
-            }}
-            title="Toggle draw mode (Esc to exit)"
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <path d="M2 10L8.5 2.5a1.5 1.5 0 012 2L4 12H2V10z"/>
-            </svg>
-            Draw
-          </button>
-
-          {/* Tool selector — only when in draw mode */}
-          {drawMode && (
-            <>
-              <div className="w-px h-4 bg-white/20" />
-              <div className="flex gap-1">
-                <button
-                  className={`flex items-center justify-center w-7 h-7 rounded transition-colors ${
-                    activeTool === 'rect'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
-                  }`}
-                  onClick={() => setActiveTool('rect')}
-                  title="Rectangle"
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <rect x="1.5" y="2.5" width="9" height="7" rx="0.5"/>
-                  </svg>
-                </button>
-                <button
-                  className={`flex items-center justify-center w-7 h-7 rounded transition-colors ${
-                    activeTool === 'line'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
-                  }`}
-                  onClick={() => setActiveTool('line')}
-                  title="Line"
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <line x1="1.5" y1="10.5" x2="10.5" y2="1.5"/>
-                  </svg>
-                </button>
-              </div>
-
-              {/* Color palette */}
-              <div className="w-px h-4 bg-white/20" />
-              <div className="flex gap-1">
-                {ANNOTATION_COLORS.map(color => (
-                  <button
-                    key={color}
-                    className={`w-5 h-5 rounded-full transition-transform ${
-                      activeColor === color ? 'scale-125 ring-2 ring-white ring-offset-1 ring-offset-black' : 'hover:scale-110'
-                    }`}
-                    style={{ backgroundColor: color, border: color === '#ffffff' ? '1px solid rgba(255,255,255,0.3)' : 'none' }}
-                    onClick={() => setActiveColor(color)}
-                    title={color}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Clear all — only when there are annotations */}
-          {annotations.length > 0 && (
-            <>
-              <div className="w-px h-4 bg-white/20" />
-              <button
-                className="flex items-center gap-1 px-2 py-1 rounded text-xs text-red-400/80 hover:text-red-400 hover:bg-white/10 transition-colors"
-                onClick={clearAllAnnotations}
-                title="Clear all annotations"
-              >
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <path d="M3 10L9 4M9 10L3 4"/>
-                </svg>
-                Clear all
-              </button>
-            </>
-          )}
-
-          {/* Hint text */}
-          {drawMode && (
-            <span className="ml-auto text-white/30 text-[10px]">
-              Drag to draw · Esc to exit
-            </span>
-          )}
-          {!drawMode && annotations.length > 0 && selectedAnnId === null && (
-            <span className="ml-auto text-white/30 text-[10px]">
-              Click shape to select · Del to delete
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* ── Strip: related images (left) + audios (right) — also shown in child lightbox if audios exist ── */}
-      {((!disableChildImages && mediaType && image?.id) || (disableChildImages && currentImageAudios.length > 0)) && (
-        <div
-          className="flex-shrink-0 bg-black/80 border-t border-white/10 px-4 py-2 flex items-center gap-3"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Left: thumbnail row — only in parent lightbox */}
-          {!disableChildImages && <div className="flex-1 min-w-0">
-            <p className="text-white/40 text-[10px] mb-1">Related images</p>
-            <DndContext
-              sensors={childSensors}
-              collisionDetection={closestCenter}
-              onDragStart={({ active }) => setDraggingChildId(active.id as number)}
-              onDragEnd={handleChildDragEnd}
+          <div className="flex items-center gap-3 px-4 py-2">
+            <span className="text-blue-400 text-base flex-shrink-0">🔊</span>
+            <span
+              className="text-sm text-blue-300 truncate flex-shrink-0 max-w-[180px]"
+              title={currentAudio.caption || playerLabel}
             >
-              <SortableContext items={imageChildren.map(c => c.id)} strategy={horizontalListSortingStrategy}>
-                <div className="flex gap-2 overflow-x-auto pb-0.5">
-                  {imageChildren.map(child => (
-                    <SortableChildThumb
-                      key={child.id}
-                      child={child}
-                      audioCount={(childAudiosMap[child.id] ?? []).length}
-                      tagCount={childTagCountMap[child.id] ?? 0}
-                      colors={childImageColorsMap[child.id] ?? []}
-                      onOpen={() => setSelectedChildId(child.id)}
-                      onDelete={() => setPendingDeleteChild(child.id)}
-                    />
-                  ))}
-                  {/* Add placeholder — outside SortableContext so it's not draggable */}
-                  <button
-                    className="flex-shrink-0 w-14 h-14 rounded-lg border-2 border-dashed border-white/20 hover:border-white/40 flex items-center justify-center transition-colors"
-                    onClick={handleAddChild}
-                    title="Paste image from clipboard (Cmd+V)"
-                  >
-                    <span className="text-white/40 text-2xl leading-none">+</span>
-                  </button>
-                </div>
-              </SortableContext>
-              <DragOverlay>
-                {draggingChildId != null && (() => {
-                  const child = imageChildren.find(c => c.id === draggingChildId);
-                  if (!child) return null;
-                  return (
-                    <div className="w-14 h-14 rounded-lg overflow-hidden shadow-2xl ring-2 ring-white/50 opacity-90">
-                      <img
-                        src={window.electronAPI.paths.getFileUrl(child.thumbnail_path ?? child.file_path)}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  );
-                })()}
-              </DragOverlay>
-            </DndContext>
-          </div>}
-
-          {/* Right: main image audios — compact horizontal chip row */}
-          {currentImageAudios.length > 0 && (
-            <>
-              {!disableChildImages && <div className="w-px self-stretch bg-white/10 flex-shrink-0" />}
-              <div className="flex-shrink-0 min-w-0 max-w-[220px]">
-                <p className="text-white/40 text-[10px] mb-1">Audios</p>
-                <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
-                  {currentImageAudios.map((audio, i) => (
-                    <div key={audio.id} className="relative flex-shrink-0 group/chip">
-                      <button
-                        title={audio.caption ?? `Audio ${i + 1}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onPlayImageAudio?.(audio, image.caption || `Image ${selectedIndex + 1}`);
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setEditingAudioCaptionId(audio.id);
-                          setAudioCaptionText(audio.caption ?? '');
-                        }}
-                        className="flex items-center gap-1 bg-white/15 hover:bg-white/25 text-white rounded-full px-2.5 py-1 text-[11px] transition-colors whitespace-nowrap"
-                      >
-                        ▶ {i + 1}{audio.duration ? ` · ${fmtSecs(audio.duration)}` : ''}
-                      </button>
-                      {onDeleteImageAudio && image?.id && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPendingDeleteAudio({ audioId: audio.id, imageId: image.id!, index: i });
-                          }}
-                          className="absolute -top-1.5 -right-1 w-3.5 h-3.5 bg-black/80 border border-red-500/50 rounded-full text-red-400 text-[9px] leading-none opacity-0 group-hover/chip:opacity-100 transition-opacity flex items-center justify-center"
-                          title="Delete audio"
-                        >×</button>
-                      )}
-                      {editingAudioCaptionId === audio.id && onUpdateImageAudioCaption && image?.id && (
-                        <div
-                          className="absolute bottom-full mb-2 left-0 z-20 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl p-2.5 w-48"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <p className="text-white/40 text-[10px] mb-1.5">Caption (right-click to edit)</p>
-                          <textarea
-                            autoFocus
-                            value={audioCaptionText}
-                            onChange={(e) => setAudioCaptionText(e.target.value)}
-                            onBlur={() => saveAudioCaption(audio.id, image.id!)}
-                            onKeyDown={(e) => {
-                              e.stopPropagation();
-                              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveAudioCaption(audio.id, image.id!); }
-                              else if (e.key === 'Escape') { setEditingAudioCaptionId(null); setAudioCaptionText(''); }
-                            }}
-                            rows={2}
-                            className="w-full text-xs bg-black/60 text-white/90 rounded-lg px-2 py-1.5 border border-white/20 focus:outline-none focus:border-white/50 resize-none"
-                            placeholder="Add caption…"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── Child image lightbox ── */}
-      {selectedChildId != null && (() => {
-        const selectedChildIndex = imageChildren.findIndex(c => c.id === selectedChildId);
-        if (selectedChildIndex === -1) return null;
-        const child = imageChildren[selectedChildIndex];
-        const childAudiosMapForLightbox = Object.fromEntries(
-          imageChildren.map(c => [c.id, (childAudiosMap[c.id] ?? []) as AnyImageAudio[]])
-        );
-        return (
-          <ImageLightbox
-            images={imageChildren.map(c => ({ id: c.id, file_path: c.file_path, caption: c.caption }))}
-            selectedIndex={selectedChildIndex}
-            onClose={() => {
-              // Refresh tag counts and colors for all children when child lightbox closes
-              Promise.all(
-                imageChildren.map(c =>
-                  window.electronAPI.tags.getByMedia('image_child', c.id)
-                    .then((tags: { name: string }[]) => [c.id, tags.length] as const)
-                )
-              ).then(entries => setChildTagCountMap(Object.fromEntries(entries)));
-              window.electronAPI.mediaColors.getBatch('image_child', imageChildren.map(c => c.id))
-                .then(setChildImageColorsMap);
-              setSelectedChildId(null);
-            }}
-            onNavigate={(newIndex) => setSelectedChildId(imageChildren[newIndex].id)}
-            mediaType="image_child"
-            imageType="image_child"
-            disableChildImages={true}
-            imageAudiosMap={childAudiosMapForLightbox}
-            onRecordForImage={onRecordForImage ? (imageId) => handleRecordForChild(imageId) : undefined}
-            onDeleteImageAudio={(audioId, imageId) => handleDeleteChildAudio(audioId, imageId)}
-            onPlayImageAudio={onPlayImageAudio}
-            onUpdateImageAudioCaption={(audioId, imageId, caption) =>
-              handleUpdateChildAudioCaption(audioId, imageId, caption)
-            }
-            onReplaceWithClipboard={handleReplaceChildWithClipboard}
-            onEditCaption={() => {
-              setChildCaptionEdit({ childId: child.id, value: child.caption ?? '' });
-            }}
-            onExtractOcr={async () => {
-              await window.electronAPI.ocr.extractCaption2('image_child', child.id, child.file_path);
-            }}
-            onDelete={() => setPendingDeleteChild(child.id)}
-          />
-        );
-      })()}
-
-      {/* ── Child caption editor ── */}
-      {childCaptionEdit != null && (
-        <div
-          className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl px-6 py-5 flex flex-col gap-3 max-w-xs w-full mx-4">
-            <p className="text-white text-sm">Edit caption</p>
-            <textarea
-              autoFocus
-              value={childCaptionEdit.value}
-              onChange={(e) => setChildCaptionEdit(prev => prev ? { ...prev, value: e.target.value } : null)}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                if (e.key === 'Escape') setChildCaptionEdit(null);
-              }}
-              rows={3}
-              className="w-full text-sm bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:outline-none focus:border-white/50 resize-none"
-              placeholder="Add caption…"
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => setChildCaptionEdit(null)}
-                className="flex-1 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  const { childId, value } = childCaptionEdit;
-                  const updated = await window.electronAPI.imageChildren.updateCaption(childId, value.trim() || null);
-                  setImageChildren(prev => prev.map(c => c.id === childId ? { ...c, caption: updated.caption } : c));
-                  setChildCaptionEdit(null);
-                }}
-                className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
-              >
-                Save
-              </button>
+              {currentAudio.caption || playerLabel}
+            </span>
+            <div className="flex-1 min-w-0">
+              <ThemedAudioPlayer
+                src={window.electronAPI.paths.getFileUrl(currentAudio.file_path)}
+                theme="blue"
+              />
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Delete child confirmation ── */}
-      {pendingDeleteChild != null && (
-        <div
-          className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl px-6 py-5 flex flex-col items-center gap-4 max-w-xs w-full mx-4">
-            <p className="text-white text-sm text-center">
-              Delete this related image?<br />
-              <span className="text-gray-400 text-xs">This cannot be undone.</span>
-            </p>
-            <div className="flex gap-3 w-full">
-              <button
-                onClick={() => setPendingDeleteChild(null)}
-                className="flex-1 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDeleteChild(pendingDeleteChild)}
-                className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
-              >
-                Delete
-              </button>
-            </div>
+            <button
+              onClick={dismissPlayer}
+              className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full
+                         bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white
+                         transition-colors text-xs"
+              title="Dismiss"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
@@ -1692,7 +1015,7 @@ export default function ImageLightbox({
       {/* ── Embedded recording bar ── */}
       {showRecordingBar && (
         <div
-          className="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 z-10"
+          className="flex-shrink-0 bg-gray-900 border-t border-gray-700"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center gap-3 px-4 h-14">
@@ -1766,38 +1089,6 @@ export default function ImageLightbox({
                 </button>
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Delete confirmation overlay ── */}
-      {pendingDeleteAudio && (
-        <div
-          className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl px-6 py-5 flex flex-col items-center gap-4 max-w-xs w-full mx-4">
-            <p className="text-white text-sm text-center">
-              Delete <span className="font-semibold text-red-400">Audio {pendingDeleteAudio.index + 1}</span>?<br />
-              <span className="text-gray-400 text-xs">This cannot be undone.</span>
-            </p>
-            <div className="flex gap-3 w-full">
-              <button
-                onClick={() => setPendingDeleteAudio(null)}
-                className="flex-1 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  onDeleteImageAudio?.(pendingDeleteAudio.audioId, pendingDeleteAudio.imageId);
-                  setPendingDeleteAudio(null);
-                }}
-                className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
-              >
-                Delete
-              </button>
-            </div>
           </div>
         </div>
       )}

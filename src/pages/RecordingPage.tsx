@@ -11,7 +11,6 @@ import SimpleAudioRecordModal from '../components/audio/SimpleAudioRecordModal';
 import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../context/ImageAudioPlayerContext';
-import { useDurationAudioPlayer } from '../context/DurationAudioPlayerContext';
 import { SYNC_COMPLETED_EVENT } from '../utils/events';
 import DurationList from '../components/recordings/DurationList';
 import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
@@ -30,13 +29,7 @@ import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
 import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
-import { IMAGE_COLOR_KEYS, IMAGE_COLORS } from '../utils/imageColors';
-import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState } from '../types';
-import SearchNavBanner from '../components/search/SearchNavBanner';
-import { TagModal } from '../components/common/TagModal';
-import type { MediaTagType } from '../types';
-import RecordingCanvas from '../components/canvas/RecordingCanvas';
-import DurationCanvas from '../components/canvas/DurationCanvas';
+import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -72,6 +65,10 @@ export default function RecordingPage() {
     addDurationAudioFromBuffer,
     deleteDurationAudio,
     updateDurationAudioCaption,
+    durationImageAudiosCache,
+    getDurationImageAudios,
+    refreshDurationImageAudios,
+    deleteDurationImageAudio,
     getDurationCodeSnippets,
     addDurationCodeSnippet,
     updateDurationCodeSnippet,
@@ -151,8 +148,6 @@ export default function RecordingPage() {
   const [selectedDurationVideoPath, setSelectedDurationVideoPath] = useState<string | null>(null);
   const audioRecording = useAudioRecording();
   const imageAudioPlayer = useImageAudioPlayer();
-  const durationAudioPlayer = useDurationAudioPlayer();
-  const [durationAudioMarkersCache, setDurationAudioMarkersCache] = useState<Record<number, AudioMarker[]>>({});
   // Local state to track media color changes for rendering (priority colors - left/right bars)
   const [mediaColorOverrides] = useState<Record<string, DurationColor>>({});
   // Local state to track media group color changes for instant visual feedback (group colors - top bar)
@@ -1172,203 +1167,11 @@ export default function RecordingPage() {
   // Build maps for duration image audio feature
   const imageAudiosMap: Record<number, DurationImageAudio[]> = {};
   const audioCountMap: Record<number, number> = {};
-  const tagCountMap: Record<number, number> = {};
-  const tagNamesMap: Record<number, string[]> = {};
   for (const img of activeDurationImages) {
     const audios = durationImageAudiosCache[img.id] ?? [];
     imageAudiosMap[img.id] = audios;
     audioCountMap[img.id] = audios.length;
-    const tags = durationImageTagsCache[img.id] ?? [];
-    tagCountMap[img.id] = tags.length;
-    tagNamesMap[img.id] = tags;
   }
-
-  // Fetch tags for active duration images so tag badges + overlays render
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (activeDurationImages.length === 0) {
-      setDurationImageTagsCache({});
-      return;
-    }
-    Promise.all(
-      activeDurationImages.map(img =>
-        window.electronAPI.tags.getByMedia('duration_image', img.id)
-          .then(tags => [img.id, tags.map((t: { name: string }) => t.name)] as const)
-      )
-    ).then(entries => setDurationImageTagsCache(Object.fromEntries(entries)));
-  }, [activeDurationId, durationImagesCache]);
-
-  // Fetch color labels for active duration images
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (activeDurationImages.length === 0) {
-      setDurationImageColorsCache({});
-      return;
-    }
-    window.electronAPI.mediaColors.getBatch('duration_image', activeDurationImages.map(i => i.id))
-      .then(setDurationImageColorsCache);
-  }, [activeDurationId, durationImagesCache]);
-
-  // Pre-fetch audios for all recording-level images so badges render in the grid
-  useEffect(() => {
-    for (const img of images) {
-      if (img.id !== undefined && recordingImageAudiosCache[img.id] === undefined) {
-        loadRecordingImageAudios(img.id);
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images]);
-
-  // Fetch color labels for recording-level images
-  useEffect(() => {
-    if (images.length === 0) {
-      setRecordingImageColorsCache({});
-      return;
-    }
-    window.electronAPI.mediaColors.getBatch('image', images.map(i => i.id))
-      .then(setRecordingImageColorsCache);
-  }, [images]);
-
-  // Fetch child image counts for recording-level images
-  useEffect(() => {
-    if (images.length === 0) { setRecordingImageChildCountMap({}); return; }
-    Promise.all(
-      images.map(img =>
-        window.electronAPI.imageChildren.getByParent('image', img.id)
-          .then((children: { id: number }[]) => [img.id, children.length] as const)
-      )
-    ).then(entries => setRecordingImageChildCountMap(Object.fromEntries(entries)));
-  }, [images]);
-
-  // Fetch child image counts for active duration images
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (activeDurationImages.length === 0) { setDurationImageChildCountMap({}); return; }
-    Promise.all(
-      activeDurationImages.map(img =>
-        window.electronAPI.imageChildren.getByParent('duration_image', img.id)
-          .then((children: { id: number }[]) => [img.id, children.length] as const)
-      )
-    ).then(entries => setDurationImageChildCountMap(Object.fromEntries(entries)));
-  }, [activeDurationId, durationImagesCache]);
-
-  // Fetch color labels for duration-level audios
-  useEffect(() => {
-    if (!activeDurationAudios.length) { setDurationAudioColorsCache({}); return; }
-    window.electronAPI.mediaColors.getBatch('duration_audio', activeDurationAudios.map(a => a.id))
-      .then(setDurationAudioColorsCache);
-  }, [activeDurationAudios]);
-
-  // Fetch color labels for recording-level audios
-  useEffect(() => {
-    if (!recordingAudios.length) { setRecordingAudioColorsCache({}); return; }
-    window.electronAPI.mediaColors.getBatch('audio', recordingAudios.map(a => a.id))
-      .then(setRecordingAudioColorsCache);
-  }, [recordingAudios]);
-
-  // Fetch color labels for recording-level image audios
-  useEffect(() => {
-    const allAudioIds = Object.values(recordingImageAudiosCache).flat().map(a => a.id);
-    if (allAudioIds.length === 0) { setRecordingImageAudioColorsCache({}); return; }
-    window.electronAPI.mediaColors.getBatch('image_audio', allAudioIds)
-      .then(setRecordingImageAudioColorsCache);
-  }, [recordingImageAudiosCache]);
-
-  // Fetch color labels for duration image audios
-  useEffect(() => {
-    const allAudioIds = activeDurationImages.flatMap(img => durationImageAudiosCache[img.id] ?? []).map(a => a.id);
-    if (allAudioIds.length === 0) { setDurationImageAudioColorsCache({}); return; }
-    window.electronAPI.mediaColors.getBatch('duration_image_audio', allAudioIds)
-      .then(setDurationImageAudioColorsCache);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDurationId, durationImageAudiosCache]);
-
-  // Fetch color labels for recording-level videos
-  useEffect(() => {
-    const recordingVideos = recording?.videos ?? [];
-    if (!recordingVideos.length) { setVideoColorsCache({}); return; }
-    window.electronAPI.mediaColors.getBatch('video', recordingVideos.map(v => v.id))
-      .then(setVideoColorsCache);
-  }, [recording?.videos]);
-
-  // Fetch color labels for duration-level videos
-  useEffect(() => {
-    if (!activeDurationVideos.length) { setDurationVideoColorsCache({}); return; }
-    window.electronAPI.mediaColors.getBatch('duration_video', activeDurationVideos.map(v => v.id))
-      .then(setDurationVideoColorsCache);
-  }, [activeDurationVideos]);
-
-  // Fetch tag counts for recording-level videos
-  useEffect(() => {
-    const recordingVideos = recording?.videos ?? [];
-    if (!recordingVideos.length) { setVideoTagCountMap({}); return; }
-    Promise.all(
-      recordingVideos.map(v =>
-        window.electronAPI.tags.getByMedia('video', v.id)
-          .then((tags: { name: string }[]) => [v.id, tags.length] as const)
-      )
-    ).then(entries => setVideoTagCountMap(Object.fromEntries(entries)));
-  }, [recording?.videos]);
-
-  // Fetch tag counts for duration-level videos
-  useEffect(() => {
-    if (!activeDurationVideos.length) { setDurationVideoTagCountMap({}); return; }
-    Promise.all(
-      activeDurationVideos.map(v =>
-        window.electronAPI.tags.getByMedia('duration_video', v.id)
-          .then((tags: { name: string }[]) => [v.id, tags.length] as const)
-      )
-    ).then(entries => setDurationVideoTagCountMap(Object.fromEntries(entries)));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDurationId, activeDurationVideos.length]);
-
-  // Fetch tag counts for recording-level audios
-  useEffect(() => {
-    if (!recordingAudios.length) { setRecordingAudioTagCountMap({}); return; }
-    Promise.all(
-      recordingAudios.map(a =>
-        window.electronAPI.tags.getByMedia('audio', a.id)
-          .then((tags: { name: string }[]) => [a.id, tags.length] as const)
-      )
-    ).then(entries => setRecordingAudioTagCountMap(Object.fromEntries(entries)));
-  }, [recordingAudios]);
-
-  // Fetch tag counts for duration-level audios
-  useEffect(() => {
-    if (!activeDurationAudios.length) { setDurationAudioTagCountMap({}); return; }
-    Promise.all(
-      activeDurationAudios.map(a =>
-        window.electronAPI.tags.getByMedia('duration_audio', a.id)
-          .then((tags: { name: string }[]) => [a.id, tags.length] as const)
-      )
-    ).then(entries => setDurationAudioTagCountMap(Object.fromEntries(entries)));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDurationId, activeDurationAudios]);
-
-  // Fetch tag counts for recording-level image audios
-  useEffect(() => {
-    const allAudios = Object.values(recordingImageAudiosCache).flat();
-    if (!allAudios.length) { setRecordingImageAudioTagCountMap({}); return; }
-    Promise.all(
-      allAudios.map(a =>
-        window.electronAPI.tags.getByMedia('image_audio', a.id)
-          .then((tags: { name: string }[]) => [a.id, tags.length] as const)
-      )
-    ).then(entries => setRecordingImageAudioTagCountMap(Object.fromEntries(entries)));
-  }, [recordingImageAudiosCache]);
-
-  // Fetch tag counts for duration image audios
-  useEffect(() => {
-    const allAudios = activeDurationImages.flatMap(img => durationImageAudiosCache[img.id] ?? []);
-    if (!allAudios.length) { setDurationImageAudioTagCountMap({}); return; }
-    Promise.all(
-      allAudios.map(a =>
-        window.electronAPI.tags.getByMedia('duration_image_audio', a.id)
-          .then((tags: { name: string }[]) => [a.id, tags.length] as const)
-      )
-    ).then(entries => setDurationImageAudioTagCountMap(Object.fromEntries(entries)));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDurationId, durationImageAudiosCache]);
 
   const handleRecordForImage = (imageId: number) => {
     if (!activeDurationId || !id) return;
@@ -1382,136 +1185,12 @@ export default function RecordingPage() {
     });
   };
 
-  const handlePlayImageAudio = async (audio: DurationImageAudio, label: string) => {
-    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'duration_image');
-    imageAudioPlayer.play(
-      audio,
-      label,
-      markers,
-      async (audioId, caption) => {
-        if ('duration_image_id' in audio) {
-          return updateDurationImageAudioCaption(audioId, audio.duration_image_id, caption);
-        }
-      },
-      'duration_image_audio'
-    );
+  const handlePlayImageAudio = (audio: DurationImageAudio, label: string) => {
+    imageAudioPlayer.play(audio, label);
   };
 
   const handleDeleteImageAudio = async (audioId: number, imageId: number) => {
     await deleteDurationImageAudio(audioId, imageId);
-  };
-
-  const handleUpdateImageAudioCaption = async (audioId: number, imageId: number, caption: string | null) => {
-    const updated = await updateDurationImageAudioCaption(audioId, imageId, caption);
-    imageAudioPlayer.syncCurrentAudio(updated);
-  };
-
-  // Recording-level image audio helpers
-  const loadRecordingImageAudios = async (imageId: number) => {
-    const audios = await window.electronAPI.imageAudios.getByImage(imageId);
-    setRecordingImageAudiosCache(prev => ({ ...prev, [imageId]: audios }));
-  };
-
-  const recordingImageAudiosMap: Record<number, AnyImageAudio[]> = {};
-  const recordingImageAudioCountMap: Record<number, number> = {};
-  for (const img of images) {
-    const audios = recordingImageAudiosCache[img.id] ?? [];
-    recordingImageAudiosMap[img.id] = audios;
-    recordingImageAudioCountMap[img.id] = audios.length;
-  }
-
-  const handleToggleRecordingImageColor = async (imageId: number, colorKey: string) => {
-    const updated = await window.electronAPI.mediaColors.toggle('image', imageId, colorKey);
-    setRecordingImageColorsCache(prev => ({ ...prev, [imageId]: updated }));
-  };
-
-  const handleToggleDurationImageColor = async (imageId: number, colorKey: string) => {
-    const updated = await window.electronAPI.mediaColors.toggle('duration_image', imageId, colorKey);
-    setDurationImageColorsCache(prev => ({ ...prev, [imageId]: updated }));
-  };
-
-  const handleToggleRecordingAudioColor = async (audioId: number, colorKey: string) => {
-    const updated = await window.electronAPI.mediaColors.toggle('audio', audioId, colorKey);
-    setRecordingAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
-    setContextMenuShowColors(false);
-  };
-
-  const handleToggleDurationAudioColor = async (audioId: number, colorKey: string) => {
-    const updated = await window.electronAPI.mediaColors.toggle('duration_audio', audioId, colorKey);
-    setDurationAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
-    setContextMenuShowColors(false);
-  };
-
-  const handleToggleVideoColor = async (videoId: number, colorKey: string) => {
-    const updated = await window.electronAPI.mediaColors.toggle('video', videoId, colorKey);
-    setVideoColorsCache(prev => ({ ...prev, [videoId]: updated }));
-    setContextMenuShowColors(false);
-  };
-
-  const handleToggleDurationVideoColor = async (videoId: number, colorKey: string) => {
-    const updated = await window.electronAPI.mediaColors.toggle('duration_video', videoId, colorKey);
-    setDurationVideoColorsCache(prev => ({ ...prev, [videoId]: updated }));
-    setContextMenuShowColors(false);
-  };
-
-  const handleToggleRecordingImageAudioColor = async (audioId: number, colorKey: string) => {
-    const updated = await window.electronAPI.mediaColors.toggle('image_audio', audioId, colorKey);
-    setRecordingImageAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
-  };
-
-  const handleToggleDurationImageAudioColor = async (audioId: number, colorKey: string) => {
-    const updated = await window.electronAPI.mediaColors.toggle('duration_image_audio', audioId, colorKey);
-    setDurationImageAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
-  };
-
-  const handleRecordForRecordingImage = (imageId: number) => {
-    if (!id) return;
-    const img = images.find(i => i.id === imageId);
-    audioRecording.startRecording({
-      type: 'recording_image',
-      imageId,
-      recordingId: id,
-      label: img?.caption || `Image ${imageId}`,
-    });
-  };
-
-  const handlePlayRecordingImageAudio = async (audio: AnyImageAudio, label: string) => {
-    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'recording_image');
-    const imageAudio = audio as ImageAudio;
-    imageAudioPlayer.play(
-      audio,
-      label,
-      markers,
-      async (audioId, caption) => {
-        const updated = await window.electronAPI.imageAudios.updateCaption(audioId, caption);
-        setRecordingImageAudiosCache(prev => ({
-          ...prev,
-          [imageAudio.image_id]: (prev[imageAudio.image_id] ?? []).map(a => a.id === audioId ? updated : a),
-        }));
-        return updated;
-      },
-      'image_audio'
-    );
-  };
-
-  const handleDeleteRecordingImageAudio = async (audioId: number, imageId: number) => {
-    const audio = (recordingImageAudiosCache[imageId] ?? []).find(a => a.id === audioId);
-    if (audio) {
-      await window.electronAPI.imageAudios.delete(audioId);
-      setRecordingImageAudiosCache(prev => ({
-        ...prev,
-        [imageId]: (prev[imageId] ?? []).filter(a => a.id !== audioId),
-      }));
-    }
-  };
-
-  const handleUpdateRecordingImageAudioCaption = async (audioId: number, imageId: number, caption: string | null) => {
-    const updated = await window.electronAPI.imageAudios.updateCaption(audioId, caption);
-    setRecordingImageAudiosCache(prev => ({
-      ...prev,
-      [imageId]: (prev[imageId] ?? []).map(a => a.id === audioId ? updated : a),
-    }));
-    imageAudioPlayer.syncCurrentAudio(updated);
   };
 
   // Debug: Log cache updates
@@ -2032,11 +1711,6 @@ export default function RecordingPage() {
             onDelete={handleDeleteDurationImage}
             onReorder={handleReorderDurationImages}
             audioCountMap={audioCountMap}
-            tagCountMap={tagCountMap}
-            tagNamesMap={tagNamesMap}
-            childCountMap={durationImageChildCountMap}
-            ocrMap={durationImageOcrMap}
-            imageColorsMap={durationImageColorsCache}
             pastePlaceholder={
               <div className="flex flex-col items-center">
                 <div className="relative w-full max-w-[160px]">
@@ -2732,20 +2406,6 @@ export default function RecordingPage() {
           onRecordForImage={handleRecordForImage}
           onDeleteImageAudio={handleDeleteImageAudio}
           onPlayImageAudio={handlePlayImageAudio}
-          onUpdateImageAudioCaption={handleUpdateImageAudioCaption}
-          onReplaceWithClipboard={handleReplaceDurationImageWithClipboard}
-          onEditCaption={() => {
-            const img = activeDurationImages[selectedDurationImageIndex!];
-            if (img?.id) openCaptionModal('durationImage', img.id, img.caption);
-          }}
-          onExtractOcr={selectedDurationImageIndex !== null && activeDurationImages[selectedDurationImageIndex]?.id ? async () => {
-            const img = activeDurationImages[selectedDurationImageIndex!];
-            await window.electronAPI.ocr.extractCaption2('duration_image', img.id!, img.file_path);
-          } : undefined}
-          mediaType="duration_image"
-          onTagsChanged={(imageId, tagNames) => {
-            setDurationImageTagsCache(prev => ({ ...prev, [imageId]: tagNames }));
-          }}
         />
       )}
 
