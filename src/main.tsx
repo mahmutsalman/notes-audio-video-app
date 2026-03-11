@@ -4,6 +4,8 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { ThemeProvider } from './context/ThemeContext';
 import { ScreenRecordingSettingsProvider } from './context/ScreenRecordingSettingsContext';
+import { AudioRecordingProvider } from './context/AudioRecordingContext';
+import { ImageAudioPlayerProvider } from './context/ImageAudioPlayerContext';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -11,7 +13,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <ThemeProvider>
         <ScreenRecordingSettingsProvider>
-          <App />
+          <AudioRecordingProvider>
+            <ImageAudioPlayerProvider>
+              <App />
+            </ImageAudioPlayerProvider>
+          </AudioRecordingProvider>
         </ScreenRecordingSettingsProvider>
       </ThemeProvider>
     </BrowserRouter>

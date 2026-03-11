@@ -9,6 +9,7 @@ import type {
   DurationImage, CreateDurationImage,
   DurationVideo, CreateDurationVideo,
   DurationAudio, CreateDurationAudio,
+  DurationImageAudio,
   CodeSnippet, CreateCodeSnippet, UpdateCodeSnippet,
   DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
   DurationGroupColor,
@@ -962,6 +963,69 @@ export const DurationCodeSnippetsOperations = {
   deleteByDuration(durationId: number): void {
     const db = getDatabase();
     db.prepare('DELETE FROM duration_code_snippets WHERE duration_id = ?').run(durationId);
+  },
+};
+
+// Duration Image Audios Operations (audio clips attached to individual duration images)
+export const DurationImageAudiosOperations = {
+  getByDurationImage(durationImageId: number): DurationImageAudio[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM duration_image_audios
+      WHERE duration_image_id = ?
+      ORDER BY sort_order, created_at
+    `).all(durationImageId) as DurationImageAudio[];
+  },
+
+  getByDuration(durationId: number): DurationImageAudio[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM duration_image_audios
+      WHERE duration_id = ?
+      ORDER BY sort_order, created_at
+    `).all(durationId) as DurationImageAudio[];
+  },
+
+  getById(id: number): DurationImageAudio | null {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM duration_image_audios WHERE id = ?').get(id) as DurationImageAudio | undefined ?? null;
+  },
+
+  create(data: { duration_image_id: number; duration_id: number; file_path: string; caption?: string | null; duration?: number | null; sort_order?: number }): DurationImageAudio {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO duration_image_audios (duration_image_id, duration_id, file_path, caption, duration, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(
+      data.duration_image_id,
+      data.duration_id,
+      data.file_path,
+      data.caption ?? null,
+      data.duration ?? null,
+      data.sort_order ?? 0
+    );
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM duration_image_audios WHERE id = ?').run(id);
+  },
+
+  updateCaption(id: number, caption: string | null): DurationImageAudio {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_image_audios SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+
+  getMaxSortOrder(durationImageId: number): number {
+    const db = getDatabase();
+    const result = db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) as max_order
+      FROM duration_image_audios WHERE duration_image_id = ?
+    `).get(durationImageId) as { max_order: number };
+    return result.max_order;
   },
 };
 

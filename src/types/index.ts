@@ -142,6 +142,17 @@ export interface DurationAudio {
   created_at: string;
 }
 
+export interface DurationImageAudio {
+  id: number;
+  duration_image_id: number;
+  duration_id: number;
+  file_path: string;
+  caption: string | null;
+  duration: number | null;
+  sort_order: number;
+  created_at: string;
+}
+
 // Screen Recording types
 
 export type ScreenResolution = '480p' | '720p' | '1080p';
@@ -405,6 +416,12 @@ export interface ElectronAPI {
     updateCaption: (id: number, caption: string | null) => Promise<DurationVideo>;
     updateColor: (id: number, color: DurationColor) => Promise<DurationVideo>;
     updateGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<DurationVideo>;
+  };
+  durationImageAudios: {
+    getByDurationImage: (durationImageId: number) => Promise<DurationImageAudio[]>;
+    addFromBuffer: (durationImageId: number, durationId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<DurationImageAudio>;
+    delete: (id: number) => Promise<void>;
+    updateCaption: (id: number, caption: string | null) => Promise<DurationImageAudio>;
   };
   durationAudios: {
     getByDuration: (durationId: number) => Promise<DurationAudio[]>;

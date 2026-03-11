@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Duration, CreateDuration, UpdateDuration, DurationImage, DurationVideo, DurationAudio, DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet } from '../types';
+import type { Duration, CreateDuration, UpdateDuration, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet } from '../types';
+import { SYNC_COMPLETED_EVENT } from '../utils/events';
 
 export function useDurations(recordingId: number | null) {
   const [durations, setDurations] = useState<Duration[]>([]);
@@ -13,6 +14,8 @@ export function useDurations(recordingId: number | null) {
   const [durationAudiosCache, setDurationAudiosCache] = useState<Record<number, DurationAudio[]>>({});
   // Cache of duration code snippets, keyed by duration ID
   const [durationCodeSnippetsCache, setDurationCodeSnippetsCache] = useState<Record<number, DurationCodeSnippet[]>>({});
+  // Cache of duration image audios, keyed by duration image ID
+  const [durationImageAudiosCache, setDurationImageAudiosCache] = useState<Record<number, DurationImageAudio[]>>({});
 
   const fetchDurations = useCallback(async () => {
     if (recordingId === null) {
@@ -337,6 +340,45 @@ export function useDurations(recordingId: number | null) {
     }));
   };
 
+  // Fetch audios for a specific duration image
+  const getDurationImageAudios = useCallback(async (durationImageId: number, force?: boolean): Promise<DurationImageAudio[]> => {
+    let cached: DurationImageAudio[] | undefined;
+    setDurationImageAudiosCache(prev => {
+      cached = prev[durationImageId];
+      return prev;
+    });
+
+    if (!force && cached) {
+      return cached;
+    }
+
+    const audios = await window.electronAPI.durationImageAudios.getByDurationImage(durationImageId);
+    setDurationImageAudiosCache(prev => ({ ...prev, [durationImageId]: audios }));
+    return audios;
+  }, []);
+
+  const refreshDurationImageAudios = useCallback(async (durationImageId: number): Promise<void> => {
+    const audios = await window.electronAPI.durationImageAudios.getByDurationImage(durationImageId);
+    setDurationImageAudiosCache(prev => ({ ...prev, [durationImageId]: audios }));
+  }, []);
+
+  const deleteDurationImageAudio = async (audioId: number, durationImageId: number): Promise<void> => {
+    await window.electronAPI.durationImageAudios.delete(audioId);
+    setDurationImageAudiosCache(prev => ({
+      ...prev,
+      [durationImageId]: (prev[durationImageId] || []).filter(a => a.id !== audioId),
+    }));
+  };
+
+  const updateDurationImageAudioCaption = async (audioId: number, durationImageId: number, caption: string | null): Promise<DurationImageAudio> => {
+    const updated = await window.electronAPI.durationImageAudios.updateCaption(audioId, caption);
+    setDurationImageAudiosCache(prev => ({
+      ...prev,
+      [durationImageId]: (prev[durationImageId] || []).map(a => a.id === audioId ? updated : a),
+    }));
+    return updated;
+  };
+
   // Clear cache for a duration (useful when switching recordings)
   const clearDurationImagesCache = useCallback(() => {
     setDurationImagesCache({});
@@ -432,6 +474,7 @@ export function useDurations(recordingId: number | null) {
     clearDurationVideosCache();
     clearDurationAudiosCache();
     clearDurationCodeSnippetsCache();
+    setDurationImageAudiosCache({});
   }, [recordingId, clearDurationImagesCache, clearDurationVideosCache, clearDurationAudiosCache, clearDurationCodeSnippetsCache]);
 
   return {
@@ -466,6 +509,12 @@ export function useDurations(recordingId: number | null) {
     deleteDurationAudio,
     updateDurationAudioCaption,
     clearDurationAudiosCache,
+    // Duration image audio functions
+    durationImageAudiosCache,
+    getDurationImageAudios,
+    refreshDurationImageAudios,
+    deleteDurationImageAudio,
+    updateDurationImageAudioCaption,
     // Duration code snippet functions
     durationCodeSnippetsCache,
     getDurationCodeSnippets,

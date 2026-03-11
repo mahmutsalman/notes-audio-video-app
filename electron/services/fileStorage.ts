@@ -777,6 +777,24 @@ export async function saveDurationAudioFromBuffer(
   return { filePath, duration: null };
 }
 
+// Duration Image Audio functions
+export async function saveDurationImageAudioFromBuffer(
+  durationImageId: number,
+  audioBuffer: ArrayBuffer,
+  extension: string = 'webm'
+): Promise<{ filePath: string; duration: number | null }> {
+  const dir = path.join(getMediaDir(), 'duration_image_audios', String(durationImageId));
+  await fs.mkdir(dir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+
+  await fs.writeFile(filePath, Buffer.from(audioBuffer));
+  console.log('Duration image audio saved to:', filePath);
+
+  return { filePath, duration: null };
+}
+
 export async function deleteDurationAudios(durationId: number): Promise<void> {
   const dir = path.join(getMediaDir(), 'duration_audios', String(durationId));
   try {

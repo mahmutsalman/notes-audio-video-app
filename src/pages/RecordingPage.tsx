@@ -8,6 +8,9 @@ import { useCodeSnippets } from '../hooks/useCodeSnippets';
 import AudioPlayer, { AudioPlayerHandle } from '../components/audio/AudioPlayer';
 import SimpleAudioRecordModal from '../components/audio/SimpleAudioRecordModal';
 import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
+import { useAudioRecording, AUDIO_SAVED_EVENT } from '../context/AudioRecordingContext';
+import { useImageAudioPlayer } from '../context/ImageAudioPlayerContext';
+import { SYNC_COMPLETED_EVENT } from '../utils/events';
 import DurationList from '../components/recordings/DurationList';
 import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
 import MarkList from '../components/recordings/MarkList';
@@ -25,7 +28,7 @@ import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
 import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
-import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea } from '../types';
+import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -58,6 +61,10 @@ export default function RecordingPage() {
     addDurationAudioFromBuffer,
     deleteDurationAudio,
     updateDurationAudioCaption,
+    durationImageAudiosCache,
+    getDurationImageAudios,
+    refreshDurationImageAudios,
+    deleteDurationImageAudio,
     getDurationCodeSnippets,
     addDurationCodeSnippet,
     updateDurationCodeSnippet,
@@ -114,8 +121,8 @@ export default function RecordingPage() {
     durationId: number;
   } | null>(null);
   const [selectedDurationVideoPath, setSelectedDurationVideoPath] = useState<string | null>(null);
-  const [isRecordingDurationAudio, setIsRecordingDurationAudio] = useState(false);
-  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const audioRecording = useAudioRecording();
+  const imageAudioPlayer = useImageAudioPlayer();
   // Local state to track media color changes for rendering (priority colors - left/right bars)
   const [mediaColorOverrides] = useState<Record<string, DurationColor>>({});
   // Local state to track media group color changes for instant visual feedback (group colors - top bar)
@@ -262,6 +269,16 @@ export default function RecordingPage() {
       console.log(`[RecordingPage] Written note duration ${activeDurationId} media loaded - Images: ${images.length}, Videos: ${videos.length}, Audios: ${audios.length}`);
     });
   }, [activeDurationId, recording, getDurationImages, getDurationVideos, getDurationAudios]);
+
+  // Load image audios whenever the active duration's images change
+  useEffect(() => {
+    const images = activeDurationId ? durationImagesCache[activeDurationId] ?? [] : [];
+    if (images.length === 0) return;
+    for (const img of images) {
+      getDurationImageAudios(img.id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDurationId, durationImagesCache]);
 
   // Handle clicks on empty page areas to toggle audio playback
   const handlePageClick = (e: React.MouseEvent) => {
@@ -617,12 +634,37 @@ export default function RecordingPage() {
     setDurationVideoToDelete(null);
   };
 
-  // Handle saving duration audio from recording modal
-  const handleSaveDurationAudio = async (audioBlob: Blob) => {
-    if (!activeDurationId) return;
-    const buffer = await audioBlob.arrayBuffer();
-    await addDurationAudioFromBuffer(activeDurationId, buffer, 'webm');
-  };
+  // Listen for audio saved events from the global recording context
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { target: savedTarget } = (e as CustomEvent).detail;
+      if (!savedTarget || !id) return;
+      if (savedTarget.type === 'duration') {
+        getDurationAudios(savedTarget.durationId, true);
+      } else if (savedTarget.type === 'duration_image') {
+        refreshDurationImageAudios(savedTarget.durationImageId);
+      } else if (savedTarget.type === 'recording' && savedTarget.recordingId === id) {
+        refetchRecordingAudios();
+      }
+    };
+    window.addEventListener(AUDIO_SAVED_EVENT, handler);
+    return () => window.removeEventListener(AUDIO_SAVED_EVENT, handler);
+  }, [id, getDurationAudios, refreshDurationImageAudios, refetchRecordingAudios]);
+
+  // After cloud sync, force-refresh media for the active mark so new content appears in place
+  useEffect(() => {
+    const handleSyncCompleted = () => {
+      if (!activeDurationId) return;
+      getDurationImages(activeDurationId, true);
+      getDurationVideos(activeDurationId, true);
+      getDurationAudios(activeDurationId, true);
+      getDurationCodeSnippets(activeDurationId).then(snippets => {
+        setActiveDurationCodeSnippets(snippets);
+      });
+    };
+    window.addEventListener(SYNC_COMPLETED_EVENT, handleSyncCompleted);
+    return () => window.removeEventListener(SYNC_COMPLETED_EVENT, handleSyncCompleted);
+  }, [activeDurationId, getDurationImages, getDurationVideos, getDurationAudios, getDurationCodeSnippets]);
 
   // Handle deleting a duration audio
   const handleDeleteDurationAudio = (audioId: number) => {
@@ -935,6 +977,35 @@ export default function RecordingPage() {
   const activeDurationImages = activeDurationId ? durationImagesCache[activeDurationId] ?? [] : [];
   const activeDurationVideos = activeDurationId ? durationVideosCache[activeDurationId] ?? [] : [];
   const activeDurationAudios = activeDurationId ? durationAudiosCache[activeDurationId] ?? [] : [];
+
+  // Build maps for duration image audio feature
+  const imageAudiosMap: Record<number, DurationImageAudio[]> = {};
+  const audioCountMap: Record<number, number> = {};
+  for (const img of activeDurationImages) {
+    const audios = durationImageAudiosCache[img.id] ?? [];
+    imageAudiosMap[img.id] = audios;
+    audioCountMap[img.id] = audios.length;
+  }
+
+  const handleRecordForImage = (imageId: number) => {
+    if (!activeDurationId || !id) return;
+    const img = activeDurationImages.find(i => i.id === imageId);
+    audioRecording.startRecording({
+      type: 'duration_image',
+      durationImageId: imageId,
+      durationId: activeDurationId,
+      recordingId: id,
+      label: img?.caption || `Image ${imageId}`,
+    });
+  };
+
+  const handlePlayImageAudio = (audio: DurationImageAudio, label: string) => {
+    imageAudioPlayer.play(audio, label);
+  };
+
+  const handleDeleteImageAudio = async (audioId: number, imageId: number) => {
+    await deleteDurationImageAudio(audioId, imageId);
+  };
 
   // Debug: Log cache updates
   useEffect(() => {
@@ -1347,6 +1418,7 @@ export default function RecordingPage() {
             onContextMenu={(e, img) => handleContextMenu(e, 'durationImage', img as DurationImage)}
             onDelete={handleDeleteDurationImage}
             onReorder={handleReorderDurationImages}
+            audioCountMap={audioCountMap}
             pastePlaceholder={
               <div className="flex flex-col items-center">
                 <div className="relative w-full max-w-[160px]">
@@ -1925,6 +1997,10 @@ export default function RecordingPage() {
           selectedIndex={selectedDurationImageIndex}
           onClose={() => setSelectedDurationImageIndex(null)}
           onNavigate={(index) => setSelectedDurationImageIndex(index)}
+          imageAudiosMap={imageAudiosMap}
+          onRecordForImage={handleRecordForImage}
+          onDeleteImageAudio={handleDeleteImageAudio}
+          onPlayImageAudio={handlePlayImageAudio}
         />
       )}
 

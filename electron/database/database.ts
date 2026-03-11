@@ -163,6 +163,30 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_audios_recording ON audios(recording_id);
   `);
 
+  // Migration: Create duration_image_audios table
+  const durationImageAudiosTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='duration_image_audios'"
+  ).get();
+
+  if (!durationImageAudiosTableExists) {
+    db.exec(`
+      CREATE TABLE duration_image_audios (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        duration_image_id INTEGER NOT NULL REFERENCES duration_images(id) ON DELETE CASCADE,
+        duration_id       INTEGER NOT NULL REFERENCES durations(id) ON DELETE CASCADE,
+        file_path         TEXT NOT NULL,
+        caption           TEXT,
+        duration          REAL,
+        sort_order        INTEGER NOT NULL DEFAULT 0,
+        created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_duration_image_audios_image ON duration_image_audios(duration_image_id);
+      CREATE INDEX idx_duration_image_audios_duration ON duration_image_audios(duration_id);
+    `);
+    console.log('Created duration_image_audios table');
+  }
+
   // Migration: Add note column to durations table if it doesn't exist
   const durationsColumns = db.prepare("PRAGMA table_info(durations)").all() as { name: string }[];
   const hasNoteColumn = durationsColumns.some(col => col.name === 'note');

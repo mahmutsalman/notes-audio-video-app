@@ -7,6 +7,7 @@ import type {
   DurationImage,
   DurationVideo,
   DurationAudio,
+  DurationImageAudio,
   CodeSnippet, CreateCodeSnippet, UpdateCodeSnippet,
   DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
   BackupResult,
@@ -222,6 +223,18 @@ const electronAPI = {
       ipcRenderer.invoke('durationVideos:updateColor', id, color),
     updateGroupColor: (id: number, groupColor: DurationGroupColor): Promise<DurationVideo> =>
       ipcRenderer.invoke('durationVideos:updateGroupColor', id, groupColor),
+  },
+
+  // Duration Image Audios (audio clips attached to individual duration images)
+  durationImageAudios: {
+    getByDurationImage: (durationImageId: number): Promise<DurationImageAudio[]> =>
+      ipcRenderer.invoke('durationImageAudios:getByDurationImage', durationImageId),
+    addFromBuffer: (durationImageId: number, durationId: number, audioBuffer: ArrayBuffer, extension?: string): Promise<DurationImageAudio> =>
+      ipcRenderer.invoke('durationImageAudios:addFromBuffer', durationImageId, durationId, audioBuffer, extension),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('durationImageAudios:delete', id),
+    updateCaption: (id: number, caption: string | null): Promise<DurationImageAudio> =>
+      ipcRenderer.invoke('durationImageAudios:updateCaption', id, caption),
   },
 
   // Duration Audios (audio clips attached to duration marks)

@@ -52,6 +52,8 @@ interface SortableImageGridProps {
   onReorder: (orderedIds: number[]) => void;
   /** Paste placeholder rendered at the end of the grid (not draggable) */
   pastePlaceholder?: React.ReactNode;
+  /** Map of imageId → audio count for showing badge */
+  audioCountMap?: Record<number, number>;
 }
 
 /* ── Sortable wrapper for a single image cell ─────────────────── */
@@ -66,6 +68,7 @@ interface SortableImageProps {
   onImageClick: (index: number) => void;
   onContextMenu: (e: React.MouseEvent, image: SortableImageItem) => void;
   onDelete: (id: number) => void;
+  audioCount?: number;
 }
 
 function SortableImage({
@@ -78,6 +81,7 @@ function SortableImage({
   onImageClick,
   onContextMenu,
   onDelete,
+  audioCount = 0,
 }: SortableImageProps) {
   const {
     attributes,
@@ -119,6 +123,13 @@ function SortableImage({
           <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
                           rounded-full flex items-center justify-center text-xs font-bold z-10">
             {index + 1}
+          </div>
+        )}
+        {/* Audio count badge */}
+        {audioCount > 0 && (
+          <div className="absolute top-1 right-6 bg-blue-500 text-white text-[10px]
+                          rounded-full w-4 h-4 flex items-center justify-center font-bold z-10">
+            {audioCount > 9 ? '9+' : audioCount}
           </div>
         )}
         {/* Left color indicator */}
@@ -207,6 +218,7 @@ export default function SortableImageGrid({
   onDelete,
   onReorder,
   pastePlaceholder,
+  audioCountMap,
 }: SortableImageGridProps) {
   const [activeId, setActiveId] = useState<number | null>(null);
 
@@ -272,6 +284,7 @@ export default function SortableImageGrid({
                 onImageClick={onImageClick}
                 onContextMenu={onContextMenu}
                 onDelete={onDelete}
+                audioCount={audioCountMap?.[img.id] ?? 0}
               />
             );
           })}

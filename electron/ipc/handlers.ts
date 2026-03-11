@@ -9,6 +9,7 @@ import {
   DurationImagesOperations,
   DurationVideosOperations,
   DurationAudiosOperations,
+  DurationImageAudiosOperations,
   CodeSnippetsOperations,
   DurationCodeSnippetsOperations,
   SettingsOperations,
@@ -25,6 +26,7 @@ import {
   saveDurationVideoFromBuffer,
   saveDurationVideoFromFile,
   saveDurationAudioFromBuffer,
+  saveDurationImageAudioFromBuffer,
   saveAudioAttachmentFromBuffer,
   deleteDurationImages,
   deleteDurationVideos,
@@ -597,6 +599,35 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationAudios:updateGroupColor', async (_, id: number, groupColor: DurationGroupColor | null) => {
     return DurationAudiosOperations.updateGroupColor(id, groupColor);
+  });
+
+  // ============ Duration Image Audios ============
+  ipcMain.handle('durationImageAudios:getByDurationImage', async (_, durationImageId: number) => {
+    return DurationImageAudiosOperations.getByDurationImage(durationImageId);
+  });
+
+  ipcMain.handle('durationImageAudios:addFromBuffer', async (_, durationImageId: number, durationId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
+    const { filePath, duration } = await saveDurationImageAudioFromBuffer(durationImageId, audioBuffer, extension);
+    return DurationImageAudiosOperations.create({
+      duration_image_id: durationImageId,
+      duration_id: durationId,
+      file_path: filePath,
+      caption: null,
+      duration: duration,
+      sort_order: DurationImageAudiosOperations.getMaxSortOrder(durationImageId) + 1,
+    });
+  });
+
+  ipcMain.handle('durationImageAudios:delete', async (_, id: number) => {
+    const audio = DurationImageAudiosOperations.getById(id);
+    if (audio) {
+      await deleteFile(audio.file_path);
+    }
+    DurationImageAudiosOperations.delete(id);
+  });
+
+  ipcMain.handle('durationImageAudios:updateCaption', async (_, id: number, caption: string | null) => {
+    return DurationImageAudiosOperations.updateCaption(id, caption);
   });
 
   // ============ Audios (recording-level audio attachments) ============

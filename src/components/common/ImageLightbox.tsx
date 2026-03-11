@@ -1,8 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import type { DurationImageAudio } from '../../types';
+import { useAudioRecording } from '../../context/AudioRecordingContext';
+import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
+import WaveformVisualizer from '../audio/WaveformVisualizer';
+import ThemedAudioPlayer from '../audio/ThemedAudioPlayer';
+import { formatDuration } from '../../utils/formatters';
 
 interface LightboxImage {
   file_path: string;
   caption: string | null;
+  id?: number;
 }
 
 interface ImageLightboxProps {
@@ -10,9 +17,29 @@ interface ImageLightboxProps {
   selectedIndex: number;
   onClose: () => void;
   onNavigate: (newIndex: number) => void;
+  // Optional audio feature props
+  imageAudiosMap?: Record<number, DurationImageAudio[]>;
+  onRecordForImage?: (imageId: number) => void;
+  onDeleteImageAudio?: (audioId: number, imageId: number) => void;
+  onPlayImageAudio?: (audio: DurationImageAudio, imageLabel: string) => void;
 }
 
-export default function ImageLightbox({ images, selectedIndex, onClose, onNavigate }: ImageLightboxProps) {
+function fmtSecs(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+export default function ImageLightbox({
+  images,
+  selectedIndex,
+  onClose,
+  onNavigate,
+  imageAudiosMap,
+  onRecordForImage,
+  onDeleteImageAudio,
+  onPlayImageAudio,
+}: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [showZoomIndicator, setShowZoomIndicator] = useState(false);
@@ -26,7 +53,30 @@ export default function ImageLightbox({ images, selectedIndex, onClose, onNaviga
   const zoomIndicatorTimeout = useRef<ReturnType<typeof setTimeout>>();
   const scaleRef = useRef(1);
 
+  // Audio recording context — for embedded recording bar
+  const {
+    isRecording,
+    isPaused,
+    duration: recDuration,
+    analyserNode,
+    target: recTarget,
+    isSaving,
+    pauseRecording,
+    resumeRecording,
+    stopAndSave,
+    cancelRecording,
+  } = useAudioRecording();
+
+  // Image audio player context — for embedded player bar
+  const { currentAudio, imageLabel: playerLabel, dismiss: dismissPlayer } = useImageAudioPlayer();
+
+  // Only show embedded bars when lightbox is in "image audio" mode
+  const imageAudioMode = onRecordForImage !== undefined;
+  const showRecordingBar = imageAudioMode && (isRecording || isSaving) && recTarget?.type === 'duration_image';
+  const showPlayerBar = imageAudioMode && currentAudio !== null;
+
   const image = images[selectedIndex];
+  const currentImageAudios = (image?.id && imageAudiosMap) ? (imageAudiosMap[image.id] ?? []) : [];
 
   // Keep scaleRef in sync with scale state
   useEffect(() => { scaleRef.current = scale; }, [scale]);
@@ -195,77 +245,238 @@ export default function ImageLightbox({ images, selectedIndex, onClose, onNaviga
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-      onClick={handleBackdropClick}
-    >
-      {/* Close button */}
-      <button
-        className="absolute top-4 right-4 text-white text-2xl hover:text-gray-300 z-10"
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
-      >
-        ×
-      </button>
+    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
 
-      {/* Image counter */}
-      <div className="absolute top-4 left-4 text-white text-lg font-medium">
-        {selectedIndex + 1} / {images.length}
+      {/* ── Image area (shrinks when bottom bars appear) ── */}
+      <div
+        ref={containerRef}
+        className="flex-1 relative flex items-center justify-center overflow-hidden p-4"
+        onClick={handleBackdropClick}
+      >
+        {/* Close button */}
+        <button
+          className="absolute top-4 right-4 text-white text-2xl hover:text-gray-300 z-10"
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
+        >
+          ×
+        </button>
+
+        {/* Mic button — record audio for this image */}
+        {onRecordForImage && image?.id && (
+          <button
+            className="absolute top-4 right-12 text-white/70 hover:text-red-400 z-10 p-1 transition-colors"
+            onClick={(e) => { e.stopPropagation(); onRecordForImage(image.id!); }}
+            title="Record audio for this image"
+          >
+            🎙️
+          </button>
+        )}
+
+        {/* Image counter */}
+        <div className="absolute top-4 left-4 text-white text-lg font-medium z-10">
+          {selectedIndex + 1} / {images.length}
+        </div>
+
+        {/* Zoom indicator */}
+        {showZoomIndicator && scale !== 1 && (
+          <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-black/70 text-white px-3 py-1 rounded-full text-sm font-medium z-10">
+            {Math.round(scale * 100)}%
+          </div>
+        )}
+
+        {/* Previous button */}
+        {selectedIndex > 0 && (
+          <button
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-5xl
+                       hover:text-gray-300 transition-colors px-2 z-10"
+            onClick={(e) => { e.stopPropagation(); onNavigate(selectedIndex - 1); }}
+          >
+            ‹
+          </button>
+        )}
+
+        {/* Image */}
+        <img
+          ref={imageRef}
+          src={window.electronAPI.paths.getFileUrl(image.file_path)}
+          alt=""
+          className="max-w-full max-h-full object-contain"
+          style={{
+            transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
+            transformOrigin: 'center center',
+            cursor: scale > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'default',
+            transition: isDragging.current ? 'none' : 'transform 0.1s ease-out',
+            userSelect: 'none',
+          }}
+          draggable={false}
+          onClick={handleImageClick}
+          onMouseDown={handleMouseDown}
+          onDoubleClick={handleDoubleClick}
+        />
+
+        {/* Audio buttons + caption — anchored to bottom of image area */}
+        <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-2 px-4 pointer-events-none">
+          {currentImageAudios.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-2 pointer-events-auto">
+              {currentImageAudios.map((audio, i) => (
+                <div key={audio.id} className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const label = image.caption || `Image ${selectedIndex + 1}`;
+                      onPlayImageAudio?.(audio, label);
+                    }}
+                    className="bg-white/20 hover:bg-white/30 text-white rounded-full px-3 py-1 text-xs flex items-center gap-1 transition-colors"
+                  >
+                    🔊 {i + 1}{audio.duration ? ` (${fmtSecs(audio.duration)})` : ''}
+                  </button>
+                  {onDeleteImageAudio && image?.id && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteImageAudio(audio.id, image.id!);
+                      }}
+                      className="text-white/40 hover:text-red-400 text-xs transition-colors pointer-events-auto"
+                      title="Delete audio"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {image.caption && (
+            <p className="text-sm text-white/90 text-center italic font-light max-w-2xl pointer-events-none">
+              {image.caption}
+            </p>
+          )}
+        </div>
+
+        {/* Next button */}
+        {selectedIndex < images.length - 1 && (
+          <button
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-5xl
+                       hover:text-gray-300 transition-colors px-2 z-10"
+            onClick={(e) => { e.stopPropagation(); onNavigate(selectedIndex + 1); }}
+          >
+            ›
+          </button>
+        )}
       </div>
 
-      {/* Zoom indicator */}
-      {showZoomIndicator && scale !== 1 && (
-        <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-black/70 text-white px-3 py-1 rounded-full text-sm font-medium z-10">
-          {Math.round(scale * 100)}%
+      {/* ── Embedded player bar ── */}
+      {showPlayerBar && currentAudio && (
+        <div
+          className="flex-shrink-0 bg-gray-900 border-t border-blue-700/50"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center gap-3 px-4 py-2">
+            <span className="text-blue-400 text-base flex-shrink-0">🔊</span>
+            <span
+              className="text-sm text-blue-300 truncate flex-shrink-0 max-w-[180px]"
+              title={currentAudio.caption || playerLabel}
+            >
+              {currentAudio.caption || playerLabel}
+            </span>
+            <div className="flex-1 min-w-0">
+              <ThemedAudioPlayer
+                src={window.electronAPI.paths.getFileUrl(currentAudio.file_path)}
+                theme="blue"
+              />
+            </div>
+            <button
+              onClick={dismissPlayer}
+              className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full
+                         bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white
+                         transition-colors text-xs"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Previous button */}
-      {selectedIndex > 0 && (
-        <button
-          className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-5xl
-                     hover:text-gray-300 transition-colors px-2"
-          onClick={(e) => { e.stopPropagation(); onNavigate(selectedIndex - 1); }}
+      {/* ── Embedded recording bar ── */}
+      {showRecordingBar && (
+        <div
+          className="flex-shrink-0 bg-gray-900 border-t border-gray-700"
+          onClick={(e) => e.stopPropagation()}
         >
-          ‹
-        </button>
-      )}
+          <div className="flex items-center gap-3 px-4 h-14">
+            {/* Status indicator */}
+            <div className="flex items-center gap-2 min-w-[110px]">
+              {isSaving ? (
+                <>
+                  <span className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-pulse" />
+                  <span className="text-sm font-medium text-blue-400">SAVING...</span>
+                </>
+              ) : isPaused ? (
+                <>
+                  <span className="w-2.5 h-2.5 bg-yellow-500 rounded-full" />
+                  <span className="text-sm font-medium text-yellow-400">PAUSED</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                  <span className="text-sm font-medium text-red-400">REC</span>
+                </>
+              )}
+            </div>
 
-      {/* Image */}
-      <img
-        ref={imageRef}
-        src={window.electronAPI.paths.getFileUrl(image.file_path)}
-        alt=""
-        className="max-w-full max-h-full object-contain"
-        style={{
-          transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
-          transformOrigin: 'center center',
-          cursor: scale > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'default',
-          transition: isDragging.current ? 'none' : 'transform 0.1s ease-out',
-          userSelect: 'none',
-        }}
-        draggable={false}
-        onClick={handleImageClick}
-        onMouseDown={handleMouseDown}
-        onDoubleClick={handleDoubleClick}
-      />
+            {/* Target label */}
+            {recTarget && (
+              <div className="text-sm text-gray-300 truncate max-w-[160px]" title={recTarget.label}>
+                {recTarget.label}
+              </div>
+            )}
 
-      {/* Caption */}
-      {image.caption && (
-        <p className="absolute bottom-4 left-0 right-0 text-sm text-white/90 dark:text-white/80 text-center italic font-light max-w-2xl mx-auto px-4">
-          {image.caption}
-        </p>
-      )}
+            {/* Timer */}
+            <div className="text-sm font-mono text-gray-100 tabular-nums min-w-[48px]">
+              {formatDuration(recDuration)}
+            </div>
 
-      {/* Next button */}
-      {selectedIndex < images.length - 1 && (
-        <button
-          className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-5xl
-                     hover:text-gray-300 transition-colors px-2"
-          onClick={(e) => { e.stopPropagation(); onNavigate(selectedIndex + 1); }}
-        >
-          ›
-        </button>
+            {/* Waveform */}
+            <div className="flex-1 h-8 min-w-[80px]">
+              <WaveformVisualizer
+                analyser={analyserNode}
+                isRecording={isRecording && !isPaused}
+              />
+            </div>
+
+            {/* Controls */}
+            {!isSaving && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={isPaused ? resumeRecording : pauseRecording}
+                  className="w-8 h-8 flex items-center justify-center rounded-full
+                             bg-gray-700 hover:bg-gray-600 text-white transition-colors text-sm"
+                  title={isPaused ? 'Resume' : 'Pause'}
+                >
+                  {isPaused ? '▶' : '⏸'}
+                </button>
+                <button
+                  onClick={stopAndSave}
+                  className="w-8 h-8 flex items-center justify-center rounded-full
+                             bg-red-600 hover:bg-red-500 text-white transition-colors text-sm"
+                  title="Stop & Save"
+                >
+                  ⏹
+                </button>
+                <button
+                  onClick={cancelRecording}
+                  className="w-8 h-8 flex items-center justify-center rounded-full
+                             bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white
+                             transition-colors text-xs"
+                  title="Cancel"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
