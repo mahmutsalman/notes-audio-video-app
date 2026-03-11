@@ -152,8 +152,12 @@ export const RecordingsOperations = {
   create(recording: CreateRecording): Recording {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO recordings (topic_id, name, audio_path, audio_duration, video_path, video_duration, video_resolution, video_fps, video_size, notes_content, recording_type, pdf_path)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO recordings (
+        topic_id, name, audio_path, audio_duration, video_path, video_duration,
+        video_resolution, video_fps, video_size, notes_content, main_notes_content,
+        importance_color, recording_type, pdf_path, page_offset
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -167,8 +171,11 @@ export const RecordingsOperations = {
       recording.video_fps ?? null,
       recording.video_size ?? null,
       recording.notes_content,
+      recording.main_notes_content ?? null,
+      recording.importance_color ?? null,
       recording.recording_type ?? 'audio',
-      recording.pdf_path ?? null
+      recording.pdf_path ?? null,
+      recording.page_offset ?? 0
     );
 
     // Update topic's updated_at
@@ -623,14 +630,20 @@ export const DurationImagesOperations = {
   create(image: CreateDurationImage): DurationImage {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO duration_images (duration_id, file_path, thumbnail_path, sort_order, page_number, rect_x, rect_y, rect_w, rect_h)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO duration_images (
+        duration_id, file_path, thumbnail_path, caption, color, group_color,
+        sort_order, page_number, rect_x, rect_y, rect_w, rect_h
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       image.duration_id,
       image.file_path,
       image.thumbnail_path ?? null,
+      image.caption ?? null,
+      image.color ?? null,
+      image.group_color ?? null,
       image.sort_order ?? 0,
       image.page_number ?? null,
       image.rect_x ?? null,
