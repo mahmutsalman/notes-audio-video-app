@@ -855,7 +855,7 @@ export default function ImageLightbox({
       {/* ── Image area (shrinks when bottom bars appear) ── */}
       <div
         ref={containerRef}
-        className="flex-1 relative flex items-center justify-center overflow-hidden p-4"
+        className="flex-1 relative flex items-center justify-center overflow-hidden px-16 py-4"
         onClick={handleBackdropClick}
       >
         {/* Close button */}
@@ -878,8 +878,8 @@ export default function ImageLightbox({
         )}
 
         {/* Image counter */}
-        <div className="absolute top-4 left-4 text-white text-lg font-medium z-10">
-          {selectedIndex + 1} / {images.length}
+        <div className="absolute top-3 left-20 bg-black/50 text-white text-sm font-medium z-10 px-2 py-0.5 rounded tabular-nums">
+          {selectedIndex + 1}/{images.length}
         </div>
 
         {/* Zoom indicator */}
