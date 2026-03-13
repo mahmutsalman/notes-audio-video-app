@@ -23,6 +23,10 @@ interface ImageLightboxProps {
   onDeleteImageAudio?: (audioId: number, imageId: number) => void;
   onPlayImageAudio?: (audio: DurationImageAudio, imageLabel: string) => void;
   onUpdateImageAudioCaption?: (audioId: number, imageId: number, caption: string | null) => Promise<void>;
+  // Replace feature
+  onReplaceWithClipboard?: () => void;
+  // Caption editing
+  onEditCaption?: () => void;
 }
 
 function fmtSecs(secs: number): string {
@@ -66,10 +70,13 @@ export default function ImageLightbox({
   onDeleteImageAudio,
   onPlayImageAudio,
   onUpdateImageAudioCaption,
+  onReplaceWithClipboard,
+  onEditCaption,
 }: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [showZoomIndicator, setShowZoomIndicator] = useState(false);
+  const [imageContextMenu, setImageContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [pendingDeleteAudio, setPendingDeleteAudio] = useState<{ audioId: number; imageId: number; index: number } | null>(null);
   const [editingAudioCaptionId, setEditingAudioCaptionId] = useState<number | null>(null);
   const [audioCaptionText, setAudioCaptionText] = useState('');
@@ -594,67 +601,18 @@ export default function ImageLightbox({
         if (e.key === 'Escape') setImageContextMenu(null);
         return;
       }
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-
-      if (e.key === 'Escape') {
-        if (drawMode) {
-          setDrawMode(false);
-          setDrawPreview(null);
-          isDrawingRef.current = false;
-          return;
-        }
-        if (selectedAnnId !== null) {
-          setSelectedAnnId(null);
-          return;
-        }
-        if (selectedChildId != null) {
-          setSelectedChildId(null);
-        } else {
-          onClose();
-        }
-        return;
-      }
-
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedAnnId !== null) {
-        const id = selectedAnnId;
-        setSelectedAnnId(null);
-        setAnnotations(prev => prev.filter(a => a.id !== id));
-        window.electronAPI.imageAnnotations.delete(id);
-        return;
-      }
-
-      if (e.key === 'ArrowLeft') {
-        if (selectedChildId == null && selectedIndex > 0) onNavigate(selectedIndex - 1);
-      } else if (e.key === 'ArrowRight') {
-        if (selectedChildId == null && selectedIndex < images.length - 1) onNavigate(selectedIndex + 1);
-      } else if (e.key === 'ArrowDown') {
-        // Open first related image when viewing a parent
-        if (!disableChildImages && selectedChildId == null && imageChildren.length > 0) {
-          e.preventDefault();
-          setSelectedChildId(imageChildren[0].id);
-        }
-      } else if (e.key === 'ArrowUp') {
-        // Go back to parent from a child
-        if (selectedChildId != null) {
-          e.preventDefault();
-          setSelectedChildId(null);
-        }
+      if (e.key === 'ArrowLeft' && selectedIndex > 0) {
+        onNavigate(selectedIndex - 1);
+      } else if (e.key === 'ArrowRight' && selectedIndex < images.length - 1) {
+        onNavigate(selectedIndex + 1);
+      } else if (e.key === 'Escape') {
+        onClose();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIndex, images.length, onNavigate, onClose, imageContextMenu, selectedChildId, drawMode, selectedAnnId, imageChildren, disableChildImages]);
-
-  // Track Shift key for OCR cursor hint
-  useEffect(() => {
-    const onDown = (e: KeyboardEvent) => { if (e.key === 'Shift') setIsShiftHeld(true); };
-    const onUp   = (e: KeyboardEvent) => { if (e.key === 'Shift') setIsShiftHeld(false); };
-    window.addEventListener('keydown', onDown);
-    window.addEventListener('keyup', onUp);
-    return () => { window.removeEventListener('keydown', onDown); window.removeEventListener('keyup', onUp); };
-  }, []);
+  }, [selectedIndex, images.length, onNavigate, onClose, imageContextMenu]);
 
   // Backdrop click: close at 1x, reset zoom at >1x, or dismiss context menu
   const handleBackdropClick = useCallback(() => {
@@ -917,6 +875,11 @@ export default function ImageLightbox({
           onClick={handleImageClick}
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClick}
+          onContextMenu={(onReplaceWithClipboard || onEditCaption) ? (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setImageContextMenu({ x: e.clientX, y: e.clientY });
+          } : undefined}
         />
 
         {/* Audio buttons + caption — anchored to bottom of image area */}
@@ -1002,6 +965,35 @@ export default function ImageLightbox({
           >
             ›
           </button>
+        )}
+
+        {/* Image context menu */}
+        {imageContextMenu && (
+          <div
+            style={{ position: 'fixed', top: imageContextMenu.y, left: imageContextMenu.x, zIndex: 60 }}
+            className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl py-1 min-w-[200px]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {onEditCaption && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                onClick={() => { onEditCaption(); setImageContextMenu(null); }}
+              >
+                <span>✏️</span> {image.caption ? 'Edit caption' : 'Add caption'}
+              </button>
+            )}
+            {onReplaceWithClipboard && onEditCaption && (
+              <div className="border-t border-gray-700 my-1" />
+            )}
+            {onReplaceWithClipboard && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                onClick={() => { onReplaceWithClipboard(); setImageContextMenu(null); }}
+              >
+                <span>📋</span> Replace with clipboard
+              </button>
+            )}
+          </div>
         )}
       </div>
 

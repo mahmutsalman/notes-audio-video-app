@@ -51,6 +51,7 @@ export default function RecordingPage() {
     durationImagesCache,
     getDurationImages,
     addDurationImageFromClipboard,
+    replaceDurationImageFromClipboard,
     addDurationImageFromScreenshot,
     reorderDurationImages,
     deleteDurationImage,
@@ -2365,11 +2366,6 @@ export default function RecordingPage() {
             const img = images[selectedImageIndex!];
             if (img?.id) openCaptionModal('image', img.id, img.caption);
           }}
-          onExtractOcr={selectedImageIndex !== null && images[selectedImageIndex]?.id ? async () => {
-            const img = images[selectedImageIndex!];
-            await window.electronAPI.ocr.extractCaption2('image', img.id!, img.file_path);
-          } : undefined}
-          mediaType="image"
         />
       )}
 
@@ -2417,6 +2413,11 @@ export default function RecordingPage() {
           onDeleteImageAudio={handleDeleteImageAudio}
           onPlayImageAudio={handlePlayImageAudio}
           onUpdateImageAudioCaption={handleUpdateImageAudioCaption}
+          onReplaceWithClipboard={handleReplaceDurationImageWithClipboard}
+          onEditCaption={() => {
+            const img = activeDurationImages[selectedDurationImageIndex!];
+            if (img?.id) openCaptionModal('durationImage', img.id, img.caption);
+          }}
         />
       )}
 

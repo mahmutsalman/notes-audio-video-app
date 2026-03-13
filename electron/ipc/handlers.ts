@@ -565,6 +565,18 @@ export function setupIpcHandlers(): void {
     });
   });
 
+  ipcMain.handle('durationImages:replaceFromClipboard', async (_, imageId: number, durationId: number, imageBuffer: ArrayBuffer, extension: string = 'png') => {
+    const old = DurationImagesOperations.getById(imageId);
+    const { filePath, thumbnailPath } = await saveDurationImageFromBuffer(durationId, imageBuffer, extension);
+    if (old) {
+      await deleteFile(old.file_path);
+      if (old.thumbnail_path && old.thumbnail_path !== old.file_path) {
+        await deleteFile(old.thumbnail_path);
+      }
+    }
+    return DurationImagesOperations.updateFilePaths(imageId, filePath, thumbnailPath);
+  });
+
   ipcMain.handle('durationImages:delete', async (_, id: number) => {
     const image = DurationImagesOperations.getById(id);
     if (image) {
