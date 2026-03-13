@@ -353,6 +353,12 @@ export const ImagesOperations = {
     db.prepare('DELETE FROM images WHERE id = ?').run(id);
   },
 
+  updateFilePaths(id: number, filePath: string, thumbnailPath: string | null): Image {
+    const db = getDatabase();
+    db.prepare('UPDATE images SET file_path = ?, thumbnail_path = ? WHERE id = ?').run(filePath, thumbnailPath, id);
+    return this.getById(id)!;
+  },
+
   updateCaption(id: number, caption: string | null): Image {
     const db = getDatabase();
     db.prepare('UPDATE images SET caption = ? WHERE id = ?').run(caption, id);
@@ -621,6 +627,12 @@ export const DurationImagesOperations = {
   deleteByDuration(durationId: number): void {
     const db = getDatabase();
     db.prepare('DELETE FROM duration_images WHERE duration_id = ?').run(durationId);
+  },
+
+  updateFilePaths(id: number, filePath: string, thumbnailPath: string | null): DurationImage {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_images SET file_path = ?, thumbnail_path = ? WHERE id = ?').run(filePath, thumbnailPath, id);
+    return this.getById(id)!;
   },
 
   updateCaption(id: number, caption: string | null): DurationImage {

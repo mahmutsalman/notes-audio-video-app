@@ -23,6 +23,10 @@ interface ImageLightboxProps {
   onDeleteImageAudio?: (audioId: number, imageId: number) => void;
   onPlayImageAudio?: (audio: DurationImageAudio, imageLabel: string) => void;
   onUpdateImageAudioCaption?: (audioId: number, imageId: number, caption: string | null) => Promise<void>;
+  // Replace feature
+  onReplaceWithClipboard?: () => void;
+  // Caption editing
+  onEditCaption?: () => void;
 }
 
 function fmtSecs(secs: number): string {
@@ -66,10 +70,13 @@ export default function ImageLightbox({
   onDeleteImageAudio,
   onPlayImageAudio,
   onUpdateImageAudioCaption,
+  onReplaceWithClipboard,
+  onEditCaption,
 }: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [showZoomIndicator, setShowZoomIndicator] = useState(false);
+  const [imageContextMenu, setImageContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [pendingDeleteAudio, setPendingDeleteAudio] = useState<{ audioId: number; imageId: number; index: number } | null>(null);
   const [editingAudioCaptionId, setEditingAudioCaptionId] = useState<number | null>(null);
   const [audioCaptionText, setAudioCaptionText] = useState('');
@@ -265,6 +272,10 @@ export default function ImageLightbox({
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (imageContextMenu) {
+        if (e.key === 'Escape') setImageContextMenu(null);
+        return;
+      }
       if (e.key === 'ArrowLeft' && selectedIndex > 0) {
         onNavigate(selectedIndex - 1);
       } else if (e.key === 'ArrowRight' && selectedIndex < images.length - 1) {
@@ -276,17 +287,21 @@ export default function ImageLightbox({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIndex, images.length, onNavigate, onClose]);
+  }, [selectedIndex, images.length, onNavigate, onClose, imageContextMenu]);
 
-  // Backdrop click: close at 1x, reset zoom at >1x
+  // Backdrop click: close at 1x, reset zoom at >1x, or dismiss context menu
   const handleBackdropClick = useCallback(() => {
+    if (imageContextMenu) {
+      setImageContextMenu(null);
+      return;
+    }
     if (scale > 1) {
       setScale(1);
       setTranslate({ x: 0, y: 0 });
     } else {
       onClose();
     }
-  }, [scale, onClose]);
+  }, [scale, onClose, imageContextMenu]);
 
   // Image click: stop propagation only if not dragging
   const handleImageClick = useCallback((e: React.MouseEvent) => {
@@ -364,6 +379,11 @@ export default function ImageLightbox({
           onClick={handleImageClick}
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClick}
+          onContextMenu={(onReplaceWithClipboard || onEditCaption) ? (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setImageContextMenu({ x: e.clientX, y: e.clientY });
+          } : undefined}
         />
 
         {/* Audio buttons + caption — anchored to bottom of image area */}
@@ -449,6 +469,35 @@ export default function ImageLightbox({
           >
             ›
           </button>
+        )}
+
+        {/* Image context menu */}
+        {imageContextMenu && (
+          <div
+            style={{ position: 'fixed', top: imageContextMenu.y, left: imageContextMenu.x, zIndex: 60 }}
+            className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl py-1 min-w-[200px]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {onEditCaption && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                onClick={() => { onEditCaption(); setImageContextMenu(null); }}
+              >
+                <span>✏️</span> {image.caption ? 'Edit caption' : 'Add caption'}
+              </button>
+            )}
+            {onReplaceWithClipboard && onEditCaption && (
+              <div className="border-t border-gray-700 my-1" />
+            )}
+            {onReplaceWithClipboard && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                onClick={() => { onReplaceWithClipboard(); setImageContextMenu(null); }}
+              >
+                <span>📋</span> Replace with clipboard
+              </button>
+            )}
+          </div>
         )}
       </div>
 

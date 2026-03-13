@@ -77,6 +77,8 @@ const electronAPI = {
       ipcRenderer.invoke('media:addVideo', recordingId, filePath),
     addImageFromClipboard: (recordingId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<Image> =>
       ipcRenderer.invoke('media:addImageFromClipboard', recordingId, imageBuffer, extension),
+    replaceImageFromClipboard: (imageId: number, recordingId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<Image> =>
+      ipcRenderer.invoke('media:replaceImageFromClipboard', imageId, recordingId, imageBuffer, extension),
     addVideoFromClipboard: (recordingId: number, videoBuffer: ArrayBuffer, extension?: string): Promise<Video> =>
       ipcRenderer.invoke('media:addVideoFromClipboard', recordingId, videoBuffer, extension),
     getImages: (recordingId: number): Promise<Image[]> => ipcRenderer.invoke('media:getImages', recordingId),
@@ -193,6 +195,8 @@ const electronAPI = {
       ipcRenderer.invoke('durationImages:getByDuration', durationId),
     addFromClipboard: (durationId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<DurationImage> =>
       ipcRenderer.invoke('durationImages:addFromClipboard', durationId, imageBuffer, extension),
+    replaceFromClipboard: (imageId: number, durationId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<DurationImage> =>
+      ipcRenderer.invoke('durationImages:replaceFromClipboard', imageId, durationId, imageBuffer, extension),
     addScreenshot: (durationId: number, imageBuffer: ArrayBuffer, pageNumber: number, rect: { x: number; y: number; w: number; h: number }): Promise<DurationImage> =>
       ipcRenderer.invoke('durationImages:addScreenshot', durationId, imageBuffer, pageNumber, rect),
     delete: (id: number): Promise<void> =>

@@ -306,6 +306,18 @@ export function setupIpcHandlers(): void {
     return ImagesOperations.reorder(recordingId, orderedIds);
   });
 
+  ipcMain.handle('media:replaceImageFromClipboard', async (_, imageId: number, recordingId: number, imageBuffer: ArrayBuffer, extension: string = 'png') => {
+    const old = ImagesOperations.getById(imageId);
+    const { filePath, thumbnailPath } = await saveImageFromBuffer(recordingId, imageBuffer, extension);
+    if (old) {
+      await deleteFile(old.file_path);
+      if (old.thumbnail_path && old.thumbnail_path !== old.file_path) {
+        await deleteFile(old.thumbnail_path);
+      }
+    }
+    return ImagesOperations.updateFilePaths(imageId, filePath, thumbnailPath);
+  });
+
   ipcMain.handle('media:updateVideoCaption', async (_, id: number, caption: string | null) => {
     return VideosOperations.updateCaption(id, caption);
   });
@@ -486,6 +498,18 @@ export function setupIpcHandlers(): void {
       rect_w: rect.w,
       rect_h: rect.h,
     });
+  });
+
+  ipcMain.handle('durationImages:replaceFromClipboard', async (_, imageId: number, durationId: number, imageBuffer: ArrayBuffer, extension: string = 'png') => {
+    const old = DurationImagesOperations.getById(imageId);
+    const { filePath, thumbnailPath } = await saveDurationImageFromBuffer(durationId, imageBuffer, extension);
+    if (old) {
+      await deleteFile(old.file_path);
+      if (old.thumbnail_path && old.thumbnail_path !== old.file_path) {
+        await deleteFile(old.thumbnail_path);
+      }
+    }
+    return DurationImagesOperations.updateFilePaths(imageId, filePath, thumbnailPath);
   });
 
   ipcMain.handle('durationImages:delete', async (_, id: number) => {

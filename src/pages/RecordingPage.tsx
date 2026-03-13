@@ -47,6 +47,7 @@ export default function RecordingPage() {
     durationImagesCache,
     getDurationImages,
     addDurationImageFromClipboard,
+    replaceDurationImageFromClipboard,
     addDurationImageFromScreenshot,
     reorderDurationImages,
     deleteDurationImage,
@@ -406,6 +407,29 @@ export default function RecordingPage() {
     }
   };
 
+  const handleReplaceImageWithClipboard = async () => {
+    if (selectedImageIndex === null || !id) return;
+    const image = images[selectedImageIndex];
+    if (!image?.id) return;
+    try {
+      const result = await window.electronAPI.clipboard.readImage();
+      if (!result.success || !result.buffer) {
+        alert('No image found in clipboard. Copy an image first.');
+        return;
+      }
+      const updated = await window.electronAPI.media.replaceImageFromClipboard(
+        image.id, Number(id), result.buffer, result.extension || 'png'
+      );
+      setRecording(prev => prev ? {
+        ...prev,
+        images: (prev.images || []).map(img => img.id === updated.id ? updated : img),
+      } : prev);
+    } catch (error) {
+      console.error('Failed to replace image:', error);
+      alert('Could not replace image from clipboard.');
+    }
+  };
+
   const handleReorderImages = async (orderedIds: number[]) => {
     if (!id) return;
 
@@ -606,6 +630,16 @@ export default function RecordingPage() {
   const handleReorderDurationImages = async (orderedIds: number[]) => {
     if (!activeDurationId) return;
     await reorderDurationImages(activeDurationId, orderedIds);
+  };
+
+  const handleReplaceDurationImageWithClipboard = async () => {
+    if (selectedDurationImageIndex === null || activeDurationId === null) return;
+    const image = activeDurationImages[selectedDurationImageIndex];
+    if (!image?.id) return;
+    const updated = await replaceDurationImageFromClipboard(image.id, activeDurationId);
+    if (!updated) {
+      alert('No image found in clipboard. Copy an image first.');
+    }
   };
 
   // Handle deleting a duration image
@@ -1965,6 +1999,11 @@ export default function RecordingPage() {
           selectedIndex={selectedImageIndex}
           onClose={() => setSelectedImageIndex(null)}
           onNavigate={(index) => setSelectedImageIndex(index)}
+          onReplaceWithClipboard={handleReplaceImageWithClipboard}
+          onEditCaption={() => {
+            const img = images[selectedImageIndex!];
+            if (img?.id) openCaptionModal('image', img.id, img.caption);
+          }}
         />
       )}
 
@@ -2012,6 +2051,11 @@ export default function RecordingPage() {
           onDeleteImageAudio={handleDeleteImageAudio}
           onPlayImageAudio={handlePlayImageAudio}
           onUpdateImageAudioCaption={handleUpdateImageAudioCaption}
+          onReplaceWithClipboard={handleReplaceDurationImageWithClipboard}
+          onEditCaption={() => {
+            const img = activeDurationImages[selectedDurationImageIndex!];
+            if (img?.id) openCaptionModal('durationImage', img.id, img.caption);
+          }}
         />
       )}
 
