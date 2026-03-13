@@ -166,6 +166,30 @@ export function useDurations(recordingId: number | null) {
     }
   };
 
+  // Replace a duration image with clipboard content (preserves sort order, caption, etc.)
+  const replaceDurationImageFromClipboard = async (imageId: number, durationId: number): Promise<DurationImage | null> => {
+    try {
+      const clipboardResult = await window.electronAPI.clipboard.readImage();
+      if (!clipboardResult.success || !clipboardResult.buffer) {
+        return null;
+      }
+      const updated = await window.electronAPI.durationImages.replaceFromClipboard(
+        imageId,
+        durationId,
+        clipboardResult.buffer,
+        clipboardResult.extension || 'png'
+      );
+      setDurationImagesCache(prev => ({
+        ...prev,
+        [durationId]: (prev[durationId] || []).map(img => img.id === updated.id ? updated : img),
+      }));
+      return updated;
+    } catch (err) {
+      console.error('Failed to replace duration image:', err);
+      return null;
+    }
+  };
+
   // Reorder duration images
   const reorderDurationImages = async (durationId: number, orderedIds: number[]): Promise<void> => {
     // Optimistic update — reorder locally for instant feedback
@@ -490,6 +514,7 @@ export function useDurations(recordingId: number | null) {
     durationImagesCache,
     getDurationImages,
     addDurationImageFromClipboard,
+    replaceDurationImageFromClipboard,
     addDurationImageFromScreenshot,
     reorderDurationImages,
     deleteDurationImage,
