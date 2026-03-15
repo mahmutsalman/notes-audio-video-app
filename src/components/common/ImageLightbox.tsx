@@ -276,6 +276,8 @@ export default function ImageLightbox({
         if (e.key === 'Escape') setImageContextMenu(null);
         return;
       }
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (e.key === 'ArrowLeft' && selectedIndex > 0) {
         onNavigate(selectedIndex - 1);
       } else if (e.key === 'ArrowRight' && selectedIndex < images.length - 1) {
