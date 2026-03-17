@@ -14,11 +14,6 @@ import {
   DurationCodeSnippetsOperations,
   SettingsOperations,
   AudioMarkersOperations,
-  SearchOperations,
-  FilteredSearchOperations,
-  TagOperations,
-  QuickCaptureOperations,
-  ImageAnnotationsOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
@@ -1431,19 +1426,13 @@ export function setupIpcHandlers(): void {
   });
 
   // ============ Audio Markers ============
-  ipcMain.handle('audioMarkers:getByAudio', async (_, audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'quick_capture_audio') => {
+  ipcMain.handle('audioMarkers:getByAudio', async (_, audioId: number, audioType: 'duration' | 'duration_image') => {
     return AudioMarkersOperations.getByAudio(audioId, audioType);
   });
 
-  ipcMain.handle('audioMarkers:addBatch', async (_, markers: { audio_id: number; audio_type: 'duration' | 'duration_image' | 'recording' | 'quick_capture_audio'; marker_type: string; start_time: number; end_time: number | null }[]) => {
+  ipcMain.handle('audioMarkers:addBatch', async (_, markers: { audio_id: number; audio_type: 'duration' | 'duration_image'; marker_type: string; start_time: number; end_time: number | null }[]) => {
     if (!markers || markers.length === 0) return [];
     return AudioMarkersOperations.addBatch(markers as any);
-  });
-
-  ipcMain.handle('audioMarkers:updateCaption', async (_, markerId: number, caption: string | null) => {
-    const result = AudioMarkersOperations.updateCaption(markerId, caption);
-    scheduleSearchReindex();
-    return result;
   });
 
   // ============ Settings ============

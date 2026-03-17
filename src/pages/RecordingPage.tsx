@@ -11,6 +11,7 @@ import SimpleAudioRecordModal from '../components/audio/SimpleAudioRecordModal';
 import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../context/ImageAudioPlayerContext';
+import { useDurationAudioPlayer } from '../context/DurationAudioPlayerContext';
 import { SYNC_COMPLETED_EVENT } from '../utils/events';
 import DurationList from '../components/recordings/DurationList';
 import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
@@ -29,7 +30,7 @@ import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
 import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
-import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea } from '../types';
+import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -150,6 +151,8 @@ export default function RecordingPage() {
   const [selectedDurationVideoPath, setSelectedDurationVideoPath] = useState<string | null>(null);
   const audioRecording = useAudioRecording();
   const imageAudioPlayer = useImageAudioPlayer();
+  const durationAudioPlayer = useDurationAudioPlayer();
+  const [durationAudioMarkersCache, setDurationAudioMarkersCache] = useState<Record<number, AudioMarker[]>>({});
   // Local state to track media color changes for rendering (priority colors - left/right bars)
   const [mediaColorOverrides] = useState<Record<string, DurationColor>>({});
   // Local state to track media group color changes for instant visual feedback (group colors - top bar)
@@ -848,6 +851,26 @@ export default function RecordingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDurationId, durationAudiosCache]);
 
+  // Load markers for duration audios whenever the active duration's audios change
+  useEffect(() => {
+    const audios = activeDurationId ? durationAudiosCache[activeDurationId] ?? [] : [];
+    if (audios.length === 0) return;
+    Promise.all(
+      audios.map(audio =>
+        window.electronAPI.audioMarkers.getByAudio(audio.id, 'duration').then(markers => ({ id: audio.id, markers }))
+      )
+    ).then(results => {
+      setDurationAudioMarkersCache(prev => {
+        const next = { ...prev };
+        for (const { id: audioId, markers } of results) {
+          next[audioId] = markers;
+        }
+        return next;
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDurationId, durationAudiosCache]);
+
   // Handle deleting a duration audio
   const handleDeleteDurationAudio = (audioId: number) => {
     if (!activeDurationId) return;
@@ -1187,10 +1210,12 @@ export default function RecordingPage() {
     });
   };
 
-  const handlePlayImageAudio = (audio: DurationImageAudio, label: string) => {
+  const handlePlayImageAudio = async (audio: DurationImageAudio, label: string) => {
+    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'duration_image');
     imageAudioPlayer.play(
       audio,
       label,
+      markers,
       (audioId, caption) => updateDurationImageAudioCaption(audioId, audio.duration_image_id, caption)
     );
   };
@@ -1920,7 +1945,7 @@ export default function RecordingPage() {
                     style={{ backgroundColor: groupColorConfig.color }}
                   />
                 )}
-                <div className={`relative flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30 overflow-hidden ${groupColorConfig ? 'mt-1' : ''}`}>
+                <div className={`flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30 ${groupColorConfig ? 'mt-1' : ''}`}>
                   <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
                     {index + 1}
                   </span>

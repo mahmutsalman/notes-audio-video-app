@@ -7,6 +7,12 @@ export type RecordingTarget =
   | { type: 'recording'; recordingId: number; label: string }
   | { type: 'duration_image'; durationImageId: number; durationId: number; recordingId: number; label: string };
 
+interface PendingMarker {
+  marker_type: AudioMarkerType;
+  start_time: number;
+  end_time: number | null;
+}
+
 interface AudioRecordingContextValue {
   // State
   isRecording: boolean;
@@ -17,7 +23,6 @@ interface AudioRecordingContextValue {
   target: RecordingTarget | null;
   isSaving: boolean;
   activeToggles: Set<AudioMarkerType>;
-  pendingCaptureAudio: { blob: Blob; durationSec: number; markers: PendingMarker[] } | null;
   // Actions
   startRecording: (target: RecordingTarget) => Promise<void>;
   pauseRecording: () => void;
@@ -25,7 +30,6 @@ interface AudioRecordingContextValue {
   stopAndSave: () => Promise<void>;
   cancelRecording: () => void;
   addMarkerToggle: (type: AudioMarkerType) => void;
-  clearPendingCaptureAudio: () => void;
 }
 
 const AudioRecordingContext = createContext<AudioRecordingContextValue | null>(null);
@@ -47,7 +51,6 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
   const [isSaving, setIsSaving] = useState(false);
   const [activeToggles, setActiveToggles] = useState<Set<AudioMarkerType>>(new Set());
   const [pendingMarkers, setPendingMarkers] = useState<PendingMarker[]>([]);
-  const [pendingCaptureAudio, setPendingCaptureAudio] = useState<{ blob: Blob; durationSec: number; markers: PendingMarker[] } | null>(null);
 
   // Warn before closing while recording
   useEffect(() => {
@@ -131,7 +134,7 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
           'webm'
         );
       } else if (target.type === 'duration_image') {
-        await window.electronAPI.durationImageAudios.addFromBuffer(
+        savedAudio = await window.electronAPI.durationImageAudios.addFromBuffer(
           target.durationImageId,
           target.durationId,
           buffer,
@@ -147,11 +150,7 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
 
       // Save pending markers if we have a saved audio record
       if (savedAudio && pendingMarkers.length > 0) {
-        const audioType = target.type === 'duration_image' ? 'duration_image'
-          : target.type === 'recording_image' ? 'recording_image'
-          : target.type === 'capture_image' ? 'capture_image'
-          : target.type === 'recording' ? 'recording'
-          : 'duration';
+        const audioType = target.type === 'duration_image' ? 'duration_image' : 'duration';
         const markersToSave = pendingMarkers
           .filter(m => m.start_time !== undefined)
           .map(m => ({
@@ -160,7 +159,6 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
             marker_type: m.marker_type,
             start_time: m.start_time,
             end_time: m.end_time,
-            caption: null,
           }));
         if (markersToSave.length > 0) {
           await window.electronAPI.audioMarkers.addBatch(markersToSave);
@@ -201,8 +199,6 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
         target,
         isSaving,
         activeToggles,
-        pendingCaptureAudio,
-        clearPendingCaptureAudio,
         startRecording,
         pauseRecording,
         resumeRecording,
