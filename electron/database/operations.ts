@@ -14,10 +14,7 @@ import type {
   DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
   DurationGroupColor,
   DurationColor,
-  AudioMarker,
-  Tag,
-  MediaTagType,
-  ImageAnnotation,
+  AudioMarker
 } from '../../src/types';
 
 // Helper to parse tags from JSON string
@@ -1135,7 +1132,7 @@ export const SettingsOperations = {
 
 // Audio Markers Operations
 export const AudioMarkersOperations = {
-  getByAudio(audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'quick_capture_audio'): AudioMarker[] {
+  getByAudio(audioId: number, audioType: 'duration' | 'duration_image'): AudioMarker[] {
     const db = getDatabase();
     return db.prepare(`
       SELECT * FROM audio_markers
@@ -1147,13 +1144,13 @@ export const AudioMarkersOperations = {
   addBatch(markers: Omit<AudioMarker, 'id' | 'created_at'>[]): AudioMarker[] {
     const db = getDatabase();
     const insert = db.prepare(`
-      INSERT INTO audio_markers (audio_id, audio_type, marker_type, start_time, end_time, caption)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO audio_markers (audio_id, audio_type, marker_type, start_time, end_time)
+      VALUES (?, ?, ?, ?, ?)
     `);
     const ids: number[] = [];
     const txn = db.transaction(() => {
       for (const m of markers) {
-        const result = insert.run(m.audio_id, m.audio_type, m.marker_type, m.start_time, m.end_time ?? null, (m as any).caption ?? null);
+        const result = insert.run(m.audio_id, m.audio_type, m.marker_type, m.start_time, m.end_time ?? null);
         ids.push(result.lastInsertRowid as number);
       }
     });
@@ -1161,16 +1158,8 @@ export const AudioMarkersOperations = {
     return ids.map(id => db.prepare('SELECT * FROM audio_markers WHERE id = ?').get(id) as AudioMarker);
   },
 
-  deleteByAudio(audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'quick_capture_audio'): void {
+  deleteByAudio(audioId: number, audioType: 'duration' | 'duration_image'): void {
     const db = getDatabase();
     db.prepare('DELETE FROM audio_markers WHERE audio_id = ? AND audio_type = ?').run(audioId, audioType);
   },
-
-  updateCaption(markerId: number, caption: string | null): AudioMarker {
-    const db = getDatabase();
-    db.prepare('UPDATE audio_markers SET caption = ? WHERE id = ?').run(caption, markerId);
-    return db.prepare('SELECT * FROM audio_markers WHERE id = ?').get(markerId) as AudioMarker;
-  },
 };
-
-// ============ Search =====};

@@ -1,13 +1,24 @@
 import { useState } from 'react';
+import type React from 'react';
 import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
-import ThemedAudioPlayer from './ThemedAudioPlayer';
+import ThemedAudioPlayer, { type ThemedAudioPlayerHandle } from './ThemedAudioPlayer';
+import type { AudioMarkerType } from '../../types';
+
+const MARKER_CONFIGS: { type: AudioMarkerType; icon: string; label: string; color: string }[] = [
+  { type: 'important', icon: '❗', label: 'Important', color: 'text-red-400 hover:bg-red-900/40' },
+  { type: 'question', icon: '❓', label: 'Question', color: 'text-blue-400 hover:bg-blue-900/40' },
+  { type: 'similar_question', icon: '↔', label: 'Similar Q', color: 'text-purple-400 hover:bg-purple-900/40' },
+];
 
 export default function ImageAudioPlayerBar() {
   const {
     currentAudio,
     imageLabel,
+    markers,
     canEditCaption,
+    playerRef,
     updateCurrentAudioCaption,
+    seekToNextMarker,
     dismiss,
   } = useImageAudioPlayer();
   const [expanded, setExpanded] = useState(false);
@@ -39,7 +50,7 @@ export default function ImageAudioPlayerBar() {
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900 dark:bg-gray-950 border-t border-blue-700/50 shadow-2xl">
+    <div className="fixed bottom-0 left-0 right-0 z-[60] bg-gray-900 dark:bg-gray-950 border-t border-blue-700/50 shadow-2xl">
       <div className="flex items-center gap-3 px-4 py-2 max-w-screen-2xl mx-auto">
         {/* Icon + label */}
         <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
@@ -80,9 +91,28 @@ export default function ImageAudioPlayerBar() {
           )}
         </div>
 
+        {/* Marker badge chips */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {MARKER_CONFIGS.map(({ type, icon, label: markerLabel, color }) => {
+            const count = markers.filter(m => m.marker_type === type).length;
+            if (count === 0) return null;
+            return (
+              <button
+                key={type}
+                onClick={() => seekToNextMarker(type)}
+                className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium bg-gray-800 ${color} border border-gray-700 transition-colors`}
+                title={`Seek to next ${markerLabel} (${count})`}
+              >
+                <span>{icon}</span>
+                <span>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Player */}
         <div className="flex-1 min-w-0">
-          <ThemedAudioPlayer src={src} theme="blue" />
+          <ThemedAudioPlayer ref={playerRef as React.RefObject<ThemedAudioPlayerHandle>} src={src} theme="blue" />
         </div>
 
         {/* Dismiss */}

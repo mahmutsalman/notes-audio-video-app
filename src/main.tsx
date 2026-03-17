@@ -4,6 +4,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { ScreenRecordingSettingsProvider } from './context/ScreenRecordingSettingsContext';
 import { AudioRecordingProvider } from './context/AudioRecordingContext';
 import { ImageAudioPlayerProvider } from './context/ImageAudioPlayerContext';
+import { DurationAudioPlayerProvider } from './context/DurationAudioPlayerContext';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -13,7 +14,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <ScreenRecordingSettingsProvider>
           <AudioRecordingProvider>
             <ImageAudioPlayerProvider>
-              <App />
+              <DurationAudioPlayerProvider>
+                <App />
+              </DurationAudioPlayerProvider>
             </ImageAudioPlayerProvider>
           </AudioRecordingProvider>
         </ScreenRecordingSettingsProvider>

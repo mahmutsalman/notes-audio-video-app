@@ -559,6 +559,24 @@ function runMigrations(db: Database.Database): void {
     console.log('Added rect_x/y/w/h columns to duration_images table');
   }
 
+  // Migration: Add audio_markers table if it doesn't exist
+  const hasAudioMarkersTable = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='audio_markers'").get() as { name: string } | undefined) !== undefined;
+  if (!hasAudioMarkersTable) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS audio_markers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        audio_id INTEGER NOT NULL,
+        audio_type TEXT NOT NULL,
+        marker_type TEXT NOT NULL,
+        start_time REAL NOT NULL,
+        end_time REAL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_audio_markers_audio ON audio_markers(audio_id, audio_type);
+    `);
+    console.log('Created audio_markers table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index
