@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type React from 'react';
-import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
+import { useDurationAudioPlayer } from '../../context/DurationAudioPlayerContext';
 import ThemedAudioPlayer, { type ThemedAudioPlayerHandle } from './ThemedAudioPlayer';
 import type { AudioMarkerType } from '../../types';
 
@@ -10,17 +10,17 @@ const MARKER_CONFIGS: { type: AudioMarkerType; icon: string; label: string; colo
   { type: 'similar_question', icon: '↔', label: 'Similar Q', color: 'text-purple-400 hover:bg-purple-900/40' },
 ];
 
-export default function ImageAudioPlayerBar() {
+export default function DurationAudioPlayerBar() {
   const {
     currentAudio,
-    imageLabel,
+    markLabel,
     markers,
     canEditCaption,
     playerRef,
     updateCurrentAudioCaption,
     seekToNextMarker,
     dismiss,
-  } = useImageAudioPlayer();
+  } = useDurationAudioPlayer();
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draftCaption, setDraftCaption] = useState('');
@@ -28,7 +28,7 @@ export default function ImageAudioPlayerBar() {
   if (!currentAudio) return null;
 
   const src = window.electronAPI.paths.getFileUrl(currentAudio.file_path);
-  const label = currentAudio.caption || imageLabel;
+  const label = currentAudio.caption || markLabel;
 
   const startEditing = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -50,11 +50,11 @@ export default function ImageAudioPlayerBar() {
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[60] bg-gray-900 dark:bg-gray-950 border-t border-blue-700/50 shadow-2xl">
+    <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900 dark:bg-gray-950 border-t border-blue-700/50 shadow-2xl">
       <div className="flex items-center gap-3 px-4 py-2 max-w-screen-2xl mx-auto">
         {/* Icon + label */}
         <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
-          <span className="text-blue-400 text-base">🔊</span>
+          <span className="text-blue-400 text-base">🎙</span>
           {editing ? (
             <textarea
               autoFocus

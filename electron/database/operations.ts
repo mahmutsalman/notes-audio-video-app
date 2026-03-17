@@ -13,7 +13,8 @@ import type {
   CodeSnippet, CreateCodeSnippet, UpdateCodeSnippet,
   DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
   DurationGroupColor,
-  DurationColor
+  DurationColor,
+  AudioMarker
 } from '../../src/types';
 
 // Helper to parse tags from JSON string
@@ -1089,5 +1090,39 @@ export const SettingsOperations = {
     const rows = db.prepare('SELECT key, value FROM app_settings').all() as
       { key: string; value: string }[];
     return Object.fromEntries(rows.map(r => [r.key, r.value]));
+  },
+};
+
+// Audio Markers Operations
+export const AudioMarkersOperations = {
+  getByAudio(audioId: number, audioType: 'duration' | 'duration_image'): AudioMarker[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM audio_markers
+      WHERE audio_id = ? AND audio_type = ?
+      ORDER BY start_time ASC
+    `).all(audioId, audioType) as AudioMarker[];
+  },
+
+  addBatch(markers: Omit<AudioMarker, 'id' | 'created_at'>[]): AudioMarker[] {
+    const db = getDatabase();
+    const insert = db.prepare(`
+      INSERT INTO audio_markers (audio_id, audio_type, marker_type, start_time, end_time)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    const ids: number[] = [];
+    const txn = db.transaction(() => {
+      for (const m of markers) {
+        const result = insert.run(m.audio_id, m.audio_type, m.marker_type, m.start_time, m.end_time ?? null);
+        ids.push(result.lastInsertRowid as number);
+      }
+    });
+    txn();
+    return ids.map(id => db.prepare('SELECT * FROM audio_markers WHERE id = ?').get(id) as AudioMarker);
+  },
+
+  deleteByAudio(audioId: number, audioType: 'duration' | 'duration_image'): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM audio_markers WHERE audio_id = ? AND audio_type = ?').run(audioId, audioType);
   },
 };

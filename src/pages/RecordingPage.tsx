@@ -10,6 +10,7 @@ import SimpleAudioRecordModal from '../components/audio/SimpleAudioRecordModal';
 import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../context/ImageAudioPlayerContext';
+import { useDurationAudioPlayer } from '../context/DurationAudioPlayerContext';
 import { SYNC_COMPLETED_EVENT } from '../utils/events';
 import DurationList from '../components/recordings/DurationList';
 import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
@@ -28,7 +29,7 @@ import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
 import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
-import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea } from '../types';
+import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -125,6 +126,8 @@ export default function RecordingPage() {
   const [selectedDurationVideoPath, setSelectedDurationVideoPath] = useState<string | null>(null);
   const audioRecording = useAudioRecording();
   const imageAudioPlayer = useImageAudioPlayer();
+  const durationAudioPlayer = useDurationAudioPlayer();
+  const [durationAudioMarkersCache, setDurationAudioMarkersCache] = useState<Record<number, AudioMarker[]>>({});
   // Local state to track media color changes for rendering (priority colors - left/right bars)
   const [mediaColorOverrides] = useState<Record<string, DurationColor>>({});
   // Local state to track media group color changes for instant visual feedback (group colors - top bar)
@@ -701,6 +704,26 @@ export default function RecordingPage() {
     return () => window.removeEventListener(SYNC_COMPLETED_EVENT, handleSyncCompleted);
   }, [activeDurationId, getDurationImages, getDurationVideos, getDurationAudios, getDurationCodeSnippets]);
 
+  // Load markers for duration audios whenever the active duration's audios change
+  useEffect(() => {
+    const audios = activeDurationId ? durationAudiosCache[activeDurationId] ?? [] : [];
+    if (audios.length === 0) return;
+    Promise.all(
+      audios.map(audio =>
+        window.electronAPI.audioMarkers.getByAudio(audio.id, 'duration').then(markers => ({ id: audio.id, markers }))
+      )
+    ).then(results => {
+      setDurationAudioMarkersCache(prev => {
+        const next = { ...prev };
+        for (const { id: audioId, markers } of results) {
+          next[audioId] = markers;
+        }
+        return next;
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDurationId, durationAudiosCache]);
+
   // Handle deleting a duration audio
   const handleDeleteDurationAudio = (audioId: number) => {
     if (!activeDurationId) return;
@@ -1034,10 +1057,12 @@ export default function RecordingPage() {
     });
   };
 
-  const handlePlayImageAudio = (audio: DurationImageAudio, label: string) => {
+  const handlePlayImageAudio = async (audio: DurationImageAudio, label: string) => {
+    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'duration_image');
     imageAudioPlayer.play(
       audio,
       label,
+      markers,
       (audioId, caption) => updateDurationImageAudioCaption(audioId, audio.duration_image_id, caption)
     );
   };
@@ -1617,11 +1642,21 @@ export default function RecordingPage() {
               🎙️ Record
             </button>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {activeDurationAudios.map((audio, index) => {
               const durationAudioKey = `durationAudio-${audio.id}`;
               const effectiveGroupColor = durationAudioKey in mediaGroupColorOverrides ? mediaGroupColorOverrides[durationAudioKey] : audio.group_color;
               const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
+              const audioMarkers = durationAudioMarkersCache[audio.id] ?? [];
+              const markerCounts: Record<AudioMarkerType, number> = {
+                important: audioMarkers.filter(m => m.marker_type === 'important').length,
+                question: audioMarkers.filter(m => m.marker_type === 'question').length,
+                similar_question: audioMarkers.filter(m => m.marker_type === 'similar_question').length,
+              };
+              const dur = activeDurationId ? durations.find(d => d.id === activeDurationId) : null;
+              const markLabel = audio.caption || (dur?.note
+                ? dur.note.replace(/<[^>]+>/g, '').slice(0, 40)
+                : `Section ${formatDuration(dur?.start_time ?? 0)} #${index + 1}`);
               return (
               <div
                 key={audio.id}
@@ -1635,26 +1670,46 @@ export default function RecordingPage() {
                     style={{ backgroundColor: groupColorConfig.color }}
                   />
                 )}
-                <div className={`flex items-start gap-2 ${groupColorConfig ? 'pt-1' : ''}`}>
-                  <span className="w-4 h-4 mt-2 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold">
+                <div className={`flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30 ${groupColorConfig ? 'mt-1' : ''}`}>
+                  <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
                     {index + 1}
                   </span>
-                  <div className="flex-1">
-                    <ThemedAudioPlayer
-                      src={window.electronAPI.paths.getFileUrl(audio.file_path)}
-                      theme="blue"
-                    />
-                    {audio.caption && (
-                      <p className="text-xs text-blue-400 mt-1 italic font-light leading-tight">
-                        {audio.caption}
-                      </p>
+                  {/* Play button */}
+                  <button
+                    onClick={async () => {
+                      const freshMarkers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'duration');
+                      durationAudioPlayer.play(audio, markLabel, freshMarkers, async (audioId, caption) => {
+                        return updateDurationAudioCaption(audioId, activeDurationId!, caption);
+                      });
+                    }}
+                    className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow"
+                    title="Play in bottom bar"
+                  >
+                    <svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </button>
+                  {/* Label / caption */}
+                  <span className="flex-1 text-xs text-blue-300 truncate min-w-0">
+                    {audio.caption || markLabel}
+                  </span>
+                  {/* Marker badge chips */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {markerCounts.important > 0 && (
+                      <span className="text-xs px-1 py-0.5 rounded bg-red-900/50 text-red-300 border border-red-800/40">❗{markerCounts.important}</span>
+                    )}
+                    {markerCounts.question > 0 && (
+                      <span className="text-xs px-1 py-0.5 rounded bg-blue-900/50 text-blue-300 border border-blue-800/40">❓{markerCounts.question}</span>
+                    )}
+                    {markerCounts.similar_question > 0 && (
+                      <span className="text-xs px-1 py-0.5 rounded bg-purple-900/50 text-purple-300 border border-purple-800/40">↔{markerCounts.similar_question}</span>
                     )}
                   </div>
                   <button
                     onClick={() => handleDeleteDurationAudio(audio.id)}
                     className="w-6 h-6 bg-red-500 text-white rounded-full
                                opacity-0 group-hover:opacity-100 transition-opacity
-                               flex items-center justify-center text-sm mt-3"
+                               flex items-center justify-center text-sm flex-shrink-0"
                   >
                     ×
                   </button>

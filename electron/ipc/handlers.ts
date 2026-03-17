@@ -13,6 +13,7 @@ import {
   CodeSnippetsOperations,
   DurationCodeSnippetsOperations,
   SettingsOperations,
+  AudioMarkersOperations,
 } from '../database/operations';
 import {
   saveAudioFile,
@@ -1306,6 +1307,16 @@ export function setupIpcHandlers(): void {
         console.log('[IPC Handler] Window focused for keyboard input');
       }
     }
+  });
+
+  // ============ Audio Markers ============
+  ipcMain.handle('audioMarkers:getByAudio', async (_, audioId: number, audioType: 'duration' | 'duration_image') => {
+    return AudioMarkersOperations.getByAudio(audioId, audioType);
+  });
+
+  ipcMain.handle('audioMarkers:addBatch', async (_, markers: { audio_id: number; audio_type: 'duration' | 'duration_image'; marker_type: string; start_time: number; end_time: number | null }[]) => {
+    if (!markers || markers.length === 0) return [];
+    return AudioMarkersOperations.addBatch(markers as any);
   });
 
   // ============ Settings ============

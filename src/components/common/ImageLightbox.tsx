@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { DurationImageAudio } from '../../types';
 import { useAudioRecording } from '../../context/AudioRecordingContext';
-import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
 import WaveformVisualizer from '../audio/WaveformVisualizer';
-import ThemedAudioPlayer from '../audio/ThemedAudioPlayer';
 import { formatDuration } from '../../utils/formatters';
 
 interface LightboxImage {
@@ -80,9 +78,6 @@ export default function ImageLightbox({
   const [pendingDeleteAudio, setPendingDeleteAudio] = useState<{ audioId: number; imageId: number; index: number } | null>(null);
   const [editingAudioCaptionId, setEditingAudioCaptionId] = useState<number | null>(null);
   const [audioCaptionText, setAudioCaptionText] = useState('');
-  const [expandedPlayerCaption, setExpandedPlayerCaption] = useState(false);
-  const [editingPlayerCaption, setEditingPlayerCaption] = useState(false);
-  const [playerCaptionText, setPlayerCaptionText] = useState('');
 
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -107,19 +102,9 @@ export default function ImageLightbox({
     cancelRecording,
   } = useAudioRecording();
 
-  // Image audio player context — for embedded player bar
-  const {
-    currentAudio,
-    imageLabel: playerLabel,
-    canEditCaption: canEditPlayerCaption,
-    updateCurrentAudioCaption,
-    dismiss: dismissPlayer,
-  } = useImageAudioPlayer();
-
   // Only show embedded bars when lightbox is in "image audio" mode
   const imageAudioMode = onRecordForImage !== undefined;
   const showRecordingBar = imageAudioMode && (isRecording || isSaving) && recTarget?.type === 'duration_image';
-  const showPlayerBar = imageAudioMode && currentAudio !== null;
 
   const image = images[selectedIndex];
   const currentImageAudios = (image?.id && imageAudiosMap) ? (imageAudiosMap[image.id] ?? []) : [];
@@ -129,12 +114,6 @@ export default function ImageLightbox({
     await onUpdateImageAudioCaption?.(audioId, imageId, trimmed);
     setEditingAudioCaptionId(null);
     setAudioCaptionText('');
-  };
-
-  const savePlayerCaption = async () => {
-    await updateCurrentAudioCaption(playerCaptionText.trim() || null);
-    setEditingPlayerCaption(false);
-    setPlayerCaptionText('');
   };
 
   // Keep scaleRef in sync with scale state
@@ -502,72 +481,6 @@ export default function ImageLightbox({
           </div>
         )}
       </div>
-
-      {/* ── Embedded player bar ── */}
-      {showPlayerBar && currentAudio && (
-        <div
-          className="flex-shrink-0 bg-gray-900 border-t border-blue-700/50"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center gap-3 px-4 py-2">
-            <span className="text-blue-400 text-base flex-shrink-0">🔊</span>
-            {editingPlayerCaption ? (
-              <textarea
-                autoFocus
-                value={playerCaptionText}
-                onChange={(e) => setPlayerCaptionText(e.target.value)}
-                onBlur={() => { void savePlayerCaption(); }}
-                onClick={(e) => e.stopPropagation()}
-                onContextMenu={(e) => e.preventDefault()}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    void savePlayerCaption();
-                  } else if (e.key === 'Escape') {
-                    setEditingPlayerCaption(false);
-                    setPlayerCaptionText('');
-                  }
-                }}
-                rows={2}
-                className="w-[180px] text-sm bg-blue-950/70 text-blue-100 rounded px-2 py-1 border border-blue-500/60 focus:outline-none focus:border-blue-300 resize-none italic"
-                placeholder="Add caption..."
-              />
-            ) : (
-              <span
-                className={`text-sm text-blue-300 flex-shrink-0 cursor-pointer ${expandedPlayerCaption ? 'max-w-xs whitespace-normal break-words' : 'truncate max-w-[180px]'}`}
-                title={expandedPlayerCaption ? undefined : (currentAudio.caption || playerLabel)}
-                onClick={(e) => { e.stopPropagation(); setExpandedPlayerCaption(v => !v); }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (!canEditPlayerCaption) return;
-                  setPlayerCaptionText(currentAudio.caption ?? '');
-                  setEditingPlayerCaption(true);
-                  setExpandedPlayerCaption(true);
-                }}
-              >
-                {currentAudio.caption || playerLabel}
-              </span>
-            )}
-            <div className="flex-1 min-w-0">
-              <ThemedAudioPlayer
-                src={window.electronAPI.paths.getFileUrl(currentAudio.file_path)}
-                theme="blue"
-              />
-            </div>
-            <button
-              onClick={dismissPlayer}
-              className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full
-                         bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white
-                         transition-colors text-xs"
-              title="Dismiss"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ── Embedded recording bar ── */}
       {showRecordingBar && (

@@ -1,10 +1,17 @@
 import { createContext, useContext, useCallback, useState, useEffect, type ReactNode } from 'react';
 import { useSimpleAudioRecorder } from '../hooks/useSimpleAudioRecorder';
+import type { AudioMarkerType } from '../types';
 
 export type RecordingTarget =
   | { type: 'duration'; durationId: number; recordingId: number; label: string }
   | { type: 'recording'; recordingId: number; label: string }
   | { type: 'duration_image'; durationImageId: number; durationId: number; recordingId: number; label: string };
+
+interface PendingMarker {
+  marker_type: AudioMarkerType;
+  start_time: number;
+  end_time: number | null;
+}
 
 interface AudioRecordingContextValue {
   // State
@@ -15,12 +22,14 @@ interface AudioRecordingContextValue {
   analyserNode: AnalyserNode | null;
   target: RecordingTarget | null;
   isSaving: boolean;
+  activeToggles: Set<AudioMarkerType>;
   // Actions
   startRecording: (target: RecordingTarget) => Promise<void>;
   pauseRecording: () => void;
   resumeRecording: () => void;
   stopAndSave: () => Promise<void>;
   cancelRecording: () => void;
+  addMarkerToggle: (type: AudioMarkerType) => void;
 }
 
 const AudioRecordingContext = createContext<AudioRecordingContextValue | null>(null);
@@ -40,6 +49,8 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
   const recorder = useSimpleAudioRecorder();
   const [target, setTarget] = useState<RecordingTarget | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [activeToggles, setActiveToggles] = useState<Set<AudioMarkerType>>(new Set());
+  const [pendingMarkers, setPendingMarkers] = useState<PendingMarker[]>([]);
 
   // Warn before closing while recording
   useEffect(() => {
@@ -57,6 +68,8 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
   const startRecording = useCallback(async (newTarget: RecordingTarget) => {
     if (recorder.isRecording) return;
     setTarget(newTarget);
+    setActiveToggles(new Set());
+    setPendingMarkers([]);
     await recorder.startRecording();
   }, [recorder]);
 
@@ -68,6 +81,35 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
     recorder.resumeRecording();
   }, [recorder]);
 
+  const addMarkerToggle = useCallback((type: AudioMarkerType) => {
+    const currentTime = recorder.duration;
+    setActiveToggles(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) {
+        // Toggle OFF: close last open marker of this type
+        setPendingMarkers(markers => {
+          const updated = [...markers];
+          for (let i = updated.length - 1; i >= 0; i--) {
+            if (updated[i].marker_type === type && updated[i].end_time === null) {
+              updated[i] = { ...updated[i], end_time: currentTime };
+              break;
+            }
+          }
+          return updated;
+        });
+        next.delete(type);
+      } else {
+        // Toggle ON: push new open marker
+        setPendingMarkers(markers => [
+          ...markers,
+          { marker_type: type, start_time: currentTime, end_time: null },
+        ]);
+        next.add(type);
+      }
+      return next;
+    });
+  }, [recorder.duration]);
+
   const stopAndSave = useCallback(async () => {
     if (!target) return;
     setIsSaving(true);
@@ -77,14 +119,16 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
 
       const buffer = await blob.arrayBuffer();
 
+      let savedAudio: { id: number } | null = null;
+
       if (target.type === 'duration') {
-        await window.electronAPI.durationAudios.addFromBuffer(
+        savedAudio = await window.electronAPI.durationAudios.addFromBuffer(
           target.durationId,
           buffer,
           'webm'
         );
       } else if (target.type === 'duration_image') {
-        await window.electronAPI.durationImageAudios.addFromBuffer(
+        savedAudio = await window.electronAPI.durationImageAudios.addFromBuffer(
           target.durationImageId,
           target.durationId,
           buffer,
@@ -98,6 +142,23 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
         );
       }
 
+      // Save pending markers if we have a saved audio record
+      if (savedAudio && pendingMarkers.length > 0) {
+        const audioType = target.type === 'duration_image' ? 'duration_image' : 'duration';
+        const markersToSave = pendingMarkers
+          .filter(m => m.start_time !== undefined)
+          .map(m => ({
+            audio_id: savedAudio!.id,
+            audio_type: audioType as 'duration' | 'duration_image',
+            marker_type: m.marker_type,
+            start_time: m.start_time,
+            end_time: m.end_time,
+          }));
+        if (markersToSave.length > 0) {
+          await window.electronAPI.audioMarkers.addBatch(markersToSave);
+        }
+      }
+
       // Notify any mounted page to refresh its cache
       window.dispatchEvent(new CustomEvent(AUDIO_SAVED_EVENT, {
         detail: { target },
@@ -107,12 +168,16 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsSaving(false);
       setTarget(null);
+      setActiveToggles(new Set());
+      setPendingMarkers([]);
     }
-  }, [target, recorder]);
+  }, [target, recorder, pendingMarkers]);
 
   const cancelRecording = useCallback(() => {
     recorder.reset();
     setTarget(null);
+    setActiveToggles(new Set());
+    setPendingMarkers([]);
   }, [recorder]);
 
   return (
@@ -125,11 +190,13 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
         analyserNode: recorder.analyserNode,
         target,
         isSaving,
+        activeToggles,
         startRecording,
         pauseRecording,
         resumeRecording,
         stopAndSave,
         cancelRecording,
+        addMarkerToggle,
       }}
     >
       {children}

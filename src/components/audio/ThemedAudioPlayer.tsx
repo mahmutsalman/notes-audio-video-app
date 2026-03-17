@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { formatDuration } from '../../utils/formatters';
 
 const SPEED_PRESETS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3] as const;
@@ -9,12 +9,24 @@ interface ThemedAudioPlayerProps {
   className?: string;
 }
 
-export default function ThemedAudioPlayer({
+export interface ThemedAudioPlayerHandle {
+  seekTo: (seconds: number) => void;
+}
+
+const ThemedAudioPlayer = forwardRef<ThemedAudioPlayerHandle, ThemedAudioPlayerProps>(function ThemedAudioPlayer({
   src,
   theme = 'violet',
   className = '',
-}: ThemedAudioPlayerProps) {
+}, ref) {
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    seekTo(seconds: number) {
+      if (audioRef.current) {
+        audioRef.current.currentTime = seconds;
+      }
+    },
+  }));
   const speedMenuRef = useRef<HTMLDivElement>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -207,4 +219,6 @@ export default function ThemedAudioPlayer({
       </div>
     </div>
   );
-}
+});
+
+export default ThemedAudioPlayer;

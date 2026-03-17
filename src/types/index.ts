@@ -264,6 +264,18 @@ export type UpdateCodeSnippet = { title?: string | null; language?: string; code
 export type UpdateDurationCodeSnippet = { title?: string | null; language?: string; code?: string; caption?: string | null };
 export type UpdateDurationAudio = { caption?: string | null };
 
+// Audio Marker types
+export type AudioMarkerType = 'important' | 'question' | 'similar_question';
+export interface AudioMarker {
+  id: number;
+  audio_id: number;
+  audio_type: 'duration' | 'duration_image';
+  marker_type: AudioMarkerType;
+  start_time: number;
+  end_time: number | null;
+  created_at: string;
+}
+
 // Backup types
 export interface BackupResult {
   success: boolean;
@@ -612,6 +624,10 @@ export interface ElectronAPI {
   };
   sync: {
     upload: () => Promise<{ success: boolean; output?: string; error?: string; stderr?: string }>;
+  };
+  audioMarkers: {
+    getByAudio: (audioId: number, audioType: 'duration' | 'duration_image') => Promise<AudioMarker[]>;
+    addBatch: (markers: Omit<AudioMarker, 'id' | 'created_at'>[]) => Promise<AudioMarker[]>;
   };
 }
 

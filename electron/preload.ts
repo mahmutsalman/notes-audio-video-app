@@ -637,6 +637,14 @@ const electronAPI = {
     upload: (): Promise<{ success: boolean; output?: string; error?: string; stderr?: string }> =>
       ipcRenderer.invoke('sync:upload'),
   },
+
+  // Audio Markers
+  audioMarkers: {
+    getByAudio: (audioId: number, audioType: 'duration' | 'duration_image') =>
+      ipcRenderer.invoke('audioMarkers:getByAudio', audioId, audioType),
+    addBatch: (markers: { audio_id: number; audio_type: 'duration' | 'duration_image'; marker_type: string; start_time: number; end_time: number | null }[]) =>
+      ipcRenderer.invoke('audioMarkers:addBatch', markers),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
