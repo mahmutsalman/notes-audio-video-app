@@ -816,6 +816,26 @@ export default function RecordingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDurationId, durationAudiosCache]);
 
+  // Load markers for duration audios whenever the active duration's audios change
+  useEffect(() => {
+    const audios = activeDurationId ? durationAudiosCache[activeDurationId] ?? [] : [];
+    if (audios.length === 0) return;
+    Promise.all(
+      audios.map(audio =>
+        window.electronAPI.audioMarkers.getByAudio(audio.id, 'duration').then(markers => ({ id: audio.id, markers }))
+      )
+    ).then(results => {
+      setDurationAudioMarkersCache(prev => {
+        const next = { ...prev };
+        for (const { id: audioId, markers } of results) {
+          next[audioId] = markers;
+        }
+        return next;
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDurationId, durationAudiosCache]);
+
   // Handle deleting a duration audio
   const handleDeleteDurationAudio = (audioId: number) => {
     if (!activeDurationId) return;
