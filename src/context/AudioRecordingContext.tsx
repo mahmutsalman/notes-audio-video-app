@@ -17,6 +17,12 @@ export interface PendingMarker {
   end_time: number | null;
 }
 
+interface PendingMarker {
+  marker_type: AudioMarkerType;
+  start_time: number;
+  end_time: number | null;
+}
+
 interface AudioRecordingContextValue {
   // State
   isRecording: boolean;
