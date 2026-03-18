@@ -693,7 +693,12 @@ export default function RecordingPage() {
   useEffect(() => {
     const handleSyncCompleted = () => {
       if (!activeDurationId) return;
-      getDurationImages(activeDurationId, true);
+      getDurationImages(activeDurationId, true).then(images => {
+        // Force-refresh image audios so new uploads from mobile appear
+        for (const img of images) {
+          refreshDurationImageAudios(img.id);
+        }
+      });
       getDurationVideos(activeDurationId, true);
       getDurationAudios(activeDurationId, true);
       getDurationCodeSnippets(activeDurationId).then(snippets => {
@@ -702,7 +707,7 @@ export default function RecordingPage() {
     };
     window.addEventListener(SYNC_COMPLETED_EVENT, handleSyncCompleted);
     return () => window.removeEventListener(SYNC_COMPLETED_EVENT, handleSyncCompleted);
-  }, [activeDurationId, getDurationImages, getDurationVideos, getDurationAudios, getDurationCodeSnippets]);
+  }, [activeDurationId, getDurationImages, getDurationVideos, getDurationAudios, getDurationCodeSnippets, refreshDurationImageAudios]);
 
   // Load markers for duration audios whenever the active duration's audios change
   useEffect(() => {
