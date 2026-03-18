@@ -802,6 +802,23 @@ export default function RecordingPage() {
         }
       });
       getDurationVideos(activeDurationId, true);
+      getDurationAudios(activeDurationId, true).then(audios => {
+        // Explicitly refresh markers for all audios after sync
+        Promise.all(
+          audios.map(audio =>
+            window.electronAPI.audioMarkers.getByAudio(audio.id, 'duration').then(markers => ({ id: audio.id, markers }))
+          )
+        ).then(results => {
+          setDurationAudioMarkersCache(prev => {
+            const next = { ...prev };
+            for (const { id: audioId, markers } of results) {
+              next[audioId] = markers;
+            }
+            return next;
+          });
+        });
+      });
+      getDurationVideos(activeDurationId, true);
       getDurationAudios(activeDurationId, true);
       getDurationCodeSnippets(activeDurationId).then(snippets => {
         setActiveDurationCodeSnippets(snippets);
@@ -810,46 +827,6 @@ export default function RecordingPage() {
     window.addEventListener(SYNC_COMPLETED_EVENT, handleSyncCompleted);
     return () => window.removeEventListener(SYNC_COMPLETED_EVENT, handleSyncCompleted);
   }, [activeDurationId, getDurationImages, getDurationVideos, getDurationAudios, getDurationCodeSnippets, refreshDurationImageAudios]);
-
-  // Load markers for duration audios whenever the active duration's audios change
-  useEffect(() => {
-    const audios = activeDurationId ? durationAudiosCache[activeDurationId] ?? [] : [];
-    if (audios.length === 0) return;
-    Promise.all(
-      audios.map(audio =>
-        window.electronAPI.audioMarkers.getByAudio(audio.id, 'duration').then(markers => ({ id: audio.id, markers }))
-      )
-    ).then(results => {
-      setDurationAudioMarkersCache(prev => {
-        const next = { ...prev };
-        for (const { id: audioId, markers } of results) {
-          next[audioId] = markers;
-        }
-        return next;
-      });
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDurationId, durationAudiosCache]);
-
-  // Load markers for duration audios whenever the active duration's audios change
-  useEffect(() => {
-    const audios = activeDurationId ? durationAudiosCache[activeDurationId] ?? [] : [];
-    if (audios.length === 0) return;
-    Promise.all(
-      audios.map(audio =>
-        window.electronAPI.audioMarkers.getByAudio(audio.id, 'duration').then(markers => ({ id: audio.id, markers }))
-      )
-    ).then(results => {
-      setDurationAudioMarkersCache(prev => {
-        const next = { ...prev };
-        for (const { id: audioId, markers } of results) {
-          next[audioId] = markers;
-        }
-        return next;
-      });
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDurationId, durationAudiosCache]);
 
   // Load markers for duration audios whenever the active duration's audios change
   useEffect(() => {
