@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -225,6 +226,27 @@ export const BookReaderView = forwardRef<BookReaderViewHandle, BookReaderViewPro
       },
     }), [navigate, state.originalPage]);
 
+    // Compute which character range within the current page corresponds to this view.
+    // Passed to PdfViewer so it can highlight the matching text items on the PDF canvas.
+    const highlightRange = useMemo(() => {
+      if (!showPdfPreview || !pdfPath || state.isLoading) return undefined;
+      const viewOffsets = viewOffsetsRef.current;
+      const pageMap = pageMapRef.current;
+      if (viewOffsets.length === 0 || pageMap.length === 0) return undefined;
+
+      const viewStart = viewOffsets[state.viewIndex] ?? 0;
+      const viewEnd = state.viewIndex + 1 < viewOffsets.length
+        ? viewOffsets[state.viewIndex + 1]
+        : fullTextRef.current.length;
+
+      const entry = pageMap.find(e => viewStart >= e.startOffset && viewStart < e.endOffset);
+      if (!entry) return undefined;
+
+      const charStart = viewStart - entry.startOffset;
+      const charEnd = Math.min(viewEnd, entry.endOffset) - entry.startOffset;
+      return { pageNum: entry.pageNum, charStart, charEnd };
+    }, [state.viewIndex, state.isLoading, showPdfPreview, pdfPath]);
+
     const fontSize = BASE_FONT_SIZE * zoom;
     const progress = state.totalViews > 1
       ? (state.viewIndex / (state.totalViews - 1)) * 100
@@ -309,6 +331,7 @@ export const BookReaderView = forwardRef<BookReaderViewHandle, BookReaderViewPro
                 ref={pdfPreviewRef}
                 filePath={pdfPath}
                 initialPage={state.originalPage}
+                highlightRange={highlightRange}
               />
             </div>
           )}
