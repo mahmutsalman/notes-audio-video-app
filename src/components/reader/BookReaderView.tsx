@@ -17,6 +17,7 @@ import {
   measureTextCapacity,
   PageMapEntry,
 } from '../../utils/readerPagination';
+import PdfViewer, { PdfViewerHandle } from '../pdf/PdfViewer';
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3.0;
@@ -26,6 +27,7 @@ const BASE_FONT_SIZE = 18;
 
 interface BookReaderViewProps {
   bookDataPath: string;
+  pdfPath?: string;
   initialCharacterOffset?: number;
   onPositionChange?: (characterOffset: number, progress: number, originalPage: number) => void;
 }
@@ -45,9 +47,15 @@ interface ReaderState {
 }
 
 export const BookReaderView = forwardRef<BookReaderViewHandle, BookReaderViewProps>(
-  ({ bookDataPath, initialCharacterOffset = 0, onPositionChange }, ref) => {
+  ({ bookDataPath, pdfPath, initialCharacterOffset = 0, onPositionChange }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
+    const pdfPreviewRef = useRef<PdfViewerHandle>(null);
     const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+    const [showPdfPreview, setShowPdfPreview] = useState(false);
+    const [isEditingPage, setIsEditingPage] = useState(false);
+    const [pageInput, setPageInput] = useState('');
+    const [isEditingView, setIsEditingView] = useState(false);
+    const [viewInput, setViewInput] = useState('');
     const [bookData, setBookData] = useState<BookData | null>(null);
     const [state, setState] = useState<ReaderState>({
       viewText: '',
@@ -163,6 +171,21 @@ export const BookReaderView = forwardRef<BookReaderViewHandle, BookReaderViewPro
       }, 500);
     }, [onPositionChange]);
 
+    // Sync PDF preview to current page whenever it changes
+    useEffect(() => {
+      if (showPdfPreview && pdfPreviewRef.current && state.originalPage) {
+        pdfPreviewRef.current.goToPage(state.originalPage);
+      }
+    }, [state.originalPage, showPdfPreview]);
+
+    // Internal helper to jump to an original PDF page (used by clickable page input)
+    const goToOriginalPageInternal = useCallback((pageNum: number) => {
+      const offset = getOffsetForPage(pageNum, pageMapRef.current);
+      charOffsetRef.current = offset;
+      const viewIndex = findViewIndex(offset, viewOffsetsRef.current);
+      navigate(viewIndex);
+    }, [navigate]);
+
     // Auto-focus the reader so arrow keys work immediately without clicking first
     const readerDivRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -216,64 +239,78 @@ export const BookReaderView = forwardRef<BookReaderViewHandle, BookReaderViewPro
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
-        {/* Reading area — always mounted */}
-        <div
-          ref={containerRef}
-          className="flex-1 overflow-hidden relative cursor-pointer"
-          onClick={(e) => {
-            if (state.isLoading) return;
-            const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-            const relX = e.clientX - rect.left;
-            if (relX < rect.width * 0.3) {
-              navigate(state.viewIndex - 1);
-            } else if (relX > rect.width * 0.7) {
-              navigate(state.viewIndex + 1);
-            }
-          }}
-        >
-          {state.isLoading ? (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-stone-400 dark:text-stone-500 text-sm">Loading book...</div>
-            </div>
-          ) : (
-            <>
-              {/* Left nav zone hint */}
-              <div className="absolute left-0 top-0 bottom-0 w-[30%] flex items-center justify-start pl-3 opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
-                {state.viewIndex > 0 && (
-                  <svg className="w-6 h-6 text-stone-400/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
-                  </svg>
-                )}
+        {/* Reading area — always mounted; splits horizontally when PDF preview is active */}
+        <div className={`flex-1 overflow-hidden ${showPdfPreview && pdfPath ? 'flex flex-row' : ''}`}>
+          {/* Reader text pane */}
+          <div
+            ref={containerRef}
+            className={`overflow-hidden relative cursor-pointer ${showPdfPreview && pdfPath ? 'w-1/2 border-r border-stone-200/60 dark:border-stone-700/60' : 'w-full h-full'}`}
+            onClick={(e) => {
+              if (state.isLoading) return;
+              const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+              const relX = e.clientX - rect.left;
+              if (relX < rect.width * 0.3) {
+                navigate(state.viewIndex - 1);
+              } else if (relX > rect.width * 0.7) {
+                navigate(state.viewIndex + 1);
+              }
+            }}
+          >
+            {state.isLoading ? (
+              <div className="h-full flex items-center justify-center">
+                <div className="text-stone-400 dark:text-stone-500 text-sm">Loading book...</div>
               </div>
-
-              {/* Right nav zone hint */}
-              <div className="absolute right-0 top-0 bottom-0 w-[30%] flex items-center justify-end pr-3 opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
-                {state.viewIndex < state.totalViews - 1 && (
-                  <svg className="w-6 h-6 text-stone-400/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
-                  </svg>
-                )}
-              </div>
-
-              {/* Text content */}
-              <div className="h-full flex items-center justify-center px-10 py-6">
-                <p
-                  style={{
-                    fontSize: `${fontSize}px`,
-                    lineHeight: 1.8,
-                    fontFamily: "Georgia, 'Palatino Linotype', serif",
-                  }}
-                  className="text-stone-800 dark:text-stone-200 max-w-prose transition-opacity duration-150"
-                >
-                  {state.viewText || (
-                    <span className="text-stone-400 dark:text-stone-500 italic">No text on this view.</span>
+            ) : (
+              <>
+                {/* Left nav zone hint */}
+                <div className="absolute left-0 top-0 bottom-0 w-[30%] flex items-center justify-start pl-3 opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
+                  {state.viewIndex > 0 && (
+                    <svg className="w-6 h-6 text-stone-400/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
+                    </svg>
                   )}
-                </p>
-              </div>
+                </div>
 
-              {/* Fade gradient at bottom edge */}
-              <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-amber-50/60 dark:from-stone-900/60 to-transparent pointer-events-none" />
-            </>
+                {/* Right nav zone hint */}
+                <div className="absolute right-0 top-0 bottom-0 w-[30%] flex items-center justify-end pr-3 opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
+                  {state.viewIndex < state.totalViews - 1 && (
+                    <svg className="w-6 h-6 text-stone-400/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
+                    </svg>
+                  )}
+                </div>
+
+                {/* Text content */}
+                <div className="h-full flex items-center justify-center px-10 py-6">
+                  <p
+                    style={{
+                      fontSize: `${fontSize}px`,
+                      lineHeight: 1.8,
+                      fontFamily: "Georgia, 'Palatino Linotype', serif",
+                    }}
+                    className="text-stone-800 dark:text-stone-200 max-w-prose transition-opacity duration-150"
+                  >
+                    {state.viewText || (
+                      <span className="text-stone-400 dark:text-stone-500 italic">No text on this view.</span>
+                    )}
+                  </p>
+                </div>
+
+                {/* Fade gradient at bottom edge */}
+                <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-amber-50/60 dark:from-stone-900/60 to-transparent pointer-events-none" />
+              </>
+            )}
+          </div>
+
+          {/* PDF preview pane */}
+          {showPdfPreview && pdfPath && (
+            <div className="w-1/2 overflow-hidden">
+              <PdfViewer
+                ref={pdfPreviewRef}
+                filePath={pdfPath}
+                initialPage={state.originalPage}
+              />
+            </div>
           )}
         </div>
 
@@ -289,12 +326,45 @@ export const BookReaderView = forwardRef<BookReaderViewHandle, BookReaderViewPro
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              {/* Page info */}
-              <span className="text-xs text-stone-500 dark:text-stone-400 tabular-nums">
-                Page {state.originalPage} of {state.totalOriginalPages}
-              </span>
+              {/* Page info — click to jump */}
+              {isEditingPage ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const val = parseInt(pageInput, 10);
+                    if (val >= 1 && val <= state.totalOriginalPages) {
+                      goToOriginalPageInternal(val);
+                    }
+                    setIsEditingPage(false);
+                  }}
+                  className="flex items-center gap-1"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <span className="text-xs text-stone-500 dark:text-stone-400">Page</span>
+                  <input
+                    autoFocus
+                    type="number"
+                    value={pageInput}
+                    onChange={(e) => setPageInput(e.target.value)}
+                    onBlur={() => setIsEditingPage(false)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setIsEditingPage(false); e.stopPropagation(); }}
+                    className="w-14 px-1 py-0 text-xs text-center tabular-nums bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 rounded outline-none focus:ring-1 focus:ring-violet-500"
+                    min={1}
+                    max={state.totalOriginalPages}
+                  />
+                  <span className="text-xs text-stone-500 dark:text-stone-400">of {state.totalOriginalPages}</span>
+                </form>
+              ) : (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setPageInput(String(state.originalPage)); setIsEditingPage(true); }}
+                  className="text-xs text-stone-500 dark:text-stone-400 tabular-nums hover:text-violet-600 dark:hover:text-violet-400 transition-colors cursor-pointer"
+                  title="Click to jump to page"
+                >
+                  Page {state.originalPage} of {state.totalOriginalPages}
+                </button>
+              )}
 
-              {/* Zoom controls */}
+              {/* Zoom controls + PDF preview toggle */}
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={(e) => { e.stopPropagation(); setZoom((z) => Math.max(MIN_ZOOM, parseFloat((z - ZOOM_STEP).toFixed(1)))); }}
@@ -313,12 +383,56 @@ export const BookReaderView = forwardRef<BookReaderViewHandle, BookReaderViewPro
                 >
                   +
                 </button>
+                {pdfPath && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowPdfPreview((v) => !v); }}
+                    className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showPdfPreview ? 'text-violet-500 bg-violet-100 dark:bg-violet-900/40' : 'text-stone-500 hover:text-stone-700 dark:hover:text-stone-300 hover:bg-stone-200/60 dark:hover:bg-stone-700/60'}`}
+                    title={showPdfPreview ? 'Hide PDF page' : 'Show PDF page'}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </button>
+                )}
               </div>
 
-              {/* View info */}
-              <span className="text-xs text-stone-500 dark:text-stone-400 tabular-nums">
-                View {state.viewIndex + 1} / {state.totalViews}
-              </span>
+              {/* View info — click to jump */}
+              {isEditingView ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const val = parseInt(viewInput, 10);
+                    if (val >= 1 && val <= state.totalViews) {
+                      navigate(val - 1);
+                    }
+                    setIsEditingView(false);
+                  }}
+                  className="flex items-center gap-1"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <span className="text-xs text-stone-500 dark:text-stone-400">View</span>
+                  <input
+                    autoFocus
+                    type="number"
+                    value={viewInput}
+                    onChange={(e) => setViewInput(e.target.value)}
+                    onBlur={() => setIsEditingView(false)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setIsEditingView(false); e.stopPropagation(); }}
+                    className="w-16 px-1 py-0 text-xs text-center tabular-nums bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 rounded outline-none focus:ring-1 focus:ring-violet-500"
+                    min={1}
+                    max={state.totalViews}
+                  />
+                  <span className="text-xs text-stone-500 dark:text-stone-400">/ {state.totalViews}</span>
+                </form>
+              ) : (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setViewInput(String(state.viewIndex + 1)); setIsEditingView(true); }}
+                  className="text-xs text-stone-500 dark:text-stone-400 tabular-nums hover:text-violet-600 dark:hover:text-violet-400 transition-colors cursor-pointer"
+                  title="Click to jump to view"
+                >
+                  View {state.viewIndex + 1} / {state.totalViews}
+                </button>
+              )}
             </div>
           </div>
         )}
