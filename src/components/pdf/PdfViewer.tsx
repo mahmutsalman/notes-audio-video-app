@@ -18,6 +18,7 @@ interface PdfViewerProps {
     rect: { x: number; y: number; w: number; h: number };
   }) => void;
   highlightRange?: { pageNum: number; charStart: number; charEnd: number };
+  wordHighlightRange?: { pageNum: number; charStart: number; charEnd: number };
 }
 
 export interface PdfViewerHandle {
@@ -41,7 +42,7 @@ const SCALE_STEP = 0.25;
 const DEFAULT_SCALE = 1.5;
 
 const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
-  ({ filePath, initialPage, onPageChange, pageOffset = 0, onCalibrateOffset, onScreenshotCapture, highlightRange }, ref) => {
+  ({ filePath, initialPage, onPageChange, pageOffset = 0, onCalibrateOffset, onScreenshotCapture, highlightRange, wordHighlightRange }, ref) => {
     const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
     const [currentPage, setCurrentPage] = useState(initialPage ?? 1);
     const [totalPages, setTotalPages] = useState(0);
@@ -57,6 +58,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
     const [selectionStart, setSelectionStart] = useState<{ pageNum: number; x: number; y: number } | null>(null);
     const [selectionEnd, setSelectionEnd] = useState<{ x: number; y: number } | null>(null);
     const [highlightRects, setHighlightRects] = useState<{ pageNum: number; x: number; y: number; w: number; h: number }[]>([]);
+    const [wordHighlightRects, setWordHighlightRects] = useState<{ pageNum: number; x: number; y: number; w: number; h: number }[]>([]);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
@@ -66,62 +68,77 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
     const restorePageOnZoom = useRef<number | null>(null);
     const calibrationRef = useRef<HTMLDivElement>(null);
 
-    // Compute highlight rects from text item positions when highlightRange changes
-    useEffect(() => {
-      if (!highlightRange || !pdfDoc) {
-        setHighlightRects([]);
-        return;
-      }
-      let cancelled = false;
-
-      (async () => {
-        try {
-          const page = await pdfDoc.getPage(highlightRange.pageNum);
-          const viewport = page.getViewport({ scale });
-          const textContent = await page.getTextContent();
-
-          const rects: typeof highlightRects = [];
-          let charOffset = 0;
-
-          for (let i = 0; i < textContent.items.length; i++) {
-            const item = textContent.items[i];
-            if (!('str' in item)) continue;
-            const str = (item as { str: string }).str;
-            const tx = (item as { transform: number[] }).transform[4];
-            const ty = (item as { transform: number[] }).transform[5];
-            const iw = (item as { width: number }).width;
-            const ih = (item as { height: number }).height;
-
-            // Mirror the extraction join(' ') separator between items
-            if (i > 0) charOffset += 1;
-
-            const itemStart = charOffset;
-            const itemEnd = charOffset + str.length;
-
-            if (itemEnd > highlightRange.charStart && itemStart < highlightRange.charEnd) {
-              // Convert item bounding box from PDF space to viewport (canvas) space
-              const [vpX1, vpY1] = viewport.convertToViewportPoint(tx, ty + ih);
-              const [vpX2, vpY2] = viewport.convertToViewportPoint(tx + iw, ty);
-              rects.push({
-                pageNum: highlightRange.pageNum,
-                x: Math.min(vpX1, vpX2),
-                y: Math.min(vpY1, vpY2),
-                w: Math.abs(vpX2 - vpX1),
-                h: Math.abs(vpY2 - vpY1),
-              });
-            }
-
-            charOffset = itemEnd;
+    // Shared helper: walk TextItems and return viewport rects for a char range.
+    // precise=true sub-divides each TextItem proportionally to isolate the exact
+    // word within it (good for single-word highlights). precise=false highlights
+    // the full TextItem (good for view-level highlights covering many words).
+    const computeTextItemRects = useCallback(async (
+      pageNum: number,
+      charStart: number,
+      charEnd: number,
+      precise = false,
+    ): Promise<{ pageNum: number; x: number; y: number; w: number; h: number }[]> => {
+      if (!pdfDoc) return [];
+      const page = await pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale });
+      const textContent = await page.getTextContent();
+      const rects: { pageNum: number; x: number; y: number; w: number; h: number }[] = [];
+      let charOffset = 0;
+      for (let i = 0; i < textContent.items.length; i++) {
+        const item = textContent.items[i];
+        if (!('str' in item)) continue;
+        const str = (item as { str: string }).str;
+        const tx = (item as { transform: number[] }).transform[4];
+        const ty = (item as { transform: number[] }).transform[5];
+        const iw = (item as { width: number }).width;
+        const ih = (item as { height: number }).height;
+        if (i > 0) charOffset += 1;
+        const itemStart = charOffset;
+        const itemEnd = charOffset + str.length;
+        if (itemEnd > charStart && itemStart < charEnd) {
+          let adjustedTx = tx;
+          let adjustedIw = iw;
+          if (precise && str.length > 0) {
+            // Proportionally narrow the rect to just the overlapping chars within this item
+            const localStart = Math.max(0, charStart - itemStart);
+            const localEnd = Math.min(str.length, charEnd - itemStart);
+            adjustedTx = tx + (localStart / str.length) * iw;
+            adjustedIw = ((localEnd - localStart) / str.length) * iw;
           }
-
-          if (!cancelled) setHighlightRects(rects);
-        } catch {
-          if (!cancelled) setHighlightRects([]);
+          const [vpX1, vpY1] = viewport.convertToViewportPoint(adjustedTx, ty + ih);
+          const [vpX2, vpY2] = viewport.convertToViewportPoint(adjustedTx + adjustedIw, ty);
+          rects.push({
+            pageNum,
+            x: Math.min(vpX1, vpX2),
+            y: Math.min(vpY1, vpY2),
+            w: Math.abs(vpX2 - vpX1),
+            h: Math.abs(vpY2 - vpY1),
+          });
         }
-      })();
+        charOffset = itemEnd;
+      }
+      return rects;
+    }, [pdfDoc, scale]);
 
+    // Compute view-level highlight rects
+    useEffect(() => {
+      if (!highlightRange || !pdfDoc) { setHighlightRects([]); return; }
+      let cancelled = false;
+      computeTextItemRects(highlightRange.pageNum, highlightRange.charStart, highlightRange.charEnd)
+        .then(rects => { if (!cancelled) setHighlightRects(rects); })
+        .catch(() => { if (!cancelled) setHighlightRects([]); });
       return () => { cancelled = true; };
-    }, [highlightRange, pdfDoc, scale]);
+    }, [highlightRange, pdfDoc, scale, computeTextItemRects]);
+
+    // Compute word-level highlight rects on hover
+    useEffect(() => {
+      if (!wordHighlightRange || !pdfDoc) { setWordHighlightRects([]); return; }
+      let cancelled = false;
+      computeTextItemRects(wordHighlightRange.pageNum, wordHighlightRange.charStart, wordHighlightRange.charEnd, true)
+        .then(rects => { if (!cancelled) setWordHighlightRects(rects); })
+        .catch(() => { if (!cancelled) setWordHighlightRects([]); });
+      return () => { cancelled = true; };
+    }, [wordHighlightRange, pdfDoc, scale, computeTextItemRects]);
 
     // Offset conversion helpers
     const toBookPage = (pdfPage: number) => pdfPage - pageOffset;
@@ -694,6 +711,24 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
                         height: r.h,
                         backgroundColor: 'rgba(167, 139, 250, 0.3)',
                         borderRadius: 2,
+                      }}
+                    />
+                  ))}
+                {/* Word-level hover highlight */}
+                {wordHighlightRects
+                  .filter(r => r.pageNum === i + 1)
+                  .map((r, ri) => (
+                    <div
+                      key={`whl-${ri}`}
+                      className="absolute pointer-events-none"
+                      style={{
+                        left: r.x,
+                        top: r.y,
+                        width: r.w,
+                        height: r.h,
+                        backgroundColor: 'rgba(167, 139, 250, 0.55)',
+                        borderRadius: 2,
+                        transition: 'opacity 100ms',
                       }}
                     />
                   ))}
