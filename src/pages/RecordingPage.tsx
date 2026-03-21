@@ -16,8 +16,9 @@ import { SYNC_COMPLETED_EVENT } from '../utils/events';
 import DurationList from '../components/recordings/DurationList';
 import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
 import MarkList from '../components/recordings/MarkList';
-import { isBookNote, isMarkBasedNote, createMarkTimes, getNextMarkIndex } from '../utils/marks';
+import { isBookNote, isReaderNote, isMarkBasedNote, createMarkTimes, getNextMarkIndex } from '../utils/marks';
 import PdfViewer, { PdfViewerHandle } from '../components/pdf/PdfViewer';
+import BookReaderView, { BookReaderViewHandle } from '../components/reader/BookReaderView';
 import { emitRecordingUpdated } from '../utils/events';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
@@ -200,6 +201,7 @@ export default function RecordingPage() {
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
   const videoPlayerRef = useRef<HTMLVideoElement>(null);
   const pdfViewerRef = useRef<PdfViewerHandle>(null);
+  const bookReaderRef = useRef<BookReaderViewHandle>(null);
   const videoLoopListenerRef = useRef<(() => void) | null>(null);
 
   // Helper to preserve scroll position across refetch
@@ -478,6 +480,8 @@ export default function RecordingPage() {
       const { start_time, end_time } = createMarkTimes(nextIndex);
       const pageNumber = isBookNote(recording) && pdfViewerRef.current
         ? pdfViewerRef.current.currentPage
+        : isReaderNote(recording) && bookReaderRef.current
+        ? bookReaderRef.current.currentOriginalPage
         : undefined;
       const newDuration = await createDuration({
         recording_id: id,
@@ -693,6 +697,8 @@ export default function RecordingPage() {
       handleDurationClick(duration);
       if (isBookNote(recording) && duration.page_number && pdfViewerRef.current) {
         pdfViewerRef.current.goToPage(duration.page_number);
+      } else if (isReaderNote(recording) && duration.page_number && bookReaderRef.current) {
+        bookReaderRef.current.goToOriginalPage(duration.page_number);
       }
     }
   };
@@ -1569,6 +1575,58 @@ export default function RecordingPage() {
         </div>
       )}
 
+      {/* Book Reader View - shown for reader notes */}
+      {isReaderNote(recording) && recording.book_data_path && (
+        <div className="mb-6 -mx-4">
+          <div className="flex items-center justify-between px-4 mb-2">
+            <h2 className="text-lg font-semibold text-violet-700 dark:text-violet-300 flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Reader
+            </h2>
+            {recording.total_words && (
+              <span className="text-xs text-stone-400 dark:text-stone-500">
+                {recording.total_words.toLocaleString()} words · {recording.total_pages} pages
+              </span>
+            )}
+          </div>
+          <div style={{ height: '70vh' }} className="rounded-lg overflow-hidden border border-violet-200 dark:border-violet-800/50 mx-4">
+            <BookReaderView
+              ref={bookReaderRef}
+              bookDataPath={recording.book_data_path}
+              initialCharacterOffset={recording.character_offset ?? 0}
+              onPositionChange={async (characterOffset, progress, _originalPage) => {
+                try {
+                  const updated = await window.electronAPI.recordings.update(recording.id, {
+                    character_offset: characterOffset,
+                    reading_progress: progress,
+                  });
+                  setRecording(updated);
+                } catch (err) {
+                  console.error('Failed to save reading progress:', err);
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Extraction pending - show re-extract option if PDF exists but no book data */}
+      {isReaderNote(recording) && recording.pdf_path && !recording.book_data_path && (
+        <div className="mb-6 p-4 -mx-4 rounded-xl bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 mx-4">
+          <p className="text-sm text-violet-700 dark:text-violet-300 mb-2">
+            Text extraction is pending or was interrupted.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="text-sm text-violet-600 dark:text-violet-400 underline"
+          >
+            Reload to retry
+          </button>
+        </div>
+      )}
+
       {/* Main Notes section - shown for mark-based notes (replaces audio/video player) */}
       {isMarkBasedRecording && (
         <div className="mb-6 p-4 -mx-4 rounded-xl bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800">
@@ -1625,6 +1683,8 @@ export default function RecordingPage() {
             setActiveDurationId(activeDurationId === duration.id ? null : duration.id);
             if (isBookNote(recording) && duration.page_number && pdfViewerRef.current) {
               pdfViewerRef.current.goToPage(duration.page_number);
+            } else if (isReaderNote(recording) && duration.page_number && bookReaderRef.current) {
+              bookReaderRef.current.goToOriginalPage(duration.page_number);
             }
           }}
           onDeleteMark={handleDeleteDuration}
@@ -1636,7 +1696,7 @@ export default function RecordingPage() {
           durationImagesCache={durationImagesCache}
           durationVideosCache={durationVideosCache}
           isAddingMark={isAddingMark}
-          pageOffset={isBookNote(recording) ? (recording.page_offset ?? 0) : undefined}
+          pageOffset={(isBookNote(recording) || isReaderNote(recording)) ? (recording.page_offset ?? 0) : undefined}
         />
       ) : (
         <DurationList
