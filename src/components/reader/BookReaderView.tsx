@@ -58,6 +58,7 @@ export const BookReaderView = forwardRef<BookReaderViewHandle, BookReaderViewPro
     const [isEditingView, setIsEditingView] = useState(false);
     const [viewInput, setViewInput] = useState('');
     const [bookData, setBookData] = useState<BookData | null>(null);
+    const [hoveredWordRange, setHoveredWordRange] = useState<{ charStart: number; charEnd: number } | null>(null);
     const [state, setState] = useState<ReaderState>({
       viewText: '',
       viewIndex: 0,
@@ -247,6 +248,41 @@ export const BookReaderView = forwardRef<BookReaderViewHandle, BookReaderViewPro
       return { pageNum: entry.pageNum, charStart, charEnd };
     }, [state.viewIndex, state.isLoading, showPdfPreview, pdfPath]);
 
+    // Split viewText into word/whitespace tokens with within-page char offsets for hover highlighting
+    const wordSpans = useMemo(() => {
+      if (!state.viewText || state.isLoading) return [];
+      const viewOffsets = viewOffsetsRef.current;
+      const pageMap = pageMapRef.current;
+      const viewStart = viewOffsets[state.viewIndex] ?? 0;
+      const entry = pageMap.find(e => viewStart >= e.startOffset && viewStart < e.endOffset);
+      const pageStartOffset = entry ? entry.startOffset : 0;
+      const spans: { text: string; isWord: boolean; pageCharStart: number; pageCharEnd: number }[] = [];
+      const regex = /(\S+|\s+)/g;
+      let match;
+      while ((match = regex.exec(state.viewText)) !== null) {
+        const text = match[0];
+        const pageCharStart = (viewStart - pageStartOffset) + match.index;
+        spans.push({
+          text,
+          isWord: /\S/.test(text),
+          pageCharStart,
+          pageCharEnd: pageCharStart + text.length,
+        });
+      }
+      return spans;
+    }, [state.viewText, state.viewIndex, state.isLoading]);
+
+    // Derive word-level highlight range for PdfViewer when hovering
+    const wordHighlightRange = useMemo(() => {
+      if (!hoveredWordRange || !showPdfPreview || !pdfPath || state.isLoading) return undefined;
+      const viewOffsets = viewOffsetsRef.current;
+      const pageMap = pageMapRef.current;
+      const viewStart = viewOffsets[state.viewIndex] ?? 0;
+      const entry = pageMap.find(e => viewStart >= e.startOffset && viewStart < e.endOffset);
+      if (!entry) return undefined;
+      return { pageNum: entry.pageNum, charStart: hoveredWordRange.charStart, charEnd: hoveredWordRange.charEnd };
+    }, [hoveredWordRange, state.viewIndex, state.isLoading, showPdfPreview, pdfPath]);
+
     const fontSize = BASE_FONT_SIZE * zoom;
     const progress = state.totalViews > 1
       ? (state.viewIndex / (state.totalViews - 1)) * 100
@@ -312,7 +348,25 @@ export const BookReaderView = forwardRef<BookReaderViewHandle, BookReaderViewPro
                     }}
                     className="text-stone-800 dark:text-stone-200 max-w-prose transition-opacity duration-150"
                   >
-                    {state.viewText || (
+                    {wordSpans.length > 0 ? wordSpans.map((span, idx) =>
+                      span.isWord ? (
+                        <span
+                          key={idx}
+                          className="rounded-sm transition-colors duration-100"
+                          style={
+                            hoveredWordRange && span.pageCharStart === hoveredWordRange.charStart
+                              ? { backgroundColor: 'rgba(167, 139, 250, 0.35)' }
+                              : undefined
+                          }
+                          onMouseEnter={() => setHoveredWordRange({ charStart: span.pageCharStart, charEnd: span.pageCharEnd })}
+                          onMouseLeave={() => setHoveredWordRange(null)}
+                        >
+                          {span.text}
+                        </span>
+                      ) : (
+                        <span key={idx}>{span.text}</span>
+                      )
+                    ) : (
                       <span className="text-stone-400 dark:text-stone-500 italic">No text on this view.</span>
                     )}
                   </p>
@@ -332,6 +386,7 @@ export const BookReaderView = forwardRef<BookReaderViewHandle, BookReaderViewPro
                 filePath={pdfPath}
                 initialPage={state.originalPage}
                 highlightRange={highlightRange}
+                wordHighlightRange={wordHighlightRange}
               />
             </div>
           )}
