@@ -147,9 +147,10 @@ export const RecordingsOperations = {
       INSERT INTO recordings (
         topic_id, name, audio_path, audio_duration, video_path, video_duration,
         video_resolution, video_fps, video_size, notes_content, main_notes_content,
-        importance_color, recording_type, pdf_path, page_offset
+        importance_color, recording_type, pdf_path, page_offset,
+        book_data_path, reading_progress, character_offset, total_pages, total_words
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -167,7 +168,12 @@ export const RecordingsOperations = {
       recording.importance_color ?? null,
       recording.recording_type ?? 'audio',
       recording.pdf_path ?? null,
-      recording.page_offset ?? 0
+      recording.page_offset ?? 0,
+      recording.book_data_path ?? null,
+      recording.reading_progress ?? 0.0,
+      recording.character_offset ?? 0,
+      recording.total_pages ?? null,
+      recording.total_words ?? null
     );
 
     // Update topic's updated_at
@@ -238,6 +244,26 @@ export const RecordingsOperations = {
     if (updates.page_offset !== undefined) {
       fields.push('page_offset = ?');
       values.push(updates.page_offset);
+    }
+    if (updates.book_data_path !== undefined) {
+      fields.push('book_data_path = ?');
+      values.push(updates.book_data_path);
+    }
+    if (updates.reading_progress !== undefined) {
+      fields.push('reading_progress = ?');
+      values.push(updates.reading_progress);
+    }
+    if (updates.character_offset !== undefined) {
+      fields.push('character_offset = ?');
+      values.push(updates.character_offset);
+    }
+    if (updates.total_pages !== undefined) {
+      fields.push('total_pages = ?');
+      values.push(updates.total_pages);
+    }
+    if (updates.total_words !== undefined) {
+      fields.push('total_words = ?');
+      values.push(updates.total_words);
     }
 
     if (fields.length > 0) {

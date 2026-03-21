@@ -1375,6 +1375,16 @@ export function setupIpcHandlers(): void {
     return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   });
 
+  ipcMain.handle('pdf:saveBookData', async (_, recordingId: number, bookData: object) => {
+    const { saveBookData } = await import('../services/fileStorage');
+    return saveBookData(recordingId, bookData);
+  });
+
+  ipcMain.handle('pdf:readBookData', async (_, bookDataPath: string) => {
+    const { readBookData } = await import('../services/fileStorage');
+    return readBookData(bookDataPath);
+  });
+
   // ============ Cloud Sync ============
   ipcMain.handle('sync:upload', async () => {
     const { exec } = await import('child_process');

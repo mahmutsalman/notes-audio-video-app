@@ -630,6 +630,10 @@ const electronAPI = {
       ipcRenderer.invoke('pdf:copyToMedia', recordingId, sourcePath),
     readFile: (filePath: string): Promise<ArrayBuffer> =>
       ipcRenderer.invoke('pdf:readFile', filePath),
+    saveBookData: (recordingId: number, bookData: object): Promise<string> =>
+      ipcRenderer.invoke('pdf:saveBookData', recordingId, bookData),
+    readBookData: (bookDataPath: string): Promise<object> =>
+      ipcRenderer.invoke('pdf:readBookData', bookDataPath),
   },
 
   // Cloud Sync

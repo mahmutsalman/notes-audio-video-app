@@ -52,6 +52,7 @@
     "react-quill-new": "^3.6.0",
     "react-router-dom": "^7.0.2",
     "soundtouchjs": "^0.2.1",
+    "tesseract.js": "^7.0.0",
     "uuid": "^11.0.3"
   },
   "devDependencies": {

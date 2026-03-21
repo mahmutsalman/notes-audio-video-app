@@ -567,6 +567,30 @@ function runMigrations(db: Database.Database): void {
     console.log('Created audio_markers table');
   }
 
+  // Migration: Add reader mode columns to recordings table
+  const recordingsColumnsForReader = db.prepare("PRAGMA table_info(recordings)").all() as { name: string }[];
+  const readerColumnNames = new Set(recordingsColumnsForReader.map(c => c.name));
+  if (!readerColumnNames.has('book_data_path')) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN book_data_path TEXT`);
+    console.log('Added book_data_path column to recordings table');
+  }
+  if (!readerColumnNames.has('reading_progress')) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN reading_progress REAL DEFAULT 0.0`);
+    console.log('Added reading_progress column to recordings table');
+  }
+  if (!readerColumnNames.has('character_offset')) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN character_offset INTEGER DEFAULT 0`);
+    console.log('Added character_offset column to recordings table');
+  }
+  if (!readerColumnNames.has('total_pages')) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN total_pages INTEGER`);
+    console.log('Added total_pages column to recordings table');
+  }
+  if (!readerColumnNames.has('total_words')) {
+    db.exec(`ALTER TABLE recordings ADD COLUMN total_words INTEGER`);
+    console.log('Added total_words column to recordings table');
+  }
+
   console.log('Database migrations completed');
 }
 

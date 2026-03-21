@@ -40,8 +40,12 @@ export function isBookNote(recording: Recording | null | undefined): boolean {
   return recording?.recording_type === 'book';
 }
 
+export function isReaderNote(recording: Recording | null | undefined): boolean {
+  return recording?.recording_type === 'reader';
+}
+
 export function isMarkBasedNote(recording: Recording | null | undefined): boolean {
-  return isWrittenNote(recording) || isBookNote(recording);
+  return isWrittenNote(recording) || isBookNote(recording) || isReaderNote(recording);
 }
 
 /**
