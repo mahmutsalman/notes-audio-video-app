@@ -30,6 +30,7 @@ export async function ensureMediaDirs(): Promise<void> {
     path.join(mediaDir, 'duration_audios'),  // duration-level audio attachments
     path.join(mediaDir, 'screen_recordings'), // screen recordings
     path.join(mediaDir, 'pdfs'),               // PDF files for book notes
+    path.join(mediaDir, 'books'),              // Extracted book data (JSON) for reader mode
   ];
 
   for (const dir of dirs) {
@@ -851,7 +852,8 @@ export async function deleteRecordingMedia(recordingId: number): Promise<void> {
   const screenRecordingsDir = path.join(mediaDir, 'screen_recordings', String(recordingId)); // screen recordings
 
   const pdfsDir = path.join(mediaDir, 'pdfs', String(recordingId)); // PDFs
-  for (const dir of [audiDir, imagesDir, videosDir, audiosDir, screenRecordingsDir, pdfsDir]) {
+  const booksDir = path.join(mediaDir, 'books', String(recordingId)); // Book data
+  for (const dir of [audiDir, imagesDir, videosDir, audiosDir, screenRecordingsDir, pdfsDir, booksDir]) {
     try {
       await fs.rm(dir, { recursive: true, force: true });
       console.log('Deleted directory:', dir);
@@ -876,6 +878,20 @@ export async function savePdfFile(
   console.log('PDF saved to:', filePath);
 
   return filePath;
+}
+
+export async function saveBookData(recordingId: number, data: object): Promise<string> {
+  const dir = path.join(getMediaDir(), 'books', String(recordingId));
+  await fs.mkdir(dir, { recursive: true });
+  const filePath = path.join(dir, 'book_data.json');
+  await fs.writeFile(filePath, JSON.stringify(data), 'utf-8');
+  console.log('Book data saved to:', filePath);
+  return filePath;
+}
+
+export async function readBookData(bookDataPath: string): Promise<object> {
+  const content = await fs.readFile(bookDataPath, 'utf-8');
+  return JSON.parse(content);
 }
 
 export function getFileUrl(filePath: string): string {
