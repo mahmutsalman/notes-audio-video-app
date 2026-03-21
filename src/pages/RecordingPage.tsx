@@ -1402,6 +1402,7 @@ export default function RecordingPage() {
             <BookReaderView
               ref={bookReaderRef}
               bookDataPath={recording.book_data_path}
+              pdfPath={recording.pdf_path ?? undefined}
               initialCharacterOffset={recording.character_offset ?? 0}
               onPositionChange={async (characterOffset, progress, _originalPage) => {
                 try {
