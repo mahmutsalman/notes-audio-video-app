@@ -278,6 +278,7 @@ export interface AudioMarker {
   marker_type: AudioMarkerType;
   start_time: number;
   end_time: number | null;
+  caption: string | null;
   created_at: string;
 }
 
@@ -657,6 +658,7 @@ export interface ElectronAPI {
   audioMarkers: {
     getByAudio: (audioId: number, audioType: 'duration' | 'duration_image') => Promise<AudioMarker[]>;
     addBatch: (markers: Omit<AudioMarker, 'id' | 'created_at'>[]) => Promise<AudioMarker[]>;
+    updateCaption: (markerId: number, caption: string | null) => Promise<AudioMarker>;
   };
 }
 

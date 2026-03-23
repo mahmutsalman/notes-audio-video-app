@@ -1319,6 +1319,10 @@ export function setupIpcHandlers(): void {
     return AudioMarkersOperations.addBatch(markers as any);
   });
 
+  ipcMain.handle('audioMarkers:updateCaption', async (_, markerId: number, caption: string | null) => {
+    return AudioMarkersOperations.updateCaption(markerId, caption);
+  });
+
   // ============ Settings ============
   ipcMain.handle('settings:get', async (_, key: string) => {
     return SettingsOperations.get(key);
