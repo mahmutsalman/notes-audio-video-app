@@ -94,6 +94,21 @@ export default function ImageAudioPlayerBar() {
     cancelEditing();
   };
 
+  const startEditingMarker = (markerId: number, currentCaption: string | null) => {
+    setEditingMarkerId(markerId);
+    setMarkerCaptionDraft(currentCaption ?? '');
+  };
+
+  const cancelEditingMarker = () => {
+    setEditingMarkerId(null);
+    setMarkerCaptionDraft('');
+  };
+
+  const saveMarkerCaption = async (markerId: number) => {
+    await updateMarkerCaption(markerId, markerCaptionDraft.trim() || null);
+    cancelEditingMarker();
+  };
+
   return (
     <div className="fixed bottom-0 left-0 right-0 z-[60] bg-gray-900 dark:bg-gray-950 border-t border-blue-700/50 shadow-2xl">
       {/* Expanded marker panel */}
