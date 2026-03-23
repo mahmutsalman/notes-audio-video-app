@@ -159,6 +159,7 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
             marker_type: m.marker_type,
             start_time: m.start_time,
             end_time: m.end_time,
+            caption: null,
           }));
         if (markersToSave.length > 0) {
           await window.electronAPI.audioMarkers.addBatch(markersToSave);

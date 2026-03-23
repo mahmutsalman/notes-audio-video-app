@@ -17,6 +17,7 @@ interface DurationAudioPlayerContextValue {
   ) => void;
   syncCurrentAudio: (audio: DurationAudio) => void;
   updateCurrentAudioCaption: (caption: string | null) => Promise<void>;
+  updateMarkerCaption: (markerId: number, caption: string | null) => Promise<void>;
   seekToNextMarker: (type: AudioMarkerType) => void;
   dismiss: () => void;
 }
@@ -69,6 +70,11 @@ export function DurationAudioPlayerProvider({ children }: { children: ReactNode 
     });
   }, [currentAudio, onUpdateCaption]);
 
+  const updateMarkerCaption = useCallback(async (markerId: number, caption: string | null) => {
+    const updated = await window.electronAPI.audioMarkers.updateCaption(markerId, caption);
+    setMarkers(prev => prev.map(m => m.id === markerId ? updated : m));
+  }, []);
+
   const seekToNextMarker = useCallback((type: AudioMarkerType) => {
     const ofType = markers.filter(m => m.marker_type === type);
     if (ofType.length === 0) return;
@@ -98,6 +104,7 @@ export function DurationAudioPlayerProvider({ children }: { children: ReactNode 
         play,
         syncCurrentAudio,
         updateCurrentAudioCaption,
+        updateMarkerCaption,
         seekToNextMarker,
         dismiss,
       }}
