@@ -577,6 +577,13 @@ function runMigrations(db: Database.Database): void {
     console.log('Created audio_markers table');
   }
 
+  // Migration: Add caption column to audio_markers table if it doesn't exist
+  const audioMarkersColumns = db.prepare("PRAGMA table_info(audio_markers)").all() as { name: string }[];
+  if (!audioMarkersColumns.some(col => col.name === 'caption')) {
+    db.exec(`ALTER TABLE audio_markers ADD COLUMN caption TEXT`);
+    console.log('Added caption column to audio_markers table');
+  }
+
   // Migration: Add reader mode columns to recordings table
   const recordingsColumnsForReader = db.prepare("PRAGMA table_info(recordings)").all() as { name: string }[];
   const readerColumnNames = new Set(recordingsColumnsForReader.map(c => c.name));

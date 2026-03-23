@@ -654,6 +654,8 @@ const electronAPI = {
       ipcRenderer.invoke('audioMarkers:getByAudio', audioId, audioType),
     addBatch: (markers: { audio_id: number; audio_type: 'duration' | 'duration_image'; marker_type: string; start_time: number; end_time: number | null }[]) =>
       ipcRenderer.invoke('audioMarkers:addBatch', markers),
+    updateCaption: (markerId: number, caption: string | null) =>
+      ipcRenderer.invoke('audioMarkers:updateCaption', markerId, caption),
   },
 };
 
