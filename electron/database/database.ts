@@ -187,6 +187,14 @@ function runMigrations(db: Database.Database): void {
     console.log('Created duration_image_audios table');
   }
 
+  // Migration: Add color column to topics table if it doesn't exist
+  const topicsColumns = db.prepare("PRAGMA table_info(topics)").all() as { name: string }[];
+  const hasTopicColorColumn = topicsColumns.some(col => col.name === 'color');
+  if (!hasTopicColorColumn) {
+    db.exec(`ALTER TABLE topics ADD COLUMN color TEXT`);
+    console.log('Added color column to topics table');
+  }
+
   // Migration: Add note column to durations table if it doesn't exist
   const durationsColumns = db.prepare("PRAGMA table_info(durations)").all() as { name: string }[];
   const hasNoteColumn = durationsColumns.some(col => col.name === 'note');
@@ -490,6 +498,7 @@ function runMigrations(db: Database.Database): void {
     SELECT
       t.id,
       t.name,
+      t.color,
       t.tags,
       t.importance_level,
       t.created_at,

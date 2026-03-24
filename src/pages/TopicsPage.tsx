@@ -11,7 +11,7 @@ export default function TopicsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'updated' | 'importance' | 'name'>('updated');
+  const [sortBy, setSortBy] = useState<'updated' | 'importance' | 'name' | 'color'>('updated');
 
   // Filter and sort topics
   const filteredTopics = topics
@@ -29,6 +29,14 @@ export default function TopicsPage() {
           return b.importance_level - a.importance_level;
         case 'name':
           return a.name.localeCompare(b.name);
+        case 'color': {
+          const aColor = a.color ?? '';
+          const bColor = b.color ?? '';
+          if (aColor && !bColor) return -1;
+          if (!aColor && bColor) return 1;
+          if (aColor !== bColor) return aColor.localeCompare(bColor);
+          return a.name.localeCompare(b.name);
+        }
         case 'updated':
         default:
           return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
@@ -83,6 +91,7 @@ export default function TopicsPage() {
           <option value="updated">Sort by: Updated</option>
           <option value="importance">Sort by: Importance</option>
           <option value="name">Sort by: Name</option>
+          <option value="color">Sort by: Color</option>
         </select>
       </div>
 

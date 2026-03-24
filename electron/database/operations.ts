@@ -59,14 +59,15 @@ export const TopicsOperations = {
   create(topic: CreateTopic): Topic {
     const db = getDatabase();
     const stmt = db.prepare(`
-      INSERT INTO topics (name, tags, importance_level)
-      VALUES (?, ?, ?)
+      INSERT INTO topics (name, tags, importance_level, color)
+      VALUES (?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       topic.name,
       JSON.stringify(topic.tags || []),
-      topic.importance_level ?? 5
+      topic.importance_level ?? 5,
+      topic.color ?? null
     );
 
     return this.getById(result.lastInsertRowid as number)!;
@@ -88,6 +89,10 @@ export const TopicsOperations = {
     if (updates.importance_level !== undefined) {
       fields.push('importance_level = ?');
       values.push(updates.importance_level);
+    }
+    if (updates.color !== undefined) {
+      fields.push('color = ?');
+      values.push(updates.color);
     }
 
     if (fields.length > 0) {

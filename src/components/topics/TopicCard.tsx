@@ -25,6 +25,7 @@ export default function TopicCard({ topic, onContextMenu }: TopicCardProps) {
       onContextMenu={handleContextMenu}
       hoverable
       className="p-4"
+      style={topic.color ? { borderLeft: `4px solid ${topic.color}` } : undefined}
     >
       {/* Topic name */}
       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">

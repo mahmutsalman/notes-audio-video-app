@@ -5,6 +5,18 @@ import ContextMenu from '../common/ContextMenu';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
 
+const COLOR_PALETTE = [
+  { label: 'Red',    value: '#ef4444' },
+  { label: 'Orange', value: '#f97316' },
+  { label: 'Amber',  value: '#f59e0b' },
+  { label: 'Green',  value: '#22c55e' },
+  { label: 'Teal',   value: '#14b8a6' },
+  { label: 'Blue',   value: '#3b82f6' },
+  { label: 'Indigo', value: '#6366f1' },
+  { label: 'Purple', value: '#a855f7' },
+  { label: 'Pink',   value: '#ec4899' },
+];
+
 interface TopicListProps {
   topics: Topic[];
   loading?: boolean;
@@ -43,6 +55,14 @@ export default function TopicList({ topics, loading, onUpdateTopic, onDeleteTopi
   });
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [colorModal, setColorModal] = useState<{
+    isOpen: boolean;
+    topic: Topic | null;
+  }>({
+    isOpen: false,
+    topic: null,
+  });
+
   const handleContextMenu = (e: React.MouseEvent, topic: Topic) => {
     e.preventDefault();
     setContextMenu({
@@ -75,6 +95,19 @@ export default function TopicList({ topics, loading, onUpdateTopic, onDeleteTopi
       });
     }
     closeContextMenu();
+  };
+
+  const handleColorClick = () => {
+    if (contextMenu.topic) {
+      setColorModal({ isOpen: true, topic: contextMenu.topic });
+    }
+    closeContextMenu();
+  };
+
+  const handleColorSelect = async (color: string | null) => {
+    if (!colorModal.topic || !onUpdateTopic) return;
+    await onUpdateTopic(colorModal.topic.id, { color });
+    setColorModal({ isOpen: false, topic: null });
   };
 
   const handleRenameSubmit = async () => {
@@ -174,6 +207,7 @@ export default function TopicList({ topics, loading, onUpdateTopic, onDeleteTopi
         onClose={closeContextMenu}
         items={[
           { label: 'Edit name', icon: '✏️', onClick: handleRenameClick },
+          { label: 'Set color', icon: '🎨', onClick: handleColorClick },
           { label: 'Delete', icon: '🗑️', onClick: handleDeleteClick, danger: true },
         ]}
       />
@@ -223,6 +257,39 @@ export default function TopicList({ topics, loading, onUpdateTopic, onDeleteTopi
               {isDeleting ? 'Deleting...' : 'Delete'}
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={colorModal.isOpen}
+        onClose={() => setColorModal({ isOpen: false, topic: null })}
+        title="Set Topic Color"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-5 gap-3">
+            {COLOR_PALETTE.map(({ label, value }) => (
+              <button
+                key={value}
+                title={label}
+                onClick={() => handleColorSelect(value)}
+                className="w-10 h-10 rounded-full border-2 border-transparent hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-offset-2"
+                style={{
+                  backgroundColor: value,
+                  borderColor: colorModal.topic?.color === value ? 'white' : 'transparent',
+                  boxShadow: colorModal.topic?.color === value ? `0 0 0 2px ${value}` : undefined,
+                }}
+              />
+            ))}
+          </div>
+          {colorModal.topic?.color && (
+            <button
+              onClick={() => handleColorSelect(null)}
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline"
+            >
+              Remove color
+            </button>
+          )}
         </div>
       </Modal>
     </>

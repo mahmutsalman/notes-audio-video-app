@@ -8,6 +8,7 @@ export type RecordingType = 'audio' | 'video' | 'written' | 'book' | 'reader';
 export interface Topic {
   id: number;
   name: string;
+  color?: string | null;
   tags: string[];
   importance_level: number;
   created_at: string;
