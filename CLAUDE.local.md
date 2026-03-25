@@ -384,6 +384,43 @@ The `note` field on each duration mark contains **only the description body** fr
 
 After changing this behavior, run `import-tours <topic> --reformat --force` to regenerate existing notes in the DB.
 
+## Bidirectional Media Sync
+
+The command is fully bidirectional for both text and media:
+
+| Direction | What syncs |
+|---|---|
+| `.tour` → DB (forward) | Step text edits, new steps, images added to `.tour`, audios added to `.tour` |
+| DB → `.tour` (reverse) | Images/audios added in the desktop app, caption edits, note text edits, sort order, desktop-created marks |
+
+**Adding images to a `.tour` step from VS Code side:**
+
+Add an entry to the step's `images` array in the `.tour` JSON, put the image file at the referenced path, then run `import-tours`:
+
+```json
+{
+  "title": "My Step",
+  "description": "Some explanation",
+  "file": "src/foo.ts",
+  "line": 10,
+  "images": [
+    {
+      "id": "my-image-1",
+      "path": ".tours/images/some-screenshot.png",
+      "caption": "optional caption"
+    }
+  ]
+}
+```
+
+- `id` — any unique string; used for deduplication (won't re-import on next run)
+- `path` — relative to project root; can point anywhere in the project
+- `caption` — optional; written to `duration_images.caption`
+
+The same applies to `audios` arrays (forward sync reads those too).
+
+**3-way conflict rule:** if you edit a step's text in VS Code AND edit the same mark's note in the desktop app before running `import-tours`, the desktop app edit wins (reverse sync takes priority because `db_hash != stored_hash`). Text-only edits on the VS Code side are safe as long as you haven't touched that mark in the app.
+
 ## Step Matching Internals
 
 Each step is identified by a content-based key: `make_step_id(step)` → `"{title}|{file}"`.
