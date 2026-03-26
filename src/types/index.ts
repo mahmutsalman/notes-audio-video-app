@@ -667,6 +667,37 @@ export interface ElectronAPI {
     addBatch: (markers: Omit<AudioMarker, 'id' | 'created_at'>[]) => Promise<AudioMarker[]>;
     updateCaption: (markerId: number, caption: string | null) => Promise<AudioMarker>;
   };
+  search: {
+    global: (query: string, limit?: number) => Promise<GlobalSearchResult[]>;
+    rebuildIndex: () => Promise<void>;
+  };
+}
+
+export interface GlobalSearchResult {
+  content_type: 'topic' | 'recording' | 'duration' | 'image' | 'video' | 'audio'
+    | 'duration_image' | 'duration_video' | 'duration_audio'
+    | 'code_snippet' | 'duration_code_snippet'
+    | 'audio_marker' | 'duration_image_audio' | 'image_audio';
+  source_id: number;
+  parent_id: number;
+  snippet: string;
+  rank: number;
+  topic_id: number | null;
+  topic_name: string | null;
+  recording_id: number | null;
+  recording_name: string | null;
+  duration_id: number | null;
+  file_path: string | null;
+  thumbnail_path: string | null;
+  marker_type: string | null;
+  language: string | null;
+  code: string | null;
+}
+
+export interface SearchNavState {
+  results: GlobalSearchResult[];
+  currentIndex: number;
+  query: string;
 }
 
 declare global {

@@ -1,5 +1,5 @@
 import { ReactNode, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import Header from './Header';
 import AudioRecordingBar from '../audio/AudioRecordingBar';
 import ImageAudioPlayerBar from '../audio/ImageAudioPlayerBar';
@@ -14,10 +14,19 @@ interface MainLayoutProps {
 
 export default function MainLayout({ children }: MainLayoutProps) {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { tabId } = useTabInstance();
-  const { updateTabPath, updateTabTitle } = useTabs();
   const { isRecording, isSaving } = useAudioRecording();
+
+  // Global Cmd+K / Ctrl+K → open search page
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        navigate('/search');
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [navigate]);
   const { currentAudio: imageAudio } = useImageAudioPlayer();
   const { currentAudio: durationAudio } = useDurationAudioPlayer();
   const recordingBarVisible = isRecording || isSaving;

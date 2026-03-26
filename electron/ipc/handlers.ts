@@ -14,8 +14,9 @@ import {
   DurationCodeSnippetsOperations,
   SettingsOperations,
   AudioMarkersOperations,
+  SearchOperations,
 } from '../database/operations';
-import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
+import { rebuildSearchIndex } from '../database/database';
 import {
   saveAudioFile,
   getAudioPath,
@@ -1732,5 +1733,5 @@ export function setupIpcHandlers(): void {
     rebuildSearchIndex();
   });
 
-  // ============ Tags =====  console.log('IPC handlers registered');
+  console.log('IPC handlers registered');
 }

@@ -748,25 +748,6 @@ export function rebuildSearchIndex(): void {
       WHERE dia.caption IS NOT NULL AND dia.caption != ''
     `);
 
-    // Quick capture images: caption + per-image tags from media_tags
-    const qciRows = database.prepare(`
-      SELECT qci.id, qci.capture_id, COALESCE(qci.caption, '') as caption
-      FROM quick_capture_images qci
-    `).all() as Array<{ id: number; capture_id: number; caption: string }>;
-    const qciTagsStmt = database.prepare(`
-      SELECT t.name FROM tags t
-      JOIN media_tags mt ON mt.tag_id = t.id
-      WHERE mt.media_type = 'quick_capture_image' AND mt.media_id = ?
-    `);
-    const qciInsert = database.prepare(`
-      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
-      VALUES ('quick_capture_image', ?, ?, ?)
-    `);
-    for (const row of qciRows) {
-      const tagNames = (qciTagsStmt.all(row.id) as Array<{ name: string }>).map(t => t.name).join(' ');
-      qciInsert.run(row.id, row.capture_id, `${row.caption} ${tagNames}`.trim());
-    }
-
     // Audio markers: caption + marker_type — parent_id computed per audio_type
     const audioMarkers = database.prepare('SELECT id, audio_id, audio_type, marker_type, caption FROM audio_markers WHERE caption IS NOT NULL AND caption != \'\'').all() as Array<{id: number, audio_id: number, audio_type: string, marker_type: string, caption: string}>;
     const markerInsert = database.prepare(`
@@ -792,56 +773,10 @@ export function rebuildSearchIndex(): void {
       } catch { /* skip on error */ }
       markerInsert.run(am.id, recordingId, am.caption + ' ' + am.marker_type);
     }
-
-    // OCR text — recording-level images (parent_id = recording_id)
-    database.exec(`
-      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
-      SELECT 'image_ocr', id, recording_id, caption2
-      FROM images WHERE caption2 IS NOT NULL AND caption2 != ''
-    `);
-
-    // OCR text — duration images (parent_id = recording_id via durations join)
-    database.exec(`
-      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
-      SELECT 'duration_image_ocr', di.id, d.recording_id, di.caption2
-      FROM duration_images di JOIN durations d ON d.id = di.duration_id
-      WHERE di.caption2 IS NOT NULL AND di.caption2 != ''
-    `);
-
-    // OCR text — quick capture images (parent_id = capture_id, same as quick_capture_image)
-    database.exec(`
-      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
-      SELECT 'quick_capture_image_ocr', id, capture_id, caption2
-      FROM quick_capture_images WHERE caption2 IS NOT NULL AND caption2 != ''
-    `);
-
-    // OCR text — child images (parent_id resolved to recording_id where possible)
-    database.exec(`
-      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
-      SELECT 'image_child_ocr', ic.id,
-        COALESCE(
-          (SELECT i.recording_id FROM images i WHERE ic.parent_type = 'image' AND i.id = ic.parent_id),
-          (SELECT d.recording_id FROM duration_images di JOIN durations d ON d.id = di.duration_id
-           WHERE ic.parent_type = 'duration_image' AND di.id = ic.parent_id),
-          0
-        ),
-        ic.caption2
-      FROM image_children ic WHERE ic.caption2 IS NOT NULL AND ic.caption2 != ''
-    `);
   });
 
   rebuild();
   console.log('Search index rebuilt');
-}
-
-let reindexTimer: ReturnType<typeof setTimeout> | null = null;
-
-export function scheduleSearchReindex(): void {
-  if (reindexTimer) clearTimeout(reindexTimer);
-  reindexTimer = setTimeout(() => {
-    try { rebuildSearchIndex(); } catch (e) { console.error('Search reindex failed:', e); }
-    reindexTimer = null;
-  }, 1000);
 }
 
 export function closeDatabase(): void {
