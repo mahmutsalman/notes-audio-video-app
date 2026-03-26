@@ -85,7 +85,8 @@ async function fetchPreviewData(
 ): Promise<PreviewData> {
   switch (kind) {
     case 'duration_image': {
-      const images = await window.electronAPI.durationImages.getByDuration(result.duration_id!);
+      const all = await window.electronAPI.durationImages.getByDuration(result.duration_id!);
+      const images = all.filter(img => img.id === result.source_id);
       return { kind: 'duration_image', images };
     }
     case 'duration_audio': {
