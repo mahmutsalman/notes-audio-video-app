@@ -779,6 +779,16 @@ export function rebuildSearchIndex(): void {
   console.log('Search index rebuilt');
 }
 
+let reindexTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function scheduleSearchReindex(): void {
+  if (reindexTimer) clearTimeout(reindexTimer);
+  reindexTimer = setTimeout(() => {
+    try { rebuildSearchIndex(); } catch (e) { console.error('Search reindex failed:', e); }
+    reindexTimer = null;
+  }, 1000);
+}
+
 export function closeDatabase(): void {
   if (db) {
     db.close();

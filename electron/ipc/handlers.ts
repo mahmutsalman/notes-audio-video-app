@@ -16,7 +16,7 @@ import {
   AudioMarkersOperations,
   SearchOperations,
 } from '../database/operations';
-import { rebuildSearchIndex } from '../database/database';
+import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
   saveAudioFile,
   getAudioPath,
@@ -704,7 +704,7 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationImageAudios:addFromBuffer', async (_, durationImageId: number, durationId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
     const { filePath, duration } = await saveDurationImageAudioFromBuffer(durationImageId, audioBuffer, extension);
-    return DurationImageAudiosOperations.create({
+    const result = DurationImageAudiosOperations.create({
       duration_image_id: durationImageId,
       duration_id: durationId,
       file_path: filePath,
@@ -712,6 +712,8 @@ export function setupIpcHandlers(): void {
       duration: duration,
       sort_order: DurationImageAudiosOperations.getMaxSortOrder(durationImageId) + 1,
     });
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('durationImageAudios:delete', async (_, id: number) => {
@@ -720,41 +722,47 @@ export function setupIpcHandlers(): void {
       await deleteFile(audio.file_path);
     }
     DurationImageAudiosOperations.delete(id);
-  ipcMain.handle('captureImageAudios:getByImage', async (_, captureImageId: number) => {
-    return CaptureImageAudiosOperations.getByImage(captureImageId);
+=======
+    scheduleSearchReindex();
   });
 
-  ipcMain.handle('captureImageAudios:addFromBuffer', async (_, captureImageId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
-    const { filePath, duration } = await saveCaptureImageAudioFromBuffer(captureImageId, audioBuffer, extension);
-    const result = CaptureImageAudiosOperations.create({
-      capture_image_id: captureImageId,
+  ipcMain.handle('durationImageAudios:updateCaption', async (_, id: number, caption: string | null) => {
+    const result = DurationImageAudiosOperations.updateCaption(id, caption);
+    scheduleSearchReindex();
+    return result;
+  });
+
+  // ============ Image Audios (audio clips attached to recording-level images) ============
+  ipcMain.handle('imageAudios:getByImage', async (_, imageId: number) => {
+    return ImageAudiosOperations.getByImage(imageId);
+  });
+
+  ipcMain.handle('imageAudios:addFromBuffer', async (_, imageId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
+    const { filePath, duration } = await saveImageAudioFromBuffer(imageId, audioBuffer, extension);
+    const result = ImageAudiosOperations.create({
+      image_id: imageId,
       file_path: filePath,
       caption: null,
       duration: duration,
-      sort_order: CaptureImageAudiosOperations.getMaxSortOrder(captureImageId) + 1,
+      sort_order: ImageAudiosOperations.getMaxSortOrder(imageId) + 1,
     });
     scheduleSearchReindex();
     return result;
   });
 
-  ipcMain.handle('captureImageAudios:delete', async (_, id: number) => {
-    const audio = CaptureImageAudiosOperations.getById(id);
+  ipcMain.handle('imageAudios:delete', async (_, id: number) => {
+    const audio = ImageAudiosOperations.getById(id);
     if (audio) {
       await deleteFile((audio as { file_path: string }).file_path);
     }
-    CaptureImageAudiosOperations.delete(id);
+    ImageAudiosOperations.delete(id);
     scheduleSearchReindex();
   });
 
-  ipcMain.handle('captureImageAudios:updateCaption', async (_, id: number, caption: string | null) => {
-    const result = CaptureImageAudiosOperations.updateCaption(id, caption);
+  ipcMain.handle('imageAudios:updateCaption', async (_, id: number, caption: string | null) => {
+    const result = ImageAudiosOperations.updateCaption(id, caption);
     scheduleSearchReindex();
     return result;
-=======
-  });
-
-  ipcMain.handle('durationImageAudios:updateCaption', async (_, id: number, caption: string | null) => {
-    return DurationImageAudiosOperations.updateCaption(id, caption);
   });
 
   // ============ Audios (recording-level audio attachments) ============
@@ -1437,7 +1445,9 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('audioMarkers:updateCaption', async (_, markerId: number, caption: string | null) => {
-    return AudioMarkersOperations.updateCaption(markerId, caption);
+    const result = AudioMarkersOperations.updateCaption(markerId, caption);
+    scheduleSearchReindex();
+    return result;
   });
 
   // ============ Settings ============
