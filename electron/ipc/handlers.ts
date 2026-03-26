@@ -16,7 +16,7 @@ import {
   AudioMarkersOperations,
   SearchOperations,
 } from '../database/operations';
-import { rebuildSearchIndex } from '../database/database';
+import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
   saveAudioFile,
   getAudioPath,
@@ -60,11 +60,15 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('topics:create', async (_, topic: CreateTopic) => {
-    return TopicsOperations.create(topic);
+    const result = TopicsOperations.create(topic);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('topics:update', async (_, id: number, updates: UpdateTopic) => {
-    return TopicsOperations.update(id, updates);
+    const result = TopicsOperations.update(id, updates);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('topics:delete', async (_, id: number) => {
@@ -86,11 +90,15 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('recordings:create', async (_, recording: CreateRecording) => {
-    return RecordingsOperations.create(recording);
+    const result = RecordingsOperations.create(recording);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('recordings:update', async (_, id: number, updates: UpdateRecording) => {
-    return RecordingsOperations.update(id, updates);
+    const result = RecordingsOperations.update(id, updates);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('recordings:delete', async (_, id: number) => {
@@ -446,11 +454,15 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('durations:create', async (_, duration: CreateDuration) => {
-    return DurationsOperations.create(duration);
+    const result = DurationsOperations.create(duration);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('durations:update', async (_, id: number, updates: UpdateDuration) => {
-    return DurationsOperations.update(id, updates);
+    const result = DurationsOperations.update(id, updates);
+    scheduleSearchReindex();
+    return result;
   });
 
   // Update duration group color
@@ -465,6 +477,7 @@ export function setupIpcHandlers(): void {
     await deleteDurationVideos(id);
     await deleteDurationAudios(id);
     DurationsOperations.delete(id);
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('durations:reorder', async (_, recordingId: number, orderedIds: number[]) => {
@@ -524,10 +537,13 @@ export function setupIpcHandlers(): void {
       }
     }
     DurationImagesOperations.delete(id);
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('durationImages:updateCaption', async (_, id: number, caption: string | null) => {
-    return DurationImagesOperations.updateCaption(id, caption);
+    const result = DurationImagesOperations.updateCaption(id, caption);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('durationImages:updateColor', async (_, id: number, color: DurationColor) => {
@@ -582,10 +598,13 @@ export function setupIpcHandlers(): void {
       }
     }
     DurationVideosOperations.delete(id);
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('durationVideos:updateCaption', async (_, id: number, caption: string | null) => {
-    return DurationVideosOperations.updateCaption(id, caption);
+    const result = DurationVideosOperations.updateCaption(id, caption);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('durationVideos:updateColor', async (_, id: number, color: DurationColor) => {
@@ -603,13 +622,15 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationAudios:addFromBuffer', async (_, durationId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
     const { filePath, duration } = await saveDurationAudioFromBuffer(durationId, audioBuffer, extension);
-    return DurationAudiosOperations.create({
+    const result = DurationAudiosOperations.create({
       duration_id: durationId,
       file_path: filePath,
       caption: null,
       duration: duration,
       sort_order: 0,
     });
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('durationAudios:delete', async (_, id: number) => {
@@ -618,10 +639,13 @@ export function setupIpcHandlers(): void {
       await deleteFile(audio.file_path);
     }
     DurationAudiosOperations.delete(id);
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('durationAudios:updateCaption', async (_, id: number, caption: string | null) => {
-    return DurationAudiosOperations.updateCaption(id, caption);
+    const result = DurationAudiosOperations.updateCaption(id, caption);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('durationAudios:updateGroupColor', async (_, id: number, groupColor: DurationGroupColor | null) => {
@@ -635,7 +659,7 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationImageAudios:addFromBuffer', async (_, durationImageId: number, durationId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
     const { filePath, duration } = await saveDurationImageAudioFromBuffer(durationImageId, audioBuffer, extension);
-    return DurationImageAudiosOperations.create({
+    const result = DurationImageAudiosOperations.create({
       duration_image_id: durationImageId,
       duration_id: durationId,
       file_path: filePath,
@@ -643,6 +667,8 @@ export function setupIpcHandlers(): void {
       duration: duration,
       sort_order: DurationImageAudiosOperations.getMaxSortOrder(durationImageId) + 1,
     });
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('durationImageAudios:delete', async (_, id: number) => {
@@ -651,10 +677,46 @@ export function setupIpcHandlers(): void {
       await deleteFile(audio.file_path);
     }
     DurationImageAudiosOperations.delete(id);
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('durationImageAudios:updateCaption', async (_, id: number, caption: string | null) => {
-    return DurationImageAudiosOperations.updateCaption(id, caption);
+    const result = DurationImageAudiosOperations.updateCaption(id, caption);
+    scheduleSearchReindex();
+    return result;
+  });
+
+  // ============ Image Audios (audio clips attached to recording-level images) ============
+  ipcMain.handle('imageAudios:getByImage', async (_, imageId: number) => {
+    return ImageAudiosOperations.getByImage(imageId);
+  });
+
+  ipcMain.handle('imageAudios:addFromBuffer', async (_, imageId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
+    const { filePath, duration } = await saveImageAudioFromBuffer(imageId, audioBuffer, extension);
+    const result = ImageAudiosOperations.create({
+      image_id: imageId,
+      file_path: filePath,
+      caption: null,
+      duration: duration,
+      sort_order: ImageAudiosOperations.getMaxSortOrder(imageId) + 1,
+    });
+    scheduleSearchReindex();
+    return result;
+  });
+
+  ipcMain.handle('imageAudios:delete', async (_, id: number) => {
+    const audio = ImageAudiosOperations.getById(id);
+    if (audio) {
+      await deleteFile((audio as { file_path: string }).file_path);
+    }
+    ImageAudiosOperations.delete(id);
+    scheduleSearchReindex();
+  });
+
+  ipcMain.handle('imageAudios:updateCaption', async (_, id: number, caption: string | null) => {
+    const result = ImageAudiosOperations.updateCaption(id, caption);
+    scheduleSearchReindex();
+    return result;
   });
 
   // ============ Audios (recording-level audio attachments) ============
@@ -664,13 +726,15 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('audios:addFromBuffer', async (_, recordingId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
     const { filePath, duration } = await saveAudioAttachmentFromBuffer(recordingId, audioBuffer, extension);
-    return AudiosOperations.create({
+    const result = AudiosOperations.create({
       recording_id: recordingId,
       file_path: filePath,
       caption: null,
       duration: duration,
       sort_order: 0,
     });
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('audios:delete', async (_, id: number) => {
@@ -679,10 +743,13 @@ export function setupIpcHandlers(): void {
       await deleteFile(audio.file_path);
     }
     AudiosOperations.delete(id);
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('audios:updateCaption', async (_, id: number, caption: string | null) => {
-    return AudiosOperations.updateCaption(id, caption);
+    const result = AudiosOperations.updateCaption(id, caption);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('audios:updateGroupColor', async (_, id: number, groupColor: DurationGroupColor | null) => {
@@ -695,15 +762,20 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('codeSnippets:create', async (_, snippet: CreateCodeSnippet) => {
-    return CodeSnippetsOperations.create(snippet);
+    const result = CodeSnippetsOperations.create(snippet);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('codeSnippets:update', async (_, id: number, updates: UpdateCodeSnippet) => {
-    return CodeSnippetsOperations.update(id, updates);
+    const result = CodeSnippetsOperations.update(id, updates);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('codeSnippets:delete', async (_, id: number) => {
     CodeSnippetsOperations.delete(id);
+    scheduleSearchReindex();
   });
 
   // ============ Duration Code Snippets ============
@@ -712,15 +784,20 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('durationCodeSnippets:create', async (_, snippet: CreateDurationCodeSnippet) => {
-    return DurationCodeSnippetsOperations.create(snippet);
+    const result = DurationCodeSnippetsOperations.create(snippet);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('durationCodeSnippets:update', async (_, id: number, updates: UpdateDurationCodeSnippet) => {
-    return DurationCodeSnippetsOperations.update(id, updates);
+    const result = DurationCodeSnippetsOperations.update(id, updates);
+    scheduleSearchReindex();
+    return result;
   });
 
   ipcMain.handle('durationCodeSnippets:delete', async (_, id: number) => {
     DurationCodeSnippetsOperations.delete(id);
+    scheduleSearchReindex();
   });
 
   // ============ Backup ============
@@ -1322,7 +1399,9 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('audioMarkers:updateCaption', async (_, markerId: number, caption: string | null) => {
-    return AudioMarkersOperations.updateCaption(markerId, caption);
+    const result = AudioMarkersOperations.updateCaption(markerId, caption);
+    scheduleSearchReindex();
+    return result;
   });
 
   // ============ Settings ============
