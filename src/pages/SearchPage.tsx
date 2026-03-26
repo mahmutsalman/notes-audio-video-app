@@ -89,11 +89,13 @@ async function fetchPreviewData(
       return { kind: 'duration_image', images };
     }
     case 'duration_audio': {
-      const audios = await window.electronAPI.durationAudios.getByDuration(result.duration_id!);
+      const all = await window.electronAPI.durationAudios.getByDuration(result.duration_id!);
+      const audios = all.filter(a => a.id === result.source_id);
       return { kind: 'duration_audio', audios };
     }
     case 'audio': {
-      const audios = await window.electronAPI.audios.getByRecording(result.recording_id!);
+      const all = await window.electronAPI.audios.getByRecording(result.recording_id!);
+      const audios = all.filter(a => a.id === result.source_id);
       return { kind: 'audio', audios };
     }
     case 'duration_note': {
@@ -239,7 +241,7 @@ function ExpandedPreview({ data, loading, error }: ExpandedPreviewProps) {
             )}
             <ThemedAudioPlayer
               src={window.electronAPI.paths.getFileUrl(a.file_path)}
-              theme="violet"
+              theme={data.kind === 'duration_audio' ? 'blue' : 'violet'}
             />
           </div>
         ))}
