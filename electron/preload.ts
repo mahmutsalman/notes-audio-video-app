@@ -648,6 +648,14 @@ const electronAPI = {
       ipcRenderer.invoke('sync:upload'),
   },
 
+  // Global Search
+  search: {
+    global: (query: string, limit?: number): Promise<import('../src/types').GlobalSearchResult[]> =>
+      ipcRenderer.invoke('search:global', query, limit),
+    rebuildIndex: (): Promise<void> =>
+      ipcRenderer.invoke('search:rebuildIndex'),
+  },
+
   // Audio Markers
   audioMarkers: {
     getByAudio: (audioId: number, audioType: 'duration' | 'duration_image') =>

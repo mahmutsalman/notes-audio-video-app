@@ -55,6 +55,8 @@ interface SortableImageGridProps {
   pastePlaceholder?: React.ReactNode;
   /** Map of imageId → audio count for showing badge */
   audioCountMap?: Record<number, number>;
+  /** Image ID to highlight (from search navigation) */
+  highlightedId?: number;
 }
 
 /* ── Sortable wrapper for a single image cell ─────────────────── */
@@ -70,6 +72,7 @@ interface SortableImageProps {
   onContextMenu?: (e: React.MouseEvent, image: SortableImageItem) => void;
   onDelete: (id: number) => void;
   audioCount?: number;
+  isHighlighted?: boolean;
 }
 
 function SortableImage({
@@ -83,6 +86,7 @@ function SortableImage({
   onContextMenu,
   onDelete,
   audioCount = 0,
+  isHighlighted = false,
 }: SortableImageProps) {
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const {
@@ -238,6 +242,7 @@ export default function SortableImageGrid({
   onReorder,
   pastePlaceholder,
   audioCountMap,
+  highlightedId,
 }: SortableImageGridProps) {
   const [activeId, setActiveId] = useState<number | null>(null);
 
@@ -334,6 +339,7 @@ export default function SortableImageGrid({
                 onContextMenu={onContextMenu}
                 onDelete={onDelete}
                 audioCount={audioCountMap?.[img.id] ?? 0}
+                isHighlighted={highlightedId === img.id}
               />
             );
           })}

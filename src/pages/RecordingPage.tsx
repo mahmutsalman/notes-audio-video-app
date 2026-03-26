@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { useTabTitle } from '../hooks/useTabTitle';
 import { useRecording, useRecordings } from '../hooks/useRecordings';
 import { useTopic } from '../hooks/useTopics';
 import { useDurations } from '../hooks/useDurations';
@@ -31,7 +30,8 @@ import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
 import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
-import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType } from '../types';
+import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState } from '../types';
+import SearchNavBanner from '../components/search/SearchNavBanner';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -1773,6 +1773,11 @@ export default function RecordingPage() {
             groupColorOverrides={mediaGroupColorOverrides}
             colorKeyPrefix="durationImage"
             captionColorClass="text-blue-600 dark:text-blue-400"
+            highlightedId={
+              searchNav?.results[searchNav.currentIndex]?.content_type === 'duration_image'
+                ? searchNav.results[searchNav.currentIndex].source_id
+                : undefined
+            }
             onImageClick={(index) => {
               const img = activeDurationImages[index];
               if (isBookNote(recording) && img?.page_number && pdfViewerRef.current) {

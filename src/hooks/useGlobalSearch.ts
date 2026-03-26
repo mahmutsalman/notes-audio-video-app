@@ -18,11 +18,6 @@ export interface GroupedSearchResults {
   audio_marker: GlobalSearchResult[];
   duration_image_audio: GlobalSearchResult[];
   image_audio: GlobalSearchResult[];
-  quick_capture_image: GlobalSearchResult[];
-  image_ocr: GlobalSearchResult[];
-  duration_image_ocr: GlobalSearchResult[];
-  quick_capture_image_ocr: GlobalSearchResult[];
-  image_child_ocr: GlobalSearchResult[];
 }
 
 export function useGlobalSearch() {
@@ -65,8 +60,6 @@ export function useGlobalSearch() {
       duration_image: [], duration_video: [], duration_audio: [],
       code_snippet: [], duration_code_snippet: [],
       audio_marker: [], duration_image_audio: [], image_audio: [],
-      quick_capture_image: [],
-      image_ocr: [], duration_image_ocr: [], quick_capture_image_ocr: [], image_child_ocr: [],
     };
     for (const r of results) {
       const key = r.content_type as keyof GroupedSearchResults;
