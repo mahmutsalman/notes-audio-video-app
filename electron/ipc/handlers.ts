@@ -14,7 +14,9 @@ import {
   DurationCodeSnippetsOperations,
   SettingsOperations,
   AudioMarkersOperations,
+  SearchOperations,
 } from '../database/operations';
+import { rebuildSearchIndex } from '../database/database';
 import {
   saveAudioFile,
   getAudioPath,
@@ -1592,6 +1594,9 @@ export function setupIpcHandlers(): void {
       );
       console.log('[IPC] Media synced');
 
+      // Rebuild FTS search index after sync (DB was overwritten)
+      try { rebuildSearchIndex(); } catch { /* non-fatal */ }
+
       return { success: true, output: stdout };
     } catch (error) {
       const err = error as Error & { stdout?: string; stderr?: string };
@@ -1603,6 +1608,15 @@ export function setupIpcHandlers(): void {
         stderr: err.stderr || '',
       };
     }
+  });
+
+  // ============ Search ============
+  ipcMain.handle('search:global', async (_, query: string, limit?: number) => {
+    return SearchOperations.search(query, limit);
+  });
+
+  ipcMain.handle('search:rebuildIndex', async () => {
+    rebuildSearchIndex();
   });
 
   console.log('IPC handlers registered');

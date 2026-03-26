@@ -1163,3 +1163,168 @@ export const AudioMarkersOperations = {
     return db.prepare('SELECT * FROM audio_markers WHERE id = ?').get(markerId) as AudioMarker;
   },
 };
+
+// ============ Search ============
+
+export interface GlobalSearchResult {
+  content_type: string;
+  source_id: number;
+  parent_id: number;
+  snippet: string;
+  rank: number;
+  topic_id: number | null;
+  topic_name: string | null;
+  recording_id: number | null;
+  recording_name: string | null;
+  file_path: string | null;
+  thumbnail_path: string | null;
+  marker_type: string | null;
+  language: string | null;
+  code: string | null;
+}
+
+function sanitizeFtsQuery(raw: string): string {
+  const cleaned = raw.replace(/['"()*:^!@#$%&]/g, ' ').trim();
+  if (!cleaned) return '';
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  return words.map(w => `"${w}"*`).join(' ');
+}
+
+export const SearchOperations = {
+  search(query: string, limit = 50): GlobalSearchResult[] {
+    const ftsQuery = sanitizeFtsQuery(query);
+    if (!ftsQuery) return [];
+
+    const db = getDatabase();
+
+    // Step 1: FTS5 search — get matched items with snippets
+    const matches = db.prepare(`
+      SELECT content_type,
+             CAST(source_id AS INTEGER) as source_id,
+             CAST(parent_id AS INTEGER) as parent_id,
+             snippet(search_index, 3, '<mark>', '</mark>', '...', 48) as snippet,
+             rank
+      FROM search_index
+      WHERE searchable_text MATCH ?
+      ORDER BY rank
+      LIMIT ?
+    `).all(ftsQuery, limit) as Array<{
+      content_type: string;
+      source_id: number;
+      parent_id: number;
+      snippet: string;
+      rank: number;
+    }>;
+
+    if (matches.length === 0) return [];
+
+    // Step 2: Collect unique IDs for batch context fetch
+    const recordingIds = new Set<number>();
+    const topicSourceIds = new Set<number>();
+
+    for (const m of matches) {
+      if (m.content_type === 'topic') {
+        topicSourceIds.add(m.source_id);
+      } else if (m.parent_id > 0) {
+        recordingIds.add(m.parent_id);
+      }
+    }
+
+    // Step 3: Batch fetch recording + topic context
+    const recordingContextMap = new Map<number, { recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }>();
+    if (recordingIds.size > 0) {
+      const ids = Array.from(recordingIds);
+      const ph = ids.map(() => '?').join(',');
+      const rows = db.prepare(`
+        SELECT r.id as recording_id, r.name as recording_name, t.id as topic_id, t.name as topic_name
+        FROM recordings r JOIN topics t ON t.id = r.topic_id
+        WHERE r.id IN (${ph})
+      `).all(...ids) as any[];
+      for (const row of rows) recordingContextMap.set(row.recording_id, row);
+    }
+
+    const topicContextMap = new Map<number, { topic_id: number; topic_name: string }>();
+    if (topicSourceIds.size > 0) {
+      const ids = Array.from(topicSourceIds);
+      const ph = ids.map(() => '?').join(',');
+      const rows = db.prepare(`SELECT id as topic_id, name as topic_name FROM topics WHERE id IN (${ph})`).all(...ids) as any[];
+      for (const row of rows) topicContextMap.set(row.topic_id, row);
+    }
+
+    // Step 4: Batch fetch type-specific extra fields (file paths, thumbnails, code, marker_type)
+    const extraByType = new Map<string, Map<number, any>>();
+    const typeToIds = new Map<string, number[]>();
+    const typesNeedingExtra = new Set(['image', 'video', 'audio', 'duration_image', 'duration_video', 'duration_audio', 'code_snippet', 'duration_code_snippet', 'audio_marker', 'duration_image_audio', 'image_audio']);
+    for (const m of matches) {
+      if (typesNeedingExtra.has(m.content_type)) {
+        if (!typeToIds.has(m.content_type)) typeToIds.set(m.content_type, []);
+        typeToIds.get(m.content_type)!.push(m.source_id);
+      }
+    }
+
+    const extraQueries: Record<string, string> = {
+      image: 'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM images WHERE id IN',
+      video: 'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM videos WHERE id IN',
+      audio: 'SELECT id, file_path, NULL as thumbnail_path, NULL as duration_id FROM audios WHERE id IN',
+      duration_image: 'SELECT id, file_path, thumbnail_path, duration_id FROM duration_images WHERE id IN',
+      duration_video: 'SELECT id, file_path, thumbnail_path, duration_id FROM duration_videos WHERE id IN',
+      duration_audio: 'SELECT id, file_path, NULL as thumbnail_path, duration_id FROM duration_audios WHERE id IN',
+      code_snippet: 'SELECT id, language, code, NULL as file_path, NULL as thumbnail_path, NULL as duration_id FROM code_snippets WHERE id IN',
+      duration_code_snippet: 'SELECT id, language, code, NULL as file_path, NULL as thumbnail_path, duration_id FROM duration_code_snippets WHERE id IN',
+      audio_marker: 'SELECT id, marker_type, NULL as file_path, NULL as thumbnail_path, NULL as duration_id FROM audio_markers WHERE id IN',
+      duration_image_audio: 'SELECT dia.id, dia.file_path, NULL as thumbnail_path, di.duration_id FROM duration_image_audios dia JOIN duration_images di ON di.id = dia.duration_image_id WHERE dia.id IN',
+      image_audio: 'SELECT id, file_path, NULL as thumbnail_path, NULL as duration_id FROM image_audios WHERE id IN',
+    };
+
+    for (const [type, ids] of typeToIds) {
+      const baseQuery = extraQueries[type];
+      if (!baseQuery) continue;
+      const ph = ids.map(() => '?').join(',');
+      const rows = db.prepare(`${baseQuery} (${ph})`).all(...ids) as any[];
+      const map = new Map<number, any>();
+      for (const row of rows) map.set(row.id, row);
+      extraByType.set(type, map);
+    }
+
+    // Step 5: Assemble final results
+    return matches.map(m => {
+      let topic_id: number | null = null;
+      let topic_name: string | null = null;
+      let recording_id: number | null = null;
+      let recording_name: string | null = null;
+
+      if (m.content_type === 'topic') {
+        const ctx = topicContextMap.get(m.source_id);
+        topic_id = ctx?.topic_id ?? null;
+        topic_name = ctx?.topic_name ?? null;
+      } else if (m.parent_id > 0) {
+        const ctx = recordingContextMap.get(m.parent_id);
+        topic_id = ctx?.topic_id ?? null;
+        topic_name = ctx?.topic_name ?? null;
+        recording_id = m.parent_id;
+        recording_name = ctx?.recording_name ?? null;
+      }
+
+      const extra = extraByType.get(m.content_type)?.get(m.source_id);
+
+      return {
+        content_type: m.content_type,
+        source_id: m.source_id,
+        parent_id: m.parent_id,
+        snippet: m.snippet,
+        rank: m.rank,
+        topic_id,
+        topic_name,
+        recording_id,
+        recording_name,
+        duration_id: extra?.duration_id ?? null,
+        file_path: extra?.file_path ?? null,
+        thumbnail_path: extra?.thumbnail_path ?? null,
+        marker_type: extra?.marker_type ?? null,
+        language: extra?.language ?? null,
+        code: extra?.code ?? null,
+      } as GlobalSearchResult;
+    });
+  },
+};

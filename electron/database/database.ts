@@ -27,8 +27,17 @@ export function initDatabase(): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
+  // Register custom function for HTML tag stripping (used by FTS rebuild)
+  db.function('strip_html', (text: string | null) => {
+    if (!text) return '';
+    return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  });
+
   // Run migrations
   runMigrations(db);
+
+  // Build full-text search index
+  rebuildSearchIndex();
 
   return db;
 }
@@ -608,6 +617,166 @@ function runMigrations(db: Database.Database): void {
   }
 
   console.log('Database migrations completed');
+
+  // Migration: Create FTS5 full-text search index
+  const ftsTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='search_index'"
+  ).get();
+  if (!ftsTableExists) {
+    db.exec(`
+      CREATE VIRTUAL TABLE search_index USING fts5(
+        content_type UNINDEXED,
+        source_id UNINDEXED,
+        parent_id UNINDEXED,
+        searchable_text,
+        tokenize='unicode61 remove_diacritics 2'
+      );
+    `);
+    console.log('Created search_index FTS5 table');
+  }
+}
+
+export function rebuildSearchIndex(): void {
+  const database = getDatabase();
+  const rebuild = database.transaction(() => {
+    database.exec('DELETE FROM search_index');
+
+    // Topics: name + tags
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'topic', id, 0,
+        COALESCE(name, '') || ' ' || COALESCE(tags, '')
+      FROM topics
+    `);
+
+    // Recordings: name + notes (HTML stripped) — parent_id = self (recording_id)
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'recording', id, id,
+        COALESCE(name, '') || ' ' || strip_html(notes_content) || ' ' || strip_html(main_notes_content)
+      FROM recordings
+    `);
+
+    // Durations: note (HTML stripped) — parent_id = recording_id
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'duration', id, recording_id,
+        strip_html(note)
+      FROM durations
+      WHERE note IS NOT NULL AND note != ''
+    `);
+
+    // Images (recording-level): caption
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'image', id, recording_id, COALESCE(caption, '')
+      FROM images
+      WHERE caption IS NOT NULL AND caption != ''
+    `);
+
+    // Videos (recording-level): caption
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'video', id, recording_id, COALESCE(caption, '')
+      FROM videos
+      WHERE caption IS NOT NULL AND caption != ''
+    `);
+
+    // Audios (recording-level): caption
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'audio', id, recording_id, COALESCE(caption, '')
+      FROM audios
+      WHERE caption IS NOT NULL AND caption != ''
+    `);
+
+    // Duration images: caption — parent_id = recording_id (via durations)
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'duration_image', di.id, d.recording_id, COALESCE(di.caption, '')
+      FROM duration_images di JOIN durations d ON d.id = di.duration_id
+      WHERE di.caption IS NOT NULL AND di.caption != ''
+    `);
+
+    // Duration videos: caption
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'duration_video', dv.id, d.recording_id, COALESCE(dv.caption, '')
+      FROM duration_videos dv JOIN durations d ON d.id = dv.duration_id
+      WHERE dv.caption IS NOT NULL AND dv.caption != ''
+    `);
+
+    // Duration audios: caption
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'duration_audio', da.id, d.recording_id, COALESCE(da.caption, '')
+      FROM duration_audios da JOIN durations d ON d.id = da.duration_id
+      WHERE da.caption IS NOT NULL AND da.caption != ''
+    `);
+
+    // Code snippets (recording-level): title + code + caption
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'code_snippet', id, recording_id,
+        COALESCE(title, '') || ' ' || COALESCE(code, '') || ' ' || COALESCE(caption, '')
+      FROM code_snippets
+    `);
+
+    // Duration code snippets: title + code + caption
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'duration_code_snippet', dcs.id, d.recording_id,
+        COALESCE(dcs.title, '') || ' ' || COALESCE(dcs.code, '') || ' ' || COALESCE(dcs.caption, '')
+      FROM duration_code_snippets dcs JOIN durations d ON d.id = dcs.duration_id
+    `);
+
+    // Image audios (audio on recording images): caption
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'image_audio', ia.id, i.recording_id, COALESCE(ia.caption, '')
+      FROM image_audios ia JOIN images i ON i.id = ia.image_id
+      WHERE ia.caption IS NOT NULL AND ia.caption != ''
+    `);
+
+    // Duration image audios: caption
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'duration_image_audio', dia.id, d.recording_id, COALESCE(dia.caption, '')
+      FROM duration_image_audios dia
+        JOIN duration_images di ON di.id = dia.duration_image_id
+        JOIN durations d ON d.id = di.duration_id
+      WHERE dia.caption IS NOT NULL AND dia.caption != ''
+    `);
+
+    // Audio markers: caption + marker_type — parent_id computed per audio_type
+    const audioMarkers = database.prepare('SELECT id, audio_id, audio_type, marker_type, caption FROM audio_markers WHERE caption IS NOT NULL AND caption != \'\'').all() as Array<{id: number, audio_id: number, audio_type: string, marker_type: string, caption: string}>;
+    const markerInsert = database.prepare(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      VALUES ('audio_marker', ?, ?, ?)
+    `);
+    for (const am of audioMarkers) {
+      let recordingId = 0;
+      try {
+        if (am.audio_type === 'recording') {
+          const row = database.prepare('SELECT recording_id FROM audios WHERE id = ?').get(am.audio_id) as any;
+          recordingId = row?.recording_id ?? 0;
+        } else if (am.audio_type === 'duration') {
+          const row = database.prepare('SELECT d.recording_id FROM duration_audios da JOIN durations d ON d.id = da.duration_id WHERE da.id = ?').get(am.audio_id) as any;
+          recordingId = row?.recording_id ?? 0;
+        } else if (am.audio_type === 'duration_image') {
+          const row = database.prepare('SELECT d.recording_id FROM duration_image_audios dia JOIN duration_images di ON di.id = dia.duration_image_id JOIN durations d ON d.id = di.duration_id WHERE dia.id = ?').get(am.audio_id) as any;
+          recordingId = row?.recording_id ?? 0;
+        } else if (am.audio_type === 'recording_image') {
+          const row = database.prepare('SELECT i.recording_id FROM image_audios ia JOIN images i ON i.id = ia.image_id WHERE ia.id = ?').get(am.audio_id) as any;
+          recordingId = row?.recording_id ?? 0;
+        }
+      } catch { /* skip on error */ }
+      markerInsert.run(am.id, recordingId, am.caption + ' ' + am.marker_type);
+    }
+  });
+
+  rebuild();
+  console.log('Search index rebuilt');
 }
 
 export function closeDatabase(): void {

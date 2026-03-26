@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useRecording, useRecordings } from '../hooks/useRecordings';
 import { useTopic } from '../hooks/useTopics';
 import { useDurations } from '../hooks/useDurations';
@@ -30,11 +30,14 @@ import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
 import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
-import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType } from '../types';
+import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState } from '../types';
+import SearchNavBanner from '../components/search/SearchNavBanner';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchNav = (location.state as { searchNav?: SearchNavState } | null)?.searchNav ?? null;
   const id = recordingId ? parseInt(recordingId, 10) : null;
 
   const { recording, loading, refetch, setRecording } = useRecording(id);
@@ -163,6 +166,11 @@ export default function RecordingPage() {
   const [pendingRegion, setPendingRegion] = useState<CaptureArea | null>(null);
   const [isAddingMark, setIsAddingMark] = useState(false);
 
+  // Search nav activation refs
+  const pendingDurationActivationRef = useRef<number | null>(null);
+  const pendingScrollTargetRef = useRef<string | null>(null);
+  const searchNavFiredRef = useRef(false);
+
   // Keep ref in sync with state
   useEffect(() => {
     isScreenRecordingRef.current = isScreenRecording;
@@ -188,12 +196,78 @@ export default function RecordingPage() {
     setMediaLoaded(false);
     setIsSeekingDuration(false);
 
+    // Reset search nav activation state
+    searchNavFiredRef.current = false;
+    pendingDurationActivationRef.current = null;
+    pendingScrollTargetRef.current = null;
+
     // Clean up video loop listener when changing recordings
     if (videoPlayerRef.current && videoLoopListenerRef.current) {
       videoPlayerRef.current.removeEventListener('timeupdate', videoLoopListenerRef.current);
       videoLoopListenerRef.current = null;
     }
   }, [id]);
+
+  // Set up pending activation targets when search nav state arrives
+  useEffect(() => {
+    if (!searchNav) return;
+    const result = searchNav.results[searchNav.currentIndex];
+    if (!result) return;
+
+    searchNavFiredRef.current = false;
+    const { content_type, source_id, duration_id } = result;
+
+    if (content_type === 'duration') {
+      pendingDurationActivationRef.current = source_id;
+      pendingScrollTargetRef.current = null;
+    } else if (
+      duration_id !== null &&
+      ['duration_image', 'duration_video', 'duration_audio', 'duration_code_snippet', 'duration_image_audio'].includes(content_type)
+    ) {
+      pendingDurationActivationRef.current = duration_id;
+      pendingScrollTargetRef.current = null;
+    } else if (content_type === 'audio') {
+      pendingDurationActivationRef.current = null;
+      pendingScrollTargetRef.current = `rec-audio-${source_id}`;
+    } else if (content_type === 'code_snippet') {
+      pendingDurationActivationRef.current = null;
+      pendingScrollTargetRef.current = `rec-code-${source_id}`;
+    } else if (content_type === 'image') {
+      pendingDurationActivationRef.current = null;
+      pendingScrollTargetRef.current = `img-cell-${source_id}`;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchNav]);
+
+  // Fire pending search nav activation when conditions are ready
+  useEffect(() => {
+    if (searchNavFiredRef.current) return;
+
+    const targetDurationId = pendingDurationActivationRef.current;
+    const scrollTarget = pendingScrollTargetRef.current;
+
+    if (targetDurationId !== null) {
+      if (durations.length === 0) return;
+      const targetDuration = durations.find(d => d.id === targetDurationId);
+      if (!targetDuration) return;
+
+      const hasMedia = !!(recording?.audio_path || recording?.video_path);
+      if (hasMedia && !mediaLoaded) return;
+
+      searchNavFiredRef.current = true;
+      handleDurationClick(targetDuration);
+      setTimeout(() => {
+        document.getElementById(`duration-mark-${targetDurationId}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 150);
+    } else if (scrollTarget !== null) {
+      if (!recording) return;
+      searchNavFiredRef.current = true;
+      setTimeout(() => {
+        document.getElementById(scrollTarget)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [durations, mediaLoaded, recording]);
 
   // Cleanup video loop listener on unmount
   useEffect(() => {
@@ -1227,6 +1301,7 @@ export default function RecordingPage() {
       onMouseUp={() => setIsContentPressed(false)}
       onMouseLeave={() => setIsContentPressed(false)}
     >
+      {searchNav && <SearchNavBanner searchNav={searchNav} />}
       <div className="flex">
         <DurationNotesSidebar
           durations={durations}
@@ -1542,6 +1617,11 @@ export default function RecordingPage() {
             groupColorOverrides={mediaGroupColorOverrides}
             colorKeyPrefix="durationImage"
             captionColorClass="text-blue-600 dark:text-blue-400"
+            highlightedId={
+              searchNav?.results[searchNav.currentIndex]?.content_type === 'duration_image'
+                ? searchNav.results[searchNav.currentIndex].source_id
+                : undefined
+            }
             onImageClick={(index) => {
               const img = activeDurationImages[index];
               if (isBookNote(recording) && img?.page_number && pdfViewerRef.current) {
@@ -1726,6 +1806,7 @@ export default function RecordingPage() {
               return (
               <div
                 key={audio.id}
+                id={`dur-audio-${audio.id}`}
                 className="group relative"
                 onContextMenu={(e) => handleContextMenu(e, 'durationAudio', audio)}
               >
@@ -1899,6 +1980,11 @@ export default function RecordingPage() {
             groupColorOverrides={mediaGroupColorOverrides}
             colorKeyPrefix="image"
             captionColorClass="text-violet-600 dark:text-violet-400"
+            highlightedId={
+              searchNav?.results[searchNav.currentIndex]?.content_type === 'image'
+                ? searchNav.results[searchNav.currentIndex].source_id
+                : undefined
+            }
             onImageClick={(index) => setSelectedImageIndex(index)}
             onContextMenu={(e, img) => handleContextMenu(e, 'image', img as Image)}
             onDelete={handleDeleteImage}
@@ -2041,6 +2127,7 @@ export default function RecordingPage() {
               return (
               <div
                 key={audio.id}
+                id={`rec-audio-${audio.id}`}
                 className="group relative"
                 onContextMenu={(e) => handleContextMenu(e, 'audio', audio)}
               >
@@ -2100,12 +2187,13 @@ export default function RecordingPage() {
         {codeSnippets.length > 0 ? (
           <div className="space-y-2">
             {codeSnippets.map((snippet) => (
-              <CodeSnippetCard
-                key={snippet.id}
-                snippet={snippet}
-                onEdit={() => handleEditCodeSnippet(snippet)}
-                onDelete={() => handleDeleteCodeSnippet(snippet.id)}
-              />
+              <div key={snippet.id} id={`rec-code-${snippet.id}`}>
+                <CodeSnippetCard
+                  snippet={snippet}
+                  onEdit={() => handleEditCodeSnippet(snippet)}
+                  onDelete={() => handleDeleteCodeSnippet(snippet.id)}
+                />
+              </div>
             ))}
           </div>
         ) : (

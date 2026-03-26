@@ -95,6 +95,7 @@ export default function DurationList({
           return (
             <div
               key={duration.id}
+              id={`duration-mark-${duration.id}`}
               className="group relative"
             >
               <button
