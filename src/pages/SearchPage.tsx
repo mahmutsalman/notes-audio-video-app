@@ -1,9 +1,10 @@
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import { useImageAudioPlayer } from '../context/ImageAudioPlayerContext';
+import { useDurationAudioPlayer } from '../context/DurationAudioPlayerContext';
+import { useRecordingAudioPlayer } from '../context/RecordingAudioPlayerContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGlobalSearch } from '../hooks/useGlobalSearch';
 import { useTabTitle } from '../hooks/useTabTitle';
-import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
 import ImageLightbox from '../components/common/ImageLightbox';
 import { TagBrowser } from '../components/tags/TagBrowser';
 import type {
@@ -16,7 +17,6 @@ import type {
   Recording,
   TaggedItems,
   AnyImageAudio,
-  AudioMarker,
 } from '../types';
 
 // ─── Section config ───────────────────────────────────────────────────────────
@@ -138,26 +138,13 @@ function ExpandedPreview({ data, loading, error }: ExpandedPreviewProps) {
   const [noteExpanded, setNoteExpanded] = useState(false);
   const noteRef = useRef<HTMLDivElement>(null);
   const [noteOverflows, setNoteOverflows] = useState(false);
-  const [markersCache, setMarkersCache] = useState<Record<number, AudioMarker[]>>({});
+  const durationAudioPlayer = useDurationAudioPlayer();
+  const recordingAudioPlayer = useRecordingAudioPlayer();
 
   useEffect(() => {
     if (noteRef.current) {
       setNoteOverflows(noteRef.current.scrollHeight > noteRef.current.clientHeight + 4);
     }
-  }, [data]);
-
-  useEffect(() => {
-    if (data?.kind !== 'duration_audio' && data?.kind !== 'audio') return;
-    const contextType = data.kind === 'duration_audio' ? 'duration' : 'recording';
-    Promise.all(
-      data.audios.map(a =>
-        window.electronAPI.audioMarkers.getByAudio(a.id, contextType).then(markers => ({ id: a.id, markers }))
-      )
-    ).then(results => {
-      const next: Record<number, AudioMarker[]> = {};
-      for (const { id, markers } of results) next[id] = markers;
-      setMarkersCache(next);
-    });
   }, [data]);
 
   const panelBase =
@@ -237,50 +224,36 @@ function ExpandedPreview({ data, loading, error }: ExpandedPreviewProps) {
     );
   }
 
-  if (data.kind === 'duration_audio' || data.kind === 'audio') {
+  if (data.kind === 'duration_audio') {
     const audios = data.audios;
-    if (audios.length === 0) {
-      return (
-        <div className={panelBase}>
-          <p className="text-xs text-gray-400 dark:text-gray-500">No audio files</p>
-        </div>
-      );
-    }
+    if (audios.length === 0) return <div className={panelBase}><p className="text-xs text-gray-400 dark:text-gray-500">No audio files</p></div>;
     return (
-      <div className={`${panelBase} space-y-3`}>
-        {audios.map(a => {
-          const markers = markersCache[a.id] ?? [];
-          const important = markers.filter(m => m.marker_type === 'important').length;
-          const question = markers.filter(m => m.marker_type === 'question').length;
-          const similar = markers.filter(m => m.marker_type === 'similar_question').length;
-          return (
-            <div key={a.id} className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                {a.caption && (
-                  <span className="text-xs text-gray-600 dark:text-gray-300 truncate">{a.caption}</span>
-                )}
-                {a.duration !== null && (
-                  <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">
-                    {formatAudioDuration(a.duration)}
-                  </span>
-                )}
-                {important > 0 && (
-                  <span className="text-xs px-1 py-0.5 rounded bg-red-900/50 text-red-300 border border-red-800/40">❗{important}</span>
-                )}
-                {question > 0 && (
-                  <span className="text-xs px-1 py-0.5 rounded bg-blue-900/50 text-blue-300 border border-blue-800/40">❓{question}</span>
-                )}
-                {similar > 0 && (
-                  <span className="text-xs px-1 py-0.5 rounded bg-purple-900/50 text-purple-300 border border-purple-800/40">↔{similar}</span>
-                )}
-              </div>
-              <ThemedAudioPlayer
-                src={window.electronAPI.paths.getFileUrl(a.file_path)}
-                theme={data.kind === 'duration_audio' ? 'blue' : 'violet'}
-              />
-            </div>
-          );
-        })}
+      <div className={`${panelBase} space-y-1`}>
+        {audios.map((a, i) => (
+          <button key={a.id} onClick={async () => { const markers = await window.electronAPI.audioMarkers.getByAudio(a.id, 'duration'); durationAudioPlayer.play(a, a.caption || `Audio ${i + 1}`, markers); }}
+            className="w-full flex items-center gap-2 px-2 py-2 rounded-lg bg-gray-100 dark:bg-dark-hover hover:bg-gray-200 dark:hover:bg-dark-border text-left transition-colors group">
+            <span className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600 group-hover:bg-blue-500 text-white"><svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg></span>
+            <span className="text-xs text-gray-700 dark:text-gray-300 truncate flex-1">{a.caption || `Audio ${i + 1}`}</span>
+            {a.duration !== null && <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">{formatAudioDuration(a.duration)}</span>}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  if (data.kind === 'audio') {
+    const audios = data.audios;
+    if (audios.length === 0) return <div className={panelBase}><p className="text-xs text-gray-400 dark:text-gray-500">No audio files</p></div>;
+    return (
+      <div className={`${panelBase} space-y-1`}>
+        {audios.map((a, i) => (
+          <button key={a.id} onClick={async () => { const markers = await window.electronAPI.audioMarkers.getByAudio(a.id, 'recording'); recordingAudioPlayer.play(a, a.caption || `Audio ${i + 1}`, markers); }}
+            className="w-full flex items-center gap-2 px-2 py-2 rounded-lg bg-gray-100 dark:bg-dark-hover hover:bg-gray-200 dark:hover:bg-dark-border text-left transition-colors group">
+            <span className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-full bg-violet-600 group-hover:bg-violet-500 text-white"><svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg></span>
+            <span className="text-xs text-gray-700 dark:text-gray-300 truncate flex-1">{a.caption || `Audio ${i + 1}`}</span>
+            {a.duration !== null && <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">{formatAudioDuration(a.duration)}</span>}
+          </button>
+        ))}
       </div>
     );
   }
@@ -519,18 +492,9 @@ function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; onNaviga
   const [lightboxIsRecordingLevel, setLightboxIsRecordingLevel] = useState(false);
   const [imageAudiosMap, setImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
 
-  // Audio row inline expansion
-  const [expandedAudioId, setExpandedAudioId] = useState<number | null>(null);
-  const [expandedAudioContextType, setExpandedAudioContextType] = useState<'recording' | 'duration'>('duration');
-  const [expandedAudioMarkers, setExpandedAudioMarkers] = useState<AudioMarker[]>([]);
-
   const imageAudioPlayer = useImageAudioPlayer();
-
-  useEffect(() => {
-    if (expandedAudioId === null) { setExpandedAudioMarkers([]); return; }
-    window.electronAPI.audioMarkers.getByAudio(expandedAudioId, expandedAudioContextType)
-      .then(setExpandedAudioMarkers);
-  }, [expandedAudioId, expandedAudioContextType]);
+  const durationAudioPlayer = useDurationAudioPlayer();
+  const recordingAudioPlayer = useRecordingAudioPlayer();
 
   useEffect(() => {
     setLoading(true);
@@ -622,13 +586,15 @@ function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; onNaviga
                 {/* Main row */}
                 <div
                   className="flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-dark-hover cursor-pointer transition-colors"
-                  onClick={() => {
+                  onClick={async () => {
                     if (isImage) {
                       openImageLightbox(rows, rowIndex, isRecordingLevel);
                     } else {
-                      const next = expandedAudioId === row.id ? null : row.id;
-                      setExpandedAudioId(next);
-                      if (next !== null) setExpandedAudioContextType(isRecordingLevel ? 'recording' : 'duration');
+                      const contextType = isRecordingLevel ? 'recording' : 'duration';
+                      const player = isRecordingLevel ? recordingAudioPlayer : durationAudioPlayer;
+                      const markers = await window.electronAPI.audioMarkers.getByAudio(row.id, contextType);
+                      const label = row.caption || `${row.recording_name || 'Recording'} — Audio`;
+                      player.play({ id: row.id, file_path: row.file_path, duration: null, caption: row.caption, created_at: '' } as any, label, markers);
                     }
                   }}
                 >
@@ -663,49 +629,11 @@ function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; onNaviga
                       </svg>
                     </button>
                   ) : (
-                    <svg
-                      className={`w-4 h-4 flex-shrink-0 text-gray-400 dark:text-gray-500 self-center transition-transform duration-150${expandedAudioId === row.id ? ' rotate-180' : ''}`}
-                      fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    <svg className="w-4 h-4 flex-shrink-0 text-gray-400 dark:text-gray-500 self-center opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
                     </svg>
                   )}
                 </div>
-
-                {/* Audio expansion panel */}
-                {!isImage && expandedAudioId === row.id && (
-                  <div className="border-t border-gray-100 dark:border-dark-border bg-gray-50 dark:bg-dark-surface px-3 py-3 space-y-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {row.caption && (
-                        <p className="text-xs text-gray-600 dark:text-gray-300 italic">{row.caption}</p>
-                      )}
-                      {expandedAudioMarkers.filter(m => m.marker_type === 'important').length > 0 && (
-                        <span className="text-xs px-1 py-0.5 rounded bg-red-900/50 text-red-300 border border-red-800/40">❗{expandedAudioMarkers.filter(m => m.marker_type === 'important').length}</span>
-                      )}
-                      {expandedAudioMarkers.filter(m => m.marker_type === 'question').length > 0 && (
-                        <span className="text-xs px-1 py-0.5 rounded bg-blue-900/50 text-blue-300 border border-blue-800/40">❓{expandedAudioMarkers.filter(m => m.marker_type === 'question').length}</span>
-                      )}
-                      {expandedAudioMarkers.filter(m => m.marker_type === 'similar_question').length > 0 && (
-                        <span className="text-xs px-1 py-0.5 rounded bg-purple-900/50 text-purple-300 border border-purple-800/40">↔{expandedAudioMarkers.filter(m => m.marker_type === 'similar_question').length}</span>
-                      )}
-                    </div>
-                    <ThemedAudioPlayer
-                      src={window.electronAPI.paths.getFileUrl(row.file_path)}
-                      theme="blue"
-                    />
-                    <div className="flex justify-end">
-                      <button
-                        onClick={() => onNavigate(row.recording_id)}
-                        className="text-[10px] text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors flex items-center gap-1"
-                      >
-                        Open recording
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             ))}
           </div>
