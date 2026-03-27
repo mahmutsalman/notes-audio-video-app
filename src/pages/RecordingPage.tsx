@@ -1514,9 +1514,9 @@ export default function RecordingPage() {
 
       {/* Main Notes section - shown for mark-based notes (replaces audio/video player) */}
       {isMarkBasedRecording && (
-        <div className="mb-6 p-4 -mx-4 rounded-xl bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800">
+        <div className="mb-6 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-teal-700 dark:text-teal-300 flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-2">
               <span>📝</span>
               Main Notes
             </h2>
@@ -1543,14 +1543,14 @@ export default function RecordingPage() {
               </div>
             </div>
           ) : (
-            <div className="p-4 bg-white dark:bg-dark-surface rounded-lg">
+            <div className="text-sm text-amber-700 dark:text-amber-300">
               {recording.main_notes_content ? (
                 <div
-                  className="notes-content text-gray-700 dark:text-gray-300"
+                  className="notes-content"
                   dangerouslySetInnerHTML={{ __html: recording.main_notes_content }}
                 />
               ) : (
-                <p className="text-teal-500 dark:text-teal-400/70 italic">
+                <p className="italic text-amber-500 dark:text-amber-400/70">
                   No main notes yet. Click Edit to add notes.
                 </p>
               )}
@@ -1917,9 +1917,10 @@ export default function RecordingPage() {
       )}
 
       {/* Notes */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+      <div className="mb-6 p-4 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold text-purple-700 dark:text-purple-300 flex items-center gap-2">
+            <span>🗒️</span>
             Notes
           </h2>
           {!isEditing && (
@@ -1945,14 +1946,14 @@ export default function RecordingPage() {
             </div>
           </div>
         ) : (
-          <div className="p-4 bg-gray-50 dark:bg-dark-hover rounded-lg">
+          <div className="text-sm text-purple-700 dark:text-purple-300">
             {recording.notes_content ? (
               <div
-                className="notes-content text-gray-700 dark:text-gray-300"
+                className="notes-content"
                 dangerouslySetInnerHTML={{ __html: recording.notes_content }}
               />
             ) : (
-              <p className="text-gray-400 dark:text-gray-500 italic">
+              <p className="italic text-purple-400 dark:text-purple-400/70">
                 No notes added
               </p>
             )}
