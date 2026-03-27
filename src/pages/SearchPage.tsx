@@ -474,7 +474,12 @@ function fmtDuration(secs: number | null): string {
 
 type TagRow = { id: number; file_path: string; thumbnail_path?: string | null; caption: string | null; recording_id: number; recording_name: string | null; topic_name: string; extra?: string };
 
-function TagResultsView({ tagName, onNavigate }: { tagName: string; onNavigate: (recordingId: number) => void }) {
+function dedupeById<T extends { id: number }>(items: T[]): T[] {
+  const seen = new Set<number>();
+  return items.filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; });
+}
+
+function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; onNavigate: (recordingId: number) => void }) {
   const [items, setItems] = useState<TaggedItems | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -493,11 +498,16 @@ function TagResultsView({ tagName, onNavigate }: { tagName: string; onNavigate: 
 
   useEffect(() => {
     setLoading(true);
-    window.electronAPI.tags.getItemsByTag(tagName).then((result) => {
-      setItems(result);
+    Promise.all(tagNames.map(t => window.electronAPI.tags.getItemsByTag(t))).then((results) => {
+      setItems({
+        images:          dedupeById(results.flatMap(r => r.images)),
+        duration_images: dedupeById(results.flatMap(r => r.duration_images)),
+        audios:          dedupeById(results.flatMap(r => r.audios)),
+        duration_audios: dedupeById(results.flatMap(r => r.duration_audios)),
+      });
       setLoading(false);
     });
-  }, [tagName]);
+  }, [tagNames.join(',')]);
 
   const openImageLightbox = async (rows: TagRow[], index: number, isRecordingLevel: boolean) => {
     setLightboxRows(rows);
@@ -525,7 +535,7 @@ function TagResultsView({ tagName, onNavigate }: { tagName: string; onNavigate: 
   const total = items.images.length + items.duration_images.length + items.audios.length + items.duration_audios.length;
 
   if (total === 0) {
-    return <p className="text-sm text-gray-400 dark:text-gray-500 py-4">No items tagged with <span className="font-mono text-blue-500">#{tagName}</span></p>;
+    return <p className="text-sm text-gray-400 dark:text-gray-500 py-4">No items tagged with {tagNames.map((t, i) => <span key={t}>{i > 0 && ' or '}<span className="font-mono text-blue-500">#{t}</span></span>)}</p>;
   }
 
   const sections: { label: string; icon: string; isImage: boolean; isRecordingLevel: boolean; rows: TagRow[] }[] = [];
@@ -558,7 +568,10 @@ function TagResultsView({ tagName, onNavigate }: { tagName: string; onNavigate: 
       )}
 
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-        {total} item{total !== 1 ? 's' : ''} tagged <span className="font-mono text-blue-500">#{tagName}</span>
+        {total} item{total !== 1 ? 's' : ''} tagged{' '}
+        {tagNames.map((t, i) => (
+          <span key={t}>{i > 0 && <span className="text-gray-400 mx-1">or</span>}<span className="font-mono text-blue-500">#{t}</span></span>
+        ))}
       </p>
       {sections.map(({ label, icon, isImage, isRecordingLevel, rows }) => (
         <div key={label} className="mb-6">
@@ -660,7 +673,7 @@ export default function SearchPage() {
   const [searchParams] = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
   const [showTagBrowser, setShowTagBrowser] = useState(false);
-  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [activeTags, setActiveTags] = useState<string[]>([]);
 
   const {
     query, setQuery,
@@ -699,7 +712,7 @@ export default function SearchPage() {
   }, [navigate, navigableResults, activeQuery]);
 
   const handleTagClick = useCallback((tagName: string) => {
-    setActiveTag(tagName);
+    setActiveTags(prev => prev.includes(tagName) ? prev.filter(t => t !== tagName) : [...prev, tagName]);
   }, []);
 
   const sectionsWithResults = SECTION_ORDER.filter(s => grouped[s.key].length > 0);
@@ -715,7 +728,7 @@ export default function SearchPage() {
           ref={inputRef}
           type="text"
           value={query}
-          onChange={e => { setQuery(e.target.value); setActiveTag(null); }}
+          onChange={e => { setQuery(e.target.value); setActiveTags([]); }}
           placeholder="Search marks, images, audios, code, notes…"
           className="w-full pl-12 pr-4 py-3 text-base rounded-xl border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 shadow-sm"
           autoComplete="off"
@@ -732,19 +745,24 @@ export default function SearchPage() {
       {/* Tag browser toggle */}
       <div className="flex items-center gap-2 mb-5">
         <button
-          onClick={() => { setShowTagBrowser(v => !v); if (showTagBrowser) setActiveTag(null); }}
+          onClick={() => { setShowTagBrowser(v => !v); if (showTagBrowser) setActiveTags([]); }}
           className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border transition-colors ${showTagBrowser ? 'bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300' : 'border-gray-200 dark:border-dark-border text-gray-500 dark:text-gray-400 hover:border-blue-300 dark:hover:border-blue-600'}`}
         >
           🏷️ Browse by Tag
           <span className={`text-[10px] transition-transform ${showTagBrowser ? 'rotate-180' : ''}`}>▾</span>
         </button>
-        {activeTag && (
-          <div className="flex items-center gap-1">
+        {activeTags.length > 0 && (
+          <div className="flex items-center gap-1 flex-wrap">
             <span className="text-xs text-gray-400">Showing:</span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
-              #{activeTag}
-              <button className="hover:text-blue-900" onClick={() => setActiveTag(null)}>×</button>
-            </span>
+            {activeTags.map(tag => (
+              <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
+                #{tag}
+                <button className="hover:text-blue-900 dark:hover:text-blue-100" onClick={() => setActiveTags(prev => prev.filter(t => t !== tag))}>×</button>
+              </span>
+            ))}
+            {activeTags.length > 1 && (
+              <button onClick={() => setActiveTags([])} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 ml-1">clear all</button>
+            )}
           </div>
         )}
       </div>
@@ -757,15 +775,15 @@ export default function SearchPage() {
       )}
 
       {/* Tag results */}
-      {activeTag && (
+      {activeTags.length > 0 && (
         <TagResultsView
-          tagName={activeTag}
+          tagNames={activeTags}
           onNavigate={(recordingId) => navigate(`/recording/${recordingId}`)}
         />
       )}
 
       {/* Text search results (hidden while browsing by tag) */}
-      {!activeTag && (
+      {activeTags.length === 0 && (
         <>
           {/* Summary bar */}
           {hasQuery && !loading && !isTyping && (
