@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
+import { useImageAudioPlayer } from '../context/ImageAudioPlayerContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGlobalSearch } from '../hooks/useGlobalSearch';
 import { useTabTitle } from '../hooks/useTabTitle';
@@ -15,6 +16,7 @@ import type {
   Recording,
   TaggedItems,
   AnyImageAudio,
+  AudioMarker,
 } from '../types';
 
 // ─── Section config ───────────────────────────────────────────────────────────
@@ -136,11 +138,26 @@ function ExpandedPreview({ data, loading, error }: ExpandedPreviewProps) {
   const [noteExpanded, setNoteExpanded] = useState(false);
   const noteRef = useRef<HTMLDivElement>(null);
   const [noteOverflows, setNoteOverflows] = useState(false);
+  const [markersCache, setMarkersCache] = useState<Record<number, AudioMarker[]>>({});
 
   useEffect(() => {
     if (noteRef.current) {
       setNoteOverflows(noteRef.current.scrollHeight > noteRef.current.clientHeight + 4);
     }
+  }, [data]);
+
+  useEffect(() => {
+    if (data?.kind !== 'duration_audio' && data?.kind !== 'audio') return;
+    const contextType = data.kind === 'duration_audio' ? 'duration' : 'recording';
+    Promise.all(
+      data.audios.map(a =>
+        window.electronAPI.audioMarkers.getByAudio(a.id, contextType).then(markers => ({ id: a.id, markers }))
+      )
+    ).then(results => {
+      const next: Record<number, AudioMarker[]> = {};
+      for (const { id, markers } of results) next[id] = markers;
+      setMarkersCache(next);
+    });
   }, [data]);
 
   const panelBase =
@@ -231,10 +248,14 @@ function ExpandedPreview({ data, loading, error }: ExpandedPreviewProps) {
     }
     return (
       <div className={`${panelBase} space-y-3`}>
-        {audios.map(a => (
-          <div key={a.id} className="space-y-1">
-            {(a.caption || a.duration !== null) && (
-              <div className="flex items-center gap-2">
+        {audios.map(a => {
+          const markers = markersCache[a.id] ?? [];
+          const important = markers.filter(m => m.marker_type === 'important').length;
+          const question = markers.filter(m => m.marker_type === 'question').length;
+          const similar = markers.filter(m => m.marker_type === 'similar_question').length;
+          return (
+            <div key={a.id} className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
                 {a.caption && (
                   <span className="text-xs text-gray-600 dark:text-gray-300 truncate">{a.caption}</span>
                 )}
@@ -243,14 +264,23 @@ function ExpandedPreview({ data, loading, error }: ExpandedPreviewProps) {
                     {formatAudioDuration(a.duration)}
                   </span>
                 )}
+                {important > 0 && (
+                  <span className="text-xs px-1 py-0.5 rounded bg-red-900/50 text-red-300 border border-red-800/40">❗{important}</span>
+                )}
+                {question > 0 && (
+                  <span className="text-xs px-1 py-0.5 rounded bg-blue-900/50 text-blue-300 border border-blue-800/40">❓{question}</span>
+                )}
+                {similar > 0 && (
+                  <span className="text-xs px-1 py-0.5 rounded bg-purple-900/50 text-purple-300 border border-purple-800/40">↔{similar}</span>
+                )}
               </div>
-            )}
-            <ThemedAudioPlayer
-              src={window.electronAPI.paths.getFileUrl(a.file_path)}
-              theme={data.kind === 'duration_audio' ? 'blue' : 'violet'}
-            />
-          </div>
-        ))}
+              <ThemedAudioPlayer
+                src={window.electronAPI.paths.getFileUrl(a.file_path)}
+                theme={data.kind === 'duration_audio' ? 'blue' : 'violet'}
+              />
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -491,10 +521,16 @@ function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; onNaviga
 
   // Audio row inline expansion
   const [expandedAudioId, setExpandedAudioId] = useState<number | null>(null);
+  const [expandedAudioContextType, setExpandedAudioContextType] = useState<'recording' | 'duration'>('duration');
+  const [expandedAudioMarkers, setExpandedAudioMarkers] = useState<AudioMarker[]>([]);
 
-  // Simple playback for image audios (no context needed)
-  const playingAudioRef = useRef<HTMLAudioElement | null>(null);
-  useEffect(() => () => { playingAudioRef.current?.pause(); }, []);
+  const imageAudioPlayer = useImageAudioPlayer();
+
+  useEffect(() => {
+    if (expandedAudioId === null) { setExpandedAudioMarkers([]); return; }
+    window.electronAPI.audioMarkers.getByAudio(expandedAudioId, expandedAudioContextType)
+      .then(setExpandedAudioMarkers);
+  }, [expandedAudioId, expandedAudioContextType]);
 
   useEffect(() => {
     setLoading(true);
@@ -522,11 +558,10 @@ function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; onNaviga
     setImageAudiosMap(map);
   };
 
-  const handlePlayImageAudio = (audio: AnyImageAudio, _label: string) => {
-    playingAudioRef.current?.pause();
-    const a = new Audio(window.electronAPI.paths.getFileUrl(audio.file_path));
-    playingAudioRef.current = a;
-    a.play();
+  const handlePlayImageAudio = async (audio: AnyImageAudio, label: string) => {
+    const contextType = lightboxIsRecordingLevel ? 'recording_image' : 'duration_image';
+    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, contextType);
+    imageAudioPlayer.play(audio, label, markers);
   };
 
   if (loading) return <p className="text-sm text-gray-400 py-4">Loading…</p>;
@@ -591,7 +626,9 @@ function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; onNaviga
                     if (isImage) {
                       openImageLightbox(rows, rowIndex, isRecordingLevel);
                     } else {
-                      setExpandedAudioId(expandedAudioId === row.id ? null : row.id);
+                      const next = expandedAudioId === row.id ? null : row.id;
+                      setExpandedAudioId(next);
+                      if (next !== null) setExpandedAudioContextType(isRecordingLevel ? 'recording' : 'duration');
                     }
                   }}
                 >
@@ -638,9 +675,20 @@ function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; onNaviga
                 {/* Audio expansion panel */}
                 {!isImage && expandedAudioId === row.id && (
                   <div className="border-t border-gray-100 dark:border-dark-border bg-gray-50 dark:bg-dark-surface px-3 py-3 space-y-2">
-                    {row.caption && (
-                      <p className="text-xs text-gray-600 dark:text-gray-300 italic">{row.caption}</p>
-                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {row.caption && (
+                        <p className="text-xs text-gray-600 dark:text-gray-300 italic">{row.caption}</p>
+                      )}
+                      {expandedAudioMarkers.filter(m => m.marker_type === 'important').length > 0 && (
+                        <span className="text-xs px-1 py-0.5 rounded bg-red-900/50 text-red-300 border border-red-800/40">❗{expandedAudioMarkers.filter(m => m.marker_type === 'important').length}</span>
+                      )}
+                      {expandedAudioMarkers.filter(m => m.marker_type === 'question').length > 0 && (
+                        <span className="text-xs px-1 py-0.5 rounded bg-blue-900/50 text-blue-300 border border-blue-800/40">❓{expandedAudioMarkers.filter(m => m.marker_type === 'question').length}</span>
+                      )}
+                      {expandedAudioMarkers.filter(m => m.marker_type === 'similar_question').length > 0 && (
+                        <span className="text-xs px-1 py-0.5 rounded bg-purple-900/50 text-purple-300 border border-purple-800/40">↔{expandedAudioMarkers.filter(m => m.marker_type === 'similar_question').length}</span>
+                      )}
+                    </div>
                     <ThemedAudioPlayer
                       src={window.electronAPI.paths.getFileUrl(row.file_path)}
                       theme="blue"
