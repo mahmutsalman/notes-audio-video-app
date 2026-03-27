@@ -1,5 +1,5 @@
 import { ReactNode, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Header from './Header';
 import AudioRecordingBar from '../audio/AudioRecordingBar';
 import ImageAudioPlayerBar from '../audio/ImageAudioPlayerBar';
@@ -7,6 +7,8 @@ import DurationAudioPlayerBar from '../audio/DurationAudioPlayerBar';
 import { useAudioRecording } from '../../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
 import { useDurationAudioPlayer } from '../../context/DurationAudioPlayerContext';
+import { useRecordingAudioPlayer } from '../../context/RecordingAudioPlayerContext';
+import { useTabInstance, useTabs, pathToTitle } from '../../context/TabsContext';
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -14,7 +16,16 @@ interface MainLayoutProps {
 
 export default function MainLayout({ children }: MainLayoutProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { tabId } = useTabInstance();
+  const { updateTabPath, updateTabTitle } = useTabs();
   const { isRecording, isSaving } = useAudioRecording();
+
+  // Keep tab path and default title in sync with navigation
+  useEffect(() => {
+    updateTabPath(tabId, location.pathname);
+    updateTabTitle(tabId, pathToTitle(location.pathname));
+  }, [location.pathname, tabId, updateTabPath, updateTabTitle]);
 
   // Global Cmd+K / Ctrl+K → open search page
   useEffect(() => {

@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTabTitle } from '../hooks/useTabTitle';
-import { useIsActiveTab } from '../context/TabsContext';
 import { useTopic } from '../hooks/useTopics';
 import { useRecordings } from '../hooks/useRecordings';
 import RecordingList from '../components/recordings/RecordingList';

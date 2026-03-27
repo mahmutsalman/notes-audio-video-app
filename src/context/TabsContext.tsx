@@ -38,7 +38,6 @@ export function pathToTitle(path: string): string {
   if (path === '/') return 'Topics';
   if (path.startsWith('/search')) return 'Search';
   if (path.startsWith('/study')) return 'Study';
-  if (path.startsWith('/capture')) return 'Capture';
   if (path.startsWith('/topic/')) return 'Topic';
   if (path.startsWith('/recording/')) return 'Recording';
   return 'Notes';
@@ -99,8 +98,15 @@ export function TabsProvider({ children }: { children: ReactNode }) {
     const handler = (e: KeyboardEvent) => {
       if (!e.metaKey && !e.ctrlKey) return;
 
-      // Cmd+T → duplicate current tab at its current path
+      // Cmd+T → new tab at /
       if (e.key === 't' && !e.shiftKey) {
+        e.preventDefault();
+        createTab('/');
+        return;
+      }
+
+      // Cmd+N → duplicate current tab at its current path
+      if (e.key === 'n' && !e.shiftKey) {
         e.preventDefault();
         setState(prev => {
           const active = prev.tabs.find(t => t.id === prev.activeTabId);
@@ -108,13 +114,6 @@ export function TabsProvider({ children }: { children: ReactNode }) {
           const tab = makeTab(path);
           return { tabs: [...prev.tabs, tab], activeTabId: tab.id };
         });
-        return;
-      }
-
-      // Cmd+N → new tab at home
-      if (e.key === 'n' && !e.shiftKey) {
-        e.preventDefault();
-        createTab('/');
         return;
       }
 
