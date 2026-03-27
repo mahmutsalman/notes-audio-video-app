@@ -1631,7 +1631,7 @@ export default function RecordingPage() {
 
       {/* Main Notes section - shown for mark-based notes (replaces audio/video player) */}
       {isMarkBasedRecording && (
-        <div className="mb-6 p-4 -mx-4 rounded-xl bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800">
+        <div className="mb-6 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-2">
               <span>📝</span>
