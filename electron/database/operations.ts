@@ -1369,8 +1369,9 @@ export const TagOperations = {
   getAllWithCounts(): Tag[] {
     const db = getDatabase();
     return db.prepare(`
-      SELECT t.id, t.name, t.created_at,
-             COUNT(mt.id) as usage_count
+      SELECT t.id, t.name, t.created_at, t.last_searched_at,
+             COUNT(mt.id)       AS usage_count,
+             MAX(mt.created_at) AS last_assigned_at
       FROM tags t
       LEFT JOIN media_tags mt ON mt.tag_id = t.id
       GROUP BY t.id
@@ -1453,6 +1454,11 @@ export const TagOperations = {
     const db = getDatabase();
     // media_tags cascade deletes automatically
     db.prepare(`DELETE FROM tags WHERE id = ?`).run(tagId);
+  },
+
+  recordSearch(tagId: number): void {
+    const db = getDatabase();
+    db.prepare(`UPDATE tags SET last_searched_at = CURRENT_TIMESTAMP WHERE id = ?`).run(tagId);
   },
 
   getItemsByTag(tagName: string): {
