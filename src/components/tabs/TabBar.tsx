@@ -53,7 +53,7 @@ export default function TabBar() {
       <button
         onClick={() => createTab('/')}
         className="titlebar-no-drag flex-shrink-0 w-8 flex items-center justify-center text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover transition-colors"
-        title="New tab (⌘T)"
+        title="New tab at home (⌘N)"
       >
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
