@@ -1777,5 +1777,9 @@ export function setupIpcHandlers(): void {
     return TagOperations.getItemsByTag(tagName);
   });
 
+  ipcMain.handle('tags:recordSearch', async (_, tagId: number) => {
+    TagOperations.recordSearch(tagId);
+  });
+
   console.log('IPC handlers registered');
 }

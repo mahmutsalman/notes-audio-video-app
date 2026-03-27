@@ -666,6 +666,14 @@ function runMigrations(db: Database.Database): void {
     console.log('Created tags and media_tags tables');
   }
 
+  // Migration: Add last_searched_at column to tags table
+  const tagsColumnsForSearch = db.prepare("PRAGMA table_info(tags)").all() as { name: string }[];
+  if (!tagsColumnsForSearch.some(col => col.name === 'last_searched_at')) {
+    db.exec(`ALTER TABLE tags ADD COLUMN last_searched_at DATETIME`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tags_last_searched ON tags(last_searched_at DESC)`);
+    console.log('Added last_searched_at column to tags table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index
