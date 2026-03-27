@@ -162,6 +162,20 @@ function ExpandedPreview({ data, loading, error, onOpenLightbox }: ExpandedPrevi
     }
   }, [data]);
 
+  useEffect(() => {
+    if (data?.kind !== 'duration_audio' && data?.kind !== 'audio') return;
+    const contextType = data.kind === 'duration_audio' ? 'duration' : 'recording';
+    Promise.all(
+      data.audios.map(a =>
+        window.electronAPI.audioMarkers.getByAudio(a.id, contextType).then(markers => ({ id: a.id, markers }))
+      )
+    ).then(results => {
+      const next: Record<number, AudioMarker[]> = {};
+      for (const { id, markers } of results) next[id] = markers;
+      setMarkersCache(next);
+    });
+  }, [data]);
+
   const panelBase =
     'border-t border-gray-100 dark:border-dark-border bg-gray-50 dark:bg-dark-surface px-3 py-3';
 
