@@ -678,6 +678,8 @@ const electronAPI = {
       ipcRenderer.invoke('tags:getMediaByTag', mediaType, tagName),
     getItemsByTag: (tagName: string): Promise<import('../src/types').TaggedItems> =>
       ipcRenderer.invoke('tags:getItemsByTag', tagName),
+    recordSearch: (tagId: number): Promise<void> =>
+      ipcRenderer.invoke('tags:recordSearch', tagId),
   },
 };
 

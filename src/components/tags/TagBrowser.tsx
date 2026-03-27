@@ -1,5 +1,25 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Tag } from '../../types';
+
+type SortMode = 'name' | 'usage' | 'last_assigned' | 'last_clicked';
+
+function formatRelativeTime(isoString: string | null): string {
+  if (!isoString) return '—';
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  const diffWk = Math.floor(diffDay / 7);
+  if (diffWk < 5) return `${diffWk}w ago`;
+  const diffMo = Math.floor(diffDay / 30);
+  if (diffMo < 12) return `${diffMo}mo ago`;
+  return `${Math.floor(diffMo / 12)}y ago`;
+}
 
 interface TreeNode {
   label: string;
@@ -152,6 +172,7 @@ export function TagBrowser({ onTagClick }: Props) {
   const [filterText, setFilterText] = useState('');
   const [renamingTag, setRenamingTag] = useState<Tag | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [sortMode, setSortMode] = useState<SortMode>('name');
 
   const loadTags = useCallback(() => {
     window.electronAPI.tags.getAll().then(setTags);
@@ -160,6 +181,30 @@ export function TagBrowser({ onTagClick }: Props) {
   useEffect(() => {
     loadTags();
   }, [loadTags]);
+
+  const handleTagClick = useCallback((tagName: string) => {
+    const tag = tags.find(t => t.name === tagName);
+    if (tag) {
+      window.electronAPI.tags.recordSearch(tag.id).catch(() => {});
+    }
+    onTagClick(tagName);
+  }, [onTagClick, tags]);
+
+  const sortedFlatTags = useMemo(() => {
+    if (sortMode === 'name') return [];
+    const filtered = filterText
+      ? tags.filter(t => t.name.toLowerCase().includes(filterText.toLowerCase()))
+      : tags;
+    return [...filtered].sort((a, b) => {
+      if (sortMode === 'usage') return b.usage_count - a.usage_count;
+      const key = sortMode === 'last_assigned' ? 'last_assigned_at' : 'last_searched_at';
+      const aVal = a[key]; const bVal = b[key];
+      if (!aVal && !bVal) return 0;
+      if (!aVal) return 1;
+      if (!bVal) return -1;
+      return new Date(bVal).getTime() - new Date(aVal).getTime();
+    });
+  }, [tags, sortMode, filterText]);
 
   async function handleRename(tag: Tag) {
     setRenamingTag(tag);
@@ -198,27 +243,83 @@ export function TagBrowser({ onTagClick }: Props) {
         />
       </div>
 
+      {/* Sort controls */}
+      <div className="px-2 pb-1 flex gap-1 flex-wrap flex-shrink-0">
+        {([
+          ['name',          'Name ↑'],
+          ['usage',         'Usage ↓'],
+          ['last_assigned', 'Last Assigned ↓'],
+          ['last_clicked',  'Last Clicked ↓'],
+        ] as [SortMode, string][]).map(([mode, label]) => (
+          <button
+            key={mode}
+            onClick={() => setSortMode(mode)}
+            className={`px-2 py-0.5 text-[10px] rounded border transition-colors ${
+              sortMode === mode
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'border-gray-600 text-gray-500 dark:text-gray-400 hover:border-blue-400'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Tag count */}
       <div className="px-3 pb-1 text-[10px] text-gray-400 dark:text-gray-600 flex-shrink-0">
         {tags.length} tag{tags.length !== 1 ? 's' : ''}
       </div>
 
-      {/* Tree */}
+      {/* Content: tree (name sort) or flat list (other sorts) */}
       <div className="flex-1 overflow-y-auto py-1">
-        {rootChildren.length === 0 ? (
-          <p className="px-3 text-xs text-gray-400 dark:text-gray-600 italic">No tags yet.</p>
+        {sortMode === 'name' ? (
+          rootChildren.length === 0 ? (
+            <p className="px-3 text-xs text-gray-400 dark:text-gray-600 italic">No tags yet.</p>
+          ) : (
+            rootChildren.map((node) => (
+              <TreeNodeView
+                key={node.fullPath}
+                node={node}
+                depth={0}
+                filterText={filterText}
+                onTagClick={handleTagClick}
+                onRename={handleRename}
+                onDelete={handleDelete}
+              />
+            ))
+          )
         ) : (
-          rootChildren.map((node) => (
-            <TreeNodeView
-              key={node.fullPath}
-              node={node}
-              depth={0}
-              filterText={filterText}
-              onTagClick={onTagClick}
-              onRename={handleRename}
-              onDelete={handleDelete}
-            />
-          ))
+          sortedFlatTags.length === 0 ? (
+            <p className="px-3 text-xs text-gray-400 dark:text-gray-600 italic">No tags yet.</p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-[10px] text-gray-500 dark:text-gray-600 border-b border-gray-100 dark:border-gray-800">
+                  <th className="text-left px-3 py-1 font-normal">Tag</th>
+                  <th className="text-right px-2 py-1 font-normal whitespace-nowrap">Last Assigned</th>
+                  <th className="text-right px-2 py-1 font-normal whitespace-nowrap">Last Clicked</th>
+                  <th className="text-right px-3 py-1 font-normal">Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedFlatTags.map(tag => (
+                  <tr
+                    key={tag.id}
+                    className="hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
+                    onClick={() => {
+                      window.electronAPI.tags.recordSearch(tag.id).catch(() => {});
+                      onTagClick(tag.name);
+                    }}
+                  >
+                    <td className="px-3 py-0.5 text-gray-700 dark:text-gray-300 truncate max-w-[130px] font-mono">{tag.name}</td>
+                    <td className="px-2 py-0.5 text-right text-gray-400 dark:text-gray-600 whitespace-nowrap">{formatRelativeTime(tag.last_assigned_at)}</td>
+                    <td className="px-2 py-0.5 text-right text-gray-400 dark:text-gray-600 whitespace-nowrap">{formatRelativeTime(tag.last_searched_at)}</td>
+                    <td className="px-3 py-0.5 text-right text-gray-400 dark:text-gray-600">{tag.usage_count > 0 ? tag.usage_count : ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
         )}
       </div>
 

@@ -674,6 +674,7 @@ export interface ElectronAPI {
     delete: (tagId: number) => Promise<void>;
     getMediaByTag: (mediaType: MediaTagType, tagName: string) => Promise<{ media_id: number }[]>;
     getItemsByTag: (tagName: string) => Promise<TaggedItems>;
+    recordSearch: (tagId: number) => Promise<void>;
   };
 }
 
@@ -711,6 +712,8 @@ export interface Tag {
   name: string;
   usage_count: number;
   created_at: string;
+  last_assigned_at: string | null;
+  last_searched_at: string | null;
 }
 
 export interface TaggedMediaImage {
