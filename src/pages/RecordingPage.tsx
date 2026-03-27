@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useTabTitle } from '../hooks/useTabTitle';
 import { useRecording, useRecordings } from '../hooks/useRecordings';
 import { useTopic } from '../hooks/useTopics';
 import { useDurations } from '../hooks/useDurations';

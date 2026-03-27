@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGlobalSearch } from '../hooks/useGlobalSearch';
+import { useTabTitle } from '../hooks/useTabTitle';
 import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
 import type {
   GlobalSearchResult,
@@ -472,6 +473,7 @@ export default function SearchPage() {
     activeQuery,
     totalCount, categoriesWithResults,
   } = useGlobalSearch();
+  useTabTitle(query ? `Search: ${query}` : 'Search');
 
   // Pre-populate from ?q= URL param on mount
   useEffect(() => {
