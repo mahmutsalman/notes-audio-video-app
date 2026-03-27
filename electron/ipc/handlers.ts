@@ -15,6 +15,7 @@ import {
   SettingsOperations,
   AudioMarkersOperations,
   SearchOperations,
+  TagOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
@@ -1696,6 +1697,39 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('search:rebuildIndex', async () => {
     rebuildSearchIndex();
+  });
+
+  // ============ Tags ============
+  ipcMain.handle('tags:getAll', async () => {
+    return TagOperations.getAllWithCounts();
+  });
+
+  ipcMain.handle('tags:search', async (_, query: string) => {
+    return TagOperations.search(query);
+  });
+
+  ipcMain.handle('tags:getByMedia', async (_, mediaType: string, mediaId: number) => {
+    return TagOperations.getByMedia(mediaType as import('../../src/types').MediaTagType, mediaId);
+  });
+
+  ipcMain.handle('tags:setForMedia', async (_, mediaType: string, mediaId: number, tagNames: string[]) => {
+    TagOperations.setForMedia(mediaType as import('../../src/types').MediaTagType, mediaId, tagNames);
+  });
+
+  ipcMain.handle('tags:rename', async (_, oldName: string, newName: string) => {
+    TagOperations.rename(oldName, newName);
+  });
+
+  ipcMain.handle('tags:delete', async (_, tagId: number) => {
+    TagOperations.delete(tagId);
+  });
+
+  ipcMain.handle('tags:getMediaByTag', async (_, mediaType: string, tagName: string) => {
+    return TagOperations.getMediaByTag(mediaType as import('../../src/types').MediaTagType, tagName);
+  });
+
+  ipcMain.handle('tags:getItemsByTag', async (_, tagName: string) => {
+    return TagOperations.getItemsByTag(tagName);
   });
 
   console.log('IPC handlers registered');

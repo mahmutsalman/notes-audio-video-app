@@ -14,7 +14,9 @@ import type {
   DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
   DurationGroupColor,
   DurationColor,
-  AudioMarker
+  AudioMarker,
+  Tag,
+  MediaTagType,
 } from '../../src/types';
 
 // Helper to parse tags from JSON string
@@ -1326,5 +1328,161 @@ export const SearchOperations = {
         code: extra?.code ?? null,
       } as GlobalSearchResult;
     });
+  },
+};
+
+// ============ Tags Operations ============
+
+export const TagOperations = {
+  getAllWithCounts(): Tag[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT t.id, t.name, t.created_at,
+             COUNT(mt.id) as usage_count
+      FROM tags t
+      LEFT JOIN media_tags mt ON mt.tag_id = t.id
+      GROUP BY t.id
+      ORDER BY t.name
+    `).all() as Tag[];
+  },
+
+  search(query: string): Tag[] {
+    const db = getDatabase();
+    if (!query) {
+      return db.prepare(`
+        SELECT t.id, t.name, t.created_at,
+               COUNT(mt.id) as usage_count
+        FROM tags t
+        LEFT JOIN media_tags mt ON mt.tag_id = t.id
+        GROUP BY t.id
+        ORDER BY t.name
+        LIMIT 20
+      `).all() as Tag[];
+    }
+    return db.prepare(`
+      SELECT t.id, t.name, t.created_at,
+             COUNT(mt.id) as usage_count
+      FROM tags t
+      LEFT JOIN media_tags mt ON mt.tag_id = t.id
+      WHERE t.name LIKE ?
+      GROUP BY t.id
+      ORDER BY t.name
+      LIMIT 10
+    `).all(`%${query}%`) as Tag[];
+  },
+
+  getByMedia(mediaType: MediaTagType, mediaId: number): Tag[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT t.id, t.name, t.created_at, 0 as usage_count
+      FROM tags t
+      INNER JOIN media_tags mt ON mt.tag_id = t.id
+      WHERE mt.media_type = ? AND mt.media_id = ?
+      ORDER BY t.name
+    `).all(mediaType, mediaId) as Tag[];
+  },
+
+  getMediaByTag(mediaType: MediaTagType, tagName: string): { media_id: number }[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT mt.media_id
+      FROM media_tags mt
+      INNER JOIN tags t ON t.id = mt.tag_id
+      WHERE mt.media_type = ? AND t.name = ?
+    `).all(mediaType, tagName) as { media_id: number }[];
+  },
+
+  setForMedia(mediaType: MediaTagType, mediaId: number, tagNames: string[]): void {
+    const db = getDatabase();
+    db.transaction(() => {
+      // Delete existing associations for this item
+      db.prepare(`DELETE FROM media_tags WHERE media_type = ? AND media_id = ?`)
+        .run(mediaType, mediaId);
+
+      for (const name of tagNames) {
+        const trimmed = name.trim();
+        if (!trimmed) continue;
+        // Insert tag if not exists
+        db.prepare(`INSERT OR IGNORE INTO tags (name) VALUES (?)`).run(trimmed);
+        const tag = db.prepare(`SELECT id FROM tags WHERE name = ?`).get(trimmed) as { id: number };
+        // Insert association
+        db.prepare(`INSERT OR IGNORE INTO media_tags (tag_id, media_type, media_id) VALUES (?, ?, ?)`)
+          .run(tag.id, mediaType, mediaId);
+      }
+    })();
+  },
+
+  rename(oldName: string, newName: string): void {
+    const db = getDatabase();
+    db.prepare(`UPDATE tags SET name = ? WHERE name = ?`).run(newName.trim(), oldName);
+  },
+
+  delete(tagId: number): void {
+    const db = getDatabase();
+    // media_tags cascade deletes automatically
+    db.prepare(`DELETE FROM tags WHERE id = ?`).run(tagId);
+  },
+
+  getItemsByTag(tagName: string): {
+    images: { id: number; file_path: string; thumbnail_path: string | null; caption: string | null; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
+    duration_images: { id: number; file_path: string; thumbnail_path: string | null; caption: string | null; duration_id: number; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
+    audios: { id: number; file_path: string; caption: string | null; duration: number | null; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
+    duration_audios: { id: number; file_path: string; caption: string | null; duration: number | null; duration_id: number; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
+  } {
+    const db = getDatabase();
+
+    const images = db.prepare(`
+      SELECT i.id, i.file_path, i.thumbnail_path, i.caption, i.recording_id,
+             r.name as recording_name, r.topic_id,
+             t.name as topic_name
+      FROM images i
+      JOIN media_tags mt ON mt.media_type = 'image' AND mt.media_id = i.id
+      JOIN tags tag ON tag.id = mt.tag_id AND tag.name = ?
+      JOIN recordings r ON r.id = i.recording_id
+      JOIN topics t ON t.id = r.topic_id
+      ORDER BY t.name, r.name, i.sort_order
+    `).all(tagName) as { id: number; file_path: string; thumbnail_path: string | null; caption: string | null; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
+
+    const duration_images = db.prepare(`
+      SELECT di.id, di.file_path, di.thumbnail_path, di.caption, di.duration_id,
+             d.recording_id,
+             r.name as recording_name, r.topic_id,
+             t.name as topic_name
+      FROM duration_images di
+      JOIN media_tags mt ON mt.media_type = 'duration_image' AND mt.media_id = di.id
+      JOIN tags tag ON tag.id = mt.tag_id AND tag.name = ?
+      JOIN durations d ON d.id = di.duration_id
+      JOIN recordings r ON r.id = d.recording_id
+      JOIN topics t ON t.id = r.topic_id
+      ORDER BY t.name, r.name, di.sort_order
+    `).all(tagName) as { id: number; file_path: string; thumbnail_path: string | null; caption: string | null; duration_id: number; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
+
+    const audios = db.prepare(`
+      SELECT a.id, a.file_path, a.caption, a.duration, a.recording_id,
+             r.name as recording_name, r.topic_id,
+             t.name as topic_name
+      FROM audios a
+      JOIN media_tags mt ON mt.media_type = 'audio' AND mt.media_id = a.id
+      JOIN tags tag ON tag.id = mt.tag_id AND tag.name = ?
+      JOIN recordings r ON r.id = a.recording_id
+      JOIN topics t ON t.id = r.topic_id
+      ORDER BY t.name, r.name, a.sort_order
+    `).all(tagName) as { id: number; file_path: string; caption: string | null; duration: number | null; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
+
+    const duration_audios = db.prepare(`
+      SELECT da.id, da.file_path, da.caption, da.duration, da.duration_id,
+             d.recording_id,
+             r.name as recording_name, r.topic_id,
+             t.name as topic_name
+      FROM duration_audios da
+      JOIN media_tags mt ON mt.media_type = 'duration_audio' AND mt.media_id = da.id
+      JOIN tags tag ON tag.id = mt.tag_id AND tag.name = ?
+      JOIN durations d ON d.id = da.duration_id
+      JOIN recordings r ON r.id = d.recording_id
+      JOIN topics t ON t.id = r.topic_id
+      ORDER BY t.name, r.name, da.sort_order
+    `).all(tagName) as { id: number; file_path: string; caption: string | null; duration: number | null; duration_id: number; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
+
+    return { images, duration_images, audios, duration_audios };
   },
 };

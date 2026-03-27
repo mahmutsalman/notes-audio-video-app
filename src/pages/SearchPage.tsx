@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGlobalSearch } from '../hooks/useGlobalSearch';
 import { useTabTitle } from '../hooks/useTabTitle';
 import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
+import { TagBrowser } from '../components/tags/TagBrowser';
 import type {
   GlobalSearchResult,
   SearchNavState,
@@ -11,6 +12,7 @@ import type {
   Audio,
   Duration,
   Recording,
+  TaggedItems,
 } from '../types';
 
 // ─── Section config ───────────────────────────────────────────────────────────
@@ -459,11 +461,104 @@ function ResultSection({
   );
 }
 
+// ─── Tag Results View ─────────────────────────────────────────────────────────
+
+function fmtDuration(secs: number | null): string {
+  if (!secs) return '';
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return ` (${m}:${s.toString().padStart(2, '0')})`;
+}
+
+function TagResultsView({ tagName, onNavigate }: { tagName: string; onNavigate: (recordingId: number) => void }) {
+  const [items, setItems] = useState<TaggedItems | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    window.electronAPI.tags.getItemsByTag(tagName).then((result) => {
+      setItems(result);
+      setLoading(false);
+    });
+  }, [tagName]);
+
+  if (loading) return <p className="text-sm text-gray-400 py-4">Loading…</p>;
+  if (!items) return null;
+
+  const total = items.images.length + items.duration_images.length + items.audios.length + items.duration_audios.length;
+
+  if (total === 0) {
+    return <p className="text-sm text-gray-400 dark:text-gray-500 py-4">No items tagged with <span className="font-mono text-blue-500">#{tagName}</span></p>;
+  }
+
+  const sections: { label: string; icon: string; rows: { id: number; file_path: string; thumbnail_path?: string | null; caption: string | null; recording_id: number; recording_name: string | null; topic_name: string; extra?: string }[] }[] = [];
+
+  if (items.images.length > 0) {
+    sections.push({ label: 'Recording-Level Images', icon: '🖼️', rows: items.images.map(i => ({ ...i, thumbnail_path: i.thumbnail_path })) });
+  }
+  if (items.duration_images.length > 0) {
+    sections.push({ label: 'Mark-Level Images', icon: '🖼️', rows: items.duration_images.map(i => ({ ...i, thumbnail_path: i.thumbnail_path })) });
+  }
+  if (items.audios.length > 0) {
+    sections.push({ label: 'Recording-Level Audios', icon: '🔊', rows: items.audios.map(a => ({ ...a, thumbnail_path: null, extra: fmtDuration(a.duration) })) });
+  }
+  if (items.duration_audios.length > 0) {
+    sections.push({ label: 'Mark-Level Audios', icon: '🔊', rows: items.duration_audios.map(a => ({ ...a, thumbnail_path: null, extra: fmtDuration(a.duration) })) });
+  }
+
+  return (
+    <div>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        {total} item{total !== 1 ? 's' : ''} tagged <span className="font-mono text-blue-500">#{tagName}</span>
+      </p>
+      {sections.map(({ label, icon, rows }) => (
+        <div key={label} className="mb-6">
+          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <span>{icon}</span>{label} <span className="font-normal normal-case text-gray-400">({rows.length})</span>
+          </h3>
+          <div className="space-y-2">
+            {rows.map((row) => (
+              <div
+                key={row.id}
+                className="flex items-center gap-3 p-2 rounded-lg border border-gray-100 dark:border-dark-border hover:border-blue-300 dark:hover:border-blue-600 bg-white dark:bg-dark-surface cursor-pointer transition-colors"
+                onClick={() => onNavigate(row.recording_id)}
+              >
+                {row.thumbnail_path ? (
+                  <img
+                    src={window.electronAPI.paths.getFileUrl(row.thumbnail_path)}
+                    alt=""
+                    className="w-10 h-10 object-cover rounded flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded flex-shrink-0 bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-lg">
+                    {icon}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-gray-700 dark:text-gray-300 truncate">
+                    {row.caption || <span className="italic text-gray-400">no caption</span>}
+                    {row.extra && <span className="text-gray-400">{row.extra}</span>}
+                  </p>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
+                    {row.topic_name} › {row.recording_name || 'Recording'}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── SearchPage ───────────────────────────────────────────────────────────────
 export default function SearchPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [showTagBrowser, setShowTagBrowser] = useState(false);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
 
   const {
     query, setQuery,
@@ -501,12 +596,16 @@ export default function SearchPage() {
     navigate(`/recording/${result.recording_id}`, { state: { searchNav: navState } });
   }, [navigate, navigableResults, activeQuery]);
 
+  const handleTagClick = useCallback((tagName: string) => {
+    setActiveTag(tagName);
+  }, []);
+
   const sectionsWithResults = SECTION_ORDER.filter(s => grouped[s.key].length > 0);
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6">
       {/* Search input */}
-      <div className="relative mb-6">
+      <div className="relative mb-3">
         <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
@@ -514,7 +613,7 @@ export default function SearchPage() {
           ref={inputRef}
           type="text"
           value={query}
-          onChange={e => setQuery(e.target.value)}
+          onChange={e => { setQuery(e.target.value); setActiveTag(null); }}
           placeholder="Search marks, images, audios, code, notes…"
           className="w-full pl-12 pr-4 py-3 text-base rounded-xl border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 shadow-sm"
           autoComplete="off"
@@ -528,36 +627,76 @@ export default function SearchPage() {
         )}
       </div>
 
-      {/* Summary bar */}
-      {hasQuery && !loading && !isTyping && (
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
-          {totalCount === 0
-            ? 'No results found'
-            : `${totalCount} result${totalCount !== 1 ? 's' : ''} across ${categoriesWithResults} categor${categoriesWithResults !== 1 ? 'ies' : 'y'}`}
-        </p>
-      )}
+      {/* Tag browser toggle */}
+      <div className="flex items-center gap-2 mb-5">
+        <button
+          onClick={() => { setShowTagBrowser(v => !v); if (showTagBrowser) setActiveTag(null); }}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border transition-colors ${showTagBrowser ? 'bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300' : 'border-gray-200 dark:border-dark-border text-gray-500 dark:text-gray-400 hover:border-blue-300 dark:hover:border-blue-600'}`}
+        >
+          🏷️ Browse by Tag
+          <span className={`text-[10px] transition-transform ${showTagBrowser ? 'rotate-180' : ''}`}>▾</span>
+        </button>
+        {activeTag && (
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-400">Showing:</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
+              #{activeTag}
+              <button className="hover:text-blue-900" onClick={() => setActiveTag(null)}>×</button>
+            </span>
+          </div>
+        )}
+      </div>
 
-      {/* Empty state */}
-      {!hasQuery && (
-        <div className="text-center py-16 text-gray-400 dark:text-gray-500">
-          <svg className="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <p className="text-sm">Search across all marks, images, audios, videos, code and notes</p>
-          <p className="text-xs mt-1 opacity-70">Prefix matching enabled — type partial words</p>
+      {/* Tag browser panel */}
+      {showTagBrowser && (
+        <div className="mb-5 rounded-xl border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface overflow-hidden" style={{ maxHeight: '300px' }}>
+          <TagBrowser onTagClick={handleTagClick} />
         </div>
       )}
 
-      {/* Results */}
-      {sectionsWithResults.map(({ key, label, icon }) => (
-        <ResultSection
-          key={key}
-          label={label}
-          icon={icon}
-          items={grouped[key]}
-          onNavigate={handleNavigate}
+      {/* Tag results */}
+      {activeTag && (
+        <TagResultsView
+          tagName={activeTag}
+          onNavigate={(recordingId) => navigate(`/recording/${recordingId}`)}
         />
-      ))}
+      )}
+
+      {/* Text search results (hidden while browsing by tag) */}
+      {!activeTag && (
+        <>
+          {/* Summary bar */}
+          {hasQuery && !loading && !isTyping && (
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
+              {totalCount === 0
+                ? 'No results found'
+                : `${totalCount} result${totalCount !== 1 ? 's' : ''} across ${categoriesWithResults} categor${categoriesWithResults !== 1 ? 'ies' : 'y'}`}
+            </p>
+          )}
+
+          {/* Empty state */}
+          {!hasQuery && !showTagBrowser && (
+            <div className="text-center py-16 text-gray-400 dark:text-gray-500">
+              <svg className="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <p className="text-sm">Search across all marks, images, audios, videos, code and notes</p>
+              <p className="text-xs mt-1 opacity-70">Prefix matching enabled — type partial words</p>
+            </div>
+          )}
+
+          {/* Results */}
+          {sectionsWithResults.map(({ key, label, icon }) => (
+            <ResultSection
+              key={key}
+              label={label}
+              icon={icon}
+              items={grouped[key]}
+              onNavigate={handleNavigate}
+            />
+          ))}
+        </>
+      )}
     </div>
   );
 }

@@ -33,6 +33,8 @@ import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
 import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState } from '../types';
 import SearchNavBanner from '../components/search/SearchNavBanner';
+import { TagModal } from '../components/common/TagModal';
+import type { MediaTagType } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -156,6 +158,7 @@ export default function RecordingPage() {
     x: number;
     y: number;
   } | null>(null);
+  const [tagModal, setTagModal] = useState<{ mediaType: MediaTagType; mediaId: number; title: string } | null>(null);
   const [captionModal, setCaptionModal] = useState<{
     type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio';
     id: number;
@@ -2216,6 +2219,7 @@ export default function RecordingPage() {
             const img = images[selectedImageIndex!];
             if (img?.id) openCaptionModal('image', img.id, img.caption);
           }}
+          mediaType="image"
         />
       )}
 
@@ -2268,6 +2272,7 @@ export default function RecordingPage() {
             const img = activeDurationImages[selectedDurationImageIndex!];
             if (img?.id) openCaptionModal('durationImage', img.id, img.caption);
           }}
+          mediaType="duration_image"
         />
       )}
 
@@ -2522,6 +2527,22 @@ export default function RecordingPage() {
             <span>✏️</span>
             {contextMenu.item.caption ? 'Edit Caption' : 'Add Caption'}
           </button>
+          {(contextMenu.type === 'image' || contextMenu.type === 'durationImage' || contextMenu.type === 'audio' || contextMenu.type === 'durationAudio') && (
+            <button
+              className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+              onClick={() => {
+                const mediaType: MediaTagType =
+                  contextMenu.type === 'image' ? 'image' :
+                  contextMenu.type === 'durationImage' ? 'duration_image' :
+                  contextMenu.type === 'audio' ? 'audio' : 'duration_audio';
+                setTagModal({ mediaType, mediaId: contextMenu.item.id, title: contextMenu.item.caption || 'Media' });
+                setContextMenu(null);
+              }}
+            >
+              <span>🏷️</span>
+              Tags
+            </button>
+          )}
           <button
             className="w-full px-3 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
             onClick={() => {
@@ -2545,6 +2566,16 @@ export default function RecordingPage() {
             Delete
           </button>
         </div>
+      )}
+
+      {/* Tag Modal */}
+      {tagModal && (
+        <TagModal
+          mediaType={tagModal.mediaType}
+          mediaId={tagModal.mediaId}
+          title={tagModal.title}
+          onClose={() => setTagModal(null)}
+        />
       )}
 
       {/* Caption Edit Modal */}

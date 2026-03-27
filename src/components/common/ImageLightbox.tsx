@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { DurationImageAudio } from '../../types';
+import type { AnyImageAudio, MediaTagType } from '../../types';
 import { useAudioRecording } from '../../context/AudioRecordingContext';
 import WaveformVisualizer from '../audio/WaveformVisualizer';
 import { formatDuration } from '../../utils/formatters';
+import { TagModal } from './TagModal';
 
 interface LightboxImage {
   file_path: string;
@@ -25,6 +26,8 @@ interface ImageLightboxProps {
   onReplaceWithClipboard?: () => void;
   // Caption editing
   onEditCaption?: () => void;
+  // Tag editing
+  mediaType?: MediaTagType;
 }
 
 function fmtSecs(secs: number): string {
@@ -70,6 +73,7 @@ export default function ImageLightbox({
   onUpdateImageAudioCaption,
   onReplaceWithClipboard,
   onEditCaption,
+  mediaType,
 }: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
@@ -78,6 +82,7 @@ export default function ImageLightbox({
   const [pendingDeleteAudio, setPendingDeleteAudio] = useState<{ audioId: number; imageId: number; index: number } | null>(null);
   const [editingAudioCaptionId, setEditingAudioCaptionId] = useState<number | null>(null);
   const [audioCaptionText, setAudioCaptionText] = useState('');
+  const [showTagModal, setShowTagModal] = useState(false);
 
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -143,6 +148,7 @@ export default function ImageLightbox({
   useEffect(() => {
     setScale(1);
     setTranslate({ x: 0, y: 0 });
+    setShowTagModal(false);
   }, [selectedIndex]);
 
   // Show zoom indicator briefly
@@ -360,7 +366,7 @@ export default function ImageLightbox({
           onClick={handleImageClick}
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClick}
-          onContextMenu={(onReplaceWithClipboard || onEditCaption) ? (e) => {
+          onContextMenu={(onReplaceWithClipboard || onEditCaption || mediaType) ? (e) => {
             e.preventDefault();
             e.stopPropagation();
             setImageContextMenu({ x: e.clientX, y: e.clientY });
@@ -478,7 +484,28 @@ export default function ImageLightbox({
                 <span>📋</span> Replace with clipboard
               </button>
             )}
+            {mediaType && image?.id && (onEditCaption || onReplaceWithClipboard) && (
+              <div className="border-t border-gray-700 my-1" />
+            )}
+            {mediaType && image?.id && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                onClick={() => { setShowTagModal(true); setImageContextMenu(null); }}
+              >
+                <span>🏷️</span> Tags
+              </button>
+            )}
           </div>
+        )}
+
+        {/* Tag modal */}
+        {showTagModal && mediaType && image?.id && (
+          <TagModal
+            mediaType={mediaType}
+            mediaId={image.id}
+            title={image.caption ?? undefined}
+            onClose={() => setShowTagModal(false)}
+          />
         )}
       </div>
 

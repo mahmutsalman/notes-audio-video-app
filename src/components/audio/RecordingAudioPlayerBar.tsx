@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type React from 'react';
-import { useDurationAudioPlayer } from '../../context/DurationAudioPlayerContext';
+import { useRecordingAudioPlayer } from '../../context/RecordingAudioPlayerContext';
 import ThemedAudioPlayer, { type ThemedAudioPlayerHandle } from './ThemedAudioPlayer';
 import type { AudioMarkerType } from '../../types';
 import { TagModal } from '../common/TagModal';
@@ -17,10 +17,10 @@ function formatTime(secs: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export default function DurationAudioPlayerBar() {
+export default function RecordingAudioPlayerBar() {
   const {
     currentAudio,
-    markLabel,
+    label,
     markers,
     canEditCaption,
     playerRef,
@@ -28,7 +28,7 @@ export default function DurationAudioPlayerBar() {
     updateMarkerCaption,
     seekToNextMarker,
     dismiss,
-  } = useDurationAudioPlayer();
+  } = useRecordingAudioPlayer();
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draftCaption, setDraftCaption] = useState('');
@@ -41,7 +41,7 @@ export default function DurationAudioPlayerBar() {
   if (!currentAudio) return null;
 
   const src = window.electronAPI.paths.getFileUrl(currentAudio.file_path);
-  const label = currentAudio.caption || markLabel;
+  const displayLabel = currentAudio.caption || label;
   const hasMarkers = markers.length > 0;
 
   const startEditing = (e: React.MouseEvent) => {
@@ -79,11 +79,11 @@ export default function DurationAudioPlayerBar() {
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900 dark:bg-gray-950 border-t border-blue-700/50 shadow-2xl">
+    <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900 dark:bg-gray-950 border-t border-violet-700/50 shadow-2xl">
       {/* Tag modal */}
       {showTagModal && (
         <TagModal
-          mediaType="duration_audio"
+          mediaType="audio"
           mediaId={currentAudio.id}
           title={currentAudio.caption ?? undefined}
           onClose={() => setShowTagModal(false)}
@@ -92,7 +92,7 @@ export default function DurationAudioPlayerBar() {
 
       {/* Expanded marker panel */}
       {showMarkerPanel && hasMarkers && (
-        <div className="border-b border-blue-800/40 max-h-[220px] overflow-y-auto">
+        <div className="border-b border-violet-800/40 max-h-[220px] overflow-y-auto">
           <div className="px-4 py-2 max-w-screen-2xl mx-auto space-y-2">
             {MARKER_CONFIGS.map(({ type, icon, label: typeLabel, badgeColor }) => {
               const ofType = markers.filter(m => m.marker_type === type);
@@ -105,15 +105,13 @@ export default function DurationAudioPlayerBar() {
                   <div className="space-y-1 pl-2">
                     {ofType.map(marker => (
                       <div key={marker.id} className="flex items-start gap-2">
-                        {/* Time range — clickable to seek */}
                         <button
                           onClick={() => playerRef.current?.seekTo(marker.start_time)}
-                          className="text-[10px] text-gray-400 hover:text-blue-300 font-mono flex-shrink-0 mt-0.5 transition-colors"
+                          className="text-[10px] text-gray-400 hover:text-violet-300 font-mono flex-shrink-0 mt-0.5 transition-colors"
                           title="Seek to this position"
                         >
                           {formatTime(marker.start_time)}{marker.end_time != null ? `–${formatTime(marker.end_time)}` : ''}
                         </button>
-                        {/* Caption area */}
                         {editingMarkerId === marker.id ? (
                           <textarea
                             autoFocus
@@ -131,7 +129,7 @@ export default function DurationAudioPlayerBar() {
                               }
                             }}
                             rows={2}
-                            className="flex-1 text-xs bg-gray-800 text-gray-100 rounded px-2 py-1 border border-blue-500/60 focus:outline-none focus:border-blue-300 resize-none italic"
+                            className="flex-1 text-xs bg-gray-800 text-gray-100 rounded px-2 py-1 border border-violet-500/60 focus:outline-none focus:border-violet-300 resize-none italic"
                             placeholder="Add caption..."
                           />
                         ) : (
@@ -157,7 +155,7 @@ export default function DurationAudioPlayerBar() {
       <div className="flex items-center gap-3 px-4 py-2 max-w-screen-2xl mx-auto">
         {/* Icon + label */}
         <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
-          <span className="text-blue-400 text-base">🎙</span>
+          <span className="text-violet-400 text-base">🎙</span>
           {editing ? (
             <textarea
               autoFocus
@@ -176,13 +174,13 @@ export default function DurationAudioPlayerBar() {
                 }
               }}
               rows={2}
-              className="w-[200px] text-sm bg-blue-950/70 text-blue-100 rounded px-2 py-1 border border-blue-500/60 focus:outline-none focus:border-blue-300 resize-none italic"
+              className="w-[200px] text-sm bg-violet-950/70 text-violet-100 rounded px-2 py-1 border border-violet-500/60 focus:outline-none focus:border-violet-300 resize-none italic"
               placeholder="Add caption..."
             />
           ) : (
             <span
-              className={`text-sm text-blue-300 cursor-pointer ${expanded ? 'max-w-[280px] whitespace-normal break-words' : 'truncate max-w-[200px]'}`}
-              title={expanded ? undefined : label}
+              className={`text-sm text-violet-300 cursor-pointer ${expanded ? 'max-w-[280px] whitespace-normal break-words' : 'truncate max-w-[200px]'}`}
+              title={expanded ? undefined : displayLabel}
               onClick={(e) => {
                 e.stopPropagation();
                 setExpanded(prev => !prev);
@@ -193,7 +191,7 @@ export default function DurationAudioPlayerBar() {
                 setLabelContextMenu({ x: e.clientX, y: e.clientY });
               }}
             >
-              {label}
+              {displayLabel}
             </span>
           )}
         </div>
@@ -253,7 +251,7 @@ export default function DurationAudioPlayerBar() {
 
         {/* Player */}
         <div className="flex-1 min-w-0">
-          <ThemedAudioPlayer ref={playerRef as React.RefObject<ThemedAudioPlayerHandle>} src={src} theme="blue" />
+          <ThemedAudioPlayer ref={playerRef as React.RefObject<ThemedAudioPlayerHandle>} src={src} theme="violet" />
         </div>
 
         {/* Dismiss */}
