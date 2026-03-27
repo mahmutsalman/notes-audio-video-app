@@ -33,6 +33,8 @@ import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
 import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState } from '../types';
 import SearchNavBanner from '../components/search/SearchNavBanner';
+import { TagModal } from '../components/common/TagModal';
+import type { MediaTagType } from '../types';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -2435,6 +2437,7 @@ export default function RecordingPage() {
             const img = images[selectedImageIndex!];
             if (img?.id) openCaptionModal('image', img.id, img.caption);
           }}
+          mediaType="image"
         />
       )}
 
@@ -2487,6 +2490,7 @@ export default function RecordingPage() {
             const img = activeDurationImages[selectedDurationImageIndex!];
             if (img?.id) openCaptionModal('durationImage', img.id, img.caption);
           }}
+          mediaType="duration_image"
         />
       )}
 
@@ -2741,81 +2745,20 @@ export default function RecordingPage() {
             <span>✏️</span>
             {contextMenu.item.caption ? 'Edit Caption' : 'Add Caption'}
           </button>
-          {(contextMenu.type === 'audio' || contextMenu.type === 'durationAudio' ||
-            contextMenu.type === 'video' || contextMenu.type === 'durationVideo') && (
-            contextMenuShowColors ? (
-              <div className="px-2 py-2">
-                <div className="grid grid-cols-5 gap-1">
-                  {IMAGE_COLOR_KEYS.map(key => {
-                    const itemColors =
-                      contextMenu.type === 'audio' ? (recordingAudioColorsCache[contextMenu.item.id] ?? []) :
-                      contextMenu.type === 'durationAudio' ? (durationAudioColorsCache[contextMenu.item.id] ?? []) :
-                      contextMenu.type === 'video' ? (videoColorsCache[contextMenu.item.id] ?? []) :
-                      (durationVideoColorsCache[contextMenu.item.id] ?? []);
-                    const active = itemColors.includes(key);
-                    return (
-                      <button
-                        key={key}
-                        title={IMAGE_COLORS[key].label}
-                        onClick={() =>
-                          contextMenu.type === 'audio' ? handleToggleRecordingAudioColor(contextMenu.item.id, key) :
-                          contextMenu.type === 'durationAudio' ? handleToggleDurationAudioColor(contextMenu.item.id, key) :
-                          contextMenu.type === 'video' ? handleToggleVideoColor(contextMenu.item.id, key) :
-                          handleToggleDurationVideoColor(contextMenu.item.id, key)
-                        }
-                        className="w-6 h-6 rounded-full flex items-center justify-center relative border-2 transition-transform hover:scale-110"
-                        style={{
-                          backgroundColor: IMAGE_COLORS[key].hex,
-                          borderColor: active ? 'white' : 'transparent',
-                        }}
-                      >
-                        {active && <span className="text-white text-[10px] font-bold">✓</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <button
-                className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
-                onClick={(e) => { e.stopPropagation(); setContextMenuShowColors(true); }}
-              >
-                <span>🎨</span>
-                Colors
-              </button>
-            )
-          )}
-          {(contextMenu.type === 'image' || contextMenu.type === 'durationImage' ||
-            contextMenu.type === 'audio' || contextMenu.type === 'durationAudio' ||
-            contextMenu.type === 'video' || contextMenu.type === 'durationVideo') && (
+          {(contextMenu.type === 'image' || contextMenu.type === 'durationImage' || contextMenu.type === 'audio' || contextMenu.type === 'durationAudio') && (
             <button
               className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
               onClick={() => {
                 const mediaType: MediaTagType =
                   contextMenu.type === 'image' ? 'image' :
                   contextMenu.type === 'durationImage' ? 'duration_image' :
-                  contextMenu.type === 'audio' ? 'audio' :
-                  contextMenu.type === 'durationAudio' ? 'duration_audio' :
-                  contextMenu.type === 'video' ? 'video' : 'duration_video';
-                setTagModal({ mediaType, mediaId: contextMenu.item.id, title: contextMenu.item.caption || 'Video' });
+                  contextMenu.type === 'audio' ? 'audio' : 'duration_audio';
+                setTagModal({ mediaType, mediaId: contextMenu.item.id, title: contextMenu.item.caption || 'Media' });
                 setContextMenu(null);
               }}
             >
               <span>🏷️</span>
               Tags
-            </button>
-          )}
-          {(contextMenu.type === 'image' || contextMenu.type === 'durationImage') && (
-            <button
-              className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
-              onClick={async () => {
-                const imageType = contextMenu.type === 'image' ? 'image' : 'duration_image';
-                setContextMenu(null);
-                await window.electronAPI.ocr.extractCaption2(imageType, contextMenu.item.id, contextMenu.item.file_path);
-              }}
-            >
-              <span>🔍</span>
-              Extract OCR text
             </button>
           )}
           <button
@@ -2849,40 +2792,7 @@ export default function RecordingPage() {
           mediaType={tagModal.mediaType}
           mediaId={tagModal.mediaId}
           title={tagModal.title}
-          onClose={() => {
-            if (tagModal.mediaType === 'duration_image') {
-              window.electronAPI.tags.getByMedia('duration_image', tagModal.mediaId)
-                .then(tags => setDurationImageTagsCache(prev => ({
-                  ...prev,
-                  [tagModal.mediaId]: tags.map((t: { name: string }) => t.name),
-                })));
-            } else if (tagModal.mediaType === 'audio') {
-              window.electronAPI.tags.getByMedia('audio', tagModal.mediaId)
-                .then((tags: { name: string }[]) => setRecordingAudioTagCountMap(prev => ({
-                  ...prev,
-                  [tagModal.mediaId]: tags.length,
-                })));
-            } else if (tagModal.mediaType === 'duration_audio') {
-              window.electronAPI.tags.getByMedia('duration_audio', tagModal.mediaId)
-                .then((tags: { name: string }[]) => setDurationAudioTagCountMap(prev => ({
-                  ...prev,
-                  [tagModal.mediaId]: tags.length,
-                })));
-            } else if (tagModal.mediaType === 'video') {
-              window.electronAPI.tags.getByMedia('video', tagModal.mediaId)
-                .then((tags: { name: string }[]) => setVideoTagCountMap(prev => ({
-                  ...prev,
-                  [tagModal.mediaId]: tags.length,
-                })));
-            } else if (tagModal.mediaType === 'duration_video') {
-              window.electronAPI.tags.getByMedia('duration_video', tagModal.mediaId)
-                .then((tags: { name: string }[]) => setDurationVideoTagCountMap(prev => ({
-                  ...prev,
-                  [tagModal.mediaId]: tags.length,
-                })));
-            }
-            setTagModal(null);
-          }}
+          onClose={() => setTagModal(null)}
         />
       )}
 

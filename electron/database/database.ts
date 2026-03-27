@@ -616,6 +616,56 @@ function runMigrations(db: Database.Database): void {
     console.log('Added total_words column to recordings table');
   }
 
+  // Migration: Create image_audios table (audio clips attached to recording-level images)
+  const imageAudiosTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='image_audios'"
+  ).get();
+
+  if (!imageAudiosTableExists) {
+    db.exec(`
+      CREATE TABLE image_audios (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        image_id  INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+        file_path TEXT NOT NULL,
+        caption   TEXT,
+        duration  REAL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_image_audios_image ON image_audios(image_id);
+    `);
+    console.log('Created image_audios table');
+  }
+
+  // Migration: Create tags and media_tags tables
+  const tagsTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='tags'"
+  ).get();
+
+  if (!tagsTableExists) {
+    db.exec(`
+      CREATE TABLE tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE media_tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+        media_type TEXT NOT NULL CHECK(media_type IN ('image','audio','duration_image','duration_audio')),
+        media_id INTEGER NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tag_id, media_type, media_id)
+      );
+
+      CREATE INDEX idx_media_tags_tag ON media_tags(tag_id);
+      CREATE INDEX idx_media_tags_media ON media_tags(media_type, media_id);
+    `);
+    console.log('Created tags and media_tags tables');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index
