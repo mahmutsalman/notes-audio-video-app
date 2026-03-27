@@ -5,7 +5,7 @@ type SortMode = 'name' | 'usage' | 'last_assigned' | 'last_clicked';
 
 function formatRelativeTime(isoString: string | null): string {
   if (!isoString) return '—';
-  const diffMs = Date.now() - new Date(isoString).getTime();
+  const diffMs = Date.now() - new Date(isoString.replace(' ', 'T') + 'Z').getTime();
   const diffSec = Math.floor(diffMs / 1000);
   if (diffSec < 60) return 'just now';
   const diffMin = Math.floor(diffSec / 60);
@@ -271,7 +271,7 @@ export function TagBrowser({ onTagClick }: Props) {
       </div>
 
       {/* Content: tree (name sort) or flat list (other sorts) */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="overflow-y-auto py-1 max-h-[268px]">
         {sortMode === 'name' ? (
           rootChildren.length === 0 ? (
             <p className="px-3 text-xs text-gray-400 dark:text-gray-600 italic">No tags yet.</p>
