@@ -665,6 +665,26 @@ const electronAPI = {
     updateCaption: (markerId: number, caption: string | null) =>
       ipcRenderer.invoke('audioMarkers:updateCaption', markerId, caption),
   },
+
+  // Tags
+  tags: {
+    getAll: (): Promise<import('../src/types').Tag[]> =>
+      ipcRenderer.invoke('tags:getAll'),
+    search: (query: string): Promise<import('../src/types').Tag[]> =>
+      ipcRenderer.invoke('tags:search', query),
+    getByMedia: (mediaType: import('../src/types').MediaTagType, mediaId: number): Promise<import('../src/types').Tag[]> =>
+      ipcRenderer.invoke('tags:getByMedia', mediaType, mediaId),
+    setForMedia: (mediaType: import('../src/types').MediaTagType, mediaId: number, tagNames: string[]): Promise<void> =>
+      ipcRenderer.invoke('tags:setForMedia', mediaType, mediaId, tagNames),
+    rename: (oldName: string, newName: string): Promise<void> =>
+      ipcRenderer.invoke('tags:rename', oldName, newName),
+    delete: (tagId: number): Promise<void> =>
+      ipcRenderer.invoke('tags:delete', tagId),
+    getMediaByTag: (mediaType: import('../src/types').MediaTagType, tagName: string): Promise<{ media_id: number }[]> =>
+      ipcRenderer.invoke('tags:getMediaByTag', mediaType, tagName),
+    getItemsByTag: (tagName: string): Promise<import('../src/types').TaggedItems> =>
+      ipcRenderer.invoke('tags:getItemsByTag', tagName),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

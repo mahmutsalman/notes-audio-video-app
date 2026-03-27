@@ -3,6 +3,7 @@ import type React from 'react';
 import { useDurationAudioPlayer } from '../../context/DurationAudioPlayerContext';
 import ThemedAudioPlayer, { type ThemedAudioPlayerHandle } from './ThemedAudioPlayer';
 import type { AudioMarkerType } from '../../types';
+import { TagModal } from '../common/TagModal';
 
 const MARKER_CONFIGS: { type: AudioMarkerType; icon: string; label: string; color: string; badgeColor: string }[] = [
   { type: 'important', icon: '❗', label: 'Important', color: 'text-red-400 hover:bg-red-900/40', badgeColor: 'text-red-300 bg-red-900/30 border-red-800/40' },
@@ -34,6 +35,8 @@ export default function DurationAudioPlayerBar() {
   const [showMarkerPanel, setShowMarkerPanel] = useState(false);
   const [editingMarkerId, setEditingMarkerId] = useState<number | null>(null);
   const [markerCaptionDraft, setMarkerCaptionDraft] = useState('');
+  const [showTagModal, setShowTagModal] = useState(false);
+  const [labelContextMenu, setLabelContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   if (!currentAudio) return null;
 
@@ -77,6 +80,16 @@ export default function DurationAudioPlayerBar() {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900 dark:bg-gray-950 border-t border-blue-700/50 shadow-2xl">
+      {/* Tag modal */}
+      {showTagModal && (
+        <TagModal
+          mediaType="duration_audio"
+          mediaId={currentAudio.id}
+          title={currentAudio.caption ?? undefined}
+          onClose={() => setShowTagModal(false)}
+        />
+      )}
+
       {/* Expanded marker panel */}
       {showMarkerPanel && hasMarkers && (
         <div className="border-b border-blue-800/40 max-h-[220px] overflow-y-auto">
@@ -174,12 +187,41 @@ export default function DurationAudioPlayerBar() {
                 e.stopPropagation();
                 setExpanded(prev => !prev);
               }}
-              onContextMenu={startEditing}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setLabelContextMenu({ x: e.clientX, y: e.clientY });
+              }}
             >
               {label}
             </span>
           )}
         </div>
+
+        {/* Label context menu */}
+        {labelContextMenu && (
+          <div
+            style={{ position: 'fixed', top: labelContextMenu.y, left: labelContextMenu.x, zIndex: 60 }}
+            className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl py-1 min-w-[180px]"
+            onClick={(e) => e.stopPropagation()}
+            onMouseLeave={() => setLabelContextMenu(null)}
+          >
+            {canEditCaption && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                onClick={() => { setLabelContextMenu(null); startEditing({ preventDefault: () => {}, stopPropagation: () => {} } as React.MouseEvent); }}
+              >
+                <span>✏️</span> {currentAudio.caption ? 'Edit caption' : 'Add caption'}
+              </button>
+            )}
+            <button
+              className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+              onClick={() => { setLabelContextMenu(null); setShowTagModal(true); }}
+            >
+              <span>🏷️</span> Tags
+            </button>
+          </div>
+        )}
 
         {/* Marker badge chips + expand toggle */}
         <div className="flex items-center gap-1 flex-shrink-0">

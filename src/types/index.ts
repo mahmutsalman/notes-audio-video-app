@@ -671,6 +671,16 @@ export interface ElectronAPI {
     global: (query: string, limit?: number) => Promise<GlobalSearchResult[]>;
     rebuildIndex: () => Promise<void>;
   };
+  tags: {
+    getAll: () => Promise<Tag[]>;
+    search: (query: string) => Promise<Tag[]>;
+    getByMedia: (mediaType: MediaTagType, mediaId: number) => Promise<Tag[]>;
+    setForMedia: (mediaType: MediaTagType, mediaId: number, tagNames: string[]) => Promise<void>;
+    rename: (oldName: string, newName: string) => Promise<void>;
+    delete: (tagId: number) => Promise<void>;
+    getMediaByTag: (mediaType: MediaTagType, tagName: string) => Promise<{ media_id: number }[]>;
+    getItemsByTag: (tagName: string) => Promise<TaggedItems>;
+  };
 }
 
 export interface GlobalSearchResult {
@@ -698,6 +708,52 @@ export interface SearchNavState {
   results: GlobalSearchResult[];
   currentIndex: number;
   query: string;
+}
+
+export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio';
+
+export interface Tag {
+  id: number;
+  name: string;
+  usage_count: number;
+  created_at: string;
+}
+
+export interface TaggedMediaImage {
+  id: number;
+  file_path: string;
+  thumbnail_path: string | null;
+  caption: string | null;
+  recording_id: number;
+  recording_name: string | null;
+  topic_id: number;
+  topic_name: string;
+}
+
+export interface TaggedMediaDurationImage extends TaggedMediaImage {
+  duration_id: number;
+}
+
+export interface TaggedMediaAudio {
+  id: number;
+  file_path: string;
+  caption: string | null;
+  duration: number | null;
+  recording_id: number;
+  recording_name: string | null;
+  topic_id: number;
+  topic_name: string;
+}
+
+export interface TaggedMediaDurationAudio extends TaggedMediaAudio {
+  duration_id: number;
+}
+
+export interface TaggedItems {
+  images: TaggedMediaImage[];
+  duration_images: TaggedMediaDurationImage[];
+  audios: TaggedMediaAudio[];
+  duration_audios: TaggedMediaDurationAudio[];
 }
 
 declare global {
