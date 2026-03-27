@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGlobalSearch } from '../hooks/useGlobalSearch';
 import { useTabTitle } from '../hooks/useTabTitle';
 import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
+import ImageLightbox from '../components/common/ImageLightbox';
 import { TagBrowser } from '../components/tags/TagBrowser';
 import type {
   GlobalSearchResult,
@@ -13,6 +14,7 @@ import type {
   Duration,
   Recording,
   TaggedItems,
+  AnyImageAudio,
 } from '../types';
 
 // ─── Section config ───────────────────────────────────────────────────────────
@@ -470,9 +472,24 @@ function fmtDuration(secs: number | null): string {
   return ` (${m}:${s.toString().padStart(2, '0')})`;
 }
 
+type TagRow = { id: number; file_path: string; thumbnail_path?: string | null; caption: string | null; recording_id: number; recording_name: string | null; topic_name: string; extra?: string };
+
 function TagResultsView({ tagName, onNavigate }: { tagName: string; onNavigate: (recordingId: number) => void }) {
   const [items, setItems] = useState<TaggedItems | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Image lightbox
+  const [lightboxRows, setLightboxRows] = useState<TagRow[] | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [lightboxIsRecordingLevel, setLightboxIsRecordingLevel] = useState(false);
+  const [imageAudiosMap, setImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
+
+  // Audio row inline expansion
+  const [expandedAudioId, setExpandedAudioId] = useState<number | null>(null);
+
+  // Simple playback for image audios (no context needed)
+  const playingAudioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => () => { playingAudioRef.current?.pause(); }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -481,6 +498,26 @@ function TagResultsView({ tagName, onNavigate }: { tagName: string; onNavigate: 
       setLoading(false);
     });
   }, [tagName]);
+
+  const openImageLightbox = async (rows: TagRow[], index: number, isRecordingLevel: boolean) => {
+    setLightboxRows(rows);
+    setLightboxIndex(index);
+    setLightboxIsRecordingLevel(isRecordingLevel);
+    const map: Record<number, AnyImageAudio[]> = {};
+    await Promise.all(rows.map(async (row) => {
+      map[row.id] = isRecordingLevel
+        ? await window.electronAPI.imageAudios.getByImage(row.id)
+        : await window.electronAPI.durationImageAudios.getByDurationImage(row.id);
+    }));
+    setImageAudiosMap(map);
+  };
+
+  const handlePlayImageAudio = (audio: AnyImageAudio, _label: string) => {
+    playingAudioRef.current?.pause();
+    const a = new Audio(window.electronAPI.paths.getFileUrl(audio.file_path));
+    playingAudioRef.current = a;
+    a.play();
+  };
 
   if (loading) return <p className="text-sm text-gray-400 py-4">Loading…</p>;
   if (!items) return null;
@@ -491,58 +528,123 @@ function TagResultsView({ tagName, onNavigate }: { tagName: string; onNavigate: 
     return <p className="text-sm text-gray-400 dark:text-gray-500 py-4">No items tagged with <span className="font-mono text-blue-500">#{tagName}</span></p>;
   }
 
-  const sections: { label: string; icon: string; rows: { id: number; file_path: string; thumbnail_path?: string | null; caption: string | null; recording_id: number; recording_name: string | null; topic_name: string; extra?: string }[] }[] = [];
+  const sections: { label: string; icon: string; isImage: boolean; isRecordingLevel: boolean; rows: TagRow[] }[] = [];
 
   if (items.images.length > 0) {
-    sections.push({ label: 'Recording-Level Images', icon: '🖼️', rows: items.images.map(i => ({ ...i, thumbnail_path: i.thumbnail_path })) });
+    sections.push({ label: 'Recording-Level Images', icon: '🖼️', isImage: true, isRecordingLevel: true, rows: items.images.map(i => ({ ...i })) });
   }
   if (items.duration_images.length > 0) {
-    sections.push({ label: 'Mark-Level Images', icon: '🖼️', rows: items.duration_images.map(i => ({ ...i, thumbnail_path: i.thumbnail_path })) });
+    sections.push({ label: 'Mark-Level Images', icon: '🖼️', isImage: true, isRecordingLevel: false, rows: items.duration_images.map(i => ({ ...i })) });
   }
   if (items.audios.length > 0) {
-    sections.push({ label: 'Recording-Level Audios', icon: '🔊', rows: items.audios.map(a => ({ ...a, thumbnail_path: null, extra: fmtDuration(a.duration) })) });
+    sections.push({ label: 'Recording-Level Audios', icon: '🔊', isImage: false, isRecordingLevel: true, rows: items.audios.map(a => ({ ...a, thumbnail_path: null, extra: fmtDuration(a.duration) })) });
   }
   if (items.duration_audios.length > 0) {
-    sections.push({ label: 'Mark-Level Audios', icon: '🔊', rows: items.duration_audios.map(a => ({ ...a, thumbnail_path: null, extra: fmtDuration(a.duration) })) });
+    sections.push({ label: 'Mark-Level Audios', icon: '🔊', isImage: false, isRecordingLevel: false, rows: items.duration_audios.map(a => ({ ...a, thumbnail_path: null, extra: fmtDuration(a.duration) })) });
   }
 
   return (
     <div>
+      {lightboxRows && (
+        <ImageLightbox
+          images={lightboxRows.map(r => ({ file_path: r.file_path, caption: r.caption, id: r.id }))}
+          selectedIndex={lightboxIndex}
+          onClose={() => { setLightboxRows(null); setImageAudiosMap({}); }}
+          onNavigate={setLightboxIndex}
+          imageAudiosMap={imageAudiosMap}
+          onPlayImageAudio={handlePlayImageAudio}
+          mediaType={lightboxIsRecordingLevel ? 'image' : 'duration_image'}
+        />
+      )}
+
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
         {total} item{total !== 1 ? 's' : ''} tagged <span className="font-mono text-blue-500">#{tagName}</span>
       </p>
-      {sections.map(({ label, icon, rows }) => (
+      {sections.map(({ label, icon, isImage, isRecordingLevel, rows }) => (
         <div key={label} className="mb-6">
           <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
             <span>{icon}</span>{label} <span className="font-normal normal-case text-gray-400">({rows.length})</span>
           </h3>
           <div className="space-y-2">
-            {rows.map((row) => (
+            {rows.map((row, rowIndex) => (
               <div
                 key={row.id}
-                className="flex items-center gap-3 p-2 rounded-lg border border-gray-100 dark:border-dark-border hover:border-blue-300 dark:hover:border-blue-600 bg-white dark:bg-dark-surface cursor-pointer transition-colors"
-                onClick={() => onNavigate(row.recording_id)}
+                className="group rounded-lg border border-gray-100 dark:border-dark-border bg-white dark:bg-dark-surface overflow-hidden"
               >
-                {row.thumbnail_path ? (
-                  <img
-                    src={window.electronAPI.paths.getFileUrl(row.thumbnail_path)}
-                    alt=""
-                    className="w-10 h-10 object-cover rounded flex-shrink-0"
-                  />
-                ) : (
-                  <div className="w-10 h-10 rounded flex-shrink-0 bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-lg">
-                    {icon}
+                {/* Main row */}
+                <div
+                  className="flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-dark-hover cursor-pointer transition-colors"
+                  onClick={() => {
+                    if (isImage) {
+                      openImageLightbox(rows, rowIndex, isRecordingLevel);
+                    } else {
+                      setExpandedAudioId(expandedAudioId === row.id ? null : row.id);
+                    }
+                  }}
+                >
+                  {row.thumbnail_path ? (
+                    <img
+                      src={window.electronAPI.paths.getFileUrl(row.thumbnail_path)}
+                      alt=""
+                      className="w-10 h-10 object-cover rounded flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded flex-shrink-0 bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-lg">
+                      {icon}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-gray-700 dark:text-gray-300 truncate">
+                      {row.caption || <span className="italic text-gray-400">no caption</span>}
+                      {row.extra && <span className="text-gray-400 ml-1">{row.extra}</span>}
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
+                      {row.topic_name} › {row.recording_name || 'Recording'}
+                    </p>
+                  </div>
+                  {isImage ? (
+                    <button
+                      onClick={e => { e.stopPropagation(); onNavigate(row.recording_id); }}
+                      className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity self-center p-1.5 rounded hover:bg-gray-200 dark:hover:bg-dark-border text-gray-500 dark:text-gray-400"
+                      title="Open recording"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </button>
+                  ) : (
+                    <svg
+                      className={`w-4 h-4 flex-shrink-0 text-gray-400 dark:text-gray-500 self-center transition-transform duration-150${expandedAudioId === row.id ? ' rotate-180' : ''}`}
+                      fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  )}
+                </div>
+
+                {/* Audio expansion panel */}
+                {!isImage && expandedAudioId === row.id && (
+                  <div className="border-t border-gray-100 dark:border-dark-border bg-gray-50 dark:bg-dark-surface px-3 py-3 space-y-2">
+                    {row.caption && (
+                      <p className="text-xs text-gray-600 dark:text-gray-300 italic">{row.caption}</p>
+                    )}
+                    <ThemedAudioPlayer
+                      src={window.electronAPI.paths.getFileUrl(row.file_path)}
+                      theme="blue"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => onNavigate(row.recording_id)}
+                        className="text-[10px] text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors flex items-center gap-1"
+                      >
+                        Open recording
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 )}
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-gray-700 dark:text-gray-300 truncate">
-                    {row.caption || <span className="italic text-gray-400">no caption</span>}
-                    {row.extra && <span className="text-gray-400">{row.extra}</span>}
-                  </p>
-                  <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
-                    {row.topic_name} › {row.recording_name || 'Recording'}
-                  </p>
-                </div>
               </div>
             ))}
           </div>
