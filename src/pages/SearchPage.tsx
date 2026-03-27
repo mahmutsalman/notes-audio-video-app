@@ -19,13 +19,13 @@ const SECTION_ORDER: Array<{
   label: string;
   icon: string;
 }> = [
-  { key: 'duration',             label: 'Marks',                icon: '🔖' },
-  { key: 'recording',            label: 'Recordings',           icon: '🎙️' },
+  { key: 'duration_image',       label: 'Mark-Level Images',    icon: '🖼️' },
+  { key: 'image',                label: 'Recording-Level Images', icon: '🖼️' },
+  { key: 'duration_audio',       label: 'Mark-Level Audios',    icon: '🔊' },
+  { key: 'audio',                label: 'Recording-Level Audios', icon: '🔊' },
+  { key: 'duration',             label: 'Mark Notes',           icon: '🔖' },
+  { key: 'recording',            label: 'Recording Notes',      icon: '🎙️' },
   { key: 'topic',                label: 'Topics',               icon: '📁' },
-  { key: 'duration_image',       label: 'Mark Images',          icon: '🖼️' },
-  { key: 'image',                label: 'Recording Images',     icon: '🖼️' },
-  { key: 'duration_audio',       label: 'Mark Audios',          icon: '🔊' },
-  { key: 'audio',                label: 'Recording Audios',     icon: '🔊' },
   { key: 'duration_video',       label: 'Mark Videos',          icon: '🎬' },
   { key: 'video',                label: 'Recording Videos',     icon: '🎬' },
   { key: 'duration_code_snippet',label: 'Mark Code',            icon: '💻' },
