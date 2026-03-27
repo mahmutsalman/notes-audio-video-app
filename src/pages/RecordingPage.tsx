@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useTabTitle } from '../hooks/useTabTitle';
 import { useRecording, useRecordings } from '../hooks/useRecordings';
 import { useTopic } from '../hooks/useTopics';
 import { useDurations } from '../hooks/useDurations';
@@ -42,6 +43,7 @@ export default function RecordingPage() {
 
   const { recording, loading, refetch, setRecording } = useRecording(id);
   const { topic } = useTopic(recording?.topic_id ?? null);
+  useTabTitle(recording?.name ?? 'Recording');
   const { recordings: topicRecordings } = useRecordings(recording?.topic_id ?? null);
   const {
     durations,

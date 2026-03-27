@@ -36,7 +36,7 @@ export default function DurationNotesSidebar({
   }
 
   return (
-    <aside className="fixed left-0 top-14 bottom-0 w-80 bg-white dark:bg-dark-surface border-r border-gray-200 dark:border-dark-border overflow-y-auto hidden lg:block z-10">
+    <aside className="fixed left-0 top-20 bottom-0 w-80 bg-white dark:bg-dark-surface border-r border-gray-200 dark:border-dark-border overflow-y-auto hidden lg:block z-10">
       {/* Sticky Header */}
       <div className="sticky top-0 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border px-4 py-3 z-20">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTabTitle } from '../hooks/useTabTitle';
 import { useTopic } from '../hooks/useTopics';
 import { useRecordings } from '../hooks/useRecordings';
 import RecordingList from '../components/recordings/RecordingList';
@@ -21,6 +22,7 @@ export default function TopicDetailPage() {
   const id = topicId ? parseInt(topicId, 10) : null;
 
   const { topic, loading: topicLoading, refetch: refetchTopic } = useTopic(id);
+  useTabTitle(topic?.name ?? 'Topic');
   const { recordings, loading: recordingsLoading, fetchRecordings, deleteRecording, updateRecording } = useRecordings(id);
 
   const [showEditModal, setShowEditModal] = useState(false);
