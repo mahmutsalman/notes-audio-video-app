@@ -98,15 +98,8 @@ export function TabsProvider({ children }: { children: ReactNode }) {
     const handler = (e: KeyboardEvent) => {
       if (!e.metaKey && !e.ctrlKey) return;
 
-      // Cmd+T → new tab at /
+      // Cmd+T → duplicate current tab at its current path
       if (e.key === 't' && !e.shiftKey) {
-        e.preventDefault();
-        createTab('/');
-        return;
-      }
-
-      // Cmd+N → duplicate current tab at its current path
-      if (e.key === 'n' && !e.shiftKey) {
         e.preventDefault();
         setState(prev => {
           const active = prev.tabs.find(t => t.id === prev.activeTabId);
@@ -114,6 +107,13 @@ export function TabsProvider({ children }: { children: ReactNode }) {
           const tab = makeTab(path);
           return { tabs: [...prev.tabs, tab], activeTabId: tab.id };
         });
+        return;
+      }
+
+      // Cmd+N → new tab at home
+      if (e.key === 'n' && !e.shiftKey) {
+        e.preventDefault();
+        createTab('/');
         return;
       }
 
