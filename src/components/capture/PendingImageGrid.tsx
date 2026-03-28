@@ -30,7 +30,6 @@ interface PendingImageGridProps {
   images: PendingImage[];
   onReorder: (newImages: PendingImage[]) => void;
   onDelete: (uid: number) => void;
-  gridClassName?: string;
   pastePlaceholder?: React.ReactNode;
 }
 
@@ -63,11 +62,11 @@ function SortablePendingImage({
     <div
       ref={setNodeRef}
       style={style}
-      className="group"
+      className="group flex flex-col items-center"
       {...attributes}
     >
       <div
-        className="relative w-full cursor-grab active:cursor-grabbing"
+        className="relative w-full max-w-[160px] cursor-grab active:cursor-grabbing"
         {...listeners}
       >
         <div className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border">
@@ -99,8 +98,8 @@ function SortablePendingImage({
 
 function PendingDragOverlay({ image }: { image: PendingImage }) {
   return (
-    <div className="opacity-90">
-      <div className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border shadow-lg ring-2 ring-blue-500">
+    <div className="w-[120px] opacity-90">
+      <div className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border shadow-lg ring-2 ring-violet-500">
         <img
           src={image.previewUrl}
           alt=""
@@ -118,7 +117,6 @@ export default function PendingImageGrid({
   images,
   onReorder,
   onDelete,
-  gridClassName = 'grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2',
   pastePlaceholder,
 }: PendingImageGridProps) {
   const [activeUid, setActiveUid] = useState<number | null>(null);
@@ -159,7 +157,7 @@ export default function PendingImageGrid({
         items={images.map(img => img.uid)}
         strategy={rectSortingStrategy}
       >
-        <div className={gridClassName}>
+        <div className="flex flex-wrap gap-2">
           {images.map(img => (
             <SortablePendingImage
               key={img.uid}

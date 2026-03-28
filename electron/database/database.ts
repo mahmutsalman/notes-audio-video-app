@@ -674,6 +674,45 @@ function runMigrations(db: Database.Database): void {
     console.log('Added last_searched_at column to tags table');
   }
 
+  // Migration: Create quick_captures tables
+  const quickCapturesTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='quick_captures'"
+  ).get();
+
+  if (!quickCapturesTableExists) {
+    db.exec(`
+      CREATE TABLE quick_captures (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        note       TEXT,
+        tags       TEXT NOT NULL DEFAULT '[]',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE quick_capture_images (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        capture_id     INTEGER NOT NULL REFERENCES quick_captures(id) ON DELETE CASCADE,
+        file_path      TEXT NOT NULL,
+        thumbnail_path TEXT,
+        caption        TEXT,
+        sort_order     INTEGER NOT NULL DEFAULT 0,
+        created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_qc_images_capture ON quick_capture_images(capture_id);
+
+      CREATE TABLE quick_capture_audios (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        capture_id INTEGER NOT NULL REFERENCES quick_captures(id) ON DELETE CASCADE,
+        file_path  TEXT NOT NULL,
+        duration   REAL,
+        caption    TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_qc_audios_capture ON quick_capture_audios(capture_id);
+    `);
+    console.log('Created quick_captures tables');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

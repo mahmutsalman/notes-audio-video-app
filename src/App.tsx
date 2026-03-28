@@ -5,6 +5,7 @@ import TopicDetailPage from './pages/TopicDetailPage';
 import RecordingPage from './pages/RecordingPage';
 import StudyPage from './pages/StudyPage';
 import SearchPage from './pages/SearchPage';
+import CapturePage from './pages/CapturePage';
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
         <Route path="/recording/:recordingId" element={<RecordingPage />} />
         <Route path="/study" element={<StudyPage />} />
         <Route path="/search" element={<SearchPage />} />
+        <Route path="/capture" element={<CapturePage />} />
       </Routes>
     </MainLayout>
   );

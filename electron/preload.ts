@@ -687,6 +687,28 @@ const electronAPI = {
     recordSearch: (tagId: number): Promise<void> =>
       ipcRenderer.invoke('tags:recordSearch', tagId),
   },
+
+  // Quick Captures
+  quickCaptures: {
+    create: (note: string, tags: string[]): Promise<{ id: number }> =>
+      ipcRenderer.invoke('quickCaptures:create', note, tags),
+    getRecent: (): Promise<import('../src/types').QuickCapture[]> =>
+      ipcRenderer.invoke('quickCaptures:getRecent'),
+    addImage: (captureId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<import('../src/types').QuickCaptureImage> =>
+      ipcRenderer.invoke('quickCaptures:addImage', captureId, imageBuffer, extension),
+    addAudio: (captureId: number, audioBuffer: ArrayBuffer, extension?: string): Promise<import('../src/types').QuickCaptureAudio> =>
+      ipcRenderer.invoke('quickCaptures:addAudio', captureId, audioBuffer, extension),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('quickCaptures:delete', id),
+    updateTags: (id: number, tags: string[]): Promise<void> =>
+      ipcRenderer.invoke('quickCaptures:updateTags', id, tags),
+    cleanup: (): Promise<void> =>
+      ipcRenderer.invoke('quickCaptures:cleanup'),
+    reorderImages: (captureId: number, imageIds: number[]): Promise<void> =>
+      ipcRenderer.invoke('quickCaptures:reorderImages', captureId, imageIds),
+    deleteImage: (imageId: number): Promise<void> =>
+      ipcRenderer.invoke('quickCaptures:deleteImage', imageId),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

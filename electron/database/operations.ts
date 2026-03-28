@@ -1524,3 +1524,115 @@ export const TagOperations = {
     return { images, duration_images, audios, duration_audios };
   },
 };
+
+// Quick Capture Operations
+export const QuickCaptureOperations = {
+  create(note: string, tags: string[]): { id: number } {
+    const db = getDatabase();
+    const result = db.prepare(
+      `INSERT INTO quick_captures (note, tags) VALUES (?, ?)`
+    ).run(note || null, JSON.stringify(tags));
+    return { id: result.lastInsertRowid as number };
+  },
+
+  getRecent(): import('../../src/types').QuickCapture[] {
+    const db = getDatabase();
+    const rows = db.prepare(
+      `SELECT * FROM quick_captures WHERE created_at >= datetime('now', '-7 days') ORDER BY created_at DESC`
+    ).all() as { id: number; note: string | null; tags: string; created_at: string }[];
+
+    return rows.map(row => {
+      const images = db.prepare(
+        `SELECT * FROM quick_capture_images WHERE capture_id = ? ORDER BY sort_order ASC`
+      ).all(row.id) as import('../../src/types').QuickCaptureImage[];
+
+      const audios = db.prepare(
+        `SELECT * FROM quick_capture_audios WHERE capture_id = ? ORDER BY sort_order ASC`
+      ).all(row.id) as import('../../src/types').QuickCaptureAudio[];
+
+      return {
+        id: row.id,
+        note: row.note,
+        tags: (() => { try { return JSON.parse(row.tags); } catch { return []; } })(),
+        created_at: row.created_at,
+        images,
+        audios,
+      };
+    });
+  },
+
+  addImage(captureId: number, filePath: string, thumbnailPath: string | null): import('../../src/types').QuickCaptureImage {
+    const db = getDatabase();
+    const sortOrder = (db.prepare(
+      `SELECT COUNT(*) as cnt FROM quick_capture_images WHERE capture_id = ?`
+    ).get(captureId) as { cnt: number }).cnt;
+
+    const result = db.prepare(
+      `INSERT INTO quick_capture_images (capture_id, file_path, thumbnail_path, sort_order) VALUES (?, ?, ?, ?)`
+    ).run(captureId, filePath, thumbnailPath, sortOrder);
+
+    return db.prepare(`SELECT * FROM quick_capture_images WHERE id = ?`).get(result.lastInsertRowid) as import('../../src/types').QuickCaptureImage;
+  },
+
+  addAudio(captureId: number, filePath: string): import('../../src/types').QuickCaptureAudio {
+    const db = getDatabase();
+    const sortOrder = (db.prepare(
+      `SELECT COUNT(*) as cnt FROM quick_capture_audios WHERE capture_id = ?`
+    ).get(captureId) as { cnt: number }).cnt;
+
+    const result = db.prepare(
+      `INSERT INTO quick_capture_audios (capture_id, file_path, sort_order) VALUES (?, ?, ?)`
+    ).run(captureId, filePath, sortOrder);
+
+    return db.prepare(`SELECT * FROM quick_capture_audios WHERE id = ?`).get(result.lastInsertRowid) as import('../../src/types').QuickCaptureAudio;
+  },
+
+  delete(id: number): { imagePaths: string[]; audioPaths: string[] } {
+    const db = getDatabase();
+    const images = db.prepare(`SELECT file_path FROM quick_capture_images WHERE capture_id = ?`).all(id) as { file_path: string }[];
+    const audios = db.prepare(`SELECT file_path FROM quick_capture_audios WHERE capture_id = ?`).all(id) as { file_path: string }[];
+    db.prepare(`DELETE FROM quick_captures WHERE id = ?`).run(id);
+    return {
+      imagePaths: images.map(r => r.file_path),
+      audioPaths: audios.map(r => r.file_path),
+    };
+  },
+
+  updateTags(id: number, tags: string[]): void {
+    const db = getDatabase();
+    db.prepare(`UPDATE quick_captures SET tags = ? WHERE id = ?`).run(JSON.stringify(tags), id);
+  },
+
+  reorderImages(captureId: number, imageIds: number[]): void {
+    const db = getDatabase();
+    const update = db.prepare('UPDATE quick_capture_images SET sort_order = ? WHERE id = ? AND capture_id = ?');
+    const tx = db.transaction(() => {
+      imageIds.forEach((id, idx) => update.run(idx, id, captureId));
+    });
+    tx();
+  },
+
+  deleteImage(imageId: number): { filePath: string; thumbnailPath: string | null } {
+    const db = getDatabase();
+    const row = db.prepare('SELECT file_path, thumbnail_path FROM quick_capture_images WHERE id = ?').get(imageId) as
+      { file_path: string; thumbnail_path: string | null } | undefined;
+    if (!row) return { filePath: '', thumbnailPath: null };
+    db.prepare('DELETE FROM quick_capture_images WHERE id = ?').run(imageId);
+    return { filePath: row.file_path, thumbnailPath: row.thumbnail_path };
+  },
+
+  getExpired(): { id: number; imagePaths: string[]; audioPaths: string[] }[] {
+    const db = getDatabase();
+    const rows = db.prepare(`SELECT id FROM quick_captures WHERE created_at < datetime('now', '-7 days')`).all() as { id: number }[];
+    return rows.map(row => {
+      const images = db.prepare(`SELECT file_path FROM quick_capture_images WHERE capture_id = ?`).all(row.id) as { file_path: string }[];
+      const audios = db.prepare(`SELECT file_path FROM quick_capture_audios WHERE capture_id = ?`).all(row.id) as { file_path: string }[];
+      db.prepare(`DELETE FROM quick_captures WHERE id = ?`).run(row.id);
+      return {
+        id: row.id,
+        imagePaths: images.map(r => r.file_path),
+        audioPaths: audios.map(r => r.file_path),
+      };
+    });
+  },
+};

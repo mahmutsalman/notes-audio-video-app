@@ -38,6 +38,7 @@ export function pathToTitle(path: string): string {
   if (path === '/') return 'Topics';
   if (path.startsWith('/search')) return 'Search';
   if (path.startsWith('/study')) return 'Study';
+  if (path.startsWith('/capture')) return 'Capture';
   if (path.startsWith('/topic/')) return 'Topic';
   if (path.startsWith('/recording/')) return 'Recording';
   return 'Notes';
