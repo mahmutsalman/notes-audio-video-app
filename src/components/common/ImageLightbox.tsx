@@ -623,7 +623,7 @@ export default function ImageLightbox({
   }, [imageContextMenu]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
+    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col titlebar-no-drag">
 
       {/* ── Image area (shrinks when bottom bars appear) ── */}
       <div
