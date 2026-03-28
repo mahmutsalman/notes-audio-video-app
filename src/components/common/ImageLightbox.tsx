@@ -26,6 +26,8 @@ interface ImageLightboxProps {
   onReplaceWithClipboard?: () => void;
   // Caption editing
   onEditCaption?: () => void;
+  // Delete current image
+  onDelete?: () => void;
   // Tag editing
   mediaType?: MediaTagType;
 }
@@ -73,6 +75,7 @@ export default function ImageLightbox({
   onUpdateImageAudioCaption,
   onReplaceWithClipboard,
   onEditCaption,
+  onDelete,
   mediaType,
 }: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
@@ -293,10 +296,14 @@ export default function ImageLightbox({
   // Image click: stop propagation only if not dragging
   const handleImageClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
+    if (imageContextMenu) {
+      setImageContextMenu(null);
+      return;
+    }
     if (hasDragged.current) {
       hasDragged.current = false;
     }
-  }, []);
+  }, [imageContextMenu]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
@@ -366,7 +373,7 @@ export default function ImageLightbox({
           onClick={handleImageClick}
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClick}
-          onContextMenu={(onReplaceWithClipboard || onEditCaption || mediaType) ? (e) => {
+          onContextMenu={(onReplaceWithClipboard || onEditCaption || onDelete || mediaType) ? (e) => {
             e.preventDefault();
             e.stopPropagation();
             setImageContextMenu({ x: e.clientX, y: e.clientY });
@@ -493,6 +500,17 @@ export default function ImageLightbox({
                 onClick={() => { setShowTagModal(true); setImageContextMenu(null); }}
               >
                 <span>🏷️</span> Tags
+              </button>
+            )}
+            {onDelete && (mediaType || onEditCaption || onReplaceWithClipboard) && (
+              <div className="border-t border-gray-700 my-1" />
+            )}
+            {onDelete && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2"
+                onClick={() => { setImageContextMenu(null); onDelete(); }}
+              >
+                <span>🗑️</span> Delete
               </button>
             )}
           </div>

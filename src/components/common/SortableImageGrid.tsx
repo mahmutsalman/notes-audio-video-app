@@ -56,6 +56,8 @@ interface SortableImageGridProps {
   audioCountMap?: Record<number, number>;
   /** Image ID to highlight (from search navigation) */
   highlightedId?: number;
+  /** Disable drag-and-drop and hide the delete button (read-only display mode) */
+  readOnly?: boolean;
 }
 
 /* ── Sortable wrapper for a single image cell ─────────────────── */
@@ -196,6 +198,98 @@ function SortableImage({
   );
 }
 
+/* ── Read-only image cell (no drag, no delete) ────────────────── */
+
+interface ReadOnlyImageProps {
+  image: SortableImageItem;
+  index: number;
+  showNumberBadge: boolean;
+  colorConfig: (typeof DURATION_COLORS)[keyof typeof DURATION_COLORS] | null;
+  groupColorConfig: (typeof DURATION_GROUP_COLORS)[keyof typeof DURATION_GROUP_COLORS] | null;
+  captionColorClass: string;
+  onImageClick: (index: number) => void;
+  onContextMenu?: (e: React.MouseEvent, image: SortableImageItem) => void;
+  audioCount?: number;
+  isHighlighted?: boolean;
+}
+
+function ReadOnlyImage({
+  image,
+  index,
+  showNumberBadge,
+  colorConfig,
+  groupColorConfig,
+  captionColorClass,
+  onImageClick,
+  onContextMenu,
+  audioCount = 0,
+  isHighlighted = false,
+}: ReadOnlyImageProps) {
+  const [captionExpanded, setCaptionExpanded] = useState(false);
+
+  return (
+    <div
+      id={`img-cell-${image.id}`}
+      className={`group flex flex-col items-center${isHighlighted ? ' ring-2 ring-blue-400 ring-offset-1 rounded-lg' : ''}`}
+    >
+      <div
+        className="relative w-full max-w-[160px] cursor-pointer"
+        onContextMenu={(e) => onContextMenu?.(e, image)}
+      >
+        {groupColorConfig && (
+          <div
+            className="absolute top-0 left-0 right-0 h-1 rounded-t-lg z-10"
+            style={{ backgroundColor: groupColorConfig.color }}
+          />
+        )}
+        {showNumberBadge && (
+          <div className="absolute top-1 left-1 w-6 h-6 bg-black/70 text-white
+                          rounded-full flex items-center justify-center text-xs font-bold z-10">
+            {index + 1}
+          </div>
+        )}
+        {audioCount > 0 && (
+          <div className="absolute top-1 right-1 bg-blue-500 text-white text-[10px]
+                          rounded-full w-4 h-4 flex items-center justify-center font-bold z-10">
+            {audioCount > 9 ? '9+' : audioCount}
+          </div>
+        )}
+        {colorConfig && (
+          <div
+            className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg z-10"
+            style={{ backgroundColor: colorConfig.borderColor }}
+          />
+        )}
+        <div
+          className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border"
+          onClick={(e) => { e.stopPropagation(); onImageClick(index); }}
+        >
+          <img
+            src={window.electronAPI.paths.getFileUrl(image.thumbnail_path || image.file_path)}
+            alt=""
+            className="w-full h-full object-cover pointer-events-none"
+            draggable={false}
+          />
+        </div>
+        {colorConfig && (
+          <div
+            className="absolute right-0 top-0 bottom-0 w-1 rounded-r-lg z-10"
+            style={{ backgroundColor: colorConfig.borderColor }}
+          />
+        )}
+      </div>
+      {image.caption && (
+        <p
+          className={`w-full text-xs ${captionColorClass} mt-1 italic font-light leading-tight text-center cursor-pointer ${captionExpanded ? '' : 'line-clamp-2'}`}
+          onClick={(e) => { e.stopPropagation(); setCaptionExpanded(v => !v); }}
+        >
+          {image.caption}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /* ── Drag overlay (thumbnail shown while dragging) ────────────── */
 
 function ImageDragOverlay({ image }: { image: SortableImageItem }) {
@@ -230,8 +324,39 @@ export default function SortableImageGrid({
   pastePlaceholder,
   audioCountMap,
   highlightedId,
+  readOnly = false,
 }: SortableImageGridProps) {
   const [activeId, setActiveId] = useState<number | null>(null);
+
+  if (readOnly) {
+    return (
+      <div className={gridClassName}>
+        {images.map((img, index) => {
+          const key = `${colorKeyPrefix}-${img.id}`;
+          const effectiveColor = colorOverrides[key] ?? img.color;
+          const effectiveGroupColor = key in groupColorOverrides ? groupColorOverrides[key] : img.group_color;
+          const colorConfig = effectiveColor ? DURATION_COLORS[effectiveColor] : null;
+          const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
+          return (
+            <ReadOnlyImage
+              key={img.id}
+              image={img}
+              index={index}
+              showNumberBadge={showNumberBadge}
+              colorConfig={colorConfig}
+              groupColorConfig={groupColorConfig}
+              captionColorClass={captionColorClass}
+              onImageClick={onImageClick}
+              onContextMenu={onContextMenu}
+              audioCount={audioCountMap?.[img.id] ?? 0}
+              isHighlighted={highlightedId === img.id}
+            />
+          );
+        })}
+        {pastePlaceholder}
+      </div>
+    );
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, {

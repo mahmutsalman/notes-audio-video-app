@@ -1,13 +1,30 @@
 import { useState, useRef, useEffect } from 'react';
-import type { QuickCapture, DurationColor, DurationGroupColor } from '../../types';
+import type { QuickCapture, QuickCaptureImage, QuickCaptureAudio, DurationColor, DurationGroupColor } from '../../types';
 import SortableImageGrid from '../common/SortableImageGrid';
+import type { SortableImageItem } from '../common/SortableImageGrid';
 import ImageLightbox from '../common/ImageLightbox';
+import { TagModal } from '../common/TagModal';
 
 interface CaptureItemProps {
   capture: QuickCapture;
   onDelete: (id: number) => void;
   expiresInDays?: number;
 }
+
+type ContextMenuState =
+  | { kind: 'image'; item: QuickCaptureImage; x: number; y: number }
+  | { kind: 'audio'; item: QuickCaptureAudio; x: number; y: number }
+  | null;
+
+type CaptionModalState =
+  | { kind: 'image'; id: number; current: string | null }
+  | { kind: 'audio'; id: number; current: string | null }
+  | null;
+
+type TagModalState =
+  | { kind: 'image'; id: number }
+  | { kind: 'audio'; id: number }
+  | null;
 
 function relativeTime(dateStr: string): string {
   const now = Date.now();
@@ -26,10 +43,15 @@ function relativeTime(dateStr: string): string {
 export default function CaptureItem({ capture, onDelete, expiresInDays }: CaptureItemProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+  const [captionModal, setCaptionModal] = useState<CaptionModalState>(null);
+  const [captionText, setCaptionText] = useState('');
+  const [tagModal, setTagModal] = useState<TagModalState>(null);
+  const [localAudios, setLocalAudios] = useState<QuickCaptureAudio[]>(capture.audios);
   const audioRefs = useRef<(HTMLAudioElement | null)[]>([]);
 
   // Map QuickCaptureImage → SortableImageItem (color: null = no color bars)
-  const [localImages, setLocalImages] = useState(() =>
+  const [localImages, setLocalImages] = useState<SortableImageItem[]>(() =>
     capture.images.map(img => ({
       ...img,
       color: null as DurationColor,
@@ -37,7 +59,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     }))
   );
 
-  // Merge newly added images when the capture prop updates (e.g. after a second save)
+  // Merge newly added images/audios when the capture prop updates
   useEffect(() => {
     setLocalImages(prev => {
       const prevIds = new Set(prev.map(i => i.id));
@@ -50,6 +72,23 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     });
   }, [capture.images]);
 
+  useEffect(() => {
+    setLocalAudios(prev => {
+      const prevIds = new Set(prev.map(a => a.id));
+      const added = capture.audios.filter(a => !prevIds.has(a.id));
+      if (added.length === 0) return prev;
+      return [...prev, ...added];
+    });
+  }, [capture.audios]);
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [contextMenu]);
+
   const handleReorder = async (orderedIds: number[]) => {
     setLocalImages(prev => orderedIds.map(id => prev.find(img => img.id === id)!));
     await window.electronAPI.quickCaptures.reorderImages(capture.id, orderedIds);
@@ -58,6 +97,11 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   const handleDeleteImage = async (imageId: number) => {
     setLocalImages(prev => prev.filter(img => img.id !== imageId));
     await window.electronAPI.quickCaptures.deleteImage(imageId);
+  };
+
+  const handleDeleteAudio = async (audioId: number) => {
+    setLocalAudios(prev => prev.filter(a => a.id !== audioId));
+    await window.electronAPI.quickCaptures.deleteAudio(audioId);
   };
 
   const handleAddImage = async () => {
@@ -72,6 +116,39 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
       setLocalImages(prev => [...prev, { ...saved, color: null as DurationColor, group_color: null as DurationGroupColor }]);
       break;
     }
+  };
+
+  const handleImageContextMenu = (e: React.MouseEvent, img: SortableImageItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Find the original QuickCaptureImage
+    const original = capture.images.find(i => i.id === img.id) ?? { ...img, capture_id: capture.id, sort_order: 0, created_at: '' } as QuickCaptureImage;
+    setContextMenu({ kind: 'image', item: original, x: e.clientX, y: e.clientY });
+  };
+
+  const handleAudioContextMenu = (e: React.MouseEvent, audio: QuickCaptureAudio) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ kind: 'audio', item: audio, x: e.clientX, y: e.clientY });
+  };
+
+  const openCaptionModal = (state: CaptionModalState) => {
+    setContextMenu(null);
+    setCaptionModal(state);
+    setCaptionText(state?.current ?? '');
+  };
+
+  const saveCaption = async () => {
+    if (!captionModal) return;
+    const trimmed = captionText.trim() || null;
+    if (captionModal.kind === 'image') {
+      const updated = await window.electronAPI.quickCaptures.updateImageCaption(captionModal.id, trimmed);
+      setLocalImages(prev => prev.map(img => img.id === captionModal.id ? { ...img, caption: updated.caption } : img));
+    } else {
+      const updated = await window.electronAPI.quickCaptures.updateAudioCaption(captionModal.id, trimmed);
+      setLocalAudios(prev => prev.map(a => a.id === captionModal.id ? { ...a, caption: updated.caption } : a));
+    }
+    setCaptionModal(null);
   };
 
   return (
@@ -142,6 +219,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
             colorKeyPrefix="qcImg"
             captionColorClass="text-blue-600 dark:text-blue-400"
             onImageClick={setLightboxIndex}
+            onContextMenu={handleImageContextMenu}
             onDelete={handleDeleteImage}
             onReorder={handleReorder}
             pastePlaceholder={
@@ -165,13 +243,13 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
       )}
 
       {/* ── Audio section ── */}
-      {capture.audios.length > 0 && (
+      {localAudios.length > 0 && (
         <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
           <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2">
-            Audio ({capture.audios.length})
+            Audio ({localAudios.length})
           </h3>
           <div className="space-y-2">
-            {capture.audios.map((audio, idx) => (
+            {localAudios.map((audio, idx) => (
               <AudioRow
                 key={audio.id}
                 index={idx}
@@ -183,6 +261,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
                     if (i !== idx && el) el.pause();
                   });
                 }}
+                onContextMenu={(e) => handleAudioContextMenu(e, audio)}
               />
             ))}
           </div>
@@ -212,6 +291,100 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
           onNavigate={setLightboxIndex}
         />
       )}
+
+      {/* ── Context Menu ── */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-lg shadow-lg py-1 min-w-[150px]"
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 170),
+            top: Math.min(contextMenu.y, window.innerHeight - 120),
+          }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <button
+            className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+            onClick={() => openCaptionModal({
+              kind: contextMenu.kind,
+              id: contextMenu.item.id,
+              current: contextMenu.item.caption,
+            })}
+          >
+            <span>✏️</span> Add Caption
+          </button>
+          <button
+            className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+            onClick={() => {
+              setContextMenu(null);
+              setTagModal({ kind: contextMenu.kind, id: contextMenu.item.id });
+            }}
+          >
+            <span>🏷️</span> Tags
+          </button>
+          <div className="border-t border-gray-100 dark:border-dark-border my-1" />
+          <button
+            className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+            onClick={() => {
+              const { kind, item } = contextMenu;
+              setContextMenu(null);
+              if (kind === 'image') handleDeleteImage(item.id);
+              else handleDeleteAudio(item.id);
+            }}
+          >
+            <span>🗑️</span> Delete
+          </button>
+        </div>
+      )}
+
+      {/* ── Caption Modal ── */}
+      {captionModal && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50"
+          onClick={() => setCaptionModal(null)}
+        >
+          <div
+            className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[360px] max-w-[90vw] p-5"
+            onClick={e => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">
+              ✏️ {captionModal.kind === 'image' ? 'Image' : 'Audio'} Caption
+            </p>
+            <input
+              type="text"
+              autoFocus
+              value={captionText}
+              onChange={e => setCaptionText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') saveCaption(); if (e.key === 'Escape') setCaptionModal(null); }}
+              placeholder="Add a caption…"
+              className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 outline-none focus:border-blue-400 dark:focus:border-blue-500"
+            />
+            <div className="flex justify-end gap-2 mt-3">
+              <button
+                onClick={() => setCaptionModal(null)}
+                className="px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-dark-hover rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveCaption}
+                className="px-3 py-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tag Modal ── */}
+      {tagModal && (
+        <TagModal
+          mediaType={tagModal.kind === 'image' ? 'quick_capture_image' : 'quick_capture_audio'}
+          mediaId={tagModal.id}
+          title={tagModal.kind === 'image' ? 'Image Tags' : 'Audio Tags'}
+          onClose={() => setTagModal(null)}
+        />
+      )}
     </div>
   );
 }
@@ -223,9 +396,10 @@ interface AudioRowProps {
   caption: string | null;
   audioRef: (el: HTMLAudioElement | null) => void;
   onPlay: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function AudioRow({ index, src, caption, audioRef, onPlay }: AudioRowProps) {
+function AudioRow({ index, src, caption, audioRef, onPlay, onContextMenu }: AudioRowProps) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -254,7 +428,10 @@ function AudioRow({ index, src, caption, audioRef, onPlay }: AudioRowProps) {
   };
 
   return (
-    <div className="flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30">
+    <div
+      className="flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30"
+      onContextMenu={onContextMenu}
+    >
       <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
         {index + 1}
       </span>
