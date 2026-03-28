@@ -930,6 +930,36 @@ export interface ImageAnnotation {
   created_at: string;
 }
 
+// Quick Capture types
+export interface QuickCaptureImage {
+  id: number;
+  capture_id: number;
+  file_path: string;
+  thumbnail_path: string | null;
+  caption: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface QuickCaptureAudio {
+  id: number;
+  capture_id: number;
+  file_path: string;
+  duration: number | null;
+  caption: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface QuickCapture {
+  id: number;
+  note: string | null;
+  tags: string[];
+  created_at: string;
+  images: QuickCaptureImage[];
+  audios: QuickCaptureAudio[];
+}
+
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
