@@ -703,6 +703,39 @@ export function setupIpcHandlers(): void {
 
   // ============ Image Audios (audio clips attached to recording-level images) =====  });
 
+  // ============ Capture Image Audios (audio clips attached to quick_capture_images) ============
+  ipcMain.handle('captureImageAudios:getByImage', async (_, captureImageId: number) => {
+    return CaptureImageAudiosOperations.getByImage(captureImageId);
+  });
+
+  ipcMain.handle('captureImageAudios:addFromBuffer', async (_, captureImageId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
+    const { filePath, duration } = await saveCaptureImageAudioFromBuffer(captureImageId, audioBuffer, extension);
+    const result = CaptureImageAudiosOperations.create({
+      capture_image_id: captureImageId,
+      file_path: filePath,
+      caption: null,
+      duration: duration,
+      sort_order: CaptureImageAudiosOperations.getMaxSortOrder(captureImageId) + 1,
+    });
+    scheduleSearchReindex();
+    return result;
+  });
+
+  ipcMain.handle('captureImageAudios:delete', async (_, id: number) => {
+    const audio = CaptureImageAudiosOperations.getById(id);
+    if (audio) {
+      await deleteFile((audio as { file_path: string }).file_path);
+    }
+    CaptureImageAudiosOperations.delete(id);
+    scheduleSearchReindex();
+  });
+
+  ipcMain.handle('captureImageAudios:updateCaption', async (_, id: number, caption: string | null) => {
+    const result = CaptureImageAudiosOperations.updateCaption(id, caption);
+    scheduleSearchReindex();
+    return result;
+  });
+
   // ============ Audios (recording-level audio attachments) ============
   ipcMain.handle('audios:getByRecording', async (_, recordingId: number) => {
     return AudiosOperations.getByRecording(recordingId);

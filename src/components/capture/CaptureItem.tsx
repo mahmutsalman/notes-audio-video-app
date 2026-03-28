@@ -343,6 +343,9 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     e.stopPropagation();
     // Find the original QuickCaptureImage
     const original = capture.images.find(i => i.id === img.id) ?? { ...img, capture_id: capture.id, sort_order: 0, created_at: '' } as QuickCaptureImage;
+    // Also open lightbox at the clicked image's position
+    const idx = localImages.findIndex(i => i.id === img.id);
+    if (idx !== -1) openLightbox(idx);
     setContextMenu({ kind: 'image', item: original, x: e.clientX, y: e.clientY });
   };
 
@@ -369,6 +372,28 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
       setLocalAudios(prev => prev.map(a => a.id === captionModal.id ? { ...a, caption: updated.caption } : a));
     }
     setCaptionModal(null);
+  };
+
+  const handleLightboxEditCaption = () => {
+    if (lightboxIndex === null) return;
+    const img = localImages[lightboxIndex];
+    setCaptionModal({ kind: 'image', id: img.id, current: img.caption });
+    setCaptionText(img.caption ?? '');
+  };
+
+  const handleLightboxDeleteImage = async () => {
+    if (lightboxIndex === null) return;
+    const img = localImages[lightboxIndex];
+    if (!window.confirm('Delete this image?')) return;
+    const newImages = localImages.filter(i => i.id !== img.id);
+    setLocalImages(newImages);
+    if (newImages.length === 0) {
+      setLightboxIndex(null);
+      setCaptureImageAudiosMap({});
+    } else {
+      setLightboxIndex(Math.min(lightboxIndex, newImages.length - 1));
+    }
+    await window.electronAPI.quickCaptures.deleteImage(img.id);
   };
 
   return (
