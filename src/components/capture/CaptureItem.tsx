@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { QuickCapture, DurationColor, DurationGroupColor } from '../../types';
 import SortableImageGrid from '../common/SortableImageGrid';
 import ImageLightbox from '../common/ImageLightbox';
@@ -37,6 +37,19 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     }))
   );
 
+  // Merge newly added images when the capture prop updates (e.g. after a second save)
+  useEffect(() => {
+    setLocalImages(prev => {
+      const prevIds = new Set(prev.map(i => i.id));
+      const added = capture.images.filter(img => !prevIds.has(img.id));
+      if (added.length === 0) return prev;
+      return [
+        ...prev,
+        ...added.map(img => ({ ...img, color: null as DurationColor, group_color: null as DurationGroupColor })),
+      ];
+    });
+  }, [capture.images]);
+
   const handleReorder = async (orderedIds: number[]) => {
     setLocalImages(prev => orderedIds.map(id => prev.find(img => img.id === id)!));
     await window.electronAPI.quickCaptures.reorderImages(capture.id, orderedIds);
@@ -45,6 +58,20 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   const handleDeleteImage = async (imageId: number) => {
     setLocalImages(prev => prev.filter(img => img.id !== imageId));
     await window.electronAPI.quickCaptures.deleteImage(imageId);
+  };
+
+  const handleAddImage = async () => {
+    const items = await navigator.clipboard.read().catch(() => [] as ClipboardItem[]);
+    for (const item of items) {
+      const imageType = item.types.find(t => t.startsWith('image/'));
+      if (!imageType) continue;
+      const blob = await item.getType(imageType);
+      const ext = imageType.split('/')[1] || 'png';
+      const buf = await blob.arrayBuffer();
+      const saved = await window.electronAPI.quickCaptures.addImage(capture.id, buf, ext);
+      setLocalImages(prev => [...prev, { ...saved, color: null as DurationColor, group_color: null as DurationGroupColor }]);
+      break;
+    }
   };
 
   return (
@@ -95,28 +122,52 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
 
       {/* ── Images section ── */}
       {localImages.length > 0 && (
-        <div className="mb-3 p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg">
-          <h3 className="text-sm font-medium text-violet-700 dark:text-violet-300 mb-2">
-            Images ({localImages.length})
-          </h3>
+        <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              Images ({localImages.length})
+            </h3>
+            <button
+              onClick={handleAddImage}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+            >
+              📋 Paste
+            </button>
+          </div>
           <SortableImageGrid
             images={localImages}
-            gridClassName="flex flex-wrap gap-2"
+            gridClassName="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2"
             colorOverrides={{}}
             groupColorOverrides={{}}
             colorKeyPrefix="qcImg"
-            captionColorClass="text-violet-600 dark:text-violet-400"
+            captionColorClass="text-blue-600 dark:text-blue-400"
             onImageClick={setLightboxIndex}
             onDelete={handleDeleteImage}
             onReorder={handleReorder}
+            pastePlaceholder={
+              <div className="flex flex-col items-center">
+                <div className="relative w-full max-w-[160px]">
+                  <div
+                    className="aspect-square rounded-lg border-2 border-dashed border-blue-300 dark:border-blue-600
+                               bg-blue-50/50 dark:bg-blue-900/10 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500
+                               hover:bg-blue-100/50 dark:hover:bg-blue-900/20 transition-colors flex items-center justify-center"
+                    onClick={handleAddImage}
+                  >
+                    <svg className="w-8 h-8 text-blue-300 dark:text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            }
           />
         </div>
       )}
 
       {/* ── Audio section ── */}
       {capture.audios.length > 0 && (
-        <div className="mb-3 p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg">
-          <h3 className="text-sm font-medium text-violet-700 dark:text-violet-300 mb-2">
+        <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+          <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2">
             Audio ({capture.audios.length})
           </h3>
           <div className="space-y-2">
@@ -144,7 +195,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
           {capture.tags.map(tag => (
             <span
               key={tag}
-              className="px-2 py-0.5 text-xs bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 rounded-full border border-violet-200 dark:border-violet-700/50"
+              className="px-2 py-0.5 text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-full border border-blue-200 dark:border-blue-700/50"
             >
               {tag}
             </span>
@@ -203,14 +254,14 @@ function AudioRow({ index, src, caption, audioRef, onPlay }: AudioRowProps) {
   };
 
   return (
-    <div className="flex items-center gap-2 py-1 px-2 rounded-lg bg-violet-900/20 border border-violet-800/30">
-      <span className="w-4 h-4 bg-violet-500/30 border border-violet-400/50 text-violet-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+    <div className="flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30">
+      <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
         {index + 1}
       </span>
 
       <button
         onClick={togglePlay}
-        className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-violet-600 hover:bg-violet-500 text-white transition-colors shadow"
+        className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow"
         title={playing ? 'Pause' : 'Play'}
       >
         {playing ? (
@@ -226,11 +277,11 @@ function AudioRow({ index, src, caption, audioRef, onPlay }: AudioRowProps) {
 
       <div className="flex-1 min-w-0">
         {caption ? (
-          <span className="text-xs text-violet-300 truncate block">{caption}</span>
+          <span className="text-xs text-blue-300 truncate block">{caption}</span>
         ) : (
           <div className="flex items-center gap-1.5">
             <div
-              className="flex-1 h-1 bg-violet-800/40 rounded-full cursor-pointer"
+              className="flex-1 h-1 bg-blue-800/40 rounded-full cursor-pointer"
               onClick={e => {
                 const el = ref.current;
                 if (!el || !duration) return;
@@ -240,11 +291,11 @@ function AudioRow({ index, src, caption, audioRef, onPlay }: AudioRowProps) {
               }}
             >
               <div
-                className="h-full bg-violet-400 rounded-full transition-all"
+                className="h-full bg-blue-400 rounded-full transition-all"
                 style={{ width: `${progress * 100}%` }}
               />
             </div>
-            <span className="text-[10px] text-violet-400 flex-shrink-0">
+            <span className="text-[10px] text-blue-400 flex-shrink-0">
               {fmt(duration > 0 ? progress * duration : 0)}/{fmt(duration)}
             </span>
           </div>

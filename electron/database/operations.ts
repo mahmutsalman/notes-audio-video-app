@@ -1535,6 +1535,32 @@ export const QuickCaptureOperations = {
     return { id: result.lastInsertRowid as number };
   },
 
+  /** Reuse the most recent capture (within 7 days) so all saves land in one package. */
+  getOrCreate(note: string, tags: string[]): { id: number } {
+    const db = getDatabase();
+    const existing = db.prepare(
+      `SELECT id, note, tags FROM quick_captures WHERE created_at >= datetime('now', '-7 days') ORDER BY created_at DESC LIMIT 1`
+    ).get() as { id: number; note: string | null; tags: string } | undefined;
+
+    if (existing) {
+      // Append note (newline-separated) if provided
+      if (note) {
+        const newNote = existing.note ? `${existing.note}\n${note}` : note;
+        db.prepare('UPDATE quick_captures SET note = ? WHERE id = ?').run(newNote, existing.id);
+      }
+      // Merge tags (deduplicated)
+      if (tags.length > 0) {
+        const existingTags = (() => { try { return JSON.parse(existing.tags) as string[]; } catch { return []; } })();
+        const merged = [...new Set([...existingTags, ...tags])];
+        db.prepare('UPDATE quick_captures SET tags = ? WHERE id = ?').run(JSON.stringify(merged), existing.id);
+      }
+      return { id: existing.id };
+    }
+
+    const result = db.prepare('INSERT INTO quick_captures (note, tags) VALUES (?, ?)').run(note || null, JSON.stringify(tags));
+    return { id: result.lastInsertRowid as number };
+  },
+
   getRecent(): import('../../src/types').QuickCapture[] {
     const db = getDatabase();
     const rows = db.prepare(
