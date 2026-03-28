@@ -1787,10 +1787,11 @@ export function setupIpcHandlers(): void {
 
   // Quick Captures
   ipcMain.handle('quickCaptures:create', async (_, note: string, tags: string[]) => {
-    console.log('[quickCaptures:create] note=', note, 'tags=', tags);
-    const result = QuickCaptureOperations.create(note, tags);
-    console.log('[quickCaptures:create] inserted id=', result.id);
-    return result;
+    return QuickCaptureOperations.create(note, tags);
+  });
+
+  ipcMain.handle('quickCaptures:getOrCreate', async (_, note: string, tags: string[]) => {
+    return QuickCaptureOperations.getOrCreate(note, tags);
   });
 
   ipcMain.handle('quickCaptures:getRecent', async () => {
@@ -1798,9 +1799,7 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('quickCaptures:addImage', async (_, captureId: number, imageBuffer: ArrayBuffer, extension?: string) => {
-    console.log('[quickCaptures:addImage] captureId=', captureId, 'bufferType=', Object.prototype.toString.call(imageBuffer), 'bufferSize=', (imageBuffer as unknown as {byteLength?: number})?.byteLength ?? 'unknown', 'ext=', extension);
     const { filePath, thumbnailPath } = await saveQuickCaptureImage(imageBuffer, extension);
-    console.log('[quickCaptures:addImage] saved to', filePath);
     return QuickCaptureOperations.addImage(captureId, filePath, thumbnailPath);
   });
 

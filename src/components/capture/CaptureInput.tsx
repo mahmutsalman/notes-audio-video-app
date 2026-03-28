@@ -81,7 +81,7 @@ export default function CaptureInput({ onSaved }: CaptureInputProps) {
     setSaving(true);
     setSaveError(null);
     try {
-      const { id } = await window.electronAPI.quickCaptures.create(note.trim(), tags);
+      const { id } = await window.electronAPI.quickCaptures.getOrCreate(note.trim(), tags);
       for (const img of pendingImages) {
         const u8 = img.buffer instanceof ArrayBuffer
           ? new Uint8Array(img.buffer)
@@ -116,19 +116,18 @@ export default function CaptureInput({ onSaved }: CaptureInputProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [handleSave]);
 
-  // Paste zone shown at end of grid (or as the full empty state)
+  // Small paste zone at end of grid (same size as thumbnails)
   const pastePlaceholder = (
     <div
-      className="w-full max-w-[160px] aspect-square border-2 border-dashed border-violet-300 dark:border-violet-700
+      className="aspect-square border-2 border-dashed border-blue-300 dark:border-blue-700
                  rounded-lg flex flex-col items-center justify-center cursor-pointer
-                 hover:border-violet-400 dark:hover:border-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/30
-                 transition-colors flex-shrink-0"
+                 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30
+                 transition-colors"
       onClick={pasteImage}
     >
-      <svg className="w-5 h-5 text-violet-300 dark:text-violet-600 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      <svg className="w-5 h-5 text-blue-300 dark:text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
       </svg>
-      <p className="text-[10px] text-violet-400 dark:text-violet-500">⌘V</p>
     </div>
   );
 
@@ -147,14 +146,14 @@ export default function CaptureInput({ onSaved }: CaptureInputProps) {
       />
 
       {/* ── Images section ── */}
-      <div className="p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg">
+      <div>
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-medium text-violet-700 dark:text-violet-300">
-            Images{pendingImages.length > 0 ? ` (${pendingImages.length})` : ''}
+          <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
+            Images ({pendingImages.length})
           </h3>
           <button
             onClick={pasteImage}
-            className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 transition-colors"
+            className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
           >
             📋 Paste
           </button>
@@ -164,54 +163,47 @@ export default function CaptureInput({ onSaved }: CaptureInputProps) {
           images={pendingImages}
           onReorder={setPendingImages}
           onDelete={removeImage}
+          gridClassName="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2"
           pastePlaceholder={pastePlaceholder}
         />
       </div>
 
       {/* ── Audio section ── */}
-      <div className="p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg">
+      <div>
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-medium text-violet-700 dark:text-violet-300">
+          <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
             Audio{pendingAudio ? ' (1)' : recorder.isRecording ? ' — recording…' : ''}
           </h3>
           <button
             onClick={recorder.isRecording ? handleStopRecording : recorder.startRecording}
-            className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 disabled:opacity-40 transition-colors"
+            className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-40 transition-colors"
           >
             {recorder.isRecording ? '⏹ Stop' : '🎙️ Record'}
           </button>
         </div>
 
-        {recorder.isRecording ? (
-          <div className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-violet-900/20 border border-violet-800/30">
+        {recorder.isRecording && (
+          <div className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30">
             <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
-            <span className="text-xs text-violet-300 flex-1">Recording… {fmt(recorder.duration)}</span>
+            <span className="text-xs text-blue-300 flex-1">Recording… {fmt(recorder.duration)}</span>
           </div>
-        ) : pendingAudio ? (
-          <div className="group flex items-center gap-2 py-1 px-2 rounded-lg bg-violet-900/20 border border-violet-800/30">
-            <span className="w-4 h-4 bg-violet-500/30 border border-violet-400/50 text-violet-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+        )}
+
+        {pendingAudio && (
+          <div className="group flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30">
+            <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
               1
             </span>
-            <svg className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path d="M18 3a1 1 0 00-1.447-.894L8.763 6H5a3 3 0 000 6h.28l1.771 5.316A1 1 0 008 18h1a1 1 0 001-1v-4.382l6.553 3.276A1 1 0 0018 15V3z" />
             </svg>
-            <span className="flex-1 text-xs text-violet-300">Voice note — {fmt(pendingAudio.durationSec)}</span>
+            <span className="flex-1 text-xs text-blue-300">Voice note — {fmt(pendingAudio.durationSec)}</span>
             <button
               onClick={removeAudio}
               className="w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity"
             >
               ×
             </button>
-          </div>
-        ) : (
-          <div
-            className="border-2 border-dashed border-violet-300 dark:border-violet-700 rounded-lg py-5 text-center cursor-pointer hover:border-violet-400 dark:hover:border-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-colors"
-            onClick={recorder.startRecording}
-          >
-            <svg className="w-6 h-6 mx-auto mb-1 text-violet-300 dark:text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-            </svg>
-            <p className="text-xs text-violet-400 dark:text-violet-500">Click to record audio</p>
           </div>
         )}
       </div>
@@ -229,7 +221,7 @@ export default function CaptureInput({ onSaved }: CaptureInputProps) {
         <button
           onClick={handleSave}
           disabled={isEmpty || saving}
-          className="px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
           title="Save (⌘↵)"
         >
           {saving ? 'Saving…' : 'Save'}

@@ -18,7 +18,11 @@ export default function CapturePage() {
   useEffect(() => { load(); }, []);
 
   const handleSaved = (capture: QuickCapture) => {
-    setCaptures(prev => [capture, ...prev]);
+    setCaptures(prev => {
+      const exists = prev.some(c => c.id === capture.id);
+      if (exists) return prev.map(c => c.id === capture.id ? capture : c);
+      return [capture, ...prev];
+    });
   };
 
   const handleDelete = async (id: number) => {
