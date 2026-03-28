@@ -1,12 +1,15 @@
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
-import { useImageAudioPlayer } from '../context/ImageAudioPlayerContext';
 import { useDurationAudioPlayer } from '../context/DurationAudioPlayerContext';
 import { useRecordingAudioPlayer } from '../context/RecordingAudioPlayerContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGlobalSearch } from '../hooks/useGlobalSearch';
 import { useTabTitle } from '../hooks/useTabTitle';
-import ImageLightbox from '../components/common/ImageLightbox';
 import { TagBrowser } from '../components/tags/TagBrowser';
+import { TagResultsView } from '../components/tags/TagResultsView';
+import ImageLightbox from '../components/common/ImageLightbox';
+import { TagModal } from '../components/common/TagModal';
+import { useAudioRecording, AUDIO_SAVED_EVENT } from '../context/AudioRecordingContext';
+import { useImageAudioPlayer } from '../context/ImageAudioPlayerContext';
 import type {
   GlobalSearchResult,
   SearchNavState,
@@ -15,9 +18,12 @@ import type {
   Audio,
   Duration,
   Recording,
-  TaggedItems,
   AnyImageAudio,
+  MediaTagType,
 } from '../types';
+
+// ─── Local types ─────────────────────────────────────────────────────────────
+type LightboxImage = { file_path: string; caption: string | null; id?: number };
 
 // ─── Section config ───────────────────────────────────────────────────────────
 const SECTION_ORDER: Array<{
@@ -131,10 +137,10 @@ interface ExpandedPreviewProps {
   data: PreviewData | null;
   loading: boolean;
   error: boolean;
+  onOpenLightbox?: (images: LightboxImage[], index: number) => void;
 }
 
-function ExpandedPreview({ data, loading, error }: ExpandedPreviewProps) {
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+function ExpandedPreview({ data, loading, error, onOpenLightbox }: ExpandedPreviewProps) {
   const [noteExpanded, setNoteExpanded] = useState(false);
   const noteRef = useRef<HTMLDivElement>(null);
   const [noteOverflows, setNoteOverflows] = useState(false);
@@ -177,35 +183,21 @@ function ExpandedPreview({ data, loading, error }: ExpandedPreviewProps) {
         </div>
       );
     }
+    const lbImages: LightboxImage[] = data.images.map(img => ({
+      file_path: window.electronAPI.paths.getFileUrl(img.file_path),
+      caption: img.caption,
+      id: img.id,
+    }));
     return (
       <div className={panelBase}>
-        {lightboxSrc && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
-            onClick={() => setLightboxSrc(null)}
-          >
-            <img
-              src={lightboxSrc}
-              className="max-w-[90vw] max-h-[90vh] object-contain rounded shadow-xl"
-              onClick={e => e.stopPropagation()}
-            />
-            <button
-              className="absolute top-4 right-4 text-white/70 hover:text-white text-2xl leading-none"
-              onClick={() => setLightboxSrc(null)}
-            >
-              ✕
-            </button>
-          </div>
-        )}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {data.images.map(img => {
+          {data.images.map((img, idx) => {
             const thumbSrc = window.electronAPI.paths.getFileUrl(img.thumbnail_path ?? img.file_path);
-            const fullSrc = window.electronAPI.paths.getFileUrl(img.file_path);
             return (
               <div key={img.id} className="flex flex-col gap-1">
                 <div
                   className="aspect-square rounded overflow-hidden cursor-pointer bg-gray-100 dark:bg-dark-hover"
-                  onClick={() => setLightboxSrc(fullSrc)}
+                  onClick={() => onOpenLightbox?.(lbImages, idx)}
                 >
                   <img
                     src={thumbSrc}
@@ -313,6 +305,8 @@ function Snippet({ html }: { html: string }) {
   );
 }
 
+const CONTEXT_MENU_TYPES = new Set(['duration_image', 'image', 'duration_audio', 'audio']);
+
 interface ResultCardProps {
   result: GlobalSearchResult;
   onNavigate: (result: GlobalSearchResult) => void;
@@ -321,12 +315,70 @@ interface ResultCardProps {
 function ResultCard({ result, onNavigate }: ResultCardProps) {
   const hasNav = result.recording_id !== null;
   const previewKind = getPreviewKind(result);
+  const supportsContextMenu = CONTEXT_MENU_TYPES.has(result.content_type);
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
   const hasFetched = useRef(false);
+
+  // Context menu
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Caption modal — 'card' = editing result card item, 'lightbox' = editing current lightbox image
+  const [captionModal, setCaptionModal] = useState<boolean>(false);
+  const [captionTarget, setCaptionTarget] = useState<'card' | 'lightbox'>('card');
+  const [captionText, setCaptionText] = useState('');
+
+  // Tag modal
+  const [showTagModal, setShowTagModal] = useState(false);
+
+  // Deleted state
+  const [isDeleted, setIsDeleted] = useState(false);
+
+  // Lightbox + image audio
+  const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
+  const [imageAudiosMap, setImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
+
+  const audioRecording = useAudioRecording();
+  const imageAudioPlayer = useImageAudioPlayer();
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [contextMenu]);
+
+  // Refresh image audios when audio saved
+  const fetchImageAudios = useCallback(async (images: LightboxImage[]) => {
+    const isRecordingImage = result.content_type === 'image';
+    const entries = await Promise.all(
+      images
+        .filter(img => img.id !== undefined)
+        .map(async img => {
+          const audios: AnyImageAudio[] = isRecordingImage
+            ? await window.electronAPI.imageAudios.getByImage(img.id!)
+            : await window.electronAPI.durationImageAudios.getByDurationImage(img.id!);
+          return [img.id!, audios] as [number, AnyImageAudio[]];
+        })
+    );
+    setImageAudiosMap(Object.fromEntries(entries));
+  }, [result.content_type]);
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const refresh = () => fetchImageAudios(lightbox.images);
+    window.addEventListener(AUDIO_SAVED_EVENT, refresh);
+    return () => window.removeEventListener(AUDIO_SAVED_EVENT, refresh);
+  }, [lightbox, fetchImageAudios]);
 
   const handleToggle = useCallback(() => {
     if (!previewKind) return;
@@ -345,12 +397,185 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
     });
   }, [previewKind, result]);
 
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (!supportsContextMenu) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, [supportsContextMenu]);
+
+  const handleOpenCaptionModal = useCallback(() => {
+    setContextMenu(null);
+    setCaptionTarget('card');
+    setCaptionText(result.snippet.replace(/<[^>]*>/g, '') || '');
+    setCaptionModal(true);
+  }, [result.snippet]);
+
+  const handleSaveCaption = useCallback(async () => {
+    const cap = captionText.trim() || null;
+    try {
+      switch (result.content_type) {
+        case 'duration_image':
+          await window.electronAPI.durationImages.updateCaption(result.source_id, cap);
+          break;
+        case 'image':
+          await window.electronAPI.media.updateImageCaption(result.source_id, cap);
+          break;
+        case 'duration_audio':
+          await window.electronAPI.durationAudios.updateCaption(result.source_id, cap);
+          break;
+        case 'audio':
+          await window.electronAPI.audios.updateCaption(result.source_id, cap);
+          break;
+      }
+    } finally {
+      setCaptionModal(false);
+    }
+  }, [captionText, result.content_type, result.source_id]);
+
+  const handleDelete = useCallback(async () => {
+    setContextMenu(null);
+    if (!window.confirm('Delete this item?')) return;
+    switch (result.content_type) {
+      case 'duration_image':
+        await window.electronAPI.durationImages.delete(result.source_id);
+        break;
+      case 'image':
+        await window.electronAPI.media.deleteImage(result.source_id);
+        break;
+      case 'duration_audio':
+        await window.electronAPI.durationAudios.delete(result.source_id);
+        break;
+      case 'audio':
+        await window.electronAPI.audios.delete(result.source_id);
+        break;
+    }
+    setIsDeleted(true);
+  }, [result.content_type, result.source_id]);
+
+  const handleOpenLightbox = useCallback((images: LightboxImage[], index: number) => {
+    setLightbox({ images, index });
+    fetchImageAudios(images);
+  }, [fetchImageAudios]);
+
+  const handleRecordForImage = useCallback((imageId: number) => {
+    const label = result.snippet.replace(/<[^>]*>/g, '').slice(0, 40) || 'Image';
+    if (result.content_type === 'image') {
+      audioRecording.startRecording({
+        type: 'recording_image',
+        imageId,
+        recordingId: result.recording_id!,
+        label,
+      });
+    } else {
+      audioRecording.startRecording({
+        type: 'duration_image',
+        durationImageId: imageId,
+        durationId: result.duration_id!,
+        recordingId: result.recording_id!,
+        label,
+      });
+    }
+  }, [result, audioRecording]);
+
+  const handlePlayImageAudio = useCallback(async (audio: AnyImageAudio, label: string) => {
+    const audioType = result.content_type === 'image' ? 'recording_image' : 'duration_image';
+    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, audioType);
+    imageAudioPlayer.play(
+      audio,
+      label,
+      markers,
+      (id, cap) => result.content_type === 'image'
+        ? window.electronAPI.imageAudios.updateCaption(id, cap)
+        : window.electronAPI.durationImageAudios.updateCaption(id, cap),
+    );
+  }, [result.content_type, imageAudioPlayer]);
+
+  const handleDeleteImageAudio = useCallback(async (audioId: number, imageId: number) => {
+    if (result.content_type === 'image') {
+      await window.electronAPI.imageAudios.delete(audioId);
+    } else {
+      await window.electronAPI.durationImageAudios.delete(audioId);
+    }
+    setImageAudiosMap(prev => ({
+      ...prev,
+      [imageId]: (prev[imageId] ?? []).filter(a => a.id !== audioId),
+    }));
+  }, [result.content_type]);
+
+  const handleUpdateImageAudioCaption = useCallback(async (audioId: number, imageId: number, cap: string | null) => {
+    if (result.content_type === 'image') {
+      await window.electronAPI.imageAudios.updateCaption(audioId, cap);
+    } else {
+      await window.electronAPI.durationImageAudios.updateCaption(audioId, cap);
+    }
+    setImageAudiosMap(prev => ({
+      ...prev,
+      [imageId]: (prev[imageId] ?? []).map(a => a.id === audioId ? { ...a, caption: cap } : a),
+    }));
+  }, [result.content_type]);
+
+  // Edit caption for the currently open lightbox image
+  const handleEditLightboxImageCaption = useCallback(() => {
+    if (!lightbox) return;
+    const img = lightbox.images[lightbox.index];
+    setCaptionTarget('lightbox');
+    setCaptionText(img.caption ?? '');
+    setCaptionModal(true);
+  }, [lightbox]);
+
+  // Caption save routes to the currently open lightbox image (not result.source_id)
+  const handleSaveLightboxImageCaption = useCallback(async () => {
+    if (!lightbox) return;
+    const img = lightbox.images[lightbox.index];
+    if (!img.id) return;
+    const cap = captionText.trim() || null;
+    try {
+      if (result.content_type === 'image') {
+        await window.electronAPI.media.updateImageCaption(img.id, cap);
+      } else {
+        await window.electronAPI.durationImages.updateCaption(img.id, cap);
+      }
+      // Update caption in lightbox images array
+      setLightbox(lb => {
+        if (!lb) return lb;
+        const imgs = lb.images.map((im, i) => i === lb.index ? { ...im, caption: cap } : im);
+        return { ...lb, images: imgs };
+      });
+    } finally {
+      setCaptionModal(false);
+    }
+  }, [lightbox, captionText, result.content_type]);
+
+  // Delete the currently open lightbox image
+  const handleDeleteLightboxImage = useCallback(async () => {
+    if (!lightbox) return;
+    const img = lightbox.images[lightbox.index];
+    if (!img.id) return;
+    if (!window.confirm('Delete this image?')) return;
+    if (result.content_type === 'image') {
+      await window.electronAPI.media.deleteImage(img.id);
+    } else {
+      await window.electronAPI.durationImages.delete(img.id);
+    }
+    const remaining = lightbox.images.filter((_, i) => i !== lightbox.index);
+    if (remaining.length === 0) {
+      setLightbox(null);
+      setIsDeleted(true);
+    } else {
+      setLightbox({ images: remaining, index: Math.min(lightbox.index, remaining.length - 1) });
+    }
+  }, [lightbox, result.content_type]);
+
+  if (isDeleted) return null;
+
   return (
     <div className="group">
       {/* Clickable card body */}
       <div
         className={`flex gap-3 p-3 hover:bg-gray-50 dark:hover:bg-dark-hover transition-colors${previewKind ? ' cursor-pointer' : ''}`}
         onClick={previewKind ? handleToggle : undefined}
+        onContextMenu={handleContextMenu}
       >
         {/* Thumbnail for image types */}
         {result.thumbnail_path && (
@@ -419,6 +644,110 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
           data={previewData}
           loading={previewLoading}
           error={previewError}
+          onOpenLightbox={handleOpenLightbox}
+        />
+      )}
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-lg shadow-lg py-1 min-w-[160px]"
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 180),
+            top: Math.min(contextMenu.y, window.innerHeight - 130),
+          }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <button
+            className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+            onClick={handleOpenCaptionModal}
+          >
+            <span>✏️</span> Add Caption
+          </button>
+          <button
+            className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+            onClick={() => { setContextMenu(null); setShowTagModal(true); }}
+          >
+            <span>🏷️</span> Tags
+          </button>
+          <div className="border-t border-gray-100 dark:border-dark-border my-1" />
+          <button
+            className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+            onClick={handleDelete}
+          >
+            <span>🗑️</span> Delete
+          </button>
+        </div>
+      )}
+
+      {/* Caption modal */}
+      {captionModal && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50"
+          onClick={() => setCaptionModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[360px] max-w-[90vw] p-5"
+            onClick={e => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">✏️ Caption</p>
+            <input
+              type="text"
+              autoFocus
+              value={captionText}
+              onChange={e => setCaptionText(e.target.value)}
+              onKeyDown={e => {
+                const save = captionTarget === 'lightbox' ? handleSaveLightboxImageCaption : handleSaveCaption;
+                if (e.key === 'Enter') save();
+                if (e.key === 'Escape') setCaptionModal(false);
+              }}
+              placeholder="Add a caption…"
+              className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 outline-none focus:border-blue-400 dark:focus:border-blue-500"
+            />
+            <div className="flex justify-end gap-2 mt-3">
+              <button
+                onClick={() => setCaptionModal(false)}
+                className="px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-dark-hover rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={captionTarget === 'lightbox' ? handleSaveLightboxImageCaption : handleSaveCaption}
+                className="px-3 py-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tag modal */}
+      {showTagModal && (
+        <TagModal
+          mediaType={result.content_type as MediaTagType}
+          mediaId={result.source_id}
+          title="Tags"
+          onClose={() => setShowTagModal(false)}
+        />
+      )}
+
+      {/* Image lightbox with audio */}
+      {lightbox && (result.content_type === 'duration_image' || result.content_type === 'image') && (
+        <ImageLightbox
+          images={lightbox.images}
+          selectedIndex={lightbox.index}
+          onClose={() => setLightbox(null)}
+          onNavigate={i => setLightbox(lb => lb ? { ...lb, index: i } : null)}
+          imageAudiosMap={imageAudiosMap}
+          onRecordForImage={result.recording_id ? handleRecordForImage : undefined}
+          onDeleteImageAudio={handleDeleteImageAudio}
+          onPlayImageAudio={handlePlayImageAudio}
+          onUpdateImageAudioCaption={handleUpdateImageAudioCaption}
+          onEditCaption={handleEditLightboxImageCaption}
+          onDelete={handleDeleteLightboxImage}
+          mediaType={result.content_type as MediaTagType}
         />
       )}
     </div>
@@ -466,182 +795,6 @@ function ResultSection({
   );
 }
 
-// ─── Tag Results View ─────────────────────────────────────────────────────────
-
-function fmtDuration(secs: number | null): string {
-  if (!secs) return '';
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  return ` (${m}:${s.toString().padStart(2, '0')})`;
-}
-
-type TagRow = { id: number; file_path: string; thumbnail_path?: string | null; caption: string | null; recording_id: number; recording_name: string | null; topic_name: string; extra?: string };
-
-function dedupeById<T extends { id: number }>(items: T[]): T[] {
-  const seen = new Set<number>();
-  return items.filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; });
-}
-
-function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; onNavigate: (recordingId: number) => void }) {
-  const [items, setItems] = useState<TaggedItems | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  // Image lightbox
-  const [lightboxRows, setLightboxRows] = useState<TagRow[] | null>(null);
-  const [lightboxIndex, setLightboxIndex] = useState(0);
-  const [lightboxIsRecordingLevel, setLightboxIsRecordingLevel] = useState(false);
-  const [imageAudiosMap, setImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
-
-  const imageAudioPlayer = useImageAudioPlayer();
-  const durationAudioPlayer = useDurationAudioPlayer();
-  const recordingAudioPlayer = useRecordingAudioPlayer();
-
-  useEffect(() => {
-    setLoading(true);
-    Promise.all(tagNames.map(t => window.electronAPI.tags.getItemsByTag(t))).then((results) => {
-      setItems({
-        images:          dedupeById(results.flatMap(r => r.images)),
-        duration_images: dedupeById(results.flatMap(r => r.duration_images)),
-        audios:          dedupeById(results.flatMap(r => r.audios)),
-        duration_audios: dedupeById(results.flatMap(r => r.duration_audios)),
-      });
-      setLoading(false);
-    });
-  }, [tagNames.join(',')]);
-
-  const openImageLightbox = async (rows: TagRow[], index: number, isRecordingLevel: boolean) => {
-    setLightboxRows(rows);
-    setLightboxIndex(index);
-    setLightboxIsRecordingLevel(isRecordingLevel);
-    const map: Record<number, AnyImageAudio[]> = {};
-    await Promise.all(rows.map(async (row) => {
-      map[row.id] = isRecordingLevel
-        ? await window.electronAPI.imageAudios.getByImage(row.id)
-        : await window.electronAPI.durationImageAudios.getByDurationImage(row.id);
-    }));
-    setImageAudiosMap(map);
-  };
-
-  const handlePlayImageAudio = async (audio: AnyImageAudio, label: string) => {
-    const contextType = lightboxIsRecordingLevel ? 'recording_image' : 'duration_image';
-    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, contextType);
-    imageAudioPlayer.play(audio, label, markers);
-  };
-
-  if (loading) return <p className="text-sm text-gray-400 py-4">Loading…</p>;
-  if (!items) return null;
-
-  const total = items.images.length + items.duration_images.length + items.audios.length + items.duration_audios.length;
-
-  if (total === 0) {
-    return <p className="text-sm text-gray-400 dark:text-gray-500 py-4">No items tagged with {tagNames.map((t, i) => <span key={t}>{i > 0 && ' or '}<span className="font-mono text-blue-500">#{t}</span></span>)}</p>;
-  }
-
-  const sections: { label: string; icon: string; isImage: boolean; isRecordingLevel: boolean; rows: TagRow[] }[] = [];
-
-  if (items.images.length > 0) {
-    sections.push({ label: 'Recording-Level Images', icon: '🖼️', isImage: true, isRecordingLevel: true, rows: items.images.map(i => ({ ...i })) });
-  }
-  if (items.duration_images.length > 0) {
-    sections.push({ label: 'Mark-Level Images', icon: '🖼️', isImage: true, isRecordingLevel: false, rows: items.duration_images.map(i => ({ ...i })) });
-  }
-  if (items.audios.length > 0) {
-    sections.push({ label: 'Recording-Level Audios', icon: '🔊', isImage: false, isRecordingLevel: true, rows: items.audios.map(a => ({ ...a, thumbnail_path: null, extra: fmtDuration(a.duration) })) });
-  }
-  if (items.duration_audios.length > 0) {
-    sections.push({ label: 'Mark-Level Audios', icon: '🔊', isImage: false, isRecordingLevel: false, rows: items.duration_audios.map(a => ({ ...a, thumbnail_path: null, extra: fmtDuration(a.duration) })) });
-  }
-
-  return (
-    <div>
-      {lightboxRows && (
-        <ImageLightbox
-          images={lightboxRows.map(r => ({ file_path: r.file_path, caption: r.caption, id: r.id }))}
-          selectedIndex={lightboxIndex}
-          onClose={() => { setLightboxRows(null); setImageAudiosMap({}); }}
-          onNavigate={setLightboxIndex}
-          imageAudiosMap={imageAudiosMap}
-          onPlayImageAudio={handlePlayImageAudio}
-          mediaType={lightboxIsRecordingLevel ? 'image' : 'duration_image'}
-        />
-      )}
-
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-        {total} item{total !== 1 ? 's' : ''} tagged{' '}
-        {tagNames.map((t, i) => (
-          <span key={t}>{i > 0 && <span className="text-gray-400 mx-1">or</span>}<span className="font-mono text-blue-500">#{t}</span></span>
-        ))}
-      </p>
-      {sections.map(({ label, icon, isImage, isRecordingLevel, rows }) => (
-        <div key={label} className="mb-6">
-          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <span>{icon}</span>{label} <span className="font-normal normal-case text-gray-400">({rows.length})</span>
-          </h3>
-          <div className="space-y-2">
-            {rows.map((row, rowIndex) => (
-              <div
-                key={row.id}
-                className="group rounded-lg border border-gray-100 dark:border-dark-border bg-white dark:bg-dark-surface overflow-hidden"
-              >
-                {/* Main row */}
-                <div
-                  className="flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-dark-hover cursor-pointer transition-colors"
-                  onClick={async () => {
-                    if (isImage) {
-                      openImageLightbox(rows, rowIndex, isRecordingLevel);
-                    } else {
-                      const contextType = isRecordingLevel ? 'recording' : 'duration';
-                      const player = isRecordingLevel ? recordingAudioPlayer : durationAudioPlayer;
-                      const markers = await window.electronAPI.audioMarkers.getByAudio(row.id, contextType);
-                      const label = row.caption || `${row.recording_name || 'Recording'} — Audio`;
-                      player.play({ id: row.id, file_path: row.file_path, duration: null, caption: row.caption, created_at: '' } as any, label, markers);
-                    }
-                  }}
-                >
-                  {row.thumbnail_path ? (
-                    <img
-                      src={window.electronAPI.paths.getFileUrl(row.thumbnail_path)}
-                      alt=""
-                      className="w-10 h-10 object-cover rounded flex-shrink-0"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded flex-shrink-0 bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-lg">
-                      {icon}
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-gray-700 dark:text-gray-300 truncate">
-                      {row.caption || <span className="italic text-gray-400">no caption</span>}
-                      {row.extra && <span className="text-gray-400 ml-1">{row.extra}</span>}
-                    </p>
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
-                      {row.topic_name} › {row.recording_name || 'Recording'}
-                    </p>
-                  </div>
-                  {isImage ? (
-                    <button
-                      onClick={e => { e.stopPropagation(); onNavigate(row.recording_id); }}
-                      className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity self-center p-1.5 rounded hover:bg-gray-200 dark:hover:bg-dark-border text-gray-500 dark:text-gray-400"
-                      title="Open recording"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                    </button>
-                  ) : (
-                    <svg className="w-4 h-4 flex-shrink-0 text-gray-400 dark:text-gray-500 self-center opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // ─── SearchPage ───────────────────────────────────────────────────────────────
 export default function SearchPage() {

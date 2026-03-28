@@ -1647,6 +1647,27 @@ export const QuickCaptureOperations = {
     return { filePath: row.file_path, thumbnailPath: row.thumbnail_path };
   },
 
+  updateImageCaption(imageId: number, caption: string | null): import('../../src/types').QuickCaptureImage {
+    const db = getDatabase();
+    db.prepare('UPDATE quick_capture_images SET caption = ? WHERE id = ?').run(caption, imageId);
+    return db.prepare('SELECT * FROM quick_capture_images WHERE id = ?').get(imageId) as import('../../src/types').QuickCaptureImage;
+  },
+
+  deleteAudio(audioId: number): { filePath: string } {
+    const db = getDatabase();
+    const row = db.prepare('SELECT file_path FROM quick_capture_audios WHERE id = ?').get(audioId) as
+      { file_path: string } | undefined;
+    if (!row) return { filePath: '' };
+    db.prepare('DELETE FROM quick_capture_audios WHERE id = ?').run(audioId);
+    return { filePath: row.file_path };
+  },
+
+  updateAudioCaption(audioId: number, caption: string | null): import('../../src/types').QuickCaptureAudio {
+    const db = getDatabase();
+    db.prepare('UPDATE quick_capture_audios SET caption = ? WHERE id = ?').run(caption, audioId);
+    return db.prepare('SELECT * FROM quick_capture_audios WHERE id = ?').get(audioId) as import('../../src/types').QuickCaptureAudio;
+  },
+
   getExpired(): { id: number; imagePaths: string[]; audioPaths: string[] }[] {
     const db = getDatabase();
     const rows = db.prepare(`SELECT id FROM quick_captures WHERE created_at < datetime('now', '-7 days')`).all() as { id: number }[];
