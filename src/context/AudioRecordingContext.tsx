@@ -5,7 +5,9 @@ import type { AudioMarkerType } from '../types';
 export type RecordingTarget =
   | { type: 'duration'; durationId: number; recordingId: number; label: string }
   | { type: 'recording'; recordingId: number; label: string }
-  | { type: 'duration_image'; durationImageId: number; durationId: number; recordingId: number; label: string };
+  | { type: 'duration_image'; durationImageId: number; durationId: number; recordingId: number; label: string }
+  | { type: 'recording_image'; imageId: number; recordingId: number; label: string }
+  | { type: 'capture_image'; captureImageId: number; label: string };
 
 interface PendingMarker {
   marker_type: AudioMarkerType;
@@ -140,6 +142,18 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
           buffer,
           'webm'
         );
+      } else if (target.type === 'recording_image') {
+        savedAudio = await window.electronAPI.imageAudios.addFromBuffer(
+          target.imageId,
+          buffer,
+          'webm'
+        );
+      } else if (target.type === 'capture_image') {
+        savedAudio = await window.electronAPI.captureImageAudios.addFromBuffer(
+          target.captureImageId,
+          buffer,
+          'webm'
+        );
       } else {
         await window.electronAPI.audios.addFromBuffer(
           target.recordingId,
@@ -150,7 +164,11 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
 
       // Save pending markers if we have a saved audio record
       if (savedAudio && pendingMarkers.length > 0) {
-        const audioType = target.type === 'duration_image' ? 'duration_image' : 'duration';
+        const audioType = target.type === 'duration_image' ? 'duration_image'
+          : target.type === 'recording_image' ? 'recording_image'
+          : target.type === 'capture_image' ? 'capture_image'
+          : target.type === 'recording' ? 'recording'
+          : 'duration';
         const markersToSave = pendingMarkers
           .filter(m => m.start_time !== undefined)
           .map(m => ({

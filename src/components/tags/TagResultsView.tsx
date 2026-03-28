@@ -5,7 +5,7 @@ import { useRecordingAudioPlayer } from '../../context/RecordingAudioPlayerConte
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 import ImageLightbox from '../common/ImageLightbox';
 import SortableImageGrid from '../common/SortableImageGrid';
-import type { TaggedItems, AnyImageAudio } from '../../types';
+import type { TaggedItems, TaggedCaptureImage, AnyImageAudio } from '../../types';
 
 function fmtDuration(secs: number | null): string {
   if (!secs) return '';
@@ -50,6 +50,12 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
   const recordingAudioPlayer = useRecordingAudioPlayer();
   const audioRecording = useAudioRecording();
 
+  // Capture image lightbox
+  const [captureLightbox, setCaptureLightbox] = useState<{ rows: TaggedCaptureImage[]; index: number } | null>(null);
+  const [captureCaptionModal, setCaptureCaptionModal] = useState(false);
+  const [captureCaptionText, setCaptureCaptionText] = useState('');
+  const [captureImageAudiosMap, setCaptureImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
+
   useEffect(() => {
     setLoading(true);
     Promise.all(tagNames.map(t => window.electronAPI.tags.getItemsByTag(t))).then((results) => {
@@ -58,6 +64,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
         duration_images: dedupeById(results.flatMap(r => r.duration_images)),
         audios:          dedupeById(results.flatMap(r => r.audios)),
         duration_audios: dedupeById(results.flatMap(r => r.duration_audios)),
+        capture_images:  dedupeById(results.flatMap(r => r.capture_images)),
       });
       setLoading(false);
     });
@@ -203,10 +210,106 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
     }
   }, [currentRow, lightboxRows, lightboxIndex, lightboxIsRecordingLevel]);
 
+  const fetchCaptureImageAudios = useCallback(async (rows: TaggedCaptureImage[]) => {
+    const map: Record<number, AnyImageAudio[]> = {};
+    await Promise.all(rows.map(async (row) => {
+      map[row.id] = await window.electronAPI.captureImageAudios.getByImage(row.id);
+    }));
+    setCaptureImageAudiosMap(map);
+  }, []);
+
+  const openCaptureLightbox = async (rows: TaggedCaptureImage[], index: number) => {
+    setCaptureLightbox({ rows, index });
+    await fetchCaptureImageAudios(rows);
+  };
+
+  // Refresh capture audio map after recording
+  useEffect(() => {
+    if (!captureLightbox) return;
+    const refresh = () => fetchCaptureImageAudios(captureLightbox.rows);
+    window.addEventListener(AUDIO_SAVED_EVENT, refresh);
+    return () => window.removeEventListener(AUDIO_SAVED_EVENT, refresh);
+  }, [captureLightbox, fetchCaptureImageAudios]);
+
+  const currentCaptureRow = captureLightbox ? captureLightbox.rows[captureLightbox.index] : null;
+
+  const handlePlayCaptureImageAudio = async (audio: AnyImageAudio, label: string) => {
+    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'capture_image');
+    imageAudioPlayer.play(
+      audio,
+      label,
+      markers,
+      (id, cap) => window.electronAPI.captureImageAudios.updateCaption(id, cap),
+    );
+  };
+
+  const handleRecordForCaptureImage = useCallback((imageId: number) => {
+    if (!currentCaptureRow) return;
+    const label = currentCaptureRow.caption || 'Capture Image';
+    audioRecording.startRecording({
+      type: 'capture_image',
+      captureImageId: imageId,
+      label,
+    });
+  }, [currentCaptureRow, audioRecording]);
+
+  const handleDeleteCaptureImageAudio = useCallback(async (audioId: number, imageId: number) => {
+    await window.electronAPI.captureImageAudios.delete(audioId);
+    setCaptureImageAudiosMap(prev => ({
+      ...prev,
+      [imageId]: (prev[imageId] ?? []).filter(a => a.id !== audioId),
+    }));
+  }, []);
+
+  const handleUpdateCaptureImageAudioCaption = useCallback(async (audioId: number, imageId: number, cap: string | null) => {
+    await window.electronAPI.captureImageAudios.updateCaption(audioId, cap);
+    setCaptureImageAudiosMap(prev => ({
+      ...prev,
+      [imageId]: (prev[imageId] ?? []).map(a => a.id === audioId ? { ...a, caption: cap } : a),
+    }));
+  }, []);
+
+  const handleCaptureEditCaption = useCallback(() => {
+    if (!captureLightbox) return;
+    const row = captureLightbox.rows[captureLightbox.index];
+    setCaptureCaptionText(row.caption ?? '');
+    setCaptureCaptionModal(true);
+  }, [captureLightbox]);
+
+  const handleCaptureSaveCaption = useCallback(async () => {
+    if (!captureLightbox) return;
+    const row = captureLightbox.rows[captureLightbox.index];
+    const cap = captureCaptionText.trim() || null;
+    try {
+      await window.electronAPI.quickCaptures.updateImageCaption(row.id, cap);
+      setCaptureLightbox(lb => lb ? {
+        ...lb,
+        rows: lb.rows.map((r, i) => i === lb.index ? { ...r, caption: cap } : r),
+      } : lb);
+    } finally {
+      setCaptureCaptionModal(false);
+    }
+  }, [captureLightbox, captureCaptionText]);
+
+  const handleCaptureDeleteImage = useCallback(async () => {
+    if (!captureLightbox) return;
+    const row = captureLightbox.rows[captureLightbox.index];
+    if (!window.confirm('Delete this image?')) return;
+    await window.electronAPI.quickCaptures.deleteImage(row.id);
+    const remaining = captureLightbox.rows.filter((_, i) => i !== captureLightbox.index);
+    setItems(prev => prev ? { ...prev, capture_images: prev.capture_images.filter(img => img.id !== row.id) } : prev);
+    if (remaining.length === 0) {
+      setCaptureLightbox(null);
+      setCaptureImageAudiosMap({});
+    } else {
+      setCaptureLightbox({ rows: remaining, index: Math.min(captureLightbox.index, remaining.length - 1) });
+    }
+  }, [captureLightbox]);
+
   if (loading) return <p className="text-sm text-gray-400 py-4">Loading…</p>;
   if (!items) return null;
 
-  const total = items.images.length + items.duration_images.length + items.audios.length + items.duration_audios.length;
+  const total = items.images.length + items.duration_images.length + items.audios.length + items.duration_audios.length + items.capture_images.length;
 
   if (total === 0) {
     return <p className="text-sm text-gray-400 dark:text-gray-500 py-4">No items tagged with {tagNames.map((t, i) => <span key={t}>{i > 0 && ' or '}<span className="font-mono text-blue-500">#{t}</span></span>)}</p>;
@@ -230,6 +333,52 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
 
   return (
     <div>
+      {/* Capture image lightbox */}
+      {captureLightbox && (
+        <ImageLightbox
+          images={captureLightbox.rows.map(r => ({ file_path: r.file_path, caption: r.caption, id: r.id }))}
+          selectedIndex={captureLightbox.index}
+          onClose={() => { setCaptureLightbox(null); setCaptureImageAudiosMap({}); }}
+          onNavigate={i => setCaptureLightbox(lb => lb ? { ...lb, index: i } : lb)}
+          mediaType="quick_capture_image"
+          imageAudiosMap={captureImageAudiosMap}
+          onPlayImageAudio={handlePlayCaptureImageAudio}
+          onRecordForImage={handleRecordForCaptureImage}
+          onDeleteImageAudio={handleDeleteCaptureImageAudio}
+          onUpdateImageAudioCaption={handleUpdateCaptureImageAudioCaption}
+          onEditCaption={handleCaptureEditCaption}
+          onDelete={handleCaptureDeleteImage}
+        />
+      )}
+
+      {/* Capture caption modal */}
+      {captureCaptionModal && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50"
+          onClick={() => setCaptureCaptionModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[360px] max-w-[90vw] p-5"
+            onClick={e => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">✏️ Caption</p>
+            <input
+              type="text"
+              autoFocus
+              value={captureCaptionText}
+              onChange={e => setCaptureCaptionText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleCaptureSaveCaption(); if (e.key === 'Escape') setCaptureCaptionModal(false); }}
+              placeholder="Add a caption…"
+              className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 outline-none focus:border-blue-400 dark:focus:border-blue-500"
+            />
+            <div className="flex justify-end gap-2 mt-3">
+              <button onClick={() => setCaptureCaptionModal(false)} className="px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-dark-hover rounded-lg hover:bg-gray-200 transition-colors">Cancel</button>
+              <button onClick={handleCaptureSaveCaption} className="px-3 py-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {lightboxRows && (
         <ImageLightbox
           images={lightboxRows.map(r => ({ file_path: r.file_path, caption: r.caption, id: r.id }))}
@@ -333,6 +482,35 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
           </div>
         </div>
       ))}
+
+      {/* Capture Images section */}
+      {items.capture_images.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <span>📸</span>Capture Images <span className="font-normal normal-case text-gray-400">({items.capture_images.length})</span>
+          </h3>
+          <SortableImageGrid
+            images={items.capture_images.map(r => ({
+              id: r.id,
+              file_path: r.file_path,
+              thumbnail_path: r.thumbnail_path ?? null,
+              caption: r.caption,
+              color: null,
+              group_color: null,
+            }))}
+            gridClassName="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2"
+            readOnly
+            showNumberBadge={false}
+            colorKeyPrefix="captureTagResult"
+            captionColorClass="text-gray-600 dark:text-gray-400"
+            colorOverrides={{}}
+            groupColorOverrides={{}}
+            onImageClick={(index) => openCaptureLightbox(items.capture_images, index)}
+            onDelete={() => {}}
+            onReorder={() => {}}
+          />
+        </div>
+      )}
 
       {/* Audio sections — list */}
       {audioSections.map(({ label, icon, isRecordingLevel, rows }) => (
