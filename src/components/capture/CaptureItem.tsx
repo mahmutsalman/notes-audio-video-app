@@ -1,9 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
-import type { QuickCapture, QuickCaptureImage, QuickCaptureAudio, DurationColor, DurationGroupColor } from '../../types';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import type { QuickCapture, QuickCaptureImage, QuickCaptureAudio, DurationColor, DurationGroupColor, AnyImageAudio } from '../../types';
 import SortableImageGrid from '../common/SortableImageGrid';
 import type { SortableImageItem } from '../common/SortableImageGrid';
 import ImageLightbox from '../common/ImageLightbox';
 import { TagModal } from '../common/TagModal';
+import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
+import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 
 interface CaptureItemProps {
   capture: QuickCapture;
@@ -43,7 +45,11 @@ function relativeTime(dateStr: string): string {
 export default function CaptureItem({ capture, onDelete, expiresInDays }: CaptureItemProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [captureImageAudiosMap, setCaptureImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+
+  const imageAudioPlayer = useImageAudioPlayer();
+  const audioRecording = useAudioRecording();
   const [captionModal, setCaptionModal] = useState<CaptionModalState>(null);
   const [captionText, setCaptionText] = useState('');
   const [tagModal, setTagModal] = useState<TagModalState>(null);
@@ -89,6 +95,64 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     return () => window.removeEventListener('mousedown', close);
   }, [contextMenu]);
 
+  const fetchCaptureImageAudios = useCallback(async (images: SortableImageItem[]) => {
+    const map: Record<number, AnyImageAudio[]> = {};
+    await Promise.all(images.map(async (img) => {
+      map[img.id] = await window.electronAPI.captureImageAudios.getByImage(img.id);
+    }));
+    setCaptureImageAudiosMap(map);
+  }, []);
+
+  const openLightbox = useCallback(async (index: number) => {
+    setLightboxIndex(index);
+    await fetchCaptureImageAudios(localImages);
+  }, [localImages, fetchCaptureImageAudios]);
+
+  // Refresh audio map after recording
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const refresh = () => fetchCaptureImageAudios(localImages);
+    window.addEventListener(AUDIO_SAVED_EVENT, refresh);
+    return () => window.removeEventListener(AUDIO_SAVED_EVENT, refresh);
+  }, [lightboxIndex, localImages, fetchCaptureImageAudios]);
+
+  const currentLightboxImage = lightboxIndex !== null ? localImages[lightboxIndex] : null;
+
+  const handlePlayCaptureImageAudio = useCallback(async (audio: AnyImageAudio, label: string) => {
+    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'capture_image');
+    imageAudioPlayer.play(
+      audio,
+      label,
+      markers,
+      (id, cap) => window.electronAPI.captureImageAudios.updateCaption(id, cap),
+    );
+  }, [imageAudioPlayer]);
+
+  const handleRecordForCaptureImage = useCallback((imageId: number) => {
+    if (!currentLightboxImage) return;
+    audioRecording.startRecording({
+      type: 'capture_image',
+      captureImageId: imageId,
+      label: currentLightboxImage.caption || 'Capture Image',
+    });
+  }, [currentLightboxImage, audioRecording]);
+
+  const handleDeleteCaptureImageAudio = useCallback(async (audioId: number, imageId: number) => {
+    await window.electronAPI.captureImageAudios.delete(audioId);
+    setCaptureImageAudiosMap(prev => ({
+      ...prev,
+      [imageId]: (prev[imageId] ?? []).filter(a => a.id !== audioId),
+    }));
+  }, []);
+
+  const handleUpdateCaptureImageAudioCaption = useCallback(async (audioId: number, imageId: number, cap: string | null) => {
+    await window.electronAPI.captureImageAudios.updateCaption(audioId, cap);
+    setCaptureImageAudiosMap(prev => ({
+      ...prev,
+      [imageId]: (prev[imageId] ?? []).map(a => a.id === audioId ? { ...a, caption: cap } : a),
+    }));
+  }, []);
+
   const handleReorder = async (orderedIds: number[]) => {
     setLocalImages(prev => orderedIds.map(id => prev.find(img => img.id === id)!));
     await window.electronAPI.quickCaptures.reorderImages(capture.id, orderedIds);
@@ -123,6 +187,9 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     e.stopPropagation();
     // Find the original QuickCaptureImage
     const original = capture.images.find(i => i.id === img.id) ?? { ...img, capture_id: capture.id, sort_order: 0, created_at: '' } as QuickCaptureImage;
+    // Also open lightbox at the clicked image's position
+    const idx = localImages.findIndex(i => i.id === img.id);
+    if (idx !== -1) openLightbox(idx);
     setContextMenu({ kind: 'image', item: original, x: e.clientX, y: e.clientY });
   };
 
@@ -149,6 +216,28 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
       setLocalAudios(prev => prev.map(a => a.id === captionModal.id ? { ...a, caption: updated.caption } : a));
     }
     setCaptionModal(null);
+  };
+
+  const handleLightboxEditCaption = () => {
+    if (lightboxIndex === null) return;
+    const img = localImages[lightboxIndex];
+    setCaptionModal({ kind: 'image', id: img.id, current: img.caption });
+    setCaptionText(img.caption ?? '');
+  };
+
+  const handleLightboxDeleteImage = async () => {
+    if (lightboxIndex === null) return;
+    const img = localImages[lightboxIndex];
+    if (!window.confirm('Delete this image?')) return;
+    const newImages = localImages.filter(i => i.id !== img.id);
+    setLocalImages(newImages);
+    if (newImages.length === 0) {
+      setLightboxIndex(null);
+      setCaptureImageAudiosMap({});
+    } else {
+      setLightboxIndex(Math.min(lightboxIndex, newImages.length - 1));
+    }
+    await window.electronAPI.quickCaptures.deleteImage(img.id);
   };
 
   return (
@@ -218,7 +307,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
             groupColorOverrides={{}}
             colorKeyPrefix="qcImg"
             captionColorClass="text-blue-600 dark:text-blue-400"
-            onImageClick={setLightboxIndex}
+            onImageClick={openLightbox}
             onContextMenu={handleImageContextMenu}
             onDelete={handleDeleteImage}
             onReorder={handleReorder}
@@ -287,8 +376,16 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
         <ImageLightbox
           images={localImages}
           selectedIndex={lightboxIndex}
-          onClose={() => setLightboxIndex(null)}
+          onClose={() => { setLightboxIndex(null); setCaptureImageAudiosMap({}); }}
           onNavigate={setLightboxIndex}
+          mediaType="quick_capture_image"
+          imageAudiosMap={captureImageAudiosMap}
+          onPlayImageAudio={handlePlayCaptureImageAudio}
+          onRecordForImage={handleRecordForCaptureImage}
+          onDeleteImageAudio={handleDeleteCaptureImageAudio}
+          onUpdateImageAudioCaption={handleUpdateCaptureImageAudioCaption}
+          onEditCaption={handleLightboxEditCaption}
+          onDelete={handleLightboxDeleteImage}
         />
       )}
 

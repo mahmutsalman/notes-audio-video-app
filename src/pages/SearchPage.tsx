@@ -45,6 +45,7 @@ const SECTION_ORDER: Array<{
   { key: 'audio_marker',        label: 'Audio Markers',         icon: '📌' },
   { key: 'duration_image_audio', label: 'Image Audios (Mark)',  icon: '🔊' },
   { key: 'image_audio',          label: 'Image Audios',         icon: '🔊' },
+  { key: 'quick_capture_image',  label: 'Capture Images',       icon: '📸' },
 ];
 
 const MARKER_COLORS: Record<string, string> = {
@@ -305,7 +306,7 @@ function Snippet({ html }: { html: string }) {
   );
 }
 
-const CONTEXT_MENU_TYPES = new Set(['duration_image', 'image', 'duration_audio', 'audio']);
+const CONTEXT_MENU_TYPES = new Set(['duration_image', 'image', 'duration_audio', 'audio', 'quick_capture_image']);
 
 interface ResultCardProps {
   result: GlobalSearchResult;
@@ -427,6 +428,9 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
         case 'audio':
           await window.electronAPI.audios.updateCaption(result.source_id, cap);
           break;
+        case 'quick_capture_image':
+          await window.electronAPI.quickCaptures.updateImageCaption(result.source_id, cap);
+          break;
       }
     } finally {
       setCaptionModal(false);
@@ -448,6 +452,9 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
         break;
       case 'audio':
         await window.electronAPI.audios.delete(result.source_id);
+        break;
+      case 'quick_capture_image':
+        await window.electronAPI.quickCaptures.deleteImage(result.source_id);
         break;
     }
     setIsDeleted(true);

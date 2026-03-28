@@ -1130,6 +1130,110 @@ export const DurationImageAudiosOperations = {
   },
 };
 
+// Image Audio Operations (audio clips attached to recording-level images)
+export const ImageAudiosOperations = {
+  getByImage(imageId: number) {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM image_audios
+      WHERE image_id = ?
+      ORDER BY sort_order, created_at
+    `).all(imageId);
+  },
+
+  getById(id: number) {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM image_audios WHERE id = ?').get(id) ?? null;
+  },
+
+  create(data: { image_id: number; file_path: string; caption?: string | null; duration?: number | null; sort_order?: number }) {
+    const db = getDatabase();
+    const result = db.prepare(`
+      INSERT INTO image_audios (image_id, file_path, caption, duration, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      data.image_id,
+      data.file_path,
+      data.caption ?? null,
+      data.duration ?? null,
+      data.sort_order ?? 0
+    );
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM image_audios WHERE id = ?').run(id);
+  },
+
+  updateCaption(id: number, caption: string | null) {
+    const db = getDatabase();
+    db.prepare('UPDATE image_audios SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+
+  getMaxSortOrder(imageId: number): number {
+    const db = getDatabase();
+    const result = db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) as max_order
+      FROM image_audios WHERE image_id = ?
+    `).get(imageId) as { max_order: number };
+    return result.max_order;
+  },
+};
+
+// Capture Image Audio Operations (audio clips attached to quick_capture_images)
+export const CaptureImageAudiosOperations = {
+  getByImage(captureImageId: number) {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM quick_capture_image_audios
+      WHERE capture_image_id = ?
+      ORDER BY sort_order, created_at
+    `).all(captureImageId);
+  },
+
+  getById(id: number) {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM quick_capture_image_audios WHERE id = ?').get(id) ?? null;
+  },
+
+  create(data: { capture_image_id: number; file_path: string; caption?: string | null; duration?: number | null; sort_order?: number }) {
+    const db = getDatabase();
+    const result = db.prepare(`
+      INSERT INTO quick_capture_image_audios (capture_image_id, file_path, caption, duration, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      data.capture_image_id,
+      data.file_path,
+      data.caption ?? null,
+      data.duration ?? null,
+      data.sort_order ?? 0
+    );
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM quick_capture_image_audios WHERE id = ?').run(id);
+  },
+
+  updateCaption(id: number, caption: string | null) {
+    const db = getDatabase();
+    db.prepare('UPDATE quick_capture_image_audios SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+
+  getMaxSortOrder(captureImageId: number): number {
+    const db = getDatabase();
+    const result = db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) as max_order
+      FROM quick_capture_image_audios WHERE capture_image_id = ?
+    `).get(captureImageId) as { max_order: number };
+    return result.max_order;
+  },
+};
+
 // Settings Operations
 export const SettingsOperations = {
   get(key: string): string | null {
@@ -1289,7 +1393,7 @@ export const SearchOperations = {
     // Step 4: Batch fetch type-specific extra fields (file paths, thumbnails, code, marker_type)
     const extraByType = new Map<string, Map<number, any>>();
     const typeToIds = new Map<string, number[]>();
-    const typesNeedingExtra = new Set(['image', 'video', 'audio', 'duration_image', 'duration_video', 'duration_audio', 'code_snippet', 'duration_code_snippet', 'audio_marker', 'duration_image_audio', 'image_audio']);
+    const typesNeedingExtra = new Set(['image', 'video', 'audio', 'duration_image', 'duration_video', 'duration_audio', 'code_snippet', 'duration_code_snippet', 'audio_marker', 'duration_image_audio', 'image_audio', 'quick_capture_image']);
     for (const m of matches) {
       if (typesNeedingExtra.has(m.content_type)) {
         if (!typeToIds.has(m.content_type)) typeToIds.set(m.content_type, []);
@@ -1309,6 +1413,7 @@ export const SearchOperations = {
       audio_marker: 'SELECT id, marker_type, NULL as file_path, NULL as thumbnail_path, NULL as duration_id FROM audio_markers WHERE id IN',
       duration_image_audio: 'SELECT dia.id, dia.file_path, NULL as thumbnail_path, di.duration_id FROM duration_image_audios dia JOIN duration_images di ON di.id = dia.duration_image_id WHERE dia.id IN',
       image_audio: 'SELECT id, file_path, NULL as thumbnail_path, NULL as duration_id FROM image_audios WHERE id IN',
+      quick_capture_image: 'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM quick_capture_images WHERE id IN',
     };
 
     for (const [type, ids] of typeToIds) {
@@ -1521,7 +1626,15 @@ export const TagOperations = {
       ORDER BY t.name, r.name, da.sort_order
     `).all(tagName) as { id: number; file_path: string; caption: string | null; duration: number | null; duration_id: number; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
 
-    return { images, duration_images, audios, duration_audios };
+    const capture_images = db.prepare(`
+      SELECT qci.id, qci.capture_id, qci.file_path, qci.thumbnail_path, qci.caption
+      FROM quick_capture_images qci
+      JOIN media_tags mt ON mt.media_type = 'quick_capture_image' AND mt.media_id = qci.id
+      JOIN tags tag ON tag.id = mt.tag_id AND tag.name = ?
+      ORDER BY qci.sort_order
+    `).all(tagName) as { id: number; capture_id: number; file_path: string; thumbnail_path: string | null; caption: string | null }[];
+
+    return { images, duration_images, audios, duration_audios, capture_images };
   },
 };
 
