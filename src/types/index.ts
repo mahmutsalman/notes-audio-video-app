@@ -678,6 +678,7 @@ export interface ElectronAPI {
   };
   quickCaptures: {
     create: (note: string, tags: string[]) => Promise<{ id: number }>;
+    getOrCreate: (note: string, tags: string[]) => Promise<{ id: number }>;
     getRecent: () => Promise<QuickCapture[]>;
     addImage: (captureId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<QuickCaptureImage>;
     addAudio: (captureId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<QuickCaptureAudio>;

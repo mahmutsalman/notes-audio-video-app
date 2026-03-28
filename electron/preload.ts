@@ -686,6 +686,8 @@ const electronAPI = {
   quickCaptures: {
     create: (note: string, tags: string[]): Promise<{ id: number }> =>
       ipcRenderer.invoke('quickCaptures:create', note, tags),
+    getOrCreate: (note: string, tags: string[]): Promise<{ id: number }> =>
+      ipcRenderer.invoke('quickCaptures:getOrCreate', note, tags),
     getRecent: (): Promise<import('../src/types').QuickCapture[]> =>
       ipcRenderer.invoke('quickCaptures:getRecent'),
     addImage: (captureId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<import('../src/types').QuickCaptureImage> =>
