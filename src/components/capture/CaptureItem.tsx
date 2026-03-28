@@ -1,39 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { QuickCapture, QuickCaptureImage, QuickCaptureAudio, DurationColor, DurationGroupColor, AnyImageAudio } from '../../types';
-import { IMAGE_COLOR_KEYS, IMAGE_COLORS } from '../../utils/imageColors';
+import { useState, useRef } from 'react';
+import type { QuickCapture, DurationColor, DurationGroupColor } from '../../types';
 import SortableImageGrid from '../common/SortableImageGrid';
-import type { SortableImageItem } from '../common/SortableImageGrid';
 import ImageLightbox from '../common/ImageLightbox';
-import { TagModal } from '../common/TagModal';
-import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
-import { useCaptureAudioPlayer } from '../../context/CaptureAudioPlayerContext';
-import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 
 interface CaptureItemProps {
   capture: QuickCapture;
   onDelete: (id: number) => void;
   expiresInDays?: number;
 }
-
-type ContextMenuState =
-  | { kind: 'image'; item: QuickCaptureImage; x: number; y: number }
-  | { kind: 'audio'; item: QuickCaptureAudio; x: number; y: number }
-  | null;
-
-type CaptionModalState =
-  | { kind: 'image'; id: number; current: string | null }
-  | { kind: 'audio'; id: number; current: string | null }
-  | null;
-
-type TagModalState =
-  | { kind: 'image'; id: number }
-  | { kind: 'audio'; id: number }
-  | null;
-
-type PendingDeleteState =
-  | { kind: 'image'; id: number }
-  | { kind: 'audio'; id: number }
-  | null;
 
 function relativeTime(dateStr: string): string {
   const now = Date.now();
@@ -52,183 +26,16 @@ function relativeTime(dateStr: string): string {
 export default function CaptureItem({ capture, onDelete, expiresInDays }: CaptureItemProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [captureImageAudiosMap, setCaptureImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
-  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
-
-  const imageAudioPlayer = useImageAudioPlayer();
-  const captureAudioPlayer = useCaptureAudioPlayer();
-  const audioRecording = useAudioRecording();
-  const [captionModal, setCaptionModal] = useState<CaptionModalState>(null);
-  const [pendingDelete, setPendingDelete] = useState<PendingDeleteState>(null);
-  const [captionText, setCaptionText] = useState('');
-  const [tagModal, setTagModal] = useState<TagModalState>(null);
-  const [localAudios, setLocalAudios] = useState<QuickCaptureAudio[]>(capture.audios);
-  const [audioMarkersMap, setAudioMarkersMap] = useState<Record<number, import('../../types').AudioMarker[]>>({});
-  const [imageTagCountMap, setImageTagCountMap] = useState<Record<number, number>>({});
-  const [imageTagNamesMap, setImageTagNamesMap] = useState<Record<number, string[]>>({});
-  const [audioTagCountMap, setAudioTagCountMap] = useState<Record<number, number>>({});
-  const [imageChildCountMap, setImageChildCountMap] = useState<Record<number, number>>({});
+  const audioRefs = useRef<(HTMLAudioElement | null)[]>([]);
 
   // Map QuickCaptureImage → SortableImageItem (color: null = no color bars)
-  const [localImages, setLocalImages] = useState<SortableImageItem[]>(() =>
+  const [localImages, setLocalImages] = useState(() =>
     capture.images.map(img => ({
       ...img,
       color: null as DurationColor,
       group_color: null as DurationGroupColor,
     }))
   );
-
-  // Merge newly added images/audios when the capture prop updates
-  useEffect(() => {
-    setLocalImages(prev => {
-      const prevIds = new Set(prev.map(i => i.id));
-      const added = capture.images.filter(img => !prevIds.has(img.id));
-      if (added.length === 0) return prev;
-      return [
-        ...prev,
-        ...added.map(img => ({ ...img, color: null as DurationColor, group_color: null as DurationGroupColor })),
-      ];
-    });
-  }, [capture.images]);
-
-  useEffect(() => {
-    setLocalAudios(prev => {
-      const prevIds = new Set(prev.map(a => a.id));
-      const added = capture.audios.filter(a => !prevIds.has(a.id));
-      if (added.length === 0) return prev;
-      return [...prev, ...added];
-    });
-  }, [capture.audios]);
-
-  // Fetch markers for all audios
-  useEffect(() => {
-    if (localAudios.length === 0) return;
-    Promise.all(
-      localAudios.map(async a => {
-        const markers = await window.electronAPI.audioMarkers.getByAudio(a.id, 'quick_capture_audio');
-        return [a.id, markers] as const;
-      })
-    ).then(entries => {
-      setAudioMarkersMap(Object.fromEntries(entries));
-    });
-  }, [localAudios]);
-
-  const fetchTagCounts = useCallback(async () => {
-    const [imgEntries, audioEntries] = await Promise.all([
-      Promise.all(
-        localImages.map(async img => {
-          const tags = await window.electronAPI.tags.getByMedia('quick_capture_image', img.id);
-          return [img.id, tags] as const;
-        })
-      ),
-      Promise.all(
-        localAudios.map(async audio => {
-          const tags = await window.electronAPI.tags.getByMedia('quick_capture_audio', audio.id);
-          return [audio.id, tags.length] as const;
-        })
-      ),
-    ]);
-    setImageTagCountMap(Object.fromEntries(imgEntries.map(([id, tags]) => [id, tags.length])));
-    setImageTagNamesMap(Object.fromEntries(imgEntries.map(([id, tags]) => [id, tags.map(t => t.name)])));
-    setAudioTagCountMap(Object.fromEntries(audioEntries));
-  }, [localImages, localAudios]);
-
-  useEffect(() => {
-    fetchTagCounts();
-  }, [fetchTagCounts]);
-
-  // Close context menu on outside click
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => { setContextMenu(null); setContextMenuShowColors(false); };
-    window.addEventListener('mousedown', close);
-    return () => window.removeEventListener('mousedown', close);
-  }, [contextMenu]);
-
-  const fetchCaptureImageAudios = useCallback(async (images: SortableImageItem[]) => {
-    const map: Record<number, AnyImageAudio[]> = {};
-    await Promise.all(images.map(async (img) => {
-      map[img.id] = await window.electronAPI.captureImageAudios.getByImage(img.id);
-    }));
-    setCaptureImageAudiosMap(map);
-  }, []);
-
-  // Keep audio counts fresh for badge display in the grid
-  useEffect(() => {
-    if (localImages.length > 0) fetchCaptureImageAudios(localImages);
-  }, [localImages, fetchCaptureImageAudios]);
-
-  // Fetch child image counts for badge display
-  useEffect(() => {
-    if (localImages.length === 0) return;
-    Promise.all(
-      localImages.map(async img => {
-        const children = await window.electronAPI.imageChildren.getByParent('quick_capture_image', img.id);
-        return [img.id, children.length] as const;
-      })
-    ).then(entries => setImageChildCountMap(Object.fromEntries(entries)));
-  }, [localImages]);
-
-  const openLightbox = useCallback(async (index: number) => {
-    setLightboxIndex(index);
-    await fetchCaptureImageAudios(localImages);
-  }, [localImages, fetchCaptureImageAudios]);
-
-  // Refresh audio map after recording
-  useEffect(() => {
-    if (lightboxIndex === null) return;
-    const refresh = () => fetchCaptureImageAudios(localImages);
-    window.addEventListener(AUDIO_SAVED_EVENT, refresh);
-    return () => window.removeEventListener(AUDIO_SAVED_EVENT, refresh);
-  }, [lightboxIndex, localImages, fetchCaptureImageAudios]);
-
-  const currentLightboxImage = lightboxIndex !== null ? localImages[lightboxIndex] : null;
-
-  const handlePlayCaptureImageAudio = useCallback(async (audio: AnyImageAudio, label: string) => {
-    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'capture_image');
-    imageAudioPlayer.play(
-      audio,
-      label,
-      markers,
-      (id, cap) => window.electronAPI.captureImageAudios.updateCaption(id, cap),
-      'quick_capture_image_audio',
-    );
-  }, [imageAudioPlayer]);
-
-  const handlePlayCaptureAudio = useCallback(async (audio: import('../../types').QuickCaptureAudio, label: string) => {
-    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'quick_capture_audio');
-    captureAudioPlayer.play(
-      audio,
-      label,
-      markers,
-      (id, cap) => window.electronAPI.quickCaptures.updateAudioCaption(id, cap),
-    );
-  }, [captureAudioPlayer]);
-
-  const handleRecordForCaptureImage = useCallback((imageId: number) => {
-    if (!currentLightboxImage) return;
-    audioRecording.startRecording({
-      type: 'capture_image',
-      captureImageId: imageId,
-      label: currentLightboxImage.caption || 'Capture Image',
-    });
-  }, [currentLightboxImage, audioRecording]);
-
-  const handleDeleteCaptureImageAudio = useCallback(async (audioId: number, imageId: number) => {
-    await window.electronAPI.captureImageAudios.delete(audioId);
-    setCaptureImageAudiosMap(prev => ({
-      ...prev,
-      [imageId]: (prev[imageId] ?? []).filter(a => a.id !== audioId),
-    }));
-  }, []);
-
-  const handleUpdateCaptureImageAudioCaption = useCallback(async (audioId: number, imageId: number, cap: string | null) => {
-    await window.electronAPI.captureImageAudios.updateCaption(audioId, cap);
-    setCaptureImageAudiosMap(prev => ({
-      ...prev,
-      [imageId]: (prev[imageId] ?? []).map(a => a.id === audioId ? { ...a, caption: cap } : a),
-    }));
-  }, []);
 
   const handleReorder = async (orderedIds: number[]) => {
     setLocalImages(prev => orderedIds.map(id => prev.find(img => img.id === id)!));
@@ -238,161 +45,6 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   const handleDeleteImage = async (imageId: number) => {
     setLocalImages(prev => prev.filter(img => img.id !== imageId));
     await window.electronAPI.quickCaptures.deleteImage(imageId);
-  };
-
-  const handleDeleteAudio = async (audioId: number) => {
-    setLocalAudios(prev => prev.filter(a => a.id !== audioId));
-    await window.electronAPI.quickCaptures.deleteAudio(audioId);
-  };
-
-  // Single: paste one image from clipboard via Electron native clipboard
-  const handleAddImage = async () => {
-    const result = await window.electronAPI.clipboard.readImage();
-    if (!result.success || !result.buffer) return;
-    const buf = result.buffer as unknown as ArrayBuffer;
-    const saved = await window.electronAPI.quickCaptures.addImage(capture.id, buf, result.extension);
-    setLocalImages(prev => [...prev, { ...saved, color: null as DurationColor, group_color: null as DurationGroupColor }]);
-  };
-
-  // Batch: pick multiple image files from disk
-  const handlePickImages = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.multiple = true;
-    input.onchange = async () => {
-      if (!input.files) return;
-      for (const file of Array.from(input.files)) {
-        const buf = await file.arrayBuffer();
-        const ext = file.name.split('.').pop() || 'png';
-        const saved = await window.electronAPI.quickCaptures.addImage(capture.id, buf, ext);
-        setLocalImages(prev => [...prev, { ...saved, color: null as DurationColor, group_color: null as DurationGroupColor }]);
-      }
-    };
-    input.click();
-  };
-
-  const handleImageContextMenu = (e: React.MouseEvent, img: SortableImageItem) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // Find the original QuickCaptureImage
-    const original = capture.images.find(i => i.id === img.id) ?? { ...img, capture_id: capture.id, sort_order: 0, created_at: '' } as QuickCaptureImage;
-    setContextMenu({ kind: 'image', item: original, x: e.clientX, y: e.clientY });
-  };
-
-  const handleAudioContextMenu = (e: React.MouseEvent, audio: QuickCaptureAudio) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({ kind: 'audio', item: audio, x: e.clientX, y: e.clientY });
-  };
-
-  const openCaptionModal = (state: CaptionModalState) => {
-    setContextMenu(null);
-    setCaptionModal(state);
-    setCaptionText(state?.current ?? '');
-  };
-
-  const saveCaption = async () => {
-    if (!captionModal) return;
-    const trimmed = captionText.trim() || null;
-    if (captionModal.kind === 'image') {
-      const updated = await window.electronAPI.quickCaptures.updateImageCaption(captionModal.id, trimmed);
-      setLocalImages(prev => prev.map(img => img.id === captionModal.id ? { ...img, caption: updated.caption } : img));
-    } else {
-      const updated = await window.electronAPI.quickCaptures.updateAudioCaption(captionModal.id, trimmed);
-      setLocalAudios(prev => prev.map(a => a.id === captionModal.id ? { ...a, caption: updated.caption } : a));
-    }
-    setCaptionModal(null);
-  };
-
-  const handleLightboxEditCaption = () => {
-    if (lightboxIndex === null) return;
-    const img = localImages[lightboxIndex];
-    setCaptionModal({ kind: 'image', id: img.id, current: img.caption });
-    setCaptionText(img.caption ?? '');
-  };
-
-  const handleLightboxDeleteImage = async () => {
-    if (lightboxIndex === null) return;
-    const img = localImages[lightboxIndex];
-    if (!window.confirm('Delete this image?')) return;
-    const newImages = localImages.filter(i => i.id !== img.id);
-    setLocalImages(newImages);
-    if (newImages.length === 0) {
-      setLightboxIndex(null);
-      setCaptureImageAudiosMap({});
-    } else {
-      setLightboxIndex(Math.min(lightboxIndex, newImages.length - 1));
-    }
-    await window.electronAPI.quickCaptures.deleteImage(img.id);
-  };
-
-  const handleLightboxReplaceWithClipboard = async () => {
-    if (lightboxIndex === null) return;
-    const img = localImages[lightboxIndex];
-    if (!img?.id) return;
-    const result = await window.electronAPI.clipboard.readImage();
-    if (!result.success || !result.buffer) {
-      alert('No image found in clipboard. Copy an image first.');
-      return;
-    }
-    const updated = await window.electronAPI.quickCaptures.replaceImageFromClipboard(img.id, result.buffer, result.extension || 'png');
-    setLocalImages(prev => prev.map(i => i.id === updated.id ? { ...i, file_path: updated.file_path, thumbnail_path: updated.thumbnail_path } : i));
-  };
-
-  const handleImageContextMenu = (e: React.MouseEvent, img: SortableImageItem) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // Find the original QuickCaptureImage
-    const original = capture.images.find(i => i.id === img.id) ?? { ...img, capture_id: capture.id, sort_order: 0, created_at: '' } as QuickCaptureImage;
-    setContextMenu({ kind: 'image', item: original, x: e.clientX, y: e.clientY });
-  };
-
-  const handleAudioContextMenu = (e: React.MouseEvent, audio: QuickCaptureAudio) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({ kind: 'audio', item: audio, x: e.clientX, y: e.clientY });
-  };
-
-  const openCaptionModal = (state: CaptionModalState) => {
-    setContextMenu(null);
-    setCaptionModal(state);
-    setCaptionText(state?.current ?? '');
-  };
-
-  const saveCaption = async () => {
-    if (!captionModal) return;
-    const trimmed = captionText.trim() || null;
-    if (captionModal.kind === 'image') {
-      const updated = await window.electronAPI.quickCaptures.updateImageCaption(captionModal.id, trimmed);
-      setLocalImages(prev => prev.map(img => img.id === captionModal.id ? { ...img, caption: updated.caption } : img));
-    } else {
-      const updated = await window.electronAPI.quickCaptures.updateAudioCaption(captionModal.id, trimmed);
-      setLocalAudios(prev => prev.map(a => a.id === captionModal.id ? { ...a, caption: updated.caption } : a));
-    }
-    setCaptionModal(null);
-  };
-
-  const handleLightboxEditCaption = () => {
-    if (lightboxIndex === null) return;
-    const img = localImages[lightboxIndex];
-    setCaptionModal({ kind: 'image', id: img.id, current: img.caption });
-    setCaptionText(img.caption ?? '');
-  };
-
-  const handleLightboxDeleteImage = async () => {
-    if (lightboxIndex === null) return;
-    const img = localImages[lightboxIndex];
-    if (!window.confirm('Delete this image?')) return;
-    const newImages = localImages.filter(i => i.id !== img.id);
-    setLocalImages(newImages);
-    if (newImages.length === 0) {
-      setLightboxIndex(null);
-      setCaptureImageAudiosMap({});
-    } else {
-      setLightboxIndex(Math.min(lightboxIndex, newImages.length - 1));
-    }
-    await window.electronAPI.quickCaptures.deleteImage(img.id);
   };
 
   return (
@@ -443,73 +95,43 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
 
       {/* ── Images section ── */}
       {localImages.length > 0 && (
-        <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
-              Images ({localImages.length})
-            </h3>
-            <button
-              onClick={handlePickImages}
-              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
-            >
-              📂 Add
-            </button>
-          </div>
+        <div className="mb-3 p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg">
+          <h3 className="text-sm font-medium text-violet-700 dark:text-violet-300 mb-2">
+            Images ({localImages.length})
+          </h3>
           <SortableImageGrid
             images={localImages}
-            gridClassName="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1"
+            gridClassName="flex flex-wrap gap-2"
             colorOverrides={{}}
             groupColorOverrides={{}}
             colorKeyPrefix="qcImg"
-            captionColorClass="text-blue-600 dark:text-blue-400"
-            onImageClick={openLightbox}
-            onContextMenu={handleImageContextMenu}
-            onDelete={(id) => setPendingDelete({ kind: 'image', id })}
+            captionColorClass="text-violet-600 dark:text-violet-400"
+            onImageClick={setLightboxIndex}
+            onDelete={handleDeleteImage}
             onReorder={handleReorder}
-            audioCountMap={Object.fromEntries(localImages.map(img => [img.id, (captureImageAudiosMap[img.id] ?? []).length]))}
-            tagCountMap={imageTagCountMap}
-            tagNamesMap={imageTagNamesMap}
-            childCountMap={imageChildCountMap}
-            ocrMap={Object.fromEntries(localImages.map(img => [img.id, !!img.caption2]))}
-            imageColorsMap={imageColorsMap}
-            pastePlaceholder={
-              <div className="flex flex-col items-center">
-                <div className="relative w-full">
-                  <div
-                    className="aspect-square rounded-lg border-2 border-dashed border-blue-300 dark:border-blue-600
-                               bg-blue-50/50 dark:bg-blue-900/10 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500
-                               hover:bg-blue-100/50 dark:hover:bg-blue-900/20 transition-colors flex items-center justify-center"
-                    onClick={handleAddImage}
-                  >
-                    <svg className="w-8 h-8 text-blue-300 dark:text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-            }
           />
         </div>
       )}
 
       {/* ── Audio section ── */}
-      {localAudios.length > 0 && (
-        <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
-          <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2">
-            Audio ({localAudios.length})
+      {capture.audios.length > 0 && (
+        <div className="mb-3 p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg">
+          <h3 className="text-sm font-medium text-violet-700 dark:text-violet-300 mb-2">
+            Audio ({capture.audios.length})
           </h3>
           <div className="space-y-2">
-            {localAudios.map((audio, idx) => (
+            {capture.audios.map((audio, idx) => (
               <AudioRow
                 key={audio.id}
                 index={idx}
+                src={window.electronAPI.paths.getFileUrl(audio.file_path)}
                 caption={audio.caption}
-                createdAt={audio.created_at}
-                markers={audioMarkersMap[audio.id] ?? []}
-                onPlayInBar={() => handlePlayCaptureAudio(audio, audio.caption || `Audio ${idx + 1}`)}
-                onContextMenu={(e) => handleAudioContextMenu(e, audio)}
-                tagCount={audioTagCountMap[audio.id] ?? 0}
-                colors={audioColorsMap[audio.id] ?? []}
+                audioRef={(el) => { audioRefs.current[idx] = el; }}
+                onPlay={() => {
+                  audioRefs.current.forEach((el, i) => {
+                    if (i !== idx && el) el.pause();
+                  });
+                }}
               />
             ))}
           </div>
@@ -522,7 +144,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
           {capture.tags.map(tag => (
             <span
               key={tag}
-              className="px-2 py-0.5 text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-full border border-blue-200 dark:border-blue-700/50"
+              className="px-2 py-0.5 text-xs bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 rounded-full border border-violet-200 dark:border-violet-700/50"
             >
               {tag}
             </span>
@@ -535,292 +157,112 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
         <ImageLightbox
           images={localImages}
           selectedIndex={lightboxIndex}
-          onClose={() => {
-            setLightboxIndex(null);
-            setCaptureImageAudiosMap({});
-            // Refresh child counts in case children were added/removed in lightbox
-            Promise.all(
-              localImages.map(async img => {
-                const children = await window.electronAPI.imageChildren.getByParent('quick_capture_image', img.id);
-                return [img.id, children.length] as const;
-              })
-            ).then(entries => setImageChildCountMap(Object.fromEntries(entries)));
-          }}
+          onClose={() => setLightboxIndex(null)}
           onNavigate={setLightboxIndex}
-          mediaType="quick_capture_image"
-          imageAudiosMap={captureImageAudiosMap}
-          onPlayImageAudio={handlePlayCaptureImageAudio}
-          onRecordForImage={handleRecordForCaptureImage}
-          onDeleteImageAudio={handleDeleteCaptureImageAudio}
-          onUpdateImageAudioCaption={handleUpdateCaptureImageAudioCaption}
-          onReplaceWithClipboard={handleLightboxReplaceWithClipboard}
-          onEditCaption={handleLightboxEditCaption}
-          onDelete={handleLightboxDeleteImage}
-          onExtractOcr={lightboxIndex !== null && localImages[lightboxIndex]?.id ? async () => {
-            const img = localImages[lightboxIndex!];
-            await window.electronAPI.ocr.extractCaption2('quick_capture_image', img.id, img.file_path);
-          } : undefined}
         />
-      )}
-
-      {/* ── Context Menu ── */}
-      {contextMenu && (
-        <div
-          className="fixed z-50 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-lg shadow-lg py-1 min-w-[150px]"
-          style={{
-            left: Math.min(contextMenu.x, window.innerWidth - 170),
-            top: Math.min(contextMenu.y, window.innerHeight - 120),
-          }}
-          onMouseDown={e => e.stopPropagation()}
-        >
-          <button
-            className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
-            onClick={() => openCaptionModal({
-              kind: contextMenu.kind,
-              id: contextMenu.item.id,
-              current: contextMenu.item.caption,
-            })}
-          >
-            <span>✏️</span> Add Caption
-          </button>
-          {contextMenu.kind === 'audio' && (
-            contextMenuShowColors ? (
-              <div className="px-2 py-2">
-                <div className="grid grid-cols-5 gap-1">
-                  {IMAGE_COLOR_KEYS.map(key => {
-                    const active = (audioColorsMap[contextMenu.item.id] ?? []).includes(key);
-                    return (
-                      <button
-                        key={key}
-                        title={IMAGE_COLORS[key].label}
-                        onMouseDown={async (e) => {
-                          e.stopPropagation();
-                          const updated = await window.electronAPI.mediaColors.toggle('quick_capture_audio', contextMenu.item.id, key);
-                          setAudioColorsMap(prev => ({ ...prev, [contextMenu.item.id]: updated }));
-                        }}
-                        className="w-6 h-6 rounded-full flex items-center justify-center border-2 transition-transform hover:scale-110"
-                        style={{
-                          backgroundColor: IMAGE_COLORS[key].hex,
-                          borderColor: active ? 'white' : 'transparent',
-                        }}
-                      >
-                        {active && <span className="text-white text-[10px] font-bold">✓</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <button
-                className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
-                onMouseDown={(e) => { e.stopPropagation(); setContextMenuShowColors(true); }}
-              >
-                <span>🎨</span> Colors
-              </button>
-            )
-          )}
-          <button
-            className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
-            onClick={() => {
-              setContextMenu(null);
-              setTagModal({ kind: contextMenu.kind, id: contextMenu.item.id });
-            }}
-          >
-            <span>🏷️</span> Tags
-          </button>
-          {contextMenu.kind === 'image' && (
-            <>
-              <button
-                className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
-                onClick={async () => {
-                  setContextMenu(null);
-                  await window.electronAPI.ocr.extractCaption2('quick_capture_image', contextMenu.item.id, contextMenu.item.file_path);
-                }}
-              >
-                <span>🔍</span> Extract OCR text
-              </button>
-            </>
-          )}
-          <div className="border-t border-gray-100 dark:border-dark-border my-1" />
-          <button
-            className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
-            onClick={() => {
-              const { kind, item } = contextMenu;
-              setContextMenu(null);
-              setPendingDelete({ kind, id: item.id });
-            }}
-          >
-            <span>🗑️</span> Delete
-          </button>
-        </div>
-      )}
-
-      {/* ── Caption Modal ── */}
-      {captionModal && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50"
-          onClick={() => setCaptionModal(null)}
-        >
-          <div
-            className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[360px] max-w-[90vw] p-5"
-            onClick={e => e.stopPropagation()}
-          >
-            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">
-              ✏️ {captionModal.kind === 'image' ? 'Image' : 'Audio'} Caption
-            </p>
-            <input
-              type="text"
-              autoFocus
-              value={captionText}
-              onChange={e => setCaptionText(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') saveCaption(); if (e.key === 'Escape') setCaptionModal(null); }}
-              placeholder="Add a caption…"
-              className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 outline-none focus:border-blue-400 dark:focus:border-blue-500"
-            />
-            <div className="flex justify-end gap-2 mt-3">
-              <button
-                onClick={() => setCaptionModal(null)}
-                className="px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-dark-hover rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveCaption}
-                className="px-3 py-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Tag Modal ── */}
-      {tagModal && (
-        <TagModal
-          mediaType={tagModal.kind === 'image' ? 'quick_capture_image' : 'quick_capture_audio'}
-          mediaId={tagModal.id}
-          title={tagModal.kind === 'image' ? 'Image Tags' : 'Audio Tags'}
-          onClose={() => { setTagModal(null); fetchTagCounts(); }}
-        />
-      )}
-
-      {/* ── Delete confirmation modal ── */}
-      {pendingDelete && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50"
-          onClick={() => setPendingDelete(null)}
-        >
-          <div
-            className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[320px] max-w-[90vw] p-5 flex flex-col items-center gap-4"
-            onClick={e => e.stopPropagation()}
-          >
-            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 text-center">
-              Delete this {pendingDelete.kind}?<br />
-              <span className="text-xs font-normal text-gray-400">This cannot be undone.</span>
-            </p>
-            <div className="flex gap-3 w-full">
-              <button
-                onClick={() => setPendingDelete(null)}
-                className="flex-1 py-2 rounded-lg bg-gray-100 dark:bg-dark-hover text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const { kind, id } = pendingDelete;
-                  setPendingDelete(null);
-                  if (kind === 'image') handleDeleteImage(id);
-                  else handleDeleteAudio(id);
-                }}
-                className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
 }
 
 // ── Inline audio row ──────────────────────────────────────────────
-const AUDIO_ROW_MARKERS = [
-  { type: 'important' as const, icon: '❗', color: 'text-red-400 bg-red-900/30 border-red-800/40' },
-  { type: 'question' as const, icon: '❓', color: 'text-blue-400 bg-blue-900/30 border-blue-800/40' },
-  { type: 'similar_question' as const, icon: '↔', color: 'text-purple-400 bg-purple-900/30 border-purple-800/40' },
-];
-
 interface AudioRowProps {
   index: number;
+  src: string;
   caption: string | null;
-  createdAt: string;
-  markers: import('../../types').AudioMarker[];
-  onPlayInBar: () => void;
-  onContextMenu: (e: React.MouseEvent) => void;
-  tagCount?: number;
-  colors?: string[];
+  audioRef: (el: HTMLAudioElement | null) => void;
+  onPlay: () => void;
 }
 
-function AudioRow({ index, caption, createdAt, markers, onPlayInBar, onContextMenu, tagCount = 0, colors = [] }: AudioRowProps) {
+function AudioRow({ index, src, caption, audioRef, onPlay }: AudioRowProps) {
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const ref = useRef<HTMLAudioElement | null>(null);
+
+  const setRef = (el: HTMLAudioElement | null) => {
+    ref.current = el;
+    audioRef(el);
+  };
+
+  const togglePlay = () => {
+    const el = ref.current;
+    if (!el) return;
+    if (playing) {
+      el.pause();
+    } else {
+      onPlay();
+      el.play();
+    }
+  };
+
+  const fmt = (s: number) => {
+    const m = Math.floor(s / 60);
+    const ss = Math.floor(s % 60);
+    return `${m}:${ss.toString().padStart(2, '0')}`;
+  };
+
   return (
-    <div
-      className="relative flex items-center gap-2 py-1.5 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30 overflow-hidden"
-      onContextMenu={onContextMenu}
-    >
-      <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+    <div className="flex items-center gap-2 py-1 px-2 rounded-lg bg-violet-900/20 border border-violet-800/30">
+      <span className="w-4 h-4 bg-violet-500/30 border border-violet-400/50 text-violet-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
         {index + 1}
       </span>
 
       <button
-        onClick={onPlayInBar}
-        className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow"
-        title="Play in bottom bar"
+        onClick={togglePlay}
+        className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-violet-600 hover:bg-violet-500 text-white transition-colors shadow"
+        title={playing ? 'Pause' : 'Play'}
       >
-        <svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M8 5v14l11-7z" />
-        </svg>
+        {playing ? (
+          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+          </svg>
+        ) : (
+          <svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        )}
       </button>
 
-      <span className="flex-1 text-xs text-blue-300 truncate">
-        {caption || 'Voice note'}
-      </span>
+      <div className="flex-1 min-w-0">
+        {caption ? (
+          <span className="text-xs text-violet-300 truncate block">{caption}</span>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <div
+              className="flex-1 h-1 bg-violet-800/40 rounded-full cursor-pointer"
+              onClick={e => {
+                const el = ref.current;
+                if (!el || !duration) return;
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                const pct = (e.clientX - rect.left) / rect.width;
+                el.currentTime = pct * duration;
+              }}
+            >
+              <div
+                className="h-full bg-violet-400 rounded-full transition-all"
+                style={{ width: `${progress * 100}%` }}
+              />
+            </div>
+            <span className="text-[10px] text-violet-400 flex-shrink-0">
+              {fmt(duration > 0 ? progress * duration : 0)}/{fmt(duration)}
+            </span>
+          </div>
+        )}
+      </div>
 
-      {/* Marker chips inline */}
-      {markers.length > 0 && AUDIO_ROW_MARKERS.map(({ type, icon, color }) => {
-        const count = markers.filter(m => m.marker_type === type).length;
-        if (count === 0) return null;
-        return (
-          <span
-            key={type}
-            className={`flex-shrink-0 flex items-center gap-0.5 px-1 py-0.5 rounded border text-[10px] font-medium ${color}`}
-          >
-            {icon}{count}
-          </span>
-        );
-      })}
-
-      {tagCount > 0 && (
-        <span className="flex-shrink-0 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-blue-900/40 border border-blue-700/50 text-blue-300 text-[10px] font-medium">
-          🏷️{tagCount}
-        </span>
-      )}
-
-      <span
-        className="text-[10px] text-blue-500 dark:text-blue-600 flex-shrink-0 tabular-nums"
-        title={createdAt}
-      >
-        {relativeTime(createdAt)}
-      </span>
-      {colors.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 flex h-[3px] pointer-events-none">
-          {colors.slice(0, 5).map(key => (
-            <div key={key} className="flex-1 h-full"
-              style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }} />
-          ))}
-        </div>
-      )}
+      <audio
+        ref={setRef}
+        src={src}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setProgress(0); }}
+        onLoadedMetadata={e => setDuration((e.target as HTMLAudioElement).duration)}
+        onTimeUpdate={e => {
+          const el = e.target as HTMLAudioElement;
+          if (el.duration) setProgress(el.currentTime / el.duration);
+        }}
+      />
     </div>
   );
 }

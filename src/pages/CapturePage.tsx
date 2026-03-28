@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import CaptureInput from '../components/capture/CaptureInput';
 import CaptureItem from '../components/capture/CaptureItem';
-import TagSearchSection from '../components/capture/TagSearchSection';
 import type { QuickCapture } from '../types';
 
 export default function CapturePage() {
@@ -19,11 +18,7 @@ export default function CapturePage() {
   useEffect(() => { load(); }, []);
 
   const handleSaved = (capture: QuickCapture) => {
-    setCaptures(prev => {
-      const exists = prev.some(c => c.id === capture.id);
-      if (exists) return prev.map(c => c.id === capture.id ? capture : c);
-      return [capture, ...prev];
-    });
+    setCaptures(prev => [capture, ...prev]);
   };
 
   const handleDelete = async (id: number) => {
@@ -56,7 +51,7 @@ export default function CapturePage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+    <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
       {/* Page header */}
       <div className="flex items-baseline justify-between">
         <div>
@@ -71,9 +66,6 @@ export default function CapturePage() {
           </span>
         )}
       </div>
-
-      {/* Tag search */}
-      <TagSearchSection />
 
       {/* Capture input */}
       <CaptureInput onSaved={handleSaved} />
