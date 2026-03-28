@@ -338,6 +338,39 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     setLocalImages(prev => prev.map(i => i.id === updated.id ? { ...i, file_path: updated.file_path, thumbnail_path: updated.thumbnail_path } : i));
   };
 
+  const handleImageContextMenu = (e: React.MouseEvent, img: SortableImageItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Find the original QuickCaptureImage
+    const original = capture.images.find(i => i.id === img.id) ?? { ...img, capture_id: capture.id, sort_order: 0, created_at: '' } as QuickCaptureImage;
+    setContextMenu({ kind: 'image', item: original, x: e.clientX, y: e.clientY });
+  };
+
+  const handleAudioContextMenu = (e: React.MouseEvent, audio: QuickCaptureAudio) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ kind: 'audio', item: audio, x: e.clientX, y: e.clientY });
+  };
+
+  const openCaptionModal = (state: CaptionModalState) => {
+    setContextMenu(null);
+    setCaptionModal(state);
+    setCaptionText(state?.current ?? '');
+  };
+
+  const saveCaption = async () => {
+    if (!captionModal) return;
+    const trimmed = captionText.trim() || null;
+    if (captionModal.kind === 'image') {
+      const updated = await window.electronAPI.quickCaptures.updateImageCaption(captionModal.id, trimmed);
+      setLocalImages(prev => prev.map(img => img.id === captionModal.id ? { ...img, caption: updated.caption } : img));
+    } else {
+      const updated = await window.electronAPI.quickCaptures.updateAudioCaption(captionModal.id, trimmed);
+      setLocalAudios(prev => prev.map(a => a.id === captionModal.id ? { ...a, caption: updated.caption } : a));
+    }
+    setCaptionModal(null);
+  };
+
   return (
     <div className="bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
 
