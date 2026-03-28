@@ -10,6 +10,8 @@ import {
   DurationVideosOperations,
   DurationAudiosOperations,
   DurationImageAudiosOperations,
+  ImageAudiosOperations,
+  CaptureImageAudiosOperations,
   CodeSnippetsOperations,
   DurationCodeSnippetsOperations,
   SettingsOperations,
@@ -32,6 +34,8 @@ import {
   saveDurationVideoFromFile,
   saveDurationAudioFromBuffer,
   saveDurationImageAudioFromBuffer,
+  saveImageAudioFromBuffer,
+  saveCaptureImageAudioFromBuffer,
   saveAudioAttachmentFromBuffer,
   deleteDurationImages,
   deleteDurationVideos,
@@ -720,6 +724,39 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('imageAudios:updateCaption', async (_, id: number, caption: string | null) => {
     const result = ImageAudiosOperations.updateCaption(id, caption);
+    scheduleSearchReindex();
+    return result;
+  });
+
+  // ============ Capture Image Audios (audio clips attached to quick_capture_images) ============
+  ipcMain.handle('captureImageAudios:getByImage', async (_, captureImageId: number) => {
+    return CaptureImageAudiosOperations.getByImage(captureImageId);
+  });
+
+  ipcMain.handle('captureImageAudios:addFromBuffer', async (_, captureImageId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
+    const { filePath, duration } = await saveCaptureImageAudioFromBuffer(captureImageId, audioBuffer, extension);
+    const result = CaptureImageAudiosOperations.create({
+      capture_image_id: captureImageId,
+      file_path: filePath,
+      caption: null,
+      duration: duration,
+      sort_order: CaptureImageAudiosOperations.getMaxSortOrder(captureImageId) + 1,
+    });
+    scheduleSearchReindex();
+    return result;
+  });
+
+  ipcMain.handle('captureImageAudios:delete', async (_, id: number) => {
+    const audio = CaptureImageAudiosOperations.getById(id);
+    if (audio) {
+      await deleteFile((audio as { file_path: string }).file_path);
+    }
+    CaptureImageAudiosOperations.delete(id);
+    scheduleSearchReindex();
+  });
+
+  ipcMain.handle('captureImageAudios:updateCaption', async (_, id: number, caption: string | null) => {
+    const result = CaptureImageAudiosOperations.updateCaption(id, caption);
     scheduleSearchReindex();
     return result;
   });
@@ -1718,14 +1755,17 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('tags:setForMedia', async (_, mediaType: string, mediaId: number, tagNames: string[]) => {
     TagOperations.setForMedia(mediaType as import('../../src/types').MediaTagType, mediaId, tagNames);
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('tags:rename', async (_, oldName: string, newName: string) => {
     TagOperations.rename(oldName, newName);
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('tags:delete', async (_, tagId: number) => {
     TagOperations.delete(tagId);
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('tags:getMediaByTag', async (_, mediaType: string, tagName: string) => {

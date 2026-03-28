@@ -674,6 +674,29 @@ function runMigrations(db: Database.Database): void {
     console.log('Added last_searched_at column to tags table');
   }
 
+  // Migration: Remove restrictive CHECK constraint from media_tags so quick_capture types are allowed
+  const mediaTagsSchema = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='media_tags'"
+  ).get() as { sql: string } | undefined;
+  if (mediaTagsSchema?.sql?.includes("CHECK(media_type IN")) {
+    db.exec(`
+      CREATE TABLE media_tags_new (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        tag_id     INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+        media_type TEXT NOT NULL,
+        media_id   INTEGER NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tag_id, media_type, media_id)
+      );
+      INSERT INTO media_tags_new SELECT * FROM media_tags;
+      DROP TABLE media_tags;
+      ALTER TABLE media_tags_new RENAME TO media_tags;
+      CREATE INDEX idx_media_tags_tag   ON media_tags(tag_id);
+      CREATE INDEX idx_media_tags_media ON media_tags(media_type, media_id);
+    `);
+    console.log('Migrated media_tags: removed CHECK constraint on media_type');
+  }
+
   // Migration: Create quick_captures tables
   const quickCapturesTableExists = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='quick_captures'"
@@ -711,6 +734,26 @@ function runMigrations(db: Database.Database): void {
       CREATE INDEX idx_qc_audios_capture ON quick_capture_audios(capture_id);
     `);
     console.log('Created quick_captures tables');
+  }
+
+  // Migration: Create quick_capture_image_audios table
+  const qcImageAudiosTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='quick_capture_image_audios'"
+  ).get();
+  if (!qcImageAudiosTableExists) {
+    db.exec(`
+      CREATE TABLE quick_capture_image_audios (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        capture_image_id INTEGER NOT NULL REFERENCES quick_capture_images(id) ON DELETE CASCADE,
+        file_path        TEXT NOT NULL,
+        caption          TEXT,
+        duration         REAL,
+        sort_order       INTEGER NOT NULL DEFAULT 0,
+        created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_qci_audios_image ON quick_capture_image_audios(capture_image_id);
+    `);
+    console.log('Created quick_capture_image_audios table');
   }
 
   console.log('Database migrations completed');
@@ -844,6 +887,25 @@ export function rebuildSearchIndex(): void {
         JOIN durations d ON d.id = di.duration_id
       WHERE dia.caption IS NOT NULL AND dia.caption != ''
     `);
+
+    // Quick capture images: caption + per-image tags from media_tags
+    const qciRows = database.prepare(`
+      SELECT qci.id, qci.capture_id, COALESCE(qci.caption, '') as caption
+      FROM quick_capture_images qci
+    `).all() as Array<{ id: number; capture_id: number; caption: string }>;
+    const qciTagsStmt = database.prepare(`
+      SELECT t.name FROM tags t
+      JOIN media_tags mt ON mt.tag_id = t.id
+      WHERE mt.media_type = 'quick_capture_image' AND mt.media_id = ?
+    `);
+    const qciInsert = database.prepare(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      VALUES ('quick_capture_image', ?, ?, ?)
+    `);
+    for (const row of qciRows) {
+      const tagNames = (qciTagsStmt.all(row.id) as Array<{ name: string }>).map(t => t.name).join(' ');
+      qciInsert.run(row.id, row.capture_id, `${row.caption} ${tagNames}`.trim());
+    }
 
     // Audio markers: caption + marker_type — parent_id computed per audio_type
     const audioMarkers = database.prepare('SELECT id, audio_id, audio_type, marker_type, caption FROM audio_markers WHERE caption IS NOT NULL AND caption != \'\'').all() as Array<{id: number, audio_id: number, audio_type: string, marker_type: string, caption: string}>;

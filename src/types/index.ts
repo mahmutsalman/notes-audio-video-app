@@ -159,6 +159,28 @@ export interface DurationImageAudio {
   created_at: string;
 }
 
+export interface ImageAudio {
+  id: number;
+  image_id: number;
+  file_path: string;
+  caption: string | null;
+  duration: number | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface QuickCaptureImageAudio {
+  id: number;
+  capture_image_id: number;
+  file_path: string;
+  caption: string | null;
+  duration: number | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export type AnyImageAudio = DurationImageAudio | ImageAudio | QuickCaptureImageAudio;
+
 // Screen Recording types
 
 export type ScreenResolution = '480p' | '720p' | '1080p';
@@ -275,7 +297,7 @@ export type AudioMarkerType = 'important' | 'question' | 'similar_question';
 export interface AudioMarker {
   id: number;
   audio_id: number;
-  audio_type: 'duration' | 'duration_image';
+  audio_type: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'capture_image';
   marker_type: AudioMarkerType;
   start_time: number;
   end_time: number | null;
@@ -465,6 +487,18 @@ export interface ElectronAPI {
     addFromBuffer: (durationImageId: number, durationId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<DurationImageAudio>;
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<DurationImageAudio>;
+  };
+  imageAudios: {
+    getByImage: (imageId: number) => Promise<ImageAudio[]>;
+    addFromBuffer: (imageId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<ImageAudio>;
+    delete: (id: number) => Promise<void>;
+    updateCaption: (id: number, caption: string | null) => Promise<ImageAudio>;
+  };
+  captureImageAudios: {
+    getByImage: (captureImageId: number) => Promise<QuickCaptureImageAudio[]>;
+    addFromBuffer: (captureImageId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<QuickCaptureImageAudio>;
+    delete: (id: number) => Promise<void>;
+    updateCaption: (id: number, caption: string | null) => Promise<QuickCaptureImageAudio>;
   };
   durationAudios: {
     getByDuration: (durationId: number) => Promise<DurationAudio[]>;
@@ -657,7 +691,7 @@ export interface ElectronAPI {
     upload: () => Promise<{ success: boolean; output?: string; error?: string; stderr?: string }>;
   };
   audioMarkers: {
-    getByAudio: (audioId: number, audioType: 'duration' | 'duration_image') => Promise<AudioMarker[]>;
+    getByAudio: (audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'capture_image') => Promise<AudioMarker[]>;
     addBatch: (markers: Omit<AudioMarker, 'id' | 'created_at'>[]) => Promise<AudioMarker[]>;
     updateCaption: (markerId: number, caption: string | null) => Promise<AudioMarker>;
   };
@@ -697,7 +731,8 @@ export interface GlobalSearchResult {
   content_type: 'topic' | 'recording' | 'duration' | 'image' | 'video' | 'audio'
     | 'duration_image' | 'duration_video' | 'duration_audio'
     | 'code_snippet' | 'duration_code_snippet'
-    | 'audio_marker' | 'duration_image_audio' | 'image_audio';
+    | 'audio_marker' | 'duration_image_audio' | 'image_audio'
+    | 'quick_capture_image';
   source_id: number;
   parent_id: number;
   snippet: string;
@@ -761,11 +796,20 @@ export interface TaggedMediaDurationAudio extends TaggedMediaAudio {
   duration_id: number;
 }
 
+export interface TaggedCaptureImage {
+  id: number;
+  capture_id: number;
+  file_path: string;
+  thumbnail_path: string | null;
+  caption: string | null;
+}
+
 export interface TaggedItems {
   images: TaggedMediaImage[];
   duration_images: TaggedMediaDurationImage[];
   audios: TaggedMediaAudio[];
   duration_audios: TaggedMediaDurationAudio[];
+  capture_images: TaggedCaptureImage[];
 }
 
 // Quick Capture types

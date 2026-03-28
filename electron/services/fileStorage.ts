@@ -33,6 +33,7 @@ export async function ensureMediaDirs(): Promise<void> {
     path.join(mediaDir, 'books'),              // Extracted book data (JSON) for reader mode
     path.join(mediaDir, 'quick_captures', 'images'),
     path.join(mediaDir, 'quick_captures', 'audios'),
+    path.join(mediaDir, 'capture_image_audios'),
   ];
 
   for (const dir of dirs) {
@@ -927,6 +928,23 @@ export async function saveQuickCaptureAudio(
   await fs.writeFile(filePath, Buffer.from(audioBuffer));
 
   return filePath;
+}
+
+export async function saveCaptureImageAudioFromBuffer(
+  captureImageId: number,
+  audioBuffer: ArrayBuffer,
+  extension: string = 'webm'
+): Promise<{ filePath: string; duration: number | null }> {
+  const dir = path.join(getMediaDir(), 'capture_image_audios', String(captureImageId));
+  await fs.mkdir(dir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+
+  await fs.writeFile(filePath, Buffer.from(audioBuffer));
+  console.log('Capture image audio saved to:', filePath);
+
+  return { filePath, duration: null };
 }
 
 export async function deleteQuickCaptureFiles(imagePaths: string[], audioPaths: string[]): Promise<void> {
