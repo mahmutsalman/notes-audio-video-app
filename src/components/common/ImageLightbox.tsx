@@ -113,7 +113,8 @@ export default function ImageLightbox({
 
   // Only show embedded bars when lightbox is in "image audio" mode
   const imageAudioMode = onRecordForImage !== undefined;
-  const showRecordingBar = imageAudioMode && (isRecording || isSaving) && recTarget?.type === 'duration_image';
+  const showRecordingBar = imageAudioMode && (isRecording || isSaving) &&
+    (recTarget?.type === 'duration_image' || recTarget?.type === 'recording_image');
 
   const image = images[selectedIndex];
   const currentImageAudios = (image?.id && imageAudiosMap) ? (imageAudiosMap[image.id] ?? []) : [];
