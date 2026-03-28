@@ -26,6 +26,8 @@ interface ImageLightboxProps {
   onReplaceWithClipboard?: () => void;
   // Caption editing
   onEditCaption?: () => void;
+  // Delete current image
+  onDelete?: () => void;
   // Tag editing
   mediaType?: MediaTagType;
 }
@@ -73,6 +75,7 @@ export default function ImageLightbox({
   onUpdateImageAudioCaption,
   onReplaceWithClipboard,
   onEditCaption,
+  onDelete,
   mediaType,
 }: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
@@ -618,173 +621,6 @@ export default function ImageLightbox({
     }
   }, [imageContextMenu]);
 
-  // SVG mouse handlers (draw mode)
-  const handleSvgMouseDown = useCallback((e: React.MouseEvent<SVGElement>) => {
-    if (!drawMode) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const coords = getSvgCoords(e.clientX, e.clientY);
-    if (!coords) return;
-    isDrawingRef.current = true;
-    drawStartRef.current = coords;
-    setDrawPreview({ x1: coords.x, y1: coords.y, x2: coords.x, y2: coords.y });
-  }, [drawMode, getSvgCoords]);
-
-  // Annotation shape mouse down (view mode — select + start drag)
-  const handleAnnMouseDown = useCallback((e: React.MouseEvent<SVGElement>, annId: number, handle: string | null) => {
-    if (drawMode) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setSelectedAnnId(annId);
-    const coords = getSvgCoords(e.clientX, e.clientY);
-    if (!coords) return;
-    const ann = annotations.find(a => a.id === annId);
-    if (!ann) return;
-    isAnnDragging.current = true;
-    annDragId.current = annId;
-    annDragHandle.current = handle;
-    annAtStart.current = { x1: ann.x1, y1: ann.y1, x2: ann.x2, y2: ann.y2 };
-    annMouseStart.current = coords;
-  }, [drawMode, getSvgCoords, annotations]);
-
-  const deleteAnnotation = useCallback(async (id: number) => {
-    setAnnotations(prev => prev.filter(a => a.id !== id));
-    if (selectedAnnId === id) setSelectedAnnId(null);
-    await window.electronAPI.imageAnnotations.delete(id);
-  }, [selectedAnnId]);
-
-  const clearAllAnnotations = useCallback(async () => {
-    if (!image?.id || !mediaType) return;
-    setAnnotations([]);
-    setSelectedAnnId(null);
-    // Delete each annotation
-    await Promise.all(annotations.map(a => window.electronAPI.imageAnnotations.delete(a.id)));
-  }, [annotations, image?.id, mediaType]);
-
-  // Render a single annotation in the SVG
-  const renderAnnotation = (ann: ImageAnnotation, isPreview = false) => {
-    const isSelected = !isPreview && ann.id === selectedAnnId && !drawMode;
-    const sw = ann.stroke_width ?? STROKE_WIDTH;
-    const hs = HANDLE_SIZE;
-
-    if (ann.ann_type === 'rect') {
-      const x = Math.min(ann.x1, ann.x2);
-      const y = Math.min(ann.y1, ann.y2);
-      const w = Math.abs(ann.x2 - ann.x1);
-      const h = Math.abs(ann.y2 - ann.y1);
-      return (
-        <g key={isPreview ? 'preview' : ann.id}>
-          {/* Invisible wider hit area for selection */}
-          {!isPreview && (
-            <rect
-              x={x} y={y} width={w} height={h}
-              fill="transparent" stroke="transparent" strokeWidth={sw + 3}
-              style={{ cursor: isSelected ? 'move' : 'pointer' }}
-              onMouseDown={(e) => handleAnnMouseDown(e, ann.id, null)}
-            />
-          )}
-          <rect
-            x={x} y={y} width={w} height={h}
-            fill="none"
-            stroke={ann.color}
-            strokeWidth={sw}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ pointerEvents: 'none' }}
-            opacity={isPreview ? 0.6 : 1}
-          />
-          {isSelected && !isPreview && (
-            <>
-              {/* Selection dashes */}
-              <rect
-                x={x} y={y} width={w} height={h}
-                fill="none" stroke="white" strokeWidth={sw * 0.5}
-                strokeDasharray={`${hs * 1.5} ${hs}`}
-                style={{ pointerEvents: 'none' }}
-              />
-              {/* Corner handles */}
-              {([
-                ['tl', x, y],
-                ['tr', x + w, y],
-                ['bl', x, y + h],
-                ['br', x + w, y + h],
-              ] as [string, number, number][]).map(([id, hx, hy]) => (
-                <rect
-                  key={id}
-                  x={hx - hs / 2} y={hy - hs / 2} width={hs} height={hs}
-                  fill="white" stroke={ann.color} strokeWidth={0.3}
-                  style={{ cursor: id === 'tl' || id === 'br' ? 'nwse-resize' : 'nesw-resize' }}
-                  onMouseDown={(e) => handleAnnMouseDown(e, ann.id, id)}
-                />
-              ))}
-              {/* Delete button */}
-              <g
-                style={{ cursor: 'pointer' }}
-                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); deleteAnnotation(ann.id); }}
-              >
-                <circle cx={x + w} cy={y} r={hs * 0.9} fill="#ef4444" />
-                <text x={x + w} y={y} textAnchor="middle" dominantBaseline="central" fontSize={hs * 1.1} fill="white" style={{ pointerEvents: 'none', fontWeight: 'bold' }}>×</text>
-              </g>
-            </>
-          )}
-        </g>
-      );
-    } else {
-      // line
-      return (
-        <g key={isPreview ? 'preview' : ann.id}>
-          {!isPreview && (
-            <line
-              x1={ann.x1} y1={ann.y1} x2={ann.x2} y2={ann.y2}
-              stroke="transparent" strokeWidth={sw + 4}
-              style={{ cursor: isSelected ? 'move' : 'pointer' }}
-              onMouseDown={(e) => handleAnnMouseDown(e, ann.id, null)}
-            />
-          )}
-          <line
-            x1={ann.x1} y1={ann.y1} x2={ann.x2} y2={ann.y2}
-            stroke={ann.color} strokeWidth={sw} strokeLinecap="round"
-            style={{ pointerEvents: 'none' }}
-            opacity={isPreview ? 0.6 : 1}
-          />
-          {isSelected && !isPreview && (
-            <>
-              {/* Endpoints */}
-              {([
-                ['start', ann.x1, ann.y1],
-                ['end', ann.x2, ann.y2],
-              ] as [string, number, number][]).map(([id, hx, hy]) => (
-                <circle
-                  key={id}
-                  cx={hx} cy={hy} r={hs * 0.6}
-                  fill="white" stroke={ann.color} strokeWidth={0.3}
-                  style={{ cursor: 'crosshair' }}
-                  onMouseDown={(e) => handleAnnMouseDown(e, ann.id, id)}
-                />
-              ))}
-              {/* Delete button */}
-              <g
-                style={{ cursor: 'pointer' }}
-                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); deleteAnnotation(ann.id); }}
-              >
-                <circle cx={(ann.x1 + ann.x2) / 2} cy={(ann.y1 + ann.y2) / 2 - hs * 1.2} r={hs * 0.9} fill="#ef4444" />
-                <text x={(ann.x1 + ann.x2) / 2} y={(ann.y1 + ann.y2) / 2 - hs * 1.2} textAnchor="middle" dominantBaseline="central" fontSize={hs * 1.1} fill="white" style={{ pointerEvents: 'none', fontWeight: 'bold' }}>×</text>
-              </g>
-            </>
-          )}
-        </g>
-      );
-    }
-  };
-
-  const imgTransformStyle = {
-    transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
-    transformOrigin: 'center center',
-    cursor: drawMode ? 'crosshair' : (isShiftHeld && mediaType ? 'crosshair' : (scale > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'default')),
-    transition: isDragging.current ? 'none' : 'transform 0.1s ease-out',
-    userSelect: 'none' as const,
-  };
-
   return (
     <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
 
@@ -853,7 +689,7 @@ export default function ImageLightbox({
           onClick={handleImageClick}
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClick}
-          onContextMenu={(onReplaceWithClipboard || onEditCaption || mediaType) ? (e) => {
+          onContextMenu={(onReplaceWithClipboard || onEditCaption || onDelete || mediaType) ? (e) => {
             e.preventDefault();
             e.stopPropagation();
             setImageContextMenu({ x: e.clientX, y: e.clientY });
@@ -980,6 +816,17 @@ export default function ImageLightbox({
                 onClick={() => { setShowTagModal(true); setImageContextMenu(null); }}
               >
                 <span>🏷️</span> Tags
+              </button>
+            )}
+            {onDelete && (mediaType || onEditCaption || onReplaceWithClipboard) && (
+              <div className="border-t border-gray-700 my-1" />
+            )}
+            {onDelete && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2"
+                onClick={() => { setImageContextMenu(null); onDelete(); }}
+              >
+                <span>🗑️</span> Delete
               </button>
             )}
           </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import CaptureInput from '../components/capture/CaptureInput';
 import CaptureItem from '../components/capture/CaptureItem';
+import TagSearchSection from '../components/capture/TagSearchSection';
 import type { QuickCapture } from '../types';
 
 export default function CapturePage() {
@@ -70,6 +71,9 @@ export default function CapturePage() {
           </span>
         )}
       </div>
+
+      {/* Tag search */}
+      <TagSearchSection />
 
       {/* Capture input */}
       <CaptureInput onSaved={handleSaved} />

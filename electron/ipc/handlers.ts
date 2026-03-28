@@ -1834,5 +1834,18 @@ export function setupIpcHandlers(): void {
     if (thumbnailPath && thumbnailPath !== filePath) await fs.unlink(thumbnailPath).catch(() => {});
   });
 
+  ipcMain.handle('quickCaptures:updateImageCaption', async (_, imageId: number, caption: string | null) => {
+    return QuickCaptureOperations.updateImageCaption(imageId, caption);
+  });
+
+  ipcMain.handle('quickCaptures:deleteAudio', async (_, audioId: number) => {
+    const { filePath } = QuickCaptureOperations.deleteAudio(audioId);
+    if (filePath) await fs.unlink(filePath).catch(() => {});
+  });
+
+  ipcMain.handle('quickCaptures:updateAudioCaption', async (_, audioId: number, caption: string | null) => {
+    return QuickCaptureOperations.updateAudioCaption(audioId, caption);
+  });
+
   console.log('IPC handlers registered');
 }

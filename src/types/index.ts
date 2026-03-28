@@ -693,6 +693,9 @@ export interface ElectronAPI {
     cleanup: () => Promise<void>;
     reorderImages: (captureId: number, imageIds: number[]) => Promise<void>;
     deleteImage: (imageId: number) => Promise<void>;
+    updateImageCaption: (imageId: number, caption: string | null) => Promise<QuickCaptureImage>;
+    deleteAudio: (audioId: number) => Promise<void>;
+    updateAudioCaption: (audioId: number, caption: string | null) => Promise<QuickCaptureAudio>;
   };
 }
 
@@ -723,7 +726,7 @@ export interface SearchNavState {
   query: string;
 }
 
-export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio';
+export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio' | 'quick_capture_image' | 'quick_capture_audio';
 
 export interface Tag {
   id: number;

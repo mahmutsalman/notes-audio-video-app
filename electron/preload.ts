@@ -710,6 +710,12 @@ const electronAPI = {
       ipcRenderer.invoke('quickCaptures:reorderImages', captureId, imageIds),
     deleteImage: (imageId: number): Promise<void> =>
       ipcRenderer.invoke('quickCaptures:deleteImage', imageId),
+    updateImageCaption: (imageId: number, caption: string | null): Promise<import('../src/types').QuickCaptureImage> =>
+      ipcRenderer.invoke('quickCaptures:updateImageCaption', imageId, caption),
+    deleteAudio: (audioId: number): Promise<void> =>
+      ipcRenderer.invoke('quickCaptures:deleteAudio', audioId),
+    updateAudioCaption: (audioId: number, caption: string | null): Promise<import('../src/types').QuickCaptureAudio> =>
+      ipcRenderer.invoke('quickCaptures:updateAudioCaption', audioId, caption),
   },
 };
 
