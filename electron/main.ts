@@ -5,6 +5,8 @@ import { initDatabase, closeDatabase } from './database/database';
 import { ensureMediaDirs } from './services/fileStorage';
 import { migrateLegacyBackups } from './services/backupService';
 import { setupIpcHandlers } from './ipc/handlers';
+import { QuickCaptureOperations } from './database/operations';
+import { deleteQuickCaptureFiles } from './services/fileStorage';
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './shortcuts/globalShortcuts';
 import { registerScreenCaptureHandlers, unregisterScreenCaptureHandlers } from './screencapture/ipc-handlers';
 
@@ -49,6 +51,19 @@ async function createWindow(): Promise<void> {
 
   // Setup IPC handlers
   setupIpcHandlers();
+
+  // Cleanup expired quick captures (older than 7 days)
+  try {
+    const expired = QuickCaptureOperations.getExpired();
+    for (const item of expired) {
+      await deleteQuickCaptureFiles(item.imagePaths, item.audioPaths);
+    }
+    if (expired.length > 0) {
+      console.log(`Cleaned up ${expired.length} expired quick capture(s)`);
+    }
+  } catch (err) {
+    console.error('Quick capture cleanup failed:', err);
+  }
 
   // macOS: Ensure app is visible in dock
   if (process.platform === 'darwin' && app.dock) {

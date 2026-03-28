@@ -31,6 +31,8 @@ export async function ensureMediaDirs(): Promise<void> {
     path.join(mediaDir, 'screen_recordings'), // screen recordings
     path.join(mediaDir, 'pdfs'),               // PDF files for book notes
     path.join(mediaDir, 'books'),              // Extracted book data (JSON) for reader mode
+    path.join(mediaDir, 'quick_captures', 'images'),
+    path.join(mediaDir, 'quick_captures', 'audios'),
   ];
 
   for (const dir of dirs) {
@@ -897,4 +899,42 @@ export async function readBookData(bookDataPath: string): Promise<object> {
 export function getFileUrl(filePath: string): string {
   // Convert to file:// URL for use in renderer
   return `file://${filePath}`;
+}
+
+export async function saveQuickCaptureImage(
+  imageBuffer: ArrayBuffer,
+  extension: string = 'png'
+): Promise<{ filePath: string; thumbnailPath: string | null }> {
+  const dir = path.join(getMediaDir(), 'quick_captures', 'images');
+  await fs.mkdir(dir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+  await fs.writeFile(filePath, Buffer.from(imageBuffer));
+
+  return { filePath, thumbnailPath: filePath };
+}
+
+export async function saveQuickCaptureAudio(
+  audioBuffer: ArrayBuffer,
+  extension: string = 'webm'
+): Promise<string> {
+  const dir = path.join(getMediaDir(), 'quick_captures', 'audios');
+  await fs.mkdir(dir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+  await fs.writeFile(filePath, Buffer.from(audioBuffer));
+
+  return filePath;
+}
+
+export async function deleteQuickCaptureFiles(imagePaths: string[], audioPaths: string[]): Promise<void> {
+  for (const p of [...imagePaths, ...audioPaths]) {
+    try {
+      await fs.unlink(p);
+    } catch {
+      // File may already be gone
+    }
+  }
 }

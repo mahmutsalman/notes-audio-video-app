@@ -47,7 +47,7 @@ interface SortableImageGridProps {
   /** Caption Tailwind color class, e.g. "text-violet-600 dark:text-violet-400" */
   captionColorClass: string;
   onImageClick: (index: number) => void;
-  onContextMenu: (e: React.MouseEvent, image: SortableImageItem) => void;
+  onContextMenu?: (e: React.MouseEvent, image: SortableImageItem) => void;
   onDelete: (id: number) => void;
   onReorder: (orderedIds: number[]) => void;
   /** Paste placeholder rendered at the end of the grid (not draggable) */
@@ -68,7 +68,7 @@ interface SortableImageProps {
   groupColorConfig: (typeof DURATION_GROUP_COLORS)[keyof typeof DURATION_GROUP_COLORS] | null;
   captionColorClass: string;
   onImageClick: (index: number) => void;
-  onContextMenu: (e: React.MouseEvent, image: SortableImageItem) => void;
+  onContextMenu?: (e: React.MouseEvent, image: SortableImageItem) => void;
   onDelete: (id: number) => void;
   audioCount?: number;
   isHighlighted?: boolean;
@@ -115,7 +115,7 @@ function SortableImage({
       <div
         className="relative w-full max-w-[160px] cursor-grab active:cursor-grabbing"
         {...listeners}
-        onContextMenu={(e) => onContextMenu(e, image)}
+        onContextMenu={(e) => onContextMenu?.(e, image)}
       >
         {/* Top group color indicator */}
         {groupColorConfig && (

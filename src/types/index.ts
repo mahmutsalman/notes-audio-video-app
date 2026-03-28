@@ -676,6 +676,17 @@ export interface ElectronAPI {
     getItemsByTag: (tagName: string) => Promise<TaggedItems>;
     recordSearch: (tagId: number) => Promise<void>;
   };
+  quickCaptures: {
+    create: (note: string, tags: string[]) => Promise<{ id: number }>;
+    getRecent: () => Promise<QuickCapture[]>;
+    addImage: (captureId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<QuickCaptureImage>;
+    addAudio: (captureId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<QuickCaptureAudio>;
+    delete: (id: number) => Promise<void>;
+    updateTags: (id: number, tags: string[]) => Promise<void>;
+    cleanup: () => Promise<void>;
+    reorderImages: (captureId: number, imageIds: number[]) => Promise<void>;
+    deleteImage: (imageId: number) => Promise<void>;
+  };
 }
 
 export interface GlobalSearchResult {
@@ -751,6 +762,36 @@ export interface TaggedItems {
   duration_images: TaggedMediaDurationImage[];
   audios: TaggedMediaAudio[];
   duration_audios: TaggedMediaDurationAudio[];
+}
+
+// Quick Capture types
+export interface QuickCaptureImage {
+  id: number;
+  capture_id: number;
+  file_path: string;
+  thumbnail_path: string | null;
+  caption: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface QuickCaptureAudio {
+  id: number;
+  capture_id: number;
+  file_path: string;
+  duration: number | null;
+  caption: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface QuickCapture {
+  id: number;
+  note: string | null;
+  tags: string[];
+  created_at: string;
+  images: QuickCaptureImage[];
+  audios: QuickCaptureAudio[];
 }
 
 declare global {

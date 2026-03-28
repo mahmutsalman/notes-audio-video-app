@@ -16,6 +16,7 @@ import {
   AudioMarkersOperations,
   SearchOperations,
   TagOperations,
+  QuickCaptureOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
@@ -40,6 +41,9 @@ import {
   getMediaDir,
   getFileUrl,
   savePdfFile,
+  saveQuickCaptureImage,
+  saveQuickCaptureAudio,
+  deleteQuickCaptureFiles,
 } from '../services/fileStorage';
 import { createBackup, getBackupDir } from '../services/backupService';
 import { mergeAudioFiles } from '../services/audioMerger';
@@ -1734,6 +1738,56 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('tags:recordSearch', async (_, tagId: number) => {
     TagOperations.recordSearch(tagId);
+  });
+
+  // Quick Captures
+  ipcMain.handle('quickCaptures:create', async (_, note: string, tags: string[]) => {
+    console.log('[quickCaptures:create] note=', note, 'tags=', tags);
+    const result = QuickCaptureOperations.create(note, tags);
+    console.log('[quickCaptures:create] inserted id=', result.id);
+    return result;
+  });
+
+  ipcMain.handle('quickCaptures:getRecent', async () => {
+    return QuickCaptureOperations.getRecent();
+  });
+
+  ipcMain.handle('quickCaptures:addImage', async (_, captureId: number, imageBuffer: ArrayBuffer, extension?: string) => {
+    console.log('[quickCaptures:addImage] captureId=', captureId, 'bufferType=', Object.prototype.toString.call(imageBuffer), 'bufferSize=', (imageBuffer as unknown as {byteLength?: number})?.byteLength ?? 'unknown', 'ext=', extension);
+    const { filePath, thumbnailPath } = await saveQuickCaptureImage(imageBuffer, extension);
+    console.log('[quickCaptures:addImage] saved to', filePath);
+    return QuickCaptureOperations.addImage(captureId, filePath, thumbnailPath);
+  });
+
+  ipcMain.handle('quickCaptures:addAudio', async (_, captureId: number, audioBuffer: ArrayBuffer, extension?: string) => {
+    const filePath = await saveQuickCaptureAudio(audioBuffer, extension);
+    return QuickCaptureOperations.addAudio(captureId, filePath);
+  });
+
+  ipcMain.handle('quickCaptures:delete', async (_, id: number) => {
+    const { imagePaths, audioPaths } = QuickCaptureOperations.delete(id);
+    await deleteQuickCaptureFiles(imagePaths, audioPaths);
+  });
+
+  ipcMain.handle('quickCaptures:updateTags', async (_, id: number, tags: string[]) => {
+    QuickCaptureOperations.updateTags(id, tags);
+  });
+
+  ipcMain.handle('quickCaptures:cleanup', async () => {
+    const expired = QuickCaptureOperations.getExpired();
+    for (const item of expired) {
+      await deleteQuickCaptureFiles(item.imagePaths, item.audioPaths);
+    }
+  });
+
+  ipcMain.handle('quickCaptures:reorderImages', async (_, captureId: number, imageIds: number[]) => {
+    QuickCaptureOperations.reorderImages(captureId, imageIds);
+  });
+
+  ipcMain.handle('quickCaptures:deleteImage', async (_, imageId: number) => {
+    const { filePath, thumbnailPath } = QuickCaptureOperations.deleteImage(imageId);
+    if (filePath) await fs.unlink(filePath).catch(() => {});
+    if (thumbnailPath && thumbnailPath !== filePath) await fs.unlink(thumbnailPath).catch(() => {});
   });
 
   console.log('IPC handlers registered');
