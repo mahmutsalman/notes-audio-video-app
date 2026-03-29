@@ -730,9 +730,11 @@ function AudioRow({ index, caption, createdAt, markers, onPlayInBar, onContextMe
       className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30"
       onContextMenu={onContextMenu}
     >
-      <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-        {index + 1}
-      </span>
+      {/* Top row: index + play + label + timestamp */}
+      <div className="flex items-center gap-2">
+        <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+          {index + 1}
+        </span>
 
       <button
         onClick={onPlayInBar}
