@@ -17,6 +17,7 @@ import type {
   AudioMarker,
   Tag,
   MediaTagType,
+  ImageAnnotation,
 } from '../../src/types';
 
 // Helper to parse tags from JSON string
@@ -1898,5 +1899,65 @@ export const ImageChildAudiosOperations = {
       FROM image_child_audios WHERE image_child_id = ?
     `).get(imageChildId) as { max_order: number };
     return result.max_order;
+  },
+};
+
+export const ImageAnnotationsOperations = {
+  getByImage(imageType: string, imageId: number) {
+    const db = getDatabase();
+    return db.prepare(
+      'SELECT * FROM image_annotations WHERE image_type = ? AND image_id = ? ORDER BY created_at ASC'
+    ).all(imageType, imageId) as ImageAnnotation[];
+  },
+
+  getById(id: number) {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM image_annotations WHERE id = ?').get(id) as ImageAnnotation | null;
+  },
+
+  create(data: {
+    image_type: string;
+    image_id: number;
+    ann_type: 'rect' | 'line';
+    x1: number; y1: number; x2: number; y2: number;
+    color: string;
+    stroke_width: number;
+  }) {
+    const db = getDatabase();
+    const result = db.prepare(`
+      INSERT INTO image_annotations (image_type, image_id, ann_type, x1, y1, x2, y2, color, stroke_width)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      data.image_type, data.image_id, data.ann_type,
+      data.x1, data.y1, data.x2, data.y2,
+      data.color, data.stroke_width
+    );
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  update(id: number, partial: { x1?: number; y1?: number; x2?: number; y2?: number; color?: string; stroke_width?: number }) {
+    const db = getDatabase();
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    if (partial.x1 !== undefined) { fields.push('x1 = ?'); values.push(partial.x1); }
+    if (partial.y1 !== undefined) { fields.push('y1 = ?'); values.push(partial.y1); }
+    if (partial.x2 !== undefined) { fields.push('x2 = ?'); values.push(partial.x2); }
+    if (partial.y2 !== undefined) { fields.push('y2 = ?'); values.push(partial.y2); }
+    if (partial.color !== undefined) { fields.push('color = ?'); values.push(partial.color); }
+    if (partial.stroke_width !== undefined) { fields.push('stroke_width = ?'); values.push(partial.stroke_width); }
+    if (fields.length === 0) return this.getById(id)!;
+    values.push(id);
+    db.prepare(`UPDATE image_annotations SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    return this.getById(id)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM image_annotations WHERE id = ?').run(id);
+  },
+
+  deleteByImage(imageType: string, imageId: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM image_annotations WHERE image_type = ? AND image_id = ?').run(imageType, imageId);
   },
 };

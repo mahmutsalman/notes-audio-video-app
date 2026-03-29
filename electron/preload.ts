@@ -762,6 +762,21 @@ const electronAPI = {
     updateCaption: (id: number, caption: string | null): Promise<import('../src/types').ImageChildAudio> =>
       ipcRenderer.invoke('imageChildAudios:updateCaption', id, caption),
   },
+
+  // Image Annotations
+  imageAnnotations: {
+    getByImage: (imageType: string, imageId: number): Promise<import('../src/types').ImageAnnotation[]> =>
+      ipcRenderer.invoke('imageAnnotations:getByImage', imageType, imageId),
+    create: (data: {
+      image_type: string; image_id: number; ann_type: 'rect' | 'line';
+      x1: number; y1: number; x2: number; y2: number; color: string; stroke_width: number;
+    }): Promise<import('../src/types').ImageAnnotation> =>
+      ipcRenderer.invoke('imageAnnotations:create', data),
+    update: (id: number, partial: { x1?: number; y1?: number; x2?: number; y2?: number; color?: string }): Promise<import('../src/types').ImageAnnotation> =>
+      ipcRenderer.invoke('imageAnnotations:update', id, partial),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('imageAnnotations:delete', id),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
