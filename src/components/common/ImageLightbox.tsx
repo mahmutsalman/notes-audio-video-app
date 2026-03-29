@@ -188,6 +188,14 @@ export default function ImageLightbox({
   // Size of the actual image content within the <img> element (accounting for object-contain letterboxing)
   const [displayedSize, setDisplayedSize] = useState<{ w: number; h: number } | null>(null);
 
+  // Child images state
+  const [imageChildren, setImageChildren] = useState<ImageChild[]>([]);
+  const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
+  const [childAudiosMap, setChildAudiosMap] = useState<Record<number, ImageChildAudio[]>>({});
+  const [childTagCountMap, setChildTagCountMap] = useState<Record<number, number>>({});
+  const [pendingDeleteChild, setPendingDeleteChild] = useState<number | null>(null);
+  const [childCaptionEdit, setChildCaptionEdit] = useState<{ childId: number; value: string } | null>(null);
+
   const imageRef = useRef<HTMLImageElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);

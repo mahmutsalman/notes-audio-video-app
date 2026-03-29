@@ -785,6 +785,19 @@ export interface ElectronAPI {
       filePath: string
     ) => Promise<string>;
   };
+  imageChildren: {
+    getByParent: (parentType: string, parentId: number) => Promise<ImageChild[]>;
+    addFromClipboard: (parentType: string, parentId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<ImageChild>;
+    delete: (id: number) => Promise<void>;
+    updateCaption: (id: number, caption: string | null) => Promise<ImageChild>;
+    reorder: (parentType: string, parentId: number, orderedIds: number[]) => Promise<void>;
+  };
+  imageChildAudios: {
+    getByChild: (imageChildId: number) => Promise<ImageChildAudio[]>;
+    addFromBuffer: (imageChildId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<ImageChildAudio>;
+    delete: (id: number) => Promise<void>;
+    updateCaption: (id: number, caption: string | null) => Promise<ImageChildAudio>;
+  };
 }
 
 export interface GlobalSearchResult {
