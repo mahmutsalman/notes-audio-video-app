@@ -141,7 +141,7 @@ function SortableImage({
                           bg-white/60 dark:bg-black/50 rounded-t-lg
                           group-hover:opacity-0 transition-opacity pointer-events-none">
             {tags.map(t => (
-              <p key={t} className={`text-[10px] ${captionColorClass} italic font-light leading-tight truncate`}>
+              <p key={t} className={`text-xs ${captionColorClass} italic font-light leading-tight truncate`}>
                 #{t}
               </p>
             ))}
