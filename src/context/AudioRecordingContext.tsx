@@ -8,7 +8,8 @@ export type RecordingTarget =
   | { type: 'duration_image'; durationImageId: number; durationId: number; recordingId: number; label: string }
   | { type: 'recording_image'; imageId: number; recordingId: number; label: string }
   | { type: 'capture_image'; captureImageId: number; label: string }
-  | { type: 'capture'; label: string };
+  | { type: 'capture'; label: string }
+  | { type: 'image_child'; imageChildId: number; label: string };
 
 export interface PendingMarker {
   marker_type: AudioMarkerType;
@@ -155,6 +156,12 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
       } else if (target.type === 'capture_image') {
         savedAudio = await window.electronAPI.captureImageAudios.addFromBuffer(
           target.captureImageId,
+          buffer,
+          'webm'
+        );
+      } else if (target.type === 'image_child') {
+        savedAudio = await window.electronAPI.imageChildAudios.addFromBuffer(
+          target.imageChildId,
           buffer,
           'webm'
         );

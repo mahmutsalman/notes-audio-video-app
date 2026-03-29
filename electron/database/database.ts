@@ -756,6 +756,47 @@ function runMigrations(db: Database.Database): void {
     console.log('Created quick_capture_image_audios table');
   }
 
+  // Migration: Create image_children table
+  const imageChildrenTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='image_children'"
+  ).get();
+  if (!imageChildrenTableExists) {
+    db.exec(`
+      CREATE TABLE image_children (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_type    TEXT NOT NULL,
+        parent_id      INTEGER NOT NULL,
+        file_path      TEXT NOT NULL,
+        thumbnail_path TEXT,
+        caption        TEXT,
+        sort_order     INTEGER NOT NULL DEFAULT 0,
+        created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_image_children_parent ON image_children(parent_type, parent_id);
+    `);
+    console.log('Created image_children table');
+  }
+
+  // Migration: Create image_child_audios table
+  const imageChildAudiosTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='image_child_audios'"
+  ).get();
+  if (!imageChildAudiosTableExists) {
+    db.exec(`
+      CREATE TABLE image_child_audios (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        image_child_id INTEGER NOT NULL REFERENCES image_children(id) ON DELETE CASCADE,
+        file_path      TEXT NOT NULL,
+        caption        TEXT,
+        duration       REAL,
+        sort_order     INTEGER NOT NULL DEFAULT 0,
+        created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_image_child_audios_child ON image_child_audios(image_child_id);
+    `);
+    console.log('Created image_child_audios table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index
