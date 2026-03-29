@@ -343,9 +343,6 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     e.stopPropagation();
     // Find the original QuickCaptureImage
     const original = capture.images.find(i => i.id === img.id) ?? { ...img, capture_id: capture.id, sort_order: 0, created_at: '' } as QuickCaptureImage;
-    // Also open lightbox at the clicked image's position
-    const idx = localImages.findIndex(i => i.id === img.id);
-    if (idx !== -1) openLightbox(idx);
     setContextMenu({ kind: 'image', item: original, x: e.clientX, y: e.clientY });
   };
 
@@ -730,11 +727,9 @@ function AudioRow({ index, caption, createdAt, markers, onPlayInBar, onContextMe
       className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30"
       onContextMenu={onContextMenu}
     >
-      {/* Top row: index + play + label + timestamp */}
-      <div className="flex items-center gap-2">
-        <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-          {index + 1}
-        </span>
+      <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+        {index + 1}
+      </span>
 
       <button
         onClick={onPlayInBar}
