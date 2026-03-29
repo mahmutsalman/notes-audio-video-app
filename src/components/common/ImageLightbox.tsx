@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation } from '../../types';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
+import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
 import WaveformVisualizer from '../audio/WaveformVisualizer';
 import { formatDuration } from '../../utils/formatters';
 import { TagModal } from './TagModal';
@@ -140,6 +141,9 @@ export default function ImageLightbox({
     stopAndSave,
     cancelRecording,
   } = useAudioRecording();
+
+  const { currentAudio: imagePlayerAudio } = useImageAudioPlayer();
+  const playerBarVisible = imagePlayerAudio !== null;
 
   // Only show embedded bars when lightbox is in "image audio" mode
   const imageAudioMode = onRecordForImage !== undefined;
@@ -801,7 +805,7 @@ export default function ImageLightbox({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col titlebar-no-drag">
+    <div className={`fixed inset-0 z-50 bg-black/90 flex flex-col titlebar-no-drag${playerBarVisible ? ' pb-14' : ''}`}>
 
       {/* ── Image area (shrinks when bottom bars appear) ── */}
       <div
