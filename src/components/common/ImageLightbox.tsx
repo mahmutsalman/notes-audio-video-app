@@ -497,66 +497,6 @@ export default function ImageLightbox({
           } : undefined}
         />
 
-        {/* Audio chips — floating bar at bottom, only in child lightbox (disableChildImages) */}
-        {disableChildImages && currentImageAudios.length > 0 && (
-          <div className="absolute bottom-4 left-0 right-0 flex justify-center px-4 pointer-events-none">
-            <div className="flex gap-1.5 flex-wrap justify-center pointer-events-auto">
-              {currentImageAudios.map((audio, i) => (
-                <div key={audio.id} className="relative flex-shrink-0 group/chip">
-                  <button
-                    title={audio.caption ?? `Audio ${i + 1}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onPlayImageAudio?.(audio, image.caption || `Image ${selectedIndex + 1}`);
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setEditingAudioCaptionId(audio.id);
-                      setAudioCaptionText(audio.caption ?? '');
-                    }}
-                    className="flex items-center gap-1 bg-black/60 hover:bg-black/80 border border-white/20 text-white rounded-full px-3 py-1 text-xs transition-colors whitespace-nowrap backdrop-blur-sm"
-                  >
-                    ▶ {i + 1}{audio.duration ? ` · ${fmtSecs(audio.duration)}` : ''}
-                  </button>
-                  {onDeleteImageAudio && image?.id && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPendingDeleteAudio({ audioId: audio.id, imageId: image.id!, index: i });
-                      }}
-                      className="absolute -top-1.5 -right-1 w-3.5 h-3.5 bg-black/80 border border-red-500/50 rounded-full text-red-400 text-[9px] leading-none opacity-0 group-hover/chip:opacity-100 transition-opacity flex items-center justify-center"
-                      title="Delete audio"
-                    >×</button>
-                  )}
-                  {editingAudioCaptionId === audio.id && onUpdateImageAudioCaption && image?.id && (
-                    <div
-                      className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-20 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl p-2.5 w-48"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <p className="text-white/40 text-[10px] mb-1.5">Caption</p>
-                      <textarea
-                        autoFocus
-                        value={audioCaptionText}
-                        onChange={(e) => setAudioCaptionText(e.target.value)}
-                        onBlur={() => saveAudioCaption(audio.id, image.id!)}
-                        onKeyDown={(e) => {
-                          e.stopPropagation();
-                          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveAudioCaption(audio.id, image.id!); }
-                          else if (e.key === 'Escape') { setEditingAudioCaptionId(null); setAudioCaptionText(''); }
-                        }}
-                        rows={2}
-                        className="w-full text-xs bg-black/60 text-white/90 rounded-lg px-2 py-1.5 border border-white/20 focus:outline-none focus:border-white/50 resize-none"
-                        placeholder="Add caption…"
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Image caption — always floats at bottom */}
         {image.caption && (
           <div className="absolute bottom-4 left-0 right-0 flex justify-center px-4 pointer-events-none">
@@ -639,14 +579,14 @@ export default function ImageLightbox({
         )}
       </div>
 
-      {/* ── Strip: related images (left) + main image audios (right) ── */}
-      {!disableChildImages && mediaType && image?.id && (
+      {/* ── Strip: related images (left) + audios (right) — also shown in child lightbox if audios exist ── */}
+      {((!disableChildImages && mediaType && image?.id) || (disableChildImages && currentImageAudios.length > 0)) && (
         <div
           className="flex-shrink-0 bg-black/80 border-t border-white/10 px-4 py-2 flex items-center gap-3"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Left: thumbnail row */}
-          <div className="flex-1 min-w-0">
+          {/* Left: thumbnail row — only in parent lightbox */}
+          {!disableChildImages && <div className="flex-1 min-w-0">
             <p className="text-white/40 text-[10px] mb-1">Related images</p>
             <div className="flex gap-2 overflow-x-auto pb-0.5">
               {imageChildren.map(child => (
@@ -693,12 +633,12 @@ export default function ImageLightbox({
                 <span className="text-white/40 text-2xl leading-none">+</span>
               </button>
             </div>
-          </div>
+          </div>}
 
           {/* Right: main image audios — compact horizontal chip row */}
           {currentImageAudios.length > 0 && (
             <>
-              <div className="w-px self-stretch bg-white/10 flex-shrink-0" />
+              {!disableChildImages && <div className="w-px self-stretch bg-white/10 flex-shrink-0" />}
               <div className="flex-shrink-0 min-w-0 max-w-[220px]">
                 <p className="text-white/40 text-[10px] mb-1">Audios</p>
                 <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
