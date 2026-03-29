@@ -5,7 +5,7 @@ import { useRecordingAudioPlayer } from '../../context/RecordingAudioPlayerConte
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 import ImageLightbox from '../common/ImageLightbox';
 import SortableImageGrid from '../common/SortableImageGrid';
-import type { TaggedItems, TaggedCaptureImage, AnyImageAudio } from '../../types';
+import type { TaggedItems, TaggedCaptureImage, TaggedChildImage, AnyImageAudio } from '../../types';
 
 function fmtDuration(secs: number | null): string {
   if (!secs) return '';
@@ -56,6 +56,10 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
   const [captureCaptionText, setCaptureCaptionText] = useState('');
   const [captureImageAudiosMap, setCaptureImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
 
+  // Child image lightbox
+  const [childLightbox, setChildLightbox] = useState<{ rows: TaggedChildImage[]; index: number } | null>(null);
+  const [childImageAudiosMap, setChildImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
+
   useEffect(() => {
     setLoading(true);
     Promise.all(tagNames.map(t => window.electronAPI.tags.getItemsByTag(t))).then((results) => {
@@ -65,6 +69,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
         audios:          dedupeById(results.flatMap(r => r.audios)),
         duration_audios: dedupeById(results.flatMap(r => r.duration_audios)),
         capture_images:  dedupeById(results.flatMap(r => r.capture_images)),
+        image_children:  dedupeById(results.flatMap(r => r.image_children)),
       });
       setLoading(false);
     });
@@ -223,6 +228,27 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
     await fetchCaptureImageAudios(rows);
   };
 
+  const fetchChildImageAudios = useCallback(async (rows: TaggedChildImage[]) => {
+    const map: Record<number, AnyImageAudio[]> = {};
+    await Promise.all(rows.map(async (row) => {
+      map[row.id] = await window.electronAPI.imageChildAudios.getByChild(row.id);
+    }));
+    setChildImageAudiosMap(map);
+  }, []);
+
+  const openChildLightbox = async (rows: TaggedChildImage[], index: number) => {
+    setChildLightbox({ rows, index });
+    await fetchChildImageAudios(rows);
+  };
+
+  // Refresh child audio map after recording
+  useEffect(() => {
+    if (!childLightbox) return;
+    const refresh = () => fetchChildImageAudios(childLightbox.rows);
+    window.addEventListener(AUDIO_SAVED_EVENT, refresh);
+    return () => window.removeEventListener(AUDIO_SAVED_EVENT, refresh);
+  }, [childLightbox, fetchChildImageAudios]);
+
   // Refresh capture audio map after recording
   useEffect(() => {
     if (!captureLightbox) return;
@@ -309,7 +335,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
   if (loading) return <p className="text-sm text-gray-400 py-4">Loading…</p>;
   if (!items) return null;
 
-  const total = items.images.length + items.duration_images.length + items.audios.length + items.duration_audios.length + items.capture_images.length;
+  const total = items.images.length + items.duration_images.length + items.audios.length + items.duration_audios.length + items.capture_images.length + items.image_children.length;
 
   if (total === 0) {
     return <p className="text-sm text-gray-400 dark:text-gray-500 py-4">No items tagged with {tagNames.map((t, i) => <span key={t}>{i > 0 && ' or '}<span className="font-mono text-blue-500">#{t}</span></span>)}</p>;
@@ -331,8 +357,69 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
     audioSections.push({ label: 'Mark-Level Audios', icon: '🔊', isRecordingLevel: false, rows: items.duration_audios.map(a => ({ ...a, thumbnail_path: null, extra: fmtDuration(a.duration) })) });
   }
 
+  const currentChildRow = childLightbox ? childLightbox.rows[childLightbox.index] : null;
+
   return (
     <div>
+      {/* Child image lightbox */}
+      {childLightbox && (
+        <ImageLightbox
+          images={childLightbox.rows.map(r => ({ file_path: r.file_path, caption: r.caption, id: r.id }))}
+          selectedIndex={childLightbox.index}
+          onClose={() => { setChildLightbox(null); setChildImageAudiosMap({}); }}
+          onNavigate={i => setChildLightbox(lb => lb ? { ...lb, index: i } : lb)}
+          mediaType="image_child"
+          disableChildImages={true}
+          imageAudiosMap={childImageAudiosMap}
+          onPlayImageAudio={async (audio, label) => {
+            const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'image_child');
+            imageAudioPlayer.play(
+              audio,
+              label,
+              markers,
+              (id, cap) => window.electronAPI.imageChildAudios.updateCaption(id, cap),
+            );
+          }}
+          onRecordForImage={(imageId) => {
+            if (!currentChildRow) return;
+            audioRecording.startRecording({
+              type: 'image_child',
+              imageChildId: imageId,
+              label: currentChildRow.caption ?? 'Related Image',
+            });
+          }}
+          onDeleteImageAudio={async (audioId, imageId) => {
+            await window.electronAPI.imageChildAudios.delete(audioId);
+            setChildImageAudiosMap(prev => ({
+              ...prev,
+              [imageId]: (prev[imageId] ?? []).filter(a => a.id !== audioId),
+            }));
+          }}
+          onUpdateImageAudioCaption={async (audioId, imageId, cap) => {
+            await window.electronAPI.imageChildAudios.updateCaption(audioId, cap);
+            setChildImageAudiosMap(prev => ({
+              ...prev,
+              [imageId]: (prev[imageId] ?? []).map(a => a.id === audioId ? { ...a, caption: cap } : a),
+            }));
+          }}
+          onEditCaption={() => {}}
+          onDelete={async () => {
+            if (!childLightbox) return;
+            const row = childLightbox.rows[childLightbox.index];
+            if (!window.confirm('Delete this image?')) return;
+            await window.electronAPI.imageChildren.delete(row.id);
+            const remaining = childLightbox.rows.filter((_, i) => i !== childLightbox.index);
+            setItems(prev => prev ? { ...prev, image_children: prev.image_children.filter(img => img.id !== row.id) } : prev);
+            if (remaining.length === 0) {
+              setChildLightbox(null);
+              setChildImageAudiosMap({});
+            } else {
+              setChildLightbox({ rows: remaining, index: Math.min(childLightbox.index, remaining.length - 1) });
+            }
+          }}
+        />
+      )}
+
       {/* Capture image lightbox */}
       {captureLightbox && (
         <ImageLightbox
@@ -514,6 +601,51 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
               onDelete={() => {}}
               onReorder={() => {}}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Related Images section */}
+      {items.image_children.length > 0 && (
+        <div className="mb-4 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+          <h3 className="text-sm font-medium text-purple-700 dark:text-purple-300 flex items-center gap-1.5 mb-2">
+            <span>🔗</span>Related Images
+            <span className="font-normal text-purple-400 dark:text-purple-500">({items.image_children.length})</span>
+          </h3>
+          <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 rounded-lg p-3">
+            <SortableImageGrid
+              images={items.image_children.map(r => ({
+                id: r.id,
+                file_path: r.file_path,
+                thumbnail_path: r.thumbnail_path ?? null,
+                caption: r.caption,
+                color: null,
+                group_color: null,
+              }))}
+              gridClassName="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1"
+              readOnly
+              showNumberBadge={false}
+              colorKeyPrefix="childTagResult"
+              captionColorClass="text-purple-600 dark:text-purple-400"
+              colorOverrides={{}}
+              groupColorOverrides={{}}
+              onImageClick={(index) => openChildLightbox(items.image_children, index)}
+              onDelete={() => {}}
+              onReorder={() => {}}
+            />
+          </div>
+          {/* Navigate buttons below grid */}
+          <div className="mt-2 flex flex-wrap gap-1">
+            {items.image_children.filter(row => row.recording_id !== null).map((row) => (
+              <button
+                key={row.id}
+                onClick={() => onNavigate(row.recording_id!)}
+                className="text-[10px] text-gray-400 dark:text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 transition-colors truncate max-w-[160px]"
+                title={`${row.topic_name ?? ''} › ${row.recording_name || 'Recording'}`}
+              >
+                {row.recording_name || 'Recording'}
+              </button>
+            ))}
           </div>
         </div>
       )}
