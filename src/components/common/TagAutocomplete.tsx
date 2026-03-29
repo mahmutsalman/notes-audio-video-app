@@ -7,14 +7,55 @@ interface Props {
   className?: string;
 }
 
+const MAX_SECTION = 6;
+
+function SuggestionRow({
+  tag,
+  highlighted,
+  onMouseEnter,
+  onMouseDown,
+}: {
+  tag: Tag;
+  highlighted: boolean;
+  onMouseEnter: () => void;
+  onMouseDown: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between gap-2 transition-colors ${
+        highlighted
+          ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+          : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+      }`}
+      onMouseDown={(e) => { e.preventDefault(); onMouseDown(); }}
+      onMouseEnter={onMouseEnter}
+    >
+      <span className={`font-mono truncate ${highlighted ? 'text-blue-700 dark:text-blue-300' : 'text-gray-800 dark:text-gray-200'}`}>
+        {tag.name}
+      </span>
+      {(tag.usage_count ?? 0) > 0 && (
+        <span className="text-gray-400 dark:text-gray-600 flex-shrink-0 text-[10px]">
+          {tag.usage_count}
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function TagAutocomplete({ mediaType, mediaId, className }: Props) {
   const [tags, setTags] = useState<string[]>([]);
+  // typedValue = what the user actually typed (preserved across navigation)
+  const [typedValue, setTypedValue] = useState('');
+  // inputValue = what's shown in the input (may mirror a highlighted suggestion)
   const [inputValue, setInputValue] = useState('');
   const [suggestions, setSuggestions] = useState<Tag[]>([]);
+  const [lastUsedTags, setLastUsedTags] = useState<Tag[]>([]);
+  const [mostUsedTags, setMostUsedTags] = useState<Tag[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const [showDropdown, setShowDropdown] = useState(false);
+  const [showPanel, setShowPanel] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load existing tags on mount
@@ -24,7 +65,6 @@ export function TagAutocomplete({ mediaType, mediaId, className }: Props) {
     });
   }, [mediaType, mediaId]);
 
-  // Persist tag changes
   const saveTags = useCallback(
     (newTags: string[]) => {
       window.electronAPI.tags.setForMedia(mediaType, mediaId, newTags);
@@ -32,29 +72,59 @@ export function TagAutocomplete({ mediaType, mediaId, className }: Props) {
     [mediaType, mediaId]
   );
 
-  // Fetch suggestions (debounced)
+  // Fetch suggestions / populate sections
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      const results = await window.electronAPI.tags.search(inputValue);
-      // Filter out already-selected tags
-      setSuggestions(results.filter((t) => !tags.includes(t.name)));
+      const results = await window.electronAPI.tags.search(typedValue);
+      const filtered = results.filter((t) => !tags.includes(t.name));
+
+      if (!typedValue) {
+        // Build Last Used: has last_assigned_at, sorted newest first
+        const withDate = filtered
+          .filter((t) => t.last_assigned_at)
+          .sort((a, b) => (b.last_assigned_at ?? '').localeCompare(a.last_assigned_at ?? ''))
+          .slice(0, MAX_SECTION);
+        // Build Most Used: sorted by usage_count desc
+        const byUsage = [...filtered]
+          .sort((a, b) => (b.usage_count ?? 0) - (a.usage_count ?? 0))
+          .slice(0, MAX_SECTION);
+        setLastUsedTags(withDate);
+        setMostUsedTags(byUsage);
+        setSuggestions([]);
+      } else {
+        setSuggestions(filtered);
+        setLastUsedTags([]);
+        setMostUsedTags([]);
+      }
       setHighlightedIndex(-1);
     }, 150);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [inputValue, tags]);
+  }, [typedValue, tags]);
+
+  // Flat navigation list
+  const isEmpty = !typedValue;
+  const mostUsedDeduped = mostUsedTags.filter(
+    (t) => !lastUsedTags.some((l) => l.id === t.id)
+  );
+  const navItems: Tag[] = isEmpty
+    ? [...lastUsedTags, ...mostUsedDeduped]
+    : suggestions;
 
   function confirmTag(name: string) {
     const trimmed = name.trim();
+    setInputValue('');
+    setTypedValue('');
+    setHighlightedIndex(-1);
     if (!trimmed || tags.includes(trimmed)) return;
     const next = [...tags, trimmed];
     setTags(next);
     saveTags(next);
-    setInputValue('');
     setSuggestions([]);
-    setShowDropdown(false);
+    // Keep panel open so user can keep adding
+    inputRef.current?.focus();
   }
 
   function removeTag(name: string) {
@@ -66,20 +136,22 @@ export function TagAutocomplete({ mediaType, mediaId, className }: Props) {
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setHighlightedIndex((i) => Math.min(i + 1, suggestions.length - 1));
+      const next = Math.min(highlightedIndex + 1, navItems.length - 1);
+      setHighlightedIndex(next);
+      if (next >= 0 && navItems[next]) setInputValue(navItems[next].name);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setHighlightedIndex((i) => Math.max(i - 1, -1));
+      const next = Math.max(highlightedIndex - 1, -1);
+      setHighlightedIndex(next);
+      setInputValue(next === -1 ? typedValue : (navItems[next]?.name ?? typedValue));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (highlightedIndex >= 0 && suggestions[highlightedIndex]) {
-        confirmTag(suggestions[highlightedIndex].name);
-      } else if (inputValue.trim()) {
-        confirmTag(inputValue);
-      }
+      confirmTag(inputValue);
     } else if (e.key === 'Escape') {
-      setShowDropdown(false);
-      setSuggestions([]);
+      // Restore typed value and deselect, or close if input is already empty
+      setInputValue(typedValue);
+      setHighlightedIndex(-1);
+      if (!typedValue) setShowPanel(false);
     } else if (e.key === 'Backspace' && inputValue === '' && tags.length > 0) {
       removeTag(tags[tags.length - 1]);
     }
@@ -87,42 +159,45 @@ export function TagAutocomplete({ mediaType, mediaId, className }: Props) {
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     let val = e.target.value;
-    // Comma or space at end → confirm the tag before the separator
+    // Comma or space → confirm
     if (val.endsWith(',') || val.endsWith(' ')) {
       const candidate = val.slice(0, -1).trim();
-      if (candidate) {
-        confirmTag(candidate);
-        return;
-      }
+      if (candidate) { confirmTag(candidate); return; }
+      val = val.slice(0, -1);
     }
+    setTypedValue(val);
     setInputValue(val);
-    setShowDropdown(true);
+    setHighlightedIndex(-1);
+    setShowPanel(true);
   }
 
-  // Close dropdown on outside click
+  // Close on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
+      const target = e.target as Node;
       if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node) &&
-        inputRef.current &&
-        !inputRef.current.contains(e.target as Node)
+        panelRef.current && !panelRef.current.contains(target) &&
+        inputRef.current && !inputRef.current.parentElement?.contains(target)
       ) {
-        setShowDropdown(false);
+        setShowPanel(false);
       }
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const dropdownVisible = showDropdown && suggestions.length > 0;
+  const panelVisible =
+    showPanel &&
+    (isEmpty
+      ? lastUsedTags.length > 0 || mostUsedDeduped.length > 0
+      : suggestions.length > 0);
 
   return (
     <div className={`relative ${className ?? ''}`}>
-      {/* Tag pills + input row */}
+      {/* Tag pills + input */}
       <div
-        className="flex flex-wrap gap-1 items-center min-h-[32px] px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 cursor-text"
-        onClick={() => inputRef.current?.focus()}
+        className="flex flex-wrap gap-1 items-center min-h-[36px] px-2 py-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 cursor-text"
+        onClick={() => { inputRef.current?.focus(); setShowPanel(true); }}
       >
         {tags.map((tag) => (
           <span
@@ -148,34 +223,73 @@ export function TagAutocomplete({ mediaType, mediaId, className }: Props) {
           value={inputValue}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          onFocus={() => setShowDropdown(true)}
+          onFocus={() => setShowPanel(true)}
+          autoFocus
         />
       </div>
 
-      {/* Suggestions dropdown */}
-      {dropdownVisible && (
+      {/* Suggestions panel */}
+      {panelVisible && (
         <div
-          ref={dropdownRef}
-          className="absolute left-0 right-0 z-50 mt-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg max-h-48 overflow-y-auto"
+          ref={panelRef}
+          className="absolute left-0 right-0 z-50 mt-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg overflow-hidden"
         >
-          {suggestions.map((tag, i) => (
-            <button
-              key={tag.id}
-              type="button"
-              className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between gap-2 hover:bg-blue-50 dark:hover:bg-blue-900/30 ${
-                i === highlightedIndex ? 'bg-blue-50 dark:bg-blue-900/30' : ''
-              }`}
-              onMouseDown={(e) => { e.preventDefault(); confirmTag(tag.name); }}
-              onMouseEnter={() => setHighlightedIndex(i)}
-            >
-              <span className="text-gray-800 dark:text-gray-200 font-mono">{tag.name}</span>
-              {tag.usage_count > 0 && (
-                <span className="text-gray-400 dark:text-gray-600 flex-shrink-0">
-                  {tag.usage_count}
-                </span>
+          {isEmpty ? (
+            // Empty input → show Last Used + Most Used sections
+            <div className="max-h-64 overflow-y-auto">
+              {lastUsedTags.length > 0 && (
+                <div>
+                  <div className="px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                    Last Used
+                  </div>
+                  {lastUsedTags.map((tag, i) => (
+                    <SuggestionRow
+                      key={tag.id}
+                      tag={tag}
+                      highlighted={highlightedIndex === i}
+                      onMouseEnter={() => { setHighlightedIndex(i); setInputValue(tag.name); }}
+                      onMouseDown={() => confirmTag(tag.name)}
+                    />
+                  ))}
+                </div>
               )}
-            </button>
-          ))}
+              {mostUsedDeduped.length > 0 && (
+                <div>
+                  <div className={`px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 ${lastUsedTags.length > 0 ? 'pt-2 border-t border-gray-100 dark:border-gray-800 mt-1' : 'pt-2.5'}`}>
+                    Most Used
+                  </div>
+                  {mostUsedDeduped.map((tag, i) => {
+                    const flatIndex = lastUsedTags.length + i;
+                    return (
+                      <SuggestionRow
+                        key={tag.id}
+                        tag={tag}
+                        highlighted={highlightedIndex === flatIndex}
+                        onMouseEnter={() => { setHighlightedIndex(flatIndex); setInputValue(tag.name); }}
+                        onMouseDown={() => confirmTag(tag.name)}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+              <div className="px-3 py-1.5 text-[10px] text-gray-400 dark:text-gray-600 border-t border-gray-100 dark:border-gray-800">
+                ↑↓ navigate · Enter to add · type to search
+              </div>
+            </div>
+          ) : (
+            // Typing → filtered suggestions
+            <div className="max-h-52 overflow-y-auto">
+              {suggestions.map((tag, i) => (
+                <SuggestionRow
+                  key={tag.id}
+                  tag={tag}
+                  highlighted={highlightedIndex === i}
+                  onMouseEnter={() => { setHighlightedIndex(i); setInputValue(tag.name); }}
+                  onMouseDown={() => confirmTag(tag.name)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
