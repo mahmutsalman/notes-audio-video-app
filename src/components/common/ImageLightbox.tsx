@@ -65,6 +65,7 @@ export default function ImageLightbox({
   const [editingAudioCaptionId, setEditingAudioCaptionId] = useState<number | null>(null);
   const [audioCaptionText, setAudioCaptionText] = useState('');
   const [showTagModal, setShowTagModal] = useState(false);
+  const [currentImageTags, setCurrentImageTags] = useState<{ name: string }[]>([]);
 
   // Child images state
   const [imageChildren, setImageChildren] = useState<ImageChild[]>([]);
@@ -163,6 +164,15 @@ export default function ImageLightbox({
       .getByParent(parentType, image.id)
       .then(children => setImageChildren(children));
   }, [image?.id, mediaType, disableChildImages]);
+
+  // Load tags for the current image
+  useEffect(() => {
+    if (!mediaType || !image?.id) {
+      setCurrentImageTags([]);
+      return;
+    }
+    window.electronAPI.tags.getByMedia(mediaType, image.id).then(setCurrentImageTags);
+  }, [image?.id, mediaType]);
 
   // Fetch tag counts for child images
   useEffect(() => {
@@ -643,6 +653,20 @@ export default function ImageLightbox({
           } : undefined}
         />
 
+        {/* Tag chips — top-left */}
+        {currentImageTags.length > 0 && (
+          <div className="absolute top-12 left-20 flex flex-wrap gap-1 pointer-events-none">
+            {currentImageTags.map(tag => (
+              <span
+                key={tag.name}
+                className="bg-orange-500/80 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+              >
+                #{tag.name}
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Image caption — always floats at bottom */}
         {image.caption && (
           <div className="absolute bottom-4 left-0 right-0 flex justify-center px-4 pointer-events-none">
@@ -720,7 +744,10 @@ export default function ImageLightbox({
             mediaType={mediaType}
             mediaId={image.id}
             title={image.caption ?? undefined}
-            onClose={() => setShowTagModal(false)}
+            onClose={() => {
+              setShowTagModal(false);
+              window.electronAPI.tags.getByMedia(mediaType, image.id!).then(setCurrentImageTags);
+            }}
           />
         )}
       </div>
