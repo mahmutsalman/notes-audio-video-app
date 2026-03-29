@@ -798,6 +798,19 @@ export interface ElectronAPI {
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<ImageChildAudio>;
   };
+  imageAnnotations: {
+    getByImage: (imageType: string, imageId: number) => Promise<ImageAnnotation[]>;
+    create: (data: {
+      image_type: string;
+      image_id: number;
+      ann_type: 'rect' | 'line';
+      x1: number; y1: number; x2: number; y2: number;
+      color: string;
+      stroke_width: number;
+    }) => Promise<ImageAnnotation>;
+    update: (id: number, partial: { x1?: number; y1?: number; x2?: number; y2?: number; color?: string }) => Promise<ImageAnnotation>;
+    delete: (id: number) => Promise<void>;
+  };
 }
 
 export interface GlobalSearchResult {
