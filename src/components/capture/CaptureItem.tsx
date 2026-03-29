@@ -218,18 +218,31 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     await window.electronAPI.quickCaptures.deleteAudio(audioId);
   };
 
+  // Single: paste one image from clipboard via Electron native clipboard
   const handleAddImage = async () => {
-    const items = await navigator.clipboard.read().catch(() => [] as ClipboardItem[]);
-    for (const item of items) {
-      const imageType = item.types.find(t => t.startsWith('image/'));
-      if (!imageType) continue;
-      const blob = await item.getType(imageType);
-      const ext = imageType.split('/')[1] || 'png';
-      const buf = await blob.arrayBuffer();
-      const saved = await window.electronAPI.quickCaptures.addImage(capture.id, buf, ext);
-      setLocalImages(prev => [...prev, { ...saved, color: null as DurationColor, group_color: null as DurationGroupColor }]);
-      break;
-    }
+    const result = await window.electronAPI.clipboard.readImage();
+    if (!result.success || !result.buffer) return;
+    const buf = result.buffer as unknown as ArrayBuffer;
+    const saved = await window.electronAPI.quickCaptures.addImage(capture.id, buf, result.extension);
+    setLocalImages(prev => [...prev, { ...saved, color: null as DurationColor, group_color: null as DurationGroupColor }]);
+  };
+
+  // Batch: pick multiple image files from disk
+  const handlePickImages = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.onchange = async () => {
+      if (!input.files) return;
+      for (const file of Array.from(input.files)) {
+        const buf = await file.arrayBuffer();
+        const ext = file.name.split('.').pop() || 'png';
+        const saved = await window.electronAPI.quickCaptures.addImage(capture.id, buf, ext);
+        setLocalImages(prev => [...prev, { ...saved, color: null as DurationColor, group_color: null as DurationGroupColor }]);
+      }
+    };
+    input.click();
   };
 
   const handleImageContextMenu = (e: React.MouseEvent, img: SortableImageItem) => {
@@ -237,9 +250,6 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     e.stopPropagation();
     // Find the original QuickCaptureImage
     const original = capture.images.find(i => i.id === img.id) ?? { ...img, capture_id: capture.id, sort_order: 0, created_at: '' } as QuickCaptureImage;
-    // Also open lightbox at the clicked image's position
-    const idx = localImages.findIndex(i => i.id === img.id);
-    if (idx !== -1) openLightbox(idx);
     setContextMenu({ kind: 'image', item: original, x: e.clientX, y: e.clientY });
   };
 
@@ -344,15 +354,15 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
               Images ({localImages.length})
             </h3>
             <button
-              onClick={handleAddImage}
+              onClick={handlePickImages}
               className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
             >
-              📋 Paste
+              📂 Add
             </button>
           </div>
           <SortableImageGrid
             images={localImages}
-            gridClassName="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2"
+            gridClassName="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1"
             colorOverrides={{}}
             groupColorOverrides={{}}
             colorKeyPrefix="qcImg"
@@ -364,7 +374,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
             tagCountMap={imageTagCountMap}
             pastePlaceholder={
               <div className="flex flex-col items-center">
-                <div className="relative w-full max-w-[160px]">
+                <div className="relative w-full">
                   <div
                     className="aspect-square rounded-lg border-2 border-dashed border-blue-300 dark:border-blue-600
                                bg-blue-50/50 dark:bg-blue-900/10 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500
@@ -554,60 +564,53 @@ interface AudioRowProps {
 function AudioRow({ index, caption, createdAt, markers, onPlayInBar, onContextMenu, tagCount = 0 }: AudioRowProps) {
   return (
     <div
-      className="flex flex-col gap-1 py-1.5 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30"
+      className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30"
       onContextMenu={onContextMenu}
     >
-      {/* Top row: index + play + label + timestamp */}
-      <div className="flex items-center gap-2">
-        <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-          {index + 1}
-        </span>
+      <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+        {index + 1}
+      </span>
 
-        <button
-          onClick={onPlayInBar}
-          className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow"
-          title="Play in bottom bar"
-        >
-          <svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-        </button>
+      <button
+        onClick={onPlayInBar}
+        className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow"
+        title="Play in bottom bar"
+      >
+        <svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+      </button>
 
-        <span className="flex-1 text-xs text-blue-300 truncate">
-          {caption || 'Voice note'}
-        </span>
+      <span className="flex-1 text-xs text-blue-300 truncate">
+        {caption || 'Voice note'}
+      </span>
 
-        {tagCount > 0 && (
-          <span className="flex-shrink-0 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-blue-900/40 border border-blue-700/50 text-blue-300 text-[10px] font-medium">
-            🏷️{tagCount}
+      {/* Marker chips inline */}
+      {markers.length > 0 && AUDIO_ROW_MARKERS.map(({ type, icon, color }) => {
+        const count = markers.filter(m => m.marker_type === type).length;
+        if (count === 0) return null;
+        return (
+          <span
+            key={type}
+            className={`flex-shrink-0 flex items-center gap-0.5 px-1 py-0.5 rounded border text-[10px] font-medium ${color}`}
+          >
+            {icon}{count}
           </span>
-        )}
+        );
+      })}
 
-        <span
-          className="text-[10px] text-blue-500 dark:text-blue-600 flex-shrink-0 tabular-nums"
-          title={createdAt}
-        >
-          {relativeTime(createdAt)}
+      {tagCount > 0 && (
+        <span className="flex-shrink-0 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-blue-900/40 border border-blue-700/50 text-blue-300 text-[10px] font-medium">
+          🏷️{tagCount}
         </span>
-      </div>
-
-      {/* Bottom row: marker chips (only when present) */}
-      {markers.length > 0 && (
-        <div className="flex items-center gap-1 pl-[52px]">
-          {AUDIO_ROW_MARKERS.map(({ type, icon, color }) => {
-            const count = markers.filter(m => m.marker_type === type).length;
-            if (count === 0) return null;
-            return (
-              <span
-                key={type}
-                className={`flex items-center gap-0.5 px-1 py-0.5 rounded border text-[10px] font-medium ${color}`}
-              >
-                {icon}{count}
-              </span>
-            );
-          })}
-        </div>
       )}
+
+      <span
+        className="text-[10px] text-blue-500 dark:text-blue-600 flex-shrink-0 tabular-nums"
+        title={createdAt}
+      >
+        {relativeTime(createdAt)}
+      </span>
     </div>
   );
 }

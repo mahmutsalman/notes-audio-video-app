@@ -119,7 +119,7 @@ function SortableImage({
       {...attributes}
     >
       <div
-        className="relative w-full max-w-[160px] cursor-grab active:cursor-grabbing"
+        className="relative w-full cursor-grab active:cursor-grabbing"
         {...listeners}
         onContextMenu={(e) => onContextMenu?.(e, image)}
       >
@@ -204,15 +204,13 @@ function SortableImage({
           ×
         </button>
       </div>
-      {/* Caption */}
-      {image.caption && (
-        <p
-          className={`w-full text-xs ${captionColorClass} mt-1 italic font-light leading-tight text-center cursor-pointer ${captionExpanded ? '' : 'line-clamp-2'}`}
-          onClick={(e) => { e.stopPropagation(); setCaptionExpanded(v => !v); }}
-        >
-          {image.caption}
-        </p>
-      )}
+      {/* Caption — always rendered for consistent vertical spacing */}
+      <p
+        className={`w-full text-xs ${captionColorClass} mt-1 italic font-light leading-tight text-center ${image.caption ? 'cursor-pointer' : 'invisible'} ${captionExpanded ? '' : 'line-clamp-2'}`}
+        onClick={image.caption ? (e) => { e.stopPropagation(); setCaptionExpanded(v => !v); } : undefined}
+      >
+        {image.caption || '\u00A0'}
+      </p>
     </div>
   );
 }
@@ -252,7 +250,7 @@ function ReadOnlyImage({
       className={`group flex flex-col items-center${isHighlighted ? ' ring-2 ring-blue-400 ring-offset-1 rounded-lg' : ''}`}
     >
       <div
-        className="relative w-full max-w-[160px] cursor-pointer"
+        className="relative w-full cursor-pointer"
         onContextMenu={(e) => onContextMenu?.(e, image)}
       >
         {groupColorConfig && (
@@ -297,14 +295,12 @@ function ReadOnlyImage({
           />
         )}
       </div>
-      {image.caption && (
-        <p
-          className={`w-full text-xs ${captionColorClass} mt-1 italic font-light leading-tight text-center cursor-pointer ${captionExpanded ? '' : 'line-clamp-2'}`}
-          onClick={(e) => { e.stopPropagation(); setCaptionExpanded(v => !v); }}
-        >
-          {image.caption}
-        </p>
-      )}
+      <p
+        className={`w-full text-xs ${captionColorClass} mt-1 italic font-light leading-tight text-center ${image.caption ? 'cursor-pointer' : 'invisible'} ${captionExpanded ? '' : 'line-clamp-2'}`}
+        onClick={image.caption ? (e) => { e.stopPropagation(); setCaptionExpanded(v => !v); } : undefined}
+      >
+        {image.caption || '\u00A0'}
+      </p>
     </div>
   );
 }
