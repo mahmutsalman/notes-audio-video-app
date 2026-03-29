@@ -114,6 +114,8 @@ export default function RecordingPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
+  const [recordingImageAudiosCache, setRecordingImageAudiosCache] = useState<Record<number, ImageAudio[]>>({});
+  const [durationImageTagsCache, setDurationImageTagsCache] = useState<Record<number, string[]>>({});
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [isContentPressed, setIsContentPressed] = useState(false);
   const [activeDurationId, setActiveDurationId] = useState<number | null>(null);
@@ -1129,11 +1131,31 @@ export default function RecordingPage() {
   // Build maps for duration image audio feature
   const imageAudiosMap: Record<number, DurationImageAudio[]> = {};
   const audioCountMap: Record<number, number> = {};
+  const tagCountMap: Record<number, number> = {};
+  const tagNamesMap: Record<number, string[]> = {};
   for (const img of activeDurationImages) {
     const audios = durationImageAudiosCache[img.id] ?? [];
     imageAudiosMap[img.id] = audios;
     audioCountMap[img.id] = audios.length;
+    const tags = durationImageTagsCache[img.id] ?? [];
+    tagCountMap[img.id] = tags.length;
+    tagNamesMap[img.id] = tags;
   }
+
+  // Fetch tags for active duration images so tag badges + overlays render
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (activeDurationImages.length === 0) {
+      setDurationImageTagsCache({});
+      return;
+    }
+    Promise.all(
+      activeDurationImages.map(img =>
+        window.electronAPI.tags.getByMedia('duration_image', img.id)
+          .then(tags => [img.id, tags.map((t: { name: string }) => t.name)] as const)
+      )
+    ).then(entries => setDurationImageTagsCache(Object.fromEntries(entries)));
+  }, [activeDurationId, durationImagesCache]);
 
   const handleRecordForImage = (imageId: number) => {
     if (!activeDurationId || !id) return;
@@ -1639,6 +1661,8 @@ export default function RecordingPage() {
             onDelete={handleDeleteDurationImage}
             onReorder={handleReorderDurationImages}
             audioCountMap={audioCountMap}
+            tagCountMap={tagCountMap}
+            tagNamesMap={tagNamesMap}
             pastePlaceholder={
               <div className="flex flex-col items-center">
                 <div className="relative w-full max-w-[160px]">
@@ -2574,7 +2598,16 @@ export default function RecordingPage() {
           mediaType={tagModal.mediaType}
           mediaId={tagModal.mediaId}
           title={tagModal.title}
-          onClose={() => setTagModal(null)}
+          onClose={() => {
+            if (tagModal.mediaType === 'duration_image') {
+              window.electronAPI.tags.getByMedia('duration_image', tagModal.mediaId)
+                .then(tags => setDurationImageTagsCache(prev => ({
+                  ...prev,
+                  [tagModal.mediaId]: tags.map((t: { name: string }) => t.name),
+                })));
+            }
+            setTagModal(null);
+          }}
         />
       )}
 

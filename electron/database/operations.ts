@@ -1766,3 +1766,117 @@ export const QuickCaptureOperations = {
     });
   },
 };
+
+// Image Children Operations (images nested inside parent images)
+export const ImageChildrenOperations = {
+  getByParent(parentType: string, parentId: number) {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM image_children
+      WHERE parent_type = ? AND parent_id = ?
+      ORDER BY sort_order, created_at
+    `).all(parentType, parentId);
+  },
+
+  getById(id: number) {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM image_children WHERE id = ?').get(id) ?? null;
+  },
+
+  create(data: { parent_type: string; parent_id: number; file_path: string; thumbnail_path?: string | null; caption?: string | null; sort_order?: number }) {
+    const db = getDatabase();
+    const result = db.prepare(`
+      INSERT INTO image_children (parent_type, parent_id, file_path, thumbnail_path, caption, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      data.parent_type,
+      data.parent_id,
+      data.file_path,
+      data.thumbnail_path ?? null,
+      data.caption ?? null,
+      data.sort_order ?? 0
+    );
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM image_children WHERE id = ?').run(id);
+  },
+
+  updateCaption(id: number, caption: string | null) {
+    const db = getDatabase();
+    db.prepare('UPDATE image_children SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+
+  reorder(parentType: string, parentId: number, orderedIds: number[]): void {
+    const db = getDatabase();
+    const update = db.prepare('UPDATE image_children SET sort_order = ? WHERE id = ?');
+    const tx = db.transaction(() => {
+      orderedIds.forEach((id, index) => update.run(index, id));
+    });
+    tx();
+  },
+
+  getMaxSortOrder(parentType: string, parentId: number): number {
+    const db = getDatabase();
+    const result = db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) as max_order
+      FROM image_children WHERE parent_type = ? AND parent_id = ?
+    `).get(parentType, parentId) as { max_order: number };
+    return result.max_order;
+  },
+};
+
+// Image Child Audio Operations (audios attached to child images)
+export const ImageChildAudiosOperations = {
+  getByChild(imageChildId: number) {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM image_child_audios
+      WHERE image_child_id = ?
+      ORDER BY sort_order, created_at
+    `).all(imageChildId);
+  },
+
+  getById(id: number) {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM image_child_audios WHERE id = ?').get(id) ?? null;
+  },
+
+  create(data: { image_child_id: number; file_path: string; caption?: string | null; duration?: number | null; sort_order?: number }) {
+    const db = getDatabase();
+    const result = db.prepare(`
+      INSERT INTO image_child_audios (image_child_id, file_path, caption, duration, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      data.image_child_id,
+      data.file_path,
+      data.caption ?? null,
+      data.duration ?? null,
+      data.sort_order ?? 0
+    );
+    return this.getById(result.lastInsertRowid as number)!;
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM image_child_audios WHERE id = ?').run(id);
+  },
+
+  updateCaption(id: number, caption: string | null) {
+    const db = getDatabase();
+    db.prepare('UPDATE image_child_audios SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+
+  getMaxSortOrder(imageChildId: number): number {
+    const db = getDatabase();
+    const result = db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) as max_order
+      FROM image_child_audios WHERE image_child_id = ?
+    `).get(imageChildId) as { max_order: number };
+    return result.max_order;
+  },
+};

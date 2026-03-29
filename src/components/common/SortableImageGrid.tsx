@@ -163,14 +163,14 @@ function SortableImage({
         )}
         {/* Tag count badge — always visible, delete button (z-20) covers it on hover */}
         {tagCount > 0 && audioCount === 0 && (
-          <div className="absolute top-1 right-1 bg-blue-500 text-white text-[10px]
+          <div className="absolute top-1 right-1 bg-orange-500 text-white text-[10px]
                           rounded-full w-4 h-4 flex items-center justify-center font-bold z-10
                           group-hover:opacity-0 transition-opacity">
             {tagCount > 9 ? '9+' : tagCount}
           </div>
         )}
         {tagCount > 0 && audioCount > 0 && (
-          <div className="absolute top-6 right-1 bg-blue-500 text-white text-[10px]
+          <div className="absolute top-6 right-1 bg-orange-500 text-white text-[10px]
                           rounded-full w-4 h-4 flex items-center justify-center font-bold z-10
                           group-hover:opacity-0 transition-opacity">
             {tagCount > 9 ? '9+' : tagCount}
