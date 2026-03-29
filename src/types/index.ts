@@ -297,7 +297,7 @@ export type AudioMarkerType = 'important' | 'question' | 'similar_question';
 export interface AudioMarker {
   id: number;
   audio_id: number;
-  audio_type: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'capture_image';
+  audio_type: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'capture_image' | 'quick_capture_audio';
   marker_type: AudioMarkerType;
   start_time: number;
   end_time: number | null;
@@ -691,7 +691,7 @@ export interface ElectronAPI {
     upload: () => Promise<{ success: boolean; output?: string; error?: string; stderr?: string }>;
   };
   audioMarkers: {
-    getByAudio: (audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'capture_image') => Promise<AudioMarker[]>;
+    getByAudio: (audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'capture_image' | 'quick_capture_audio') => Promise<AudioMarker[]>;
     addBatch: (markers: Omit<AudioMarker, 'id' | 'created_at'>[]) => Promise<AudioMarker[]>;
     updateCaption: (markerId: number, caption: string | null) => Promise<AudioMarker>;
   };

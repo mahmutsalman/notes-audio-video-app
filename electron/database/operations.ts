@@ -1232,7 +1232,7 @@ export const SettingsOperations = {
 
 // Audio Markers Operations
 export const AudioMarkersOperations = {
-  getByAudio(audioId: number, audioType: 'duration' | 'duration_image'): AudioMarker[] {
+  getByAudio(audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'quick_capture_audio'): AudioMarker[] {
     const db = getDatabase();
     return db.prepare(`
       SELECT * FROM audio_markers
@@ -1258,7 +1258,7 @@ export const AudioMarkersOperations = {
     return ids.map(id => db.prepare('SELECT * FROM audio_markers WHERE id = ?').get(id) as AudioMarker);
   },
 
-  deleteByAudio(audioId: number, audioType: 'duration' | 'duration_image'): void {
+  deleteByAudio(audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'quick_capture_audio'): void {
     const db = getDatabase();
     db.prepare('DELETE FROM audio_markers WHERE audio_id = ? AND audio_type = ?').run(audioId, audioType);
   },

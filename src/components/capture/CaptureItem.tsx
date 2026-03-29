@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { QuickCapture, QuickCaptureImage, QuickCaptureAudio, DurationColor, DurationGroupColor, AnyImageAudio } from '../../types';
 import SortableImageGrid from '../common/SortableImageGrid';
 import type { SortableImageItem } from '../common/SortableImageGrid';
 import ImageLightbox from '../common/ImageLightbox';
 import { TagModal } from '../common/TagModal';
 import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
+import { useCaptureAudioPlayer } from '../../context/CaptureAudioPlayerContext';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 
 interface CaptureItemProps {
@@ -49,12 +50,13 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
 
   const imageAudioPlayer = useImageAudioPlayer();
+  const captureAudioPlayer = useCaptureAudioPlayer();
   const audioRecording = useAudioRecording();
   const [captionModal, setCaptionModal] = useState<CaptionModalState>(null);
   const [captionText, setCaptionText] = useState('');
   const [tagModal, setTagModal] = useState<TagModalState>(null);
   const [localAudios, setLocalAudios] = useState<QuickCaptureAudio[]>(capture.audios);
-  const audioRefs = useRef<(HTMLAudioElement | null)[]>([]);
+  const [audioMarkersMap, setAudioMarkersMap] = useState<Record<number, import('../../types').AudioMarker[]>>({});
 
   // Map QuickCaptureImage → SortableImageItem (color: null = no color bars)
   const [localImages, setLocalImages] = useState<SortableImageItem[]>(() =>
@@ -86,6 +88,19 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
       return [...prev, ...added];
     });
   }, [capture.audios]);
+
+  // Fetch markers for all audios
+  useEffect(() => {
+    if (localAudios.length === 0) return;
+    Promise.all(
+      localAudios.map(async a => {
+        const markers = await window.electronAPI.audioMarkers.getByAudio(a.id, 'quick_capture_audio');
+        return [a.id, markers] as const;
+      })
+    ).then(entries => {
+      setAudioMarkersMap(Object.fromEntries(entries));
+    });
+  }, [localAudios]);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -127,6 +142,16 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
       (id, cap) => window.electronAPI.captureImageAudios.updateCaption(id, cap),
     );
   }, [imageAudioPlayer]);
+
+  const handlePlayCaptureAudio = useCallback(async (audio: import('../../types').QuickCaptureAudio, label: string) => {
+    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'quick_capture_audio');
+    captureAudioPlayer.play(
+      audio,
+      label,
+      markers,
+      (id, cap) => window.electronAPI.quickCaptures.updateAudioCaption(id, cap),
+    );
+  }, [captureAudioPlayer]);
 
   const handleRecordForCaptureImage = useCallback((imageId: number) => {
     if (!currentLightboxImage) return;
@@ -342,14 +367,10 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
               <AudioRow
                 key={audio.id}
                 index={idx}
-                src={window.electronAPI.paths.getFileUrl(audio.file_path)}
                 caption={audio.caption}
-                audioRef={(el) => { audioRefs.current[idx] = el; }}
-                onPlay={() => {
-                  audioRefs.current.forEach((el, i) => {
-                    if (i !== idx && el) el.pause();
-                  });
-                }}
+                createdAt={audio.created_at}
+                markers={audioMarkersMap[audio.id] ?? []}
+                onPlayInBar={() => handlePlayCaptureAudio(audio, audio.caption || `Audio ${idx + 1}`)}
                 onContextMenu={(e) => handleAudioContextMenu(e, audio)}
               />
             ))}
@@ -487,107 +508,72 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
 }
 
 // ── Inline audio row ──────────────────────────────────────────────
+const AUDIO_ROW_MARKERS = [
+  { type: 'important' as const, icon: '❗', color: 'text-red-400 bg-red-900/30 border-red-800/40' },
+  { type: 'question' as const, icon: '❓', color: 'text-blue-400 bg-blue-900/30 border-blue-800/40' },
+  { type: 'similar_question' as const, icon: '↔', color: 'text-purple-400 bg-purple-900/30 border-purple-800/40' },
+];
+
 interface AudioRowProps {
   index: number;
-  src: string;
   caption: string | null;
-  audioRef: (el: HTMLAudioElement | null) => void;
-  onPlay: () => void;
+  createdAt: string;
+  markers: import('../../types').AudioMarker[];
+  onPlayInBar: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function AudioRow({ index, src, caption, audioRef, onPlay, onContextMenu }: AudioRowProps) {
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const ref = useRef<HTMLAudioElement | null>(null);
-
-  const setRef = (el: HTMLAudioElement | null) => {
-    ref.current = el;
-    audioRef(el);
-  };
-
-  const togglePlay = () => {
-    const el = ref.current;
-    if (!el) return;
-    if (playing) {
-      el.pause();
-    } else {
-      onPlay();
-      el.play();
-    }
-  };
-
-  const fmt = (s: number) => {
-    const m = Math.floor(s / 60);
-    const ss = Math.floor(s % 60);
-    return `${m}:${ss.toString().padStart(2, '0')}`;
-  };
-
+function AudioRow({ index, caption, createdAt, markers, onPlayInBar, onContextMenu }: AudioRowProps) {
   return (
     <div
-      className="flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30"
+      className="flex flex-col gap-1 py-1.5 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30"
       onContextMenu={onContextMenu}
     >
-      <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-        {index + 1}
-      </span>
+      {/* Top row: index + play + label + timestamp */}
+      <div className="flex items-center gap-2">
+        <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+          {index + 1}
+        </span>
 
-      <button
-        onClick={togglePlay}
-        className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow"
-        title={playing ? 'Pause' : 'Play'}
-      >
-        {playing ? (
-          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-          </svg>
-        ) : (
+        <button
+          onClick={onPlayInBar}
+          className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow"
+          title="Play in bottom bar"
+        >
           <svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
             <path d="M8 5v14l11-7z" />
           </svg>
-        )}
-      </button>
+        </button>
 
-      <div className="flex-1 min-w-0">
-        {caption ? (
-          <span className="text-xs text-blue-300 truncate block">{caption}</span>
-        ) : (
-          <div className="flex items-center gap-1.5">
-            <div
-              className="flex-1 h-1 bg-blue-800/40 rounded-full cursor-pointer"
-              onClick={e => {
-                const el = ref.current;
-                if (!el || !duration) return;
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                const pct = (e.clientX - rect.left) / rect.width;
-                el.currentTime = pct * duration;
-              }}
-            >
-              <div
-                className="h-full bg-blue-400 rounded-full transition-all"
-                style={{ width: `${progress * 100}%` }}
-              />
-            </div>
-            <span className="text-[10px] text-blue-400 flex-shrink-0">
-              {fmt(duration > 0 ? progress * duration : 0)}/{fmt(duration)}
-            </span>
-          </div>
-        )}
+        <span className="flex-1 text-xs text-blue-300 truncate">
+          {caption || 'Voice note'}
+        </span>
+
+        <span
+          className="text-[10px] text-blue-500 dark:text-blue-600 flex-shrink-0 tabular-nums"
+          title={createdAt}
+        >
+          {relativeTime(createdAt)}
+        </span>
       </div>
 
-      <audio
-        ref={setRef}
-        src={src}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => { setPlaying(false); setProgress(0); }}
-        onLoadedMetadata={e => setDuration((e.target as HTMLAudioElement).duration)}
-        onTimeUpdate={e => {
-          const el = e.target as HTMLAudioElement;
-          if (el.duration) setProgress(el.currentTime / el.duration);
-        }}
-      />
+      {/* Bottom row: marker chips (only when present) */}
+      {markers.length > 0 && (
+        <div className="flex items-center gap-1 pl-[52px]">
+          {AUDIO_ROW_MARKERS.map(({ type, icon, color }) => {
+            const count = markers.filter(m => m.marker_type === type).length;
+            if (count === 0) return null;
+            return (
+              <span
+                key={type}
+                className={`flex items-center gap-0.5 px-1 py-0.5 rounded border text-[10px] font-medium ${color}`}
+              >
+                {icon}{count}
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
