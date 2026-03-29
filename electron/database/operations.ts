@@ -1489,23 +1489,25 @@ export const TagOperations = {
     if (!query) {
       return db.prepare(`
         SELECT t.id, t.name, t.created_at,
-               COUNT(mt.id) as usage_count
+               COUNT(mt.id) as usage_count,
+               MAX(mt.created_at) AS last_assigned_at
         FROM tags t
         LEFT JOIN media_tags mt ON mt.tag_id = t.id
         GROUP BY t.id
-        ORDER BY t.name
-        LIMIT 20
+        ORDER BY usage_count DESC, last_assigned_at DESC
+        LIMIT 50
       `).all() as Tag[];
     }
     return db.prepare(`
       SELECT t.id, t.name, t.created_at,
-             COUNT(mt.id) as usage_count
+             COUNT(mt.id) as usage_count,
+             MAX(mt.created_at) AS last_assigned_at
       FROM tags t
       LEFT JOIN media_tags mt ON mt.tag_id = t.id
       WHERE t.name LIKE ?
       GROUP BY t.id
-      ORDER BY t.name
-      LIMIT 10
+      ORDER BY usage_count DESC, t.name
+      LIMIT 15
     `).all(`%${query}%`) as Tag[];
   },
 

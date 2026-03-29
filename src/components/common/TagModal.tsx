@@ -15,7 +15,7 @@ export function TagModal({ mediaType, mediaId, title, onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[380px] max-w-[90vw] p-5"
+        className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[420px] max-w-[90vw] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-3">
