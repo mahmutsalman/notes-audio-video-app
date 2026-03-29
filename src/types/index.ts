@@ -718,7 +718,7 @@ export interface ElectronAPI {
     upload: () => Promise<{ success: boolean; output?: string; error?: string; stderr?: string }>;
   };
   audioMarkers: {
-    getByAudio: (audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'capture_image' | 'quick_capture_audio') => Promise<AudioMarker[]>;
+    getByAudio: (audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'capture_image' | 'quick_capture_audio' | 'image_child') => Promise<AudioMarker[]>;
     addBatch: (markers: Omit<AudioMarker, 'id' | 'created_at'>[]) => Promise<AudioMarker[]>;
     updateCaption: (markerId: number, caption: string | null) => Promise<AudioMarker>;
   };
@@ -844,12 +844,25 @@ export interface TaggedCaptureImage {
   caption: string | null;
 }
 
+export interface TaggedChildImage {
+  id: number;
+  file_path: string;
+  thumbnail_path: string | null;
+  caption: string | null;
+  parent_type: 'duration_image' | 'image' | 'quick_capture_image';
+  parent_id: number;
+  recording_id: number | null;
+  recording_name: string | null;
+  topic_name: string | null;
+}
+
 export interface TaggedItems {
   images: TaggedMediaImage[];
   duration_images: TaggedMediaDurationImage[];
   audios: TaggedMediaAudio[];
   duration_audios: TaggedMediaDurationAudio[];
   capture_images: TaggedCaptureImage[];
+  image_children: TaggedChildImage[];
 }
 
 // Quick Capture types

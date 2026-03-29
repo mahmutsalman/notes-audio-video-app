@@ -1573,6 +1573,7 @@ export const TagOperations = {
     duration_images: { id: number; file_path: string; thumbnail_path: string | null; caption: string | null; duration_id: number; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
     audios: { id: number; file_path: string; caption: string | null; duration: number | null; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
     duration_audios: { id: number; file_path: string; caption: string | null; duration: number | null; duration_id: number; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
+    image_children: { id: number; file_path: string; thumbnail_path: string | null; caption: string | null; parent_type: string; parent_id: number; recording_id: number | null; recording_name: string | null; topic_name: string | null }[];
   } {
     const db = getDatabase();
 
@@ -1636,7 +1637,26 @@ export const TagOperations = {
       ORDER BY qci.sort_order
     `).all(tagName) as { id: number; capture_id: number; file_path: string; thumbnail_path: string | null; caption: string | null }[];
 
-    return { images, duration_images, audios, duration_audios, capture_images };
+    const image_children = db.prepare(`
+      SELECT ic.id, ic.file_path, ic.thumbnail_path, ic.caption,
+             ic.parent_type, ic.parent_id,
+             COALESCE(r1.id, r2.id) as recording_id,
+             COALESCE(r1.name, r2.name) as recording_name,
+             COALESCE(t1.name, t2.name) as topic_name
+      FROM image_children ic
+      JOIN media_tags mt ON mt.media_type = 'image_child' AND mt.media_id = ic.id
+      JOIN tags tag ON tag.id = mt.tag_id AND tag.name = ?
+      LEFT JOIN images img ON ic.parent_type = 'image' AND img.id = ic.parent_id
+      LEFT JOIN recordings r1 ON r1.id = img.recording_id
+      LEFT JOIN topics t1 ON t1.id = r1.topic_id
+      LEFT JOIN duration_images di ON ic.parent_type = 'duration_image' AND di.id = ic.parent_id
+      LEFT JOIN durations dur ON dur.id = di.duration_id
+      LEFT JOIN recordings r2 ON r2.id = dur.recording_id
+      LEFT JOIN topics t2 ON t2.id = r2.topic_id
+      ORDER BY ic.sort_order, ic.created_at
+    `).all(tagName) as { id: number; file_path: string; thumbnail_path: string | null; caption: string | null; parent_type: string; parent_id: number; recording_id: number | null; recording_name: string | null; topic_name: string | null }[];
+
+    return { images, duration_images, audios, duration_audios, capture_images, image_children };
   },
 };
 
