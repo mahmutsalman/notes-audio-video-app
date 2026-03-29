@@ -196,6 +196,16 @@ export default function ImageLightbox({
   const [pendingDeleteChild, setPendingDeleteChild] = useState<number | null>(null);
   const [childCaptionEdit, setChildCaptionEdit] = useState<{ childId: number; value: string } | null>(null);
 
+  // Annotation state
+  const [annotations, setAnnotations] = useState<ImageAnnotation[]>([]);
+  const [drawMode, setDrawMode] = useState(false);
+  const [activeTool, setActiveTool] = useState<'rect' | 'line'>('rect');
+  const [activeColor, setActiveColor] = useState(ANNOTATION_COLORS[0]);
+  const [selectedAnnId, setSelectedAnnId] = useState<number | null>(null);
+  const [drawPreview, setDrawPreview] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  // Size of the actual image content within the <img> element (accounting for object-contain letterboxing)
+  const [displayedSize, setDisplayedSize] = useState<{ w: number; h: number } | null>(null);
+
   const imageRef = useRef<HTMLImageElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
