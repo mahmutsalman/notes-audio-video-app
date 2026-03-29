@@ -57,6 +57,8 @@ interface SortableImageGridProps {
   audioCountMap?: Record<number, number>;
   /** Map of imageId → tag count for showing badge */
   tagCountMap?: Record<number, number>;
+  /** Map of imageId → tag name array for showing above image */
+  tagNamesMap?: Record<number, string[]>;
   /** Image ID to highlight (from search navigation) */
   highlightedId?: number;
   /** Disable drag-and-drop and hide the delete button (read-only display mode) */
@@ -77,6 +79,7 @@ interface SortableImageProps {
   onDelete: (id: number) => void;
   audioCount?: number;
   tagCount?: number;
+  tags?: string[];
   isHighlighted?: boolean;
 }
 
@@ -92,6 +95,7 @@ function SortableImage({
   onDelete,
   audioCount = 0,
   tagCount = 0,
+  tags = [],
   isHighlighted = false,
 }: SortableImageProps) {
   const [captionExpanded, setCaptionExpanded] = useState(false);
@@ -137,7 +141,7 @@ function SortableImage({
                           bg-white/60 dark:bg-black/50 rounded-t-lg
                           group-hover:opacity-0 transition-opacity pointer-events-none">
             {tags.map(t => (
-              <p key={t} className={`text-xs ${captionColorClass} italic font-light leading-tight truncate`}>
+              <p key={t} className={`text-[10px] ${captionColorClass} italic font-light leading-tight truncate`}>
                 #{t}
               </p>
             ))}
@@ -352,6 +356,7 @@ export default function SortableImageGrid({
   pastePlaceholder,
   audioCountMap,
   tagCountMap,
+  tagNamesMap,
   highlightedId,
   readOnly = false,
 }: SortableImageGridProps) {
@@ -451,6 +456,7 @@ export default function SortableImageGrid({
                 onDelete={onDelete}
                 audioCount={audioCountMap?.[img.id] ?? 0}
                 tagCount={tagCountMap?.[img.id] ?? 0}
+                tags={tagNamesMap?.[img.id] ?? []}
                 isHighlighted={highlightedId === img.id}
               />
             );

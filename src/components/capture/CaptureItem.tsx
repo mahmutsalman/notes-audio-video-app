@@ -58,6 +58,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   const [localAudios, setLocalAudios] = useState<QuickCaptureAudio[]>(capture.audios);
   const [audioMarkersMap, setAudioMarkersMap] = useState<Record<number, import('../../types').AudioMarker[]>>({});
   const [imageTagCountMap, setImageTagCountMap] = useState<Record<number, number>>({});
+  const [imageTagNamesMap, setImageTagNamesMap] = useState<Record<number, string[]>>({});
   const [audioTagCountMap, setAudioTagCountMap] = useState<Record<number, number>>({});
 
   // Map QuickCaptureImage → SortableImageItem (color: null = no color bars)
@@ -109,7 +110,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
       Promise.all(
         localImages.map(async img => {
           const tags = await window.electronAPI.tags.getByMedia('quick_capture_image', img.id);
-          return [img.id, tags.length] as const;
+          return [img.id, tags] as const;
         })
       ),
       Promise.all(
@@ -119,7 +120,8 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
         })
       ),
     ]);
-    setImageTagCountMap(Object.fromEntries(imgEntries));
+    setImageTagCountMap(Object.fromEntries(imgEntries.map(([id, tags]) => [id, tags.length])));
+    setImageTagNamesMap(Object.fromEntries(imgEntries.map(([id, tags]) => [id, tags.map(t => t.name)])));
     setAudioTagCountMap(Object.fromEntries(audioEntries));
   }, [localImages, localAudios]);
 
@@ -372,6 +374,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
             onDelete={handleDeleteImage}
             onReorder={handleReorder}
             tagCountMap={imageTagCountMap}
+            tagNamesMap={imageTagNamesMap}
             pastePlaceholder={
               <div className="flex flex-col items-center">
                 <div className="relative w-full">
