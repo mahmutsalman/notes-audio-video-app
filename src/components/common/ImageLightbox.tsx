@@ -667,38 +667,44 @@ export default function ImageLightbox({
           } : undefined}
         />
 
-        {/* Audio buttons — shown floating only when strip is not visible (child lightbox) */}
+        {/* Audio chips — floating bar at bottom, only in child lightbox (disableChildImages) */}
         {disableChildImages && currentImageAudios.length > 0 && (
-          <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-2 px-4 pointer-events-none">
-            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 pointer-events-auto">
+          <div className="absolute bottom-4 left-0 right-0 flex justify-center px-4 pointer-events-none">
+            <div className="flex gap-1.5 flex-wrap justify-center pointer-events-auto">
               {currentImageAudios.map((audio, i) => (
-                <div key={audio.id} className="flex flex-col items-center gap-0.5">
-                  <div className="flex items-center gap-1">
+                <div key={audio.id} className="relative flex-shrink-0 group/chip">
+                  <button
+                    title={audio.caption ?? `Audio ${i + 1}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPlayImageAudio?.(audio, image.caption || `Image ${selectedIndex + 1}`);
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setEditingAudioCaptionId(audio.id);
+                      setAudioCaptionText(audio.caption ?? '');
+                    }}
+                    className="flex items-center gap-1 bg-black/60 hover:bg-black/80 border border-white/20 text-white rounded-full px-3 py-1 text-xs transition-colors whitespace-nowrap backdrop-blur-sm"
+                  >
+                    ▶ {i + 1}{audio.duration ? ` · ${fmtSecs(audio.duration)}` : ''}
+                  </button>
+                  {onDeleteImageAudio && image?.id && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        const label = image.caption || `Image ${selectedIndex + 1}`;
-                        onPlayImageAudio?.(audio, label);
+                        setPendingDeleteAudio({ audioId: audio.id, imageId: image.id!, index: i });
                       }}
-                      className="bg-white/20 hover:bg-white/30 text-white rounded-full px-3 py-1 text-xs flex items-center gap-1 transition-colors"
+                      className="absolute -top-1.5 -right-1 w-3.5 h-3.5 bg-black/80 border border-red-500/50 rounded-full text-red-400 text-[9px] leading-none opacity-0 group-hover/chip:opacity-100 transition-opacity flex items-center justify-center"
+                      title="Delete audio"
+                    >×</button>
+                  )}
+                  {editingAudioCaptionId === audio.id && onUpdateImageAudioCaption && image?.id && (
+                    <div
+                      className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-20 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl p-2.5 w-48"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      🔊 {i + 1}{audio.duration ? ` (${fmtSecs(audio.duration)})` : ''}
-                    </button>
-                    {onDeleteImageAudio && image?.id && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPendingDeleteAudio({ audioId: audio.id, imageId: image.id!, index: i });
-                        }}
-                        className="text-white/40 hover:text-red-400 text-xs transition-colors"
-                        title="Delete audio"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                  {onUpdateImageAudioCaption && image?.id && (
-                    editingAudioCaptionId === audio.id ? (
+                      <p className="text-white/40 text-[10px] mb-1.5">Caption</p>
                       <textarea
                         autoFocus
                         value={audioCaptionText}
@@ -709,14 +715,11 @@ export default function ImageLightbox({
                           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveAudioCaption(audio.id, image.id!); }
                           else if (e.key === 'Escape') { setEditingAudioCaptionId(null); setAudioCaptionText(''); }
                         }}
-                        onClick={(e) => e.stopPropagation()}
                         rows={2}
-                        className="w-40 text-xs bg-black/60 text-white/90 rounded px-2 py-1 border border-white/30 focus:outline-none focus:border-white/60 resize-none italic"
+                        className="w-full text-xs bg-black/60 text-white/90 rounded-lg px-2 py-1.5 border border-white/20 focus:outline-none focus:border-white/50 resize-none"
                         placeholder="Add caption…"
                       />
-                    ) : (
-                      <AudioCaptionText caption={audio.caption} onEdit={() => { setEditingAudioCaptionId(audio.id); setAudioCaptionText(audio.caption ?? ''); }} />
-                    )
+                    </div>
                   )}
                 </div>
               ))}
@@ -830,7 +833,7 @@ export default function ImageLightbox({
                   {/* Audio count badge — top-right */}
                   {(childAudiosMap[child.id] ?? []).length > 0 && (
                     <span className="absolute top-0.5 right-0.5 bg-blue-500/80 text-white text-[9px] rounded px-0.5 leading-4 pointer-events-none">
-                      {(childAudiosMap[child.id] ?? []).length}🔊
+                      {(childAudiosMap[child.id] ?? []).length}
                     </span>
                   )}
                   {/* Tag count badge — stacked below audio if both, otherwise top-right */}
@@ -838,7 +841,7 @@ export default function ImageLightbox({
                     <span className={`absolute right-0.5 bg-orange-500/90 text-white text-[9px] rounded px-0.5 leading-4 pointer-events-none ${
                       (childAudiosMap[child.id] ?? []).length > 0 ? 'top-4' : 'top-0.5'
                     }`}>
-                      {childTagCountMap[child.id]}🏷
+                      {childTagCountMap[child.id]}
                     </span>
                   )}
                   {/* Delete button — top-left corner, small × */}
@@ -862,23 +865,30 @@ export default function ImageLightbox({
             </div>
           </div>
 
-          {/* Right: main image audio badges */}
+          {/* Right: main image audios — compact horizontal chip row */}
           {currentImageAudios.length > 0 && (
             <>
               <div className="w-px self-stretch bg-white/10 flex-shrink-0" />
-              <div className="flex flex-col gap-1 flex-shrink-0 max-w-[180px]">
-                {currentImageAudios.map((audio, i) => (
-                  <div key={audio.id} className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-1">
+              <div className="flex-shrink-0 min-w-0 max-w-[220px]">
+                <p className="text-white/40 text-[10px] mb-1">Audios</p>
+                <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
+                  {currentImageAudios.map((audio, i) => (
+                    <div key={audio.id} className="relative flex-shrink-0 group/chip">
                       <button
+                        title={audio.caption ?? `Audio ${i + 1}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          const label = image.caption || `Image ${selectedIndex + 1}`;
-                          onPlayImageAudio?.(audio, label);
+                          onPlayImageAudio?.(audio, image.caption || `Image ${selectedIndex + 1}`);
                         }}
-                        className="bg-white/15 hover:bg-white/25 text-white rounded-full px-2 py-0.5 text-xs flex items-center gap-1 transition-colors whitespace-nowrap"
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setEditingAudioCaptionId(audio.id);
+                          setAudioCaptionText(audio.caption ?? '');
+                        }}
+                        className="flex items-center gap-1 bg-white/15 hover:bg-white/25 text-white rounded-full px-2.5 py-1 text-[11px] transition-colors whitespace-nowrap"
                       >
-                        🔊 {i + 1}{audio.duration ? ` (${fmtSecs(audio.duration)})` : ''}
+                        ▶ {i + 1}{audio.duration ? ` · ${fmtSecs(audio.duration)}` : ''}
                       </button>
                       {onDeleteImageAudio && image?.id && (
                         <button
@@ -886,36 +896,35 @@ export default function ImageLightbox({
                             e.stopPropagation();
                             setPendingDeleteAudio({ audioId: audio.id, imageId: image.id!, index: i });
                           }}
-                          className="text-white/30 hover:text-red-400 text-xs transition-colors"
+                          className="absolute -top-1.5 -right-1 w-3.5 h-3.5 bg-black/80 border border-red-500/50 rounded-full text-red-400 text-[9px] leading-none opacity-0 group-hover/chip:opacity-100 transition-opacity flex items-center justify-center"
                           title="Delete audio"
+                        >×</button>
+                      )}
+                      {editingAudioCaptionId === audio.id && onUpdateImageAudioCaption && image?.id && (
+                        <div
+                          className="absolute bottom-full mb-2 left-0 z-20 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl p-2.5 w-48"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          ×
-                        </button>
+                          <p className="text-white/40 text-[10px] mb-1.5">Caption (right-click to edit)</p>
+                          <textarea
+                            autoFocus
+                            value={audioCaptionText}
+                            onChange={(e) => setAudioCaptionText(e.target.value)}
+                            onBlur={() => saveAudioCaption(audio.id, image.id!)}
+                            onKeyDown={(e) => {
+                              e.stopPropagation();
+                              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveAudioCaption(audio.id, image.id!); }
+                              else if (e.key === 'Escape') { setEditingAudioCaptionId(null); setAudioCaptionText(''); }
+                            }}
+                            rows={2}
+                            className="w-full text-xs bg-black/60 text-white/90 rounded-lg px-2 py-1.5 border border-white/20 focus:outline-none focus:border-white/50 resize-none"
+                            placeholder="Add caption…"
+                          />
+                        </div>
                       )}
                     </div>
-                    {onUpdateImageAudioCaption && image?.id && (
-                      editingAudioCaptionId === audio.id ? (
-                        <textarea
-                          autoFocus
-                          value={audioCaptionText}
-                          onChange={(e) => setAudioCaptionText(e.target.value)}
-                          onBlur={() => saveAudioCaption(audio.id, image.id!)}
-                          onKeyDown={(e) => {
-                            e.stopPropagation();
-                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveAudioCaption(audio.id, image.id!); }
-                            else if (e.key === 'Escape') { setEditingAudioCaptionId(null); setAudioCaptionText(''); }
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          rows={2}
-                          className="w-36 text-xs bg-black/60 text-white/90 rounded px-2 py-1 border border-white/30 focus:outline-none focus:border-white/60 resize-none italic"
-                          placeholder="Add caption…"
-                        />
-                      ) : (
-                        <AudioCaptionText caption={audio.caption} onEdit={() => { setEditingAudioCaptionId(audio.id); setAudioCaptionText(audio.caption ?? ''); }} />
-                      )
-                    )}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </>
           )}
