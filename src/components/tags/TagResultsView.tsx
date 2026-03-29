@@ -434,7 +434,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
         </div>
       )}
 
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+      <p className="text-sm text-gray-400 dark:text-gray-500 mb-4">
         {total} item{total !== 1 ? 's' : ''} tagged{' '}
         {tagNames.map((t, i) => (
           <span key={t}>{i > 0 && <span className="text-gray-400 mx-1">or</span>}<span className="font-mono text-blue-500">#{t}</span></span>
@@ -443,30 +443,33 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
 
       {/* Image sections — square grid */}
       {imageSections.map(({ label, isRecordingLevel, rows }) => (
-        <div key={label} className="mb-6">
-          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <span>🖼️</span>{label} <span className="font-normal normal-case text-gray-400">({rows.length})</span>
+        <div key={label} className="mb-4 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+          <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 flex items-center gap-1.5 mb-2">
+            <span>🖼️</span>{label}
+            <span className="font-normal text-blue-400 dark:text-blue-500">({rows.length})</span>
           </h3>
-          <SortableImageGrid
-            images={rows.map(r => ({
-              id: r.id,
-              file_path: r.file_path,
-              thumbnail_path: r.thumbnail_path ?? null,
-              caption: r.caption,
-              color: null,
-              group_color: null,
-            }))}
-            gridClassName="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2"
-            readOnly
-            showNumberBadge={false}
-            colorKeyPrefix="tagResult"
-            captionColorClass="text-gray-600 dark:text-gray-400"
-            colorOverrides={{}}
-            groupColorOverrides={{}}
-            onImageClick={(index) => openImageLightbox(rows, index, isRecordingLevel)}
-            onDelete={() => {}}
-            onReorder={() => {}}
-          />
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg p-3">
+            <SortableImageGrid
+              images={rows.map(r => ({
+                id: r.id,
+                file_path: r.file_path,
+                thumbnail_path: r.thumbnail_path ?? null,
+                caption: r.caption,
+                color: null,
+                group_color: null,
+              }))}
+              gridClassName="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1"
+              readOnly
+              showNumberBadge={false}
+              colorKeyPrefix="tagResult"
+              captionColorClass="text-blue-600 dark:text-blue-400"
+              colorOverrides={{}}
+              groupColorOverrides={{}}
+              onImageClick={(index) => openImageLightbox(rows, index, isRecordingLevel)}
+              onDelete={() => {}}
+              onReorder={() => {}}
+            />
+          </div>
           {/* Navigate buttons below grid */}
           <div className="mt-2 flex flex-wrap gap-1">
             {rows.map((row) => (
@@ -485,77 +488,78 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
 
       {/* Capture Images section */}
       {items.capture_images.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <span>📸</span>Capture Images <span className="font-normal normal-case text-gray-400">({items.capture_images.length})</span>
+        <div className="mb-4 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+          <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 flex items-center gap-1.5 mb-2">
+            <span>📸</span>Capture Images
+            <span className="font-normal text-blue-400 dark:text-blue-500">({items.capture_images.length})</span>
           </h3>
-          <SortableImageGrid
-            images={items.capture_images.map(r => ({
-              id: r.id,
-              file_path: r.file_path,
-              thumbnail_path: r.thumbnail_path ?? null,
-              caption: r.caption,
-              color: null,
-              group_color: null,
-            }))}
-            gridClassName="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2"
-            readOnly
-            showNumberBadge={false}
-            colorKeyPrefix="captureTagResult"
-            captionColorClass="text-gray-600 dark:text-gray-400"
-            colorOverrides={{}}
-            groupColorOverrides={{}}
-            onImageClick={(index) => openCaptureLightbox(items.capture_images, index)}
-            onDelete={() => {}}
-            onReorder={() => {}}
-          />
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg p-3">
+            <SortableImageGrid
+              images={items.capture_images.map(r => ({
+                id: r.id,
+                file_path: r.file_path,
+                thumbnail_path: r.thumbnail_path ?? null,
+                caption: r.caption,
+                color: null,
+                group_color: null,
+              }))}
+              gridClassName="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1"
+              readOnly
+              showNumberBadge={false}
+              colorKeyPrefix="captureTagResult"
+              captionColorClass="text-blue-600 dark:text-blue-400"
+              colorOverrides={{}}
+              groupColorOverrides={{}}
+              onImageClick={(index) => openCaptureLightbox(items.capture_images, index)}
+              onDelete={() => {}}
+              onReorder={() => {}}
+            />
+          </div>
         </div>
       )}
 
       {/* Audio sections — list */}
       {audioSections.map(({ label, icon, isRecordingLevel, rows }) => (
-        <div key={label} className="mb-6">
-          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <span>{icon}</span>{label} <span className="font-normal normal-case text-gray-400">({rows.length})</span>
+        <div key={label} className="mb-4 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+          <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 flex items-center gap-1.5 mb-2">
+            <span>{icon}</span>{label}
+            <span className="font-normal text-blue-400 dark:text-blue-500">({rows.length})</span>
           </h3>
-          <div className="space-y-2">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg overflow-hidden space-y-1 p-2">
             {rows.map((row) => (
               <div
                 key={row.id}
-                className="group rounded-lg border border-gray-100 dark:border-dark-border bg-white dark:bg-dark-surface overflow-hidden"
+                className="group flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/10 dark:bg-blue-900/20 border border-blue-800/20 dark:border-blue-800/30 cursor-pointer hover:bg-blue-900/20 dark:hover:bg-blue-900/30 transition-colors"
+                onClick={async () => {
+                  const contextType = isRecordingLevel ? 'recording' : 'duration';
+                  const player = isRecordingLevel ? recordingAudioPlayer : durationAudioPlayer;
+                  const markers = await window.electronAPI.audioMarkers.getByAudio(row.id, contextType);
+                  const audioLabel = row.caption || `${row.recording_name || 'Recording'} — Audio`;
+                  player.play({ id: row.id, file_path: row.file_path, duration: null, caption: row.caption, created_at: '' } as any, audioLabel, markers);
+                }}
               >
-                <div
-                  className="flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-dark-hover cursor-pointer transition-colors"
-                  onClick={async () => {
-                    const contextType = isRecordingLevel ? 'recording' : 'duration';
-                    const player = isRecordingLevel ? recordingAudioPlayer : durationAudioPlayer;
-                    const markers = await window.electronAPI.audioMarkers.getByAudio(row.id, contextType);
-                    const audioLabel = row.caption || `${row.recording_name || 'Recording'} — Audio`;
-                    player.play({ id: row.id, file_path: row.file_path, duration: null, caption: row.caption, created_at: '' } as any, audioLabel, markers);
-                  }}
+                <span className="w-5 h-5 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                  {icon}
+                </span>
+                <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M18 3a1 1 0 00-1.447-.894L8.763 6H5a3 3 0 000 6h.28l1.771 5.316A1 1 0 008 18h1a1 1 0 001-1v-4.382l6.553 3.276A1 1 0 0018 15V3z" />
+                </svg>
+                <span className="flex-1 min-w-0 text-xs text-blue-300 truncate">
+                  {row.caption || <span className="italic opacity-60">no caption</span>}
+                  {row.extra && <span className="ml-1 opacity-60">{row.extra}</span>}
+                </span>
+                <span className="text-[10px] text-blue-400/70 truncate max-w-[140px] flex-shrink-0">
+                  {row.recording_name || 'Recording'}
+                </span>
+                <button
+                  onClick={e => { e.stopPropagation(); onNavigate(row.recording_id); }}
+                  className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-blue-800/30 text-blue-400"
+                  title="Open recording"
                 >
-                  <div className="w-10 h-10 rounded flex-shrink-0 bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-lg">
-                    {icon}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-gray-700 dark:text-gray-300 truncate">
-                      {row.caption || <span className="italic text-gray-400">no caption</span>}
-                      {row.extra && <span className="text-gray-400 ml-1">{row.extra}</span>}
-                    </p>
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
-                      {row.topic_name} › {row.recording_name || 'Recording'}
-                    </p>
-                  </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); onNavigate(row.recording_id); }}
-                    className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity self-center p-1.5 rounded hover:bg-gray-200 dark:hover:bg-dark-border text-gray-500 dark:text-gray-400"
-                    title="Open recording"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                  </button>
-                </div>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </button>
               </div>
             ))}
           </div>
