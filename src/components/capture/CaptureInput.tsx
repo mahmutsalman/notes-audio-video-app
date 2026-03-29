@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import TagInput from '../common/TagInput';
+import { TagInputSuggestions } from '../common/TagInputSuggestions';
 import { useAudioRecording, type PendingMarker } from '../../context/AudioRecordingContext';
 import type { QuickCapture } from '../../types';
 import PendingImageGrid, { type PendingImage } from './PendingImageGrid';
@@ -221,7 +221,7 @@ export default function CaptureInput({ onSaved }: CaptureInputProps) {
       {/* Tags + Save */}
       <div className="flex items-center gap-2">
         <div className="flex-1">
-          <TagInput tags={tags} onChange={setTags} placeholder="Add tags…" />
+          <TagInputSuggestions tags={tags} onChange={setTags} placeholder="Add tags…" />
         </div>
         <button
           onClick={handleSave}
