@@ -797,6 +797,30 @@ function runMigrations(db: Database.Database): void {
     console.log('Created image_child_audios table');
   }
 
+  // Migration: Create image_annotations table
+  const imageAnnotationsTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='image_annotations'"
+  ).get();
+  if (!imageAnnotationsTableExists) {
+    db.exec(`
+      CREATE TABLE image_annotations (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        image_type   TEXT    NOT NULL,
+        image_id     INTEGER NOT NULL,
+        ann_type     TEXT    NOT NULL,
+        x1           REAL    NOT NULL,
+        y1           REAL    NOT NULL,
+        x2           REAL    NOT NULL,
+        y2           REAL    NOT NULL,
+        color        TEXT    NOT NULL DEFAULT '#ef4444',
+        stroke_width REAL    NOT NULL DEFAULT 0.5,
+        created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_image_annotations_image ON image_annotations(image_type, image_id);
+    `);
+    console.log('Created image_annotations table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

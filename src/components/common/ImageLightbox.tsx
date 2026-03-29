@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio } from '../../types';
+import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation } from '../../types';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 import WaveformVisualizer from '../audio/WaveformVisualizer';
 import { formatDuration } from '../../utils/formatters';
@@ -40,6 +40,19 @@ function fmtSecs(secs: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+const ANNOTATION_COLORS = [
+  '#ef4444', // red
+  '#f97316', // orange
+  '#eab308', // yellow
+  '#22c55e', // green
+  '#3b82f6', // blue
+  '#a855f7', // purple
+  '#ffffff',  // white
+  '#1a1a1a',  // black
+];
+
+const STROKE_WIDTH = 0.6; // SVG viewBox units (0 0 100 100)
+const HANDLE_SIZE = 1.8;  // handle square/circle radius in viewBox units
 
 export default function ImageLightbox({
   images,
@@ -75,7 +88,18 @@ export default function ImageLightbox({
   const [pendingDeleteChild, setPendingDeleteChild] = useState<number | null>(null);
   const [childCaptionEdit, setChildCaptionEdit] = useState<{ childId: number; value: string } | null>(null);
 
+  // Annotation state
+  const [annotations, setAnnotations] = useState<ImageAnnotation[]>([]);
+  const [drawMode, setDrawMode] = useState(false);
+  const [activeTool, setActiveTool] = useState<'rect' | 'line'>('rect');
+  const [activeColor, setActiveColor] = useState(ANNOTATION_COLORS[0]);
+  const [selectedAnnId, setSelectedAnnId] = useState<number | null>(null);
+  const [drawPreview, setDrawPreview] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  // Size of the actual image content within the <img> element (accounting for object-contain letterboxing)
+  const [displayedSize, setDisplayedSize] = useState<{ w: number; h: number } | null>(null);
+
   const imageRef = useRef<HTMLImageElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const hasDragged = useRef(false);
@@ -83,6 +107,24 @@ export default function ImageLightbox({
   const translateAtDragStart = useRef({ x: 0, y: 0 });
   const zoomIndicatorTimeout = useRef<ReturnType<typeof setTimeout>>();
   const scaleRef = useRef(1);
+
+  // Annotation drag refs
+  const isAnnDragging = useRef(false);
+  const annDragId = useRef<number | null>(null);
+  const annDragHandle = useRef<string | null>(null); // null=move body, 'tl','tr','bl','br','start','end'
+  const annAtStart = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const annMouseStart = useRef<{ x: number; y: number } | null>(null);
+
+  // Draw refs
+  const isDrawingRef = useRef(false);
+  const drawStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Refs that mirror state so global mouse handlers don't need to re-register on every state change
+  const annotationsRef = useRef<ImageAnnotation[]>([]);
+  const drawPreviewRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const activeToolRef = useRef<'rect' | 'line'>('rect');
+  const activeColorRef = useRef(ANNOTATION_COLORS[0]);
+  const currentImageIdRef = useRef<number | undefined>(undefined);
+  const currentMediaTypeRef = useRef<string | undefined>(undefined);
 
   // Audio recording context — for embedded recording bar
   const {
@@ -116,6 +158,13 @@ export default function ImageLightbox({
 
   // Keep scaleRef in sync with scale state
   useEffect(() => { scaleRef.current = scale; }, [scale]);
+  // Keep mirror refs in sync
+  useEffect(() => { annotationsRef.current = annotations; }, [annotations]);
+  useEffect(() => { drawPreviewRef.current = drawPreview; }, [drawPreview]);
+  useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
+  useEffect(() => { activeColorRef.current = activeColor; }, [activeColor]);
+  useEffect(() => { currentImageIdRef.current = image?.id; }, [image?.id]);
+  useEffect(() => { currentMediaTypeRef.current = mediaType; }, [mediaType]);
 
   // Clamp translate so the image edge can't move past the container edge
   const clampTranslate = useCallback((t: { x: number; y: number }, currentScale: number) => {
@@ -137,13 +186,57 @@ export default function ImageLightbox({
     };
   }, []);
 
-  // Reset zoom on navigation
+  // Reset zoom + annotation state on navigation
   useEffect(() => {
     setScale(1);
     setTranslate({ x: 0, y: 0 });
     setShowTagModal(false);
     setSelectedChildId(null);
+    setDisplayedSize(null);
+    setAnnotations([]);
+    setSelectedAnnId(null);
+    setDrawPreview(null);
+    isDrawingRef.current = false;
+    isAnnDragging.current = false;
   }, [selectedIndex]);
+
+  // Load annotations when image changes
+  useEffect(() => {
+    if (!mediaType || !image?.id) {
+      setAnnotations([]);
+      return;
+    }
+    window.electronAPI.imageAnnotations.getByImage(mediaType, image.id).then(setAnnotations);
+  }, [image?.id, mediaType]);
+
+  // Compute actual image content size after load (to position SVG overlay)
+  const handleImageLoad = useCallback(() => {
+    const img = imageRef.current;
+    if (!img || img.offsetWidth === 0 || img.offsetHeight === 0) return;
+    const naturalAR = img.naturalWidth / img.naturalHeight;
+    const offsetAR = img.offsetWidth / img.offsetHeight;
+    let w: number, h: number;
+    if (naturalAR > offsetAR) {
+      w = img.offsetWidth;
+      h = img.offsetWidth / naturalAR;
+    } else {
+      h = img.offsetHeight;
+      w = img.offsetHeight * naturalAR;
+    }
+    setDisplayedSize({ w, h });
+  }, []);
+
+  // Convert screen coords to SVG viewBox percentage coords (0–100)
+  const getSvgCoords = useCallback((clientX: number, clientY: number) => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    return {
+      x: Math.max(0, Math.min(100, (clientX - rect.left) / rect.width * 100)),
+      y: Math.max(0, Math.min(100, (clientY - rect.top) / rect.height * 100)),
+    };
+  }, []);
 
   // Load child images when the current image changes
   useEffect(() => {
@@ -297,6 +390,7 @@ export default function ImageLightbox({
               x: cursorX - ratio * (cursorX - t.x),
               y: cursorY - ratio * (cursorY - t.y),
             };
+
             return clampTranslate(raw, newScale);
           });
         }
@@ -310,16 +404,16 @@ export default function ImageLightbox({
     return () => container.removeEventListener('wheel', handleWheel);
   }, [flashZoomIndicator, clampTranslate]);
 
-  // Drag to pan
+  // Drag to pan (only when not in draw mode)
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (scale <= 1) return;
+    if (scale <= 1 || drawMode) return;
     e.preventDefault();
     isDragging.current = true;
     hasDragged.current = false;
     dragStart.current = { x: e.clientX, y: e.clientY };
     translateAtDragStart.current = { ...translate };
     document.body.style.cursor = 'grabbing';
-  }, [scale, translate]);
+  }, [scale, translate, drawMode]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -350,6 +444,115 @@ export default function ImageLightbox({
     };
   }, [clampTranslate]);
 
+  // Global mouse move/up for annotation dragging and drawing.
+  // Uses refs for frequently-changing state to avoid re-registering handlers on every move.
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDrawingRef.current && drawStartRef.current) {
+        const coords = getSvgCoords(e.clientX, e.clientY);
+        if (coords) {
+          setDrawPreview({
+            x1: drawStartRef.current.x,
+            y1: drawStartRef.current.y,
+            x2: coords.x,
+            y2: coords.y,
+          });
+        }
+        return;
+      }
+
+      if (!isAnnDragging.current || annDragId.current === null || !annAtStart.current || !annMouseStart.current) return;
+      const coords = getSvgCoords(e.clientX, e.clientY);
+      if (!coords) return;
+
+      const dx = coords.x - annMouseStart.current.x;
+      const dy = coords.y - annMouseStart.current.y;
+      const a = annAtStart.current;
+      const handle = annDragHandle.current;
+
+      let newCoords: { x1: number; y1: number; x2: number; y2: number };
+      if (handle === null) {
+        newCoords = { x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy };
+      } else if (handle === 'tl') {
+        newCoords = { x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2, y2: a.y2 };
+      } else if (handle === 'tr') {
+        newCoords = { x1: a.x1, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 };
+      } else if (handle === 'bl') {
+        newCoords = { x1: a.x1 + dx, y1: a.y1, x2: a.x2, y2: a.y2 + dy };
+      } else if (handle === 'br') {
+        newCoords = { x1: a.x1, y1: a.y1, x2: a.x2 + dx, y2: a.y2 + dy };
+      } else if (handle === 'start') {
+        newCoords = { x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2, y2: a.y2 };
+      } else {
+        newCoords = { x1: a.x1, y1: a.y1, x2: a.x2 + dx, y2: a.y2 + dy };
+      }
+
+      newCoords = {
+        x1: Math.max(0, Math.min(100, newCoords.x1)),
+        y1: Math.max(0, Math.min(100, newCoords.y1)),
+        x2: Math.max(0, Math.min(100, newCoords.x2)),
+        y2: Math.max(0, Math.min(100, newCoords.y2)),
+      };
+
+      setAnnotations(prev => prev.map(ann =>
+        ann.id === annDragId.current ? { ...ann, ...newCoords } : ann
+      ));
+    };
+
+    const handleMouseUp = async () => {
+      if (isDrawingRef.current) {
+        isDrawingRef.current = false;
+        const preview = drawPreviewRef.current;
+        drawStartRef.current = null;
+        setDrawPreview(null);
+
+        if (!preview || !imageRef.current) return;
+        const minSize = 0.5;
+        if (Math.abs(preview.x2 - preview.x1) < minSize && Math.abs(preview.y2 - preview.y1) < minSize) return;
+
+        // Read image info from the DOM ref to avoid stale closure
+        const imgEl = svgRef.current?.closest('.image-lightbox-root') as HTMLElement | null;
+        void imgEl; // not needed, we use captured values below
+        const currentImageId = currentImageIdRef.current;
+        const currentMediaType = currentMediaTypeRef.current;
+        if (!currentImageId || !currentMediaType) return;
+
+        const created = await window.electronAPI.imageAnnotations.create({
+          image_type: currentMediaType,
+          image_id: currentImageId,
+          ann_type: activeToolRef.current,
+          x1: preview.x1, y1: preview.y1, x2: preview.x2, y2: preview.y2,
+          color: activeColorRef.current,
+          stroke_width: STROKE_WIDTH,
+        });
+        setAnnotations(prev => [...prev, created]);
+        return;
+      }
+
+      if (!isAnnDragging.current || annDragId.current === null) return;
+      const id = annDragId.current;
+      isAnnDragging.current = false;
+      annDragId.current = null;
+      annDragHandle.current = null;
+      annAtStart.current = null;
+      annMouseStart.current = null;
+
+      const ann = annotationsRef.current.find(a => a.id === id);
+      if (ann) {
+        await window.electronAPI.imageAnnotations.update(id, {
+          x1: ann.x1, y1: ann.y1, x2: ann.x2, y2: ann.y2,
+        });
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [getSvgCoords]); // stable deps only — state accessed via refs
+
   // Double-click to reset zoom
   const handleDoubleClick = useCallback(() => {
     setScale(1);
@@ -365,22 +568,44 @@ export default function ImageLightbox({
       }
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (e.key === 'ArrowLeft') {
-        if (selectedChildId == null && selectedIndex > 0) onNavigate(selectedIndex - 1);
-      } else if (e.key === 'ArrowRight') {
-        if (selectedChildId == null && selectedIndex < images.length - 1) onNavigate(selectedIndex + 1);
-      } else if (e.key === 'Escape') {
+
+      if (e.key === 'Escape') {
+        if (drawMode) {
+          setDrawMode(false);
+          setDrawPreview(null);
+          isDrawingRef.current = false;
+          return;
+        }
+        if (selectedAnnId !== null) {
+          setSelectedAnnId(null);
+          return;
+        }
         if (selectedChildId != null) {
           setSelectedChildId(null);
         } else {
           onClose();
         }
+        return;
+      }
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedAnnId !== null) {
+        const id = selectedAnnId;
+        setSelectedAnnId(null);
+        setAnnotations(prev => prev.filter(a => a.id !== id));
+        window.electronAPI.imageAnnotations.delete(id);
+        return;
+      }
+
+      if (e.key === 'ArrowLeft') {
+        if (selectedChildId == null && selectedIndex > 0) onNavigate(selectedIndex - 1);
+      } else if (e.key === 'ArrowRight') {
+        if (selectedChildId == null && selectedIndex < images.length - 1) onNavigate(selectedIndex + 1);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIndex, images.length, onNavigate, onClose, imageContextMenu, selectedChildId]);
+  }, [selectedIndex, images.length, onNavigate, onClose, imageContextMenu, selectedChildId, drawMode, selectedAnnId]);
 
   // Backdrop click: close at 1x, reset zoom at >1x, or dismiss context menu
   const handleBackdropClick = useCallback(() => {
@@ -407,6 +632,173 @@ export default function ImageLightbox({
       hasDragged.current = false;
     }
   }, [imageContextMenu]);
+
+  // SVG mouse handlers (draw mode)
+  const handleSvgMouseDown = useCallback((e: React.MouseEvent<SVGElement>) => {
+    if (!drawMode) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const coords = getSvgCoords(e.clientX, e.clientY);
+    if (!coords) return;
+    isDrawingRef.current = true;
+    drawStartRef.current = coords;
+    setDrawPreview({ x1: coords.x, y1: coords.y, x2: coords.x, y2: coords.y });
+  }, [drawMode, getSvgCoords]);
+
+  // Annotation shape mouse down (view mode — select + start drag)
+  const handleAnnMouseDown = useCallback((e: React.MouseEvent<SVGElement>, annId: number, handle: string | null) => {
+    if (drawMode) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedAnnId(annId);
+    const coords = getSvgCoords(e.clientX, e.clientY);
+    if (!coords) return;
+    const ann = annotations.find(a => a.id === annId);
+    if (!ann) return;
+    isAnnDragging.current = true;
+    annDragId.current = annId;
+    annDragHandle.current = handle;
+    annAtStart.current = { x1: ann.x1, y1: ann.y1, x2: ann.x2, y2: ann.y2 };
+    annMouseStart.current = coords;
+  }, [drawMode, getSvgCoords, annotations]);
+
+  const deleteAnnotation = useCallback(async (id: number) => {
+    setAnnotations(prev => prev.filter(a => a.id !== id));
+    if (selectedAnnId === id) setSelectedAnnId(null);
+    await window.electronAPI.imageAnnotations.delete(id);
+  }, [selectedAnnId]);
+
+  const clearAllAnnotations = useCallback(async () => {
+    if (!image?.id || !mediaType) return;
+    setAnnotations([]);
+    setSelectedAnnId(null);
+    // Delete each annotation
+    await Promise.all(annotations.map(a => window.electronAPI.imageAnnotations.delete(a.id)));
+  }, [annotations, image?.id, mediaType]);
+
+  // Render a single annotation in the SVG
+  const renderAnnotation = (ann: ImageAnnotation, isPreview = false) => {
+    const isSelected = !isPreview && ann.id === selectedAnnId && !drawMode;
+    const sw = ann.stroke_width ?? STROKE_WIDTH;
+    const hs = HANDLE_SIZE;
+
+    if (ann.ann_type === 'rect') {
+      const x = Math.min(ann.x1, ann.x2);
+      const y = Math.min(ann.y1, ann.y2);
+      const w = Math.abs(ann.x2 - ann.x1);
+      const h = Math.abs(ann.y2 - ann.y1);
+      return (
+        <g key={isPreview ? 'preview' : ann.id}>
+          {/* Invisible wider hit area for selection */}
+          {!isPreview && (
+            <rect
+              x={x} y={y} width={w} height={h}
+              fill="transparent" stroke="transparent" strokeWidth={sw + 3}
+              style={{ cursor: isSelected ? 'move' : 'pointer' }}
+              onMouseDown={(e) => handleAnnMouseDown(e, ann.id, null)}
+            />
+          )}
+          <rect
+            x={x} y={y} width={w} height={h}
+            fill="none"
+            stroke={ann.color}
+            strokeWidth={sw}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ pointerEvents: 'none' }}
+            opacity={isPreview ? 0.6 : 1}
+          />
+          {isSelected && !isPreview && (
+            <>
+              {/* Selection dashes */}
+              <rect
+                x={x} y={y} width={w} height={h}
+                fill="none" stroke="white" strokeWidth={sw * 0.5}
+                strokeDasharray={`${hs * 1.5} ${hs}`}
+                style={{ pointerEvents: 'none' }}
+              />
+              {/* Corner handles */}
+              {([
+                ['tl', x, y],
+                ['tr', x + w, y],
+                ['bl', x, y + h],
+                ['br', x + w, y + h],
+              ] as [string, number, number][]).map(([id, hx, hy]) => (
+                <rect
+                  key={id}
+                  x={hx - hs / 2} y={hy - hs / 2} width={hs} height={hs}
+                  fill="white" stroke={ann.color} strokeWidth={0.3}
+                  style={{ cursor: id === 'tl' || id === 'br' ? 'nwse-resize' : 'nesw-resize' }}
+                  onMouseDown={(e) => handleAnnMouseDown(e, ann.id, id)}
+                />
+              ))}
+              {/* Delete button */}
+              <g
+                style={{ cursor: 'pointer' }}
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); deleteAnnotation(ann.id); }}
+              >
+                <circle cx={x + w} cy={y} r={hs * 0.9} fill="#ef4444" />
+                <text x={x + w} y={y} textAnchor="middle" dominantBaseline="central" fontSize={hs * 1.1} fill="white" style={{ pointerEvents: 'none', fontWeight: 'bold' }}>×</text>
+              </g>
+            </>
+          )}
+        </g>
+      );
+    } else {
+      // line
+      return (
+        <g key={isPreview ? 'preview' : ann.id}>
+          {!isPreview && (
+            <line
+              x1={ann.x1} y1={ann.y1} x2={ann.x2} y2={ann.y2}
+              stroke="transparent" strokeWidth={sw + 4}
+              style={{ cursor: isSelected ? 'move' : 'pointer' }}
+              onMouseDown={(e) => handleAnnMouseDown(e, ann.id, null)}
+            />
+          )}
+          <line
+            x1={ann.x1} y1={ann.y1} x2={ann.x2} y2={ann.y2}
+            stroke={ann.color} strokeWidth={sw} strokeLinecap="round"
+            style={{ pointerEvents: 'none' }}
+            opacity={isPreview ? 0.6 : 1}
+          />
+          {isSelected && !isPreview && (
+            <>
+              {/* Endpoints */}
+              {([
+                ['start', ann.x1, ann.y1],
+                ['end', ann.x2, ann.y2],
+              ] as [string, number, number][]).map(([id, hx, hy]) => (
+                <circle
+                  key={id}
+                  cx={hx} cy={hy} r={hs * 0.6}
+                  fill="white" stroke={ann.color} strokeWidth={0.3}
+                  style={{ cursor: 'crosshair' }}
+                  onMouseDown={(e) => handleAnnMouseDown(e, ann.id, id)}
+                />
+              ))}
+              {/* Delete button */}
+              <g
+                style={{ cursor: 'pointer' }}
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); deleteAnnotation(ann.id); }}
+              >
+                <circle cx={(ann.x1 + ann.x2) / 2} cy={(ann.y1 + ann.y2) / 2 - hs * 1.2} r={hs * 0.9} fill="#ef4444" />
+                <text x={(ann.x1 + ann.x2) / 2} y={(ann.y1 + ann.y2) / 2 - hs * 1.2} textAnchor="middle" dominantBaseline="central" fontSize={hs * 1.1} fill="white" style={{ pointerEvents: 'none', fontWeight: 'bold' }}>×</text>
+              </g>
+            </>
+          )}
+        </g>
+      );
+    }
+  };
+
+  const imgTransformStyle = {
+    transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
+    transformOrigin: 'center center',
+    cursor: drawMode ? 'crosshair' : (scale > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'default'),
+    transition: isDragging.current ? 'none' : 'transform 0.1s ease-out',
+    userSelect: 'none' as const,
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/90 flex flex-col titlebar-no-drag">
@@ -465,23 +857,55 @@ export default function ImageLightbox({
           src={window.electronAPI.paths.getFileUrl(image.file_path)}
           alt=""
           className="max-w-full max-h-full object-contain"
-          style={{
-            transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
-            transformOrigin: 'center center',
-            cursor: scale > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'default',
-            transition: isDragging.current ? 'none' : 'transform 0.1s ease-out',
-            userSelect: 'none',
-          }}
+          style={imgTransformStyle}
           draggable={false}
           onClick={handleImageClick}
-          onMouseDown={handleMouseDown}
+          onMouseDown={drawMode ? undefined : handleMouseDown}
           onDoubleClick={handleDoubleClick}
+          onLoad={handleImageLoad}
           onContextMenu={(onReplaceWithClipboard || onEditCaption || onDelete || mediaType) ? (e) => {
             e.preventDefault();
             e.stopPropagation();
             setImageContextMenu({ x: e.clientX, y: e.clientY });
           } : undefined}
         />
+
+        {/* SVG annotation overlay — same transform as img, covers image pixels exactly */}
+        {displayedSize && (annotations.length > 0 || drawMode || drawPreview !== null) && (
+          <svg
+            ref={svgRef}
+            style={{
+              position: 'absolute',
+              width: displayedSize.w,
+              height: displayedSize.h,
+              ...imgTransformStyle,
+              cursor: drawMode ? 'crosshair' : 'default',
+              pointerEvents: drawMode ? 'all' : (annotations.length > 0 ? 'all' : 'none'),
+            }}
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            onMouseDown={drawMode ? handleSvgMouseDown : undefined}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!drawMode) setSelectedAnnId(null);
+            }}
+          >
+            {/* Transparent background to catch clicks for deselect / draw start */}
+            <rect x="0" y="0" width="100" height="100" fill="transparent" />
+
+            {annotations.map(ann => renderAnnotation(ann))}
+
+            {drawPreview && (() => {
+              const p = drawPreview;
+              const fakeAnn: ImageAnnotation = {
+                id: -1, image_type: 'image', image_id: 0, ann_type: activeTool,
+                x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2,
+                color: activeColor, stroke_width: STROKE_WIDTH, created_at: '',
+              };
+              return renderAnnotation(fakeAnn, true);
+            })()}
+          </svg>
+        )}
 
         {/* Tag chips — top-left */}
         {currentImageTags.length > 0 && (
@@ -581,6 +1005,115 @@ export default function ImageLightbox({
           />
         )}
       </div>
+
+      {/* ── Annotation toolbar (only when mediaType present so we can persist) ── */}
+      {mediaType && image?.id && (
+        <div
+          className="flex-shrink-0 bg-black/70 border-t border-white/10 px-4 py-1.5 flex items-center gap-3"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Draw toggle */}
+          <button
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              drawMode
+                ? 'bg-blue-600 text-white'
+                : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
+            }`}
+            onClick={() => {
+              setDrawMode(d => !d);
+              setSelectedAnnId(null);
+              setDrawPreview(null);
+              isDrawingRef.current = false;
+            }}
+            title="Toggle draw mode (Esc to exit)"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M2 10L8.5 2.5a1.5 1.5 0 012 2L4 12H2V10z"/>
+            </svg>
+            Draw
+          </button>
+
+          {/* Tool selector — only when in draw mode */}
+          {drawMode && (
+            <>
+              <div className="w-px h-4 bg-white/20" />
+              <div className="flex gap-1">
+                <button
+                  className={`flex items-center justify-center w-7 h-7 rounded transition-colors ${
+                    activeTool === 'rect'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
+                  }`}
+                  onClick={() => setActiveTool('rect')}
+                  title="Rectangle"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <rect x="1.5" y="2.5" width="9" height="7" rx="0.5"/>
+                  </svg>
+                </button>
+                <button
+                  className={`flex items-center justify-center w-7 h-7 rounded transition-colors ${
+                    activeTool === 'line'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
+                  }`}
+                  onClick={() => setActiveTool('line')}
+                  title="Line"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <line x1="1.5" y1="10.5" x2="10.5" y2="1.5"/>
+                  </svg>
+                </button>
+              </div>
+
+              {/* Color palette */}
+              <div className="w-px h-4 bg-white/20" />
+              <div className="flex gap-1">
+                {ANNOTATION_COLORS.map(color => (
+                  <button
+                    key={color}
+                    className={`w-5 h-5 rounded-full transition-transform ${
+                      activeColor === color ? 'scale-125 ring-2 ring-white ring-offset-1 ring-offset-black' : 'hover:scale-110'
+                    }`}
+                    style={{ backgroundColor: color, border: color === '#ffffff' ? '1px solid rgba(255,255,255,0.3)' : 'none' }}
+                    onClick={() => setActiveColor(color)}
+                    title={color}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Clear all — only when there are annotations */}
+          {annotations.length > 0 && (
+            <>
+              <div className="w-px h-4 bg-white/20" />
+              <button
+                className="flex items-center gap-1 px-2 py-1 rounded text-xs text-red-400/80 hover:text-red-400 hover:bg-white/10 transition-colors"
+                onClick={clearAllAnnotations}
+                title="Clear all annotations"
+              >
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M3 10L9 4M9 10L3 4"/>
+                </svg>
+                Clear all
+              </button>
+            </>
+          )}
+
+          {/* Hint text */}
+          {drawMode && (
+            <span className="ml-auto text-white/30 text-[10px]">
+              Drag to draw · Esc to exit
+            </span>
+          )}
+          {!drawMode && annotations.length > 0 && selectedAnnId === null && (
+            <span className="ml-auto text-white/30 text-[10px]">
+              Click shape to select · Del to delete
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── Strip: related images (left) + audios (right) — also shown in child lightbox if audios exist ── */}
       {((!disableChildImages && mediaType && image?.id) || (disableChildImages && currentImageAudios.length > 0)) && (

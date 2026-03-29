@@ -21,6 +21,7 @@ import {
   SearchOperations,
   TagOperations,
   QuickCaptureOperations,
+  ImageAnnotationsOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
@@ -1912,6 +1913,26 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('imageChildAudios:updateCaption', async (_, id: number, caption: string | null) => {
     return ImageChildAudiosOperations.updateCaption(id, caption);
+  });
+
+  // ============ Image Annotations ============
+  ipcMain.handle('imageAnnotations:getByImage', async (_, imageType: string, imageId: number) => {
+    return ImageAnnotationsOperations.getByImage(imageType, imageId);
+  });
+
+  ipcMain.handle('imageAnnotations:create', async (_, data: {
+    image_type: string; image_id: number; ann_type: 'rect' | 'line';
+    x1: number; y1: number; x2: number; y2: number; color: string; stroke_width: number;
+  }) => {
+    return ImageAnnotationsOperations.create(data);
+  });
+
+  ipcMain.handle('imageAnnotations:update', async (_, id: number, partial: { x1?: number; y1?: number; x2?: number; y2?: number; color?: string }) => {
+    return ImageAnnotationsOperations.update(id, partial);
+  });
+
+  ipcMain.handle('imageAnnotations:delete', async (_, id: number) => {
+    ImageAnnotationsOperations.delete(id);
   });
 
   console.log('IPC handlers registered');
