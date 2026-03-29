@@ -6,6 +6,7 @@ import { AudioRecordingProvider } from './context/AudioRecordingContext';
 import { ImageAudioPlayerProvider } from './context/ImageAudioPlayerContext';
 import { DurationAudioPlayerProvider } from './context/DurationAudioPlayerContext';
 import { RecordingAudioPlayerProvider } from './context/RecordingAudioPlayerContext';
+import { CaptureAudioPlayerProvider } from './context/CaptureAudioPlayerContext';
 import { TabsProvider } from './context/TabsContext';
 import TabsShell from './components/tabs/TabsShell';
 import './index.css';
@@ -18,9 +19,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <ImageAudioPlayerProvider>
             <DurationAudioPlayerProvider>
               <RecordingAudioPlayerProvider>
-                <TabsProvider>
-                  <TabsShell />
-                </TabsProvider>
+                <CaptureAudioPlayerProvider>
+                  <TabsProvider>
+                    <TabsShell />
+                  </TabsProvider>
+                </CaptureAudioPlayerProvider>
               </RecordingAudioPlayerProvider>
             </DurationAudioPlayerProvider>
           </ImageAudioPlayerProvider>
