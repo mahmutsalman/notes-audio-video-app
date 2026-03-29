@@ -40,30 +40,6 @@ function fmtSecs(secs: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function AudioCaptionText({ caption, onEdit }: { caption: string | null; onEdit: () => void }) {
-  const [expanded, setExpanded] = useState(false);
-  if (!caption) {
-    return (
-      <span
-        onClick={(e) => { e.stopPropagation(); onEdit(); }}
-        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
-        className="text-xs text-white/30 italic cursor-text hover:text-white/50 transition-colors"
-      >
-        add caption…
-      </span>
-    );
-  }
-  return (
-    <p
-      onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
-      title="Click to expand · Right-click to edit"
-      className={`text-xs text-white/70 italic cursor-pointer text-center max-w-[160px] leading-tight ${expanded ? '' : 'line-clamp-2'}`}
-    >
-      {caption}
-    </p>
-  );
-}
 
 export default function ImageLightbox({
   images,
