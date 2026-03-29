@@ -12,6 +12,8 @@ import {
   DurationImageAudiosOperations,
   ImageAudiosOperations,
   CaptureImageAudiosOperations,
+  ImageChildrenOperations,
+  ImageChildAudiosOperations,
   CodeSnippetsOperations,
   DurationCodeSnippetsOperations,
   SettingsOperations,
@@ -36,6 +38,8 @@ import {
   saveDurationImageAudioFromBuffer,
   saveImageAudioFromBuffer,
   saveCaptureImageAudioFromBuffer,
+  saveImageChildFromBuffer,
+  saveImageChildAudioFromBuffer,
   saveAudioAttachmentFromBuffer,
   deleteDurationImages,
   deleteDurationVideos,
@@ -1889,6 +1893,70 @@ export function setupIpcHandlers(): void {
     const result = QuickCaptureOperations.updateAudioCaption(audioId, caption);
     scheduleSearchReindex();
     return result;
+  });
+
+  // ============ Image Children ============
+  ipcMain.handle('imageChildren:getByParent', async (_, parentType: string, parentId: number) => {
+    return ImageChildrenOperations.getByParent(parentType, parentId);
+  });
+
+  ipcMain.handle('imageChildren:addFromClipboard', async (_, parentType: string, parentId: number, imageBuffer: ArrayBuffer, extension: string = 'png') => {
+    const { filePath, thumbnailPath } = await saveImageChildFromBuffer(parentId, imageBuffer, extension);
+    const nextSortOrder = ImageChildrenOperations.getMaxSortOrder(parentType, parentId) + 1;
+    return ImageChildrenOperations.create({
+      parent_type: parentType,
+      parent_id: parentId,
+      file_path: filePath,
+      thumbnail_path: thumbnailPath,
+      sort_order: nextSortOrder,
+    });
+  });
+
+  ipcMain.handle('imageChildren:delete', async (_, id: number) => {
+    const child = ImageChildrenOperations.getById(id) as { file_path: string; thumbnail_path: string | null } | null;
+    if (child) {
+      await deleteFile(child.file_path);
+      if (child.thumbnail_path && child.thumbnail_path !== child.file_path) {
+        await deleteFile(child.thumbnail_path);
+      }
+    }
+    ImageChildrenOperations.delete(id);
+  });
+
+  ipcMain.handle('imageChildren:updateCaption', async (_, id: number, caption: string | null) => {
+    return ImageChildrenOperations.updateCaption(id, caption);
+  });
+
+  ipcMain.handle('imageChildren:reorder', async (_, parentType: string, parentId: number, orderedIds: number[]) => {
+    ImageChildrenOperations.reorder(parentType, parentId, orderedIds);
+  });
+
+  // ============ Image Child Audios ============
+  ipcMain.handle('imageChildAudios:getByChild', async (_, imageChildId: number) => {
+    return ImageChildAudiosOperations.getByChild(imageChildId);
+  });
+
+  ipcMain.handle('imageChildAudios:addFromBuffer', async (_, imageChildId: number, audioBuffer: ArrayBuffer, extension: string = 'webm') => {
+    const { filePath, duration } = await saveImageChildAudioFromBuffer(imageChildId, audioBuffer, extension);
+    return ImageChildAudiosOperations.create({
+      image_child_id: imageChildId,
+      file_path: filePath,
+      caption: null,
+      duration: duration,
+      sort_order: ImageChildAudiosOperations.getMaxSortOrder(imageChildId) + 1,
+    });
+  });
+
+  ipcMain.handle('imageChildAudios:delete', async (_, id: number) => {
+    const audio = ImageChildAudiosOperations.getById(id) as { file_path: string } | null;
+    if (audio) {
+      await deleteFile(audio.file_path);
+    }
+    ImageChildAudiosOperations.delete(id);
+  });
+
+  ipcMain.handle('imageChildAudios:updateCaption', async (_, id: number, caption: string | null) => {
+    return ImageChildAudiosOperations.updateCaption(id, caption);
   });
 
   console.log('IPC handlers registered');

@@ -743,6 +743,31 @@ const electronAPI = {
     updateAudioCaption: (audioId: number, caption: string | null): Promise<import('../src/types').QuickCaptureAudio> =>
       ipcRenderer.invoke('quickCaptures:updateAudioCaption', audioId, caption),
   },
+  // Image Children
+  imageChildren: {
+    getByParent: (parentType: string, parentId: number): Promise<import('../src/types').ImageChild[]> =>
+      ipcRenderer.invoke('imageChildren:getByParent', parentType, parentId),
+    addFromClipboard: (parentType: string, parentId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<import('../src/types').ImageChild> =>
+      ipcRenderer.invoke('imageChildren:addFromClipboard', parentType, parentId, imageBuffer, extension),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('imageChildren:delete', id),
+    updateCaption: (id: number, caption: string | null): Promise<import('../src/types').ImageChild> =>
+      ipcRenderer.invoke('imageChildren:updateCaption', id, caption),
+    reorder: (parentType: string, parentId: number, orderedIds: number[]): Promise<void> =>
+      ipcRenderer.invoke('imageChildren:reorder', parentType, parentId, orderedIds),
+  },
+
+  // Image Child Audios
+  imageChildAudios: {
+    getByChild: (imageChildId: number): Promise<import('../src/types').ImageChildAudio[]> =>
+      ipcRenderer.invoke('imageChildAudios:getByChild', imageChildId),
+    addFromBuffer: (imageChildId: number, audioBuffer: ArrayBuffer, extension?: string): Promise<import('../src/types').ImageChildAudio> =>
+      ipcRenderer.invoke('imageChildAudios:addFromBuffer', imageChildId, audioBuffer, extension),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('imageChildAudios:delete', id),
+    updateCaption: (id: number, caption: string | null): Promise<import('../src/types').ImageChildAudio> =>
+      ipcRenderer.invoke('imageChildAudios:updateCaption', id, caption),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

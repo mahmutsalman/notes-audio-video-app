@@ -145,6 +145,11 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     setCaptureImageAudiosMap(map);
   }, []);
 
+  // Keep audio counts fresh for badge display in the grid
+  useEffect(() => {
+    if (localImages.length > 0) fetchCaptureImageAudios(localImages);
+  }, [localImages, fetchCaptureImageAudios]);
+
   const openLightbox = useCallback(async (index: number) => {
     setLightboxIndex(index);
     await fetchCaptureImageAudios(localImages);
@@ -373,6 +378,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
             onContextMenu={handleImageContextMenu}
             onDelete={handleDeleteImage}
             onReorder={handleReorder}
+            audioCountMap={Object.fromEntries(localImages.map(img => [img.id, (captureImageAudiosMap[img.id] ?? []).length]))}
             tagCountMap={imageTagCountMap}
             tagNamesMap={imageTagNamesMap}
             pastePlaceholder={

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { AnyImageAudio, MediaTagType } from '../../types';
-import { useAudioRecording } from '../../context/AudioRecordingContext';
+import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio } from '../../types';
+import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 import WaveformVisualizer from '../audio/WaveformVisualizer';
 import { formatDuration } from '../../utils/formatters';
 import { TagModal } from './TagModal';
@@ -30,6 +30,8 @@ interface ImageLightboxProps {
   onDelete?: () => void;
   // Tag editing
   mediaType?: MediaTagType;
+  // Disable child images (used by child lightbox to prevent recursion)
+  disableChildImages?: boolean;
 }
 
 function fmtSecs(secs: number): string {
@@ -77,6 +79,7 @@ export default function ImageLightbox({
   onEditCaption,
   onDelete,
   mediaType,
+  disableChildImages = false,
 }: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
@@ -86,6 +89,14 @@ export default function ImageLightbox({
   const [editingAudioCaptionId, setEditingAudioCaptionId] = useState<number | null>(null);
   const [audioCaptionText, setAudioCaptionText] = useState('');
   const [showTagModal, setShowTagModal] = useState(false);
+
+  // Child images state
+  const [imageChildren, setImageChildren] = useState<ImageChild[]>([]);
+  const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
+  const [childAudiosMap, setChildAudiosMap] = useState<Record<number, ImageChildAudio[]>>({});
+  const [childTagCountMap, setChildTagCountMap] = useState<Record<number, number>>({});
+  const [pendingDeleteChild, setPendingDeleteChild] = useState<number | null>(null);
+  const [childCaptionEdit, setChildCaptionEdit] = useState<{ childId: number; value: string } | null>(null);
 
   const imageRef = useRef<HTMLImageElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -105,6 +116,7 @@ export default function ImageLightbox({
     analyserNode,
     target: recTarget,
     isSaving,
+    startRecording,
     pauseRecording,
     resumeRecording,
     stopAndSave,
@@ -114,7 +126,7 @@ export default function ImageLightbox({
   // Only show embedded bars when lightbox is in "image audio" mode
   const imageAudioMode = onRecordForImage !== undefined;
   const showRecordingBar = imageAudioMode && (isRecording || isSaving) &&
-    (recTarget?.type === 'duration_image' || recTarget?.type === 'recording_image');
+    (recTarget?.type === 'duration_image' || recTarget?.type === 'recording_image' || recTarget?.type === 'image_child');
 
   const image = images[selectedIndex];
   const currentImageAudios = (image?.id && imageAudiosMap) ? (imageAudiosMap[image.id] ?? []) : [];
@@ -161,45 +173,8 @@ export default function ImageLightbox({
     setScale(1);
     setTranslate({ x: 0, y: 0 });
     setShowTagModal(false);
+    setSelectedChildId(null);
   }, [selectedIndex]);
-
-  // Load annotations when image changes
-  useEffect(() => {
-    if (!mediaType || !image?.id) {
-      setAnnotations([]);
-      return;
-    }
-    window.electronAPI.imageAnnotations.getByImage(mediaType, image.id).then(setAnnotations);
-  }, [image?.id, mediaType]);
-
-  // Compute actual image content size after load (to position SVG overlay)
-  const handleImageLoad = useCallback(() => {
-    const img = imageRef.current;
-    if (!img || img.offsetWidth === 0 || img.offsetHeight === 0) return;
-    const naturalAR = img.naturalWidth / img.naturalHeight;
-    const offsetAR = img.offsetWidth / img.offsetHeight;
-    let w: number, h: number;
-    if (naturalAR > offsetAR) {
-      w = img.offsetWidth;
-      h = img.offsetWidth / naturalAR;
-    } else {
-      h = img.offsetHeight;
-      w = img.offsetHeight * naturalAR;
-    }
-    setDisplayedSize({ w, h });
-  }, []);
-
-  // Convert screen coords to SVG viewBox percentage coords (0–100)
-  const getSvgCoords = useCallback((clientX: number, clientY: number) => {
-    const svg = svgRef.current;
-    if (!svg) return null;
-    const rect = svg.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return null;
-    return {
-      x: Math.max(0, Math.min(100, (clientX - rect.left) / rect.width * 100)),
-      y: Math.max(0, Math.min(100, (clientY - rect.top) / rect.height * 100)),
-    };
-  }, []);
 
   // Load child images when the current image changes
   useEffect(() => {
@@ -212,15 +187,6 @@ export default function ImageLightbox({
       .getByParent(parentType, image.id)
       .then(children => setImageChildren(children));
   }, [image?.id, mediaType, disableChildImages]);
-
-  // Load tags for the current image
-  useEffect(() => {
-    if (!mediaType || !image?.id) {
-      setCurrentImageTags([]);
-      return;
-    }
-    window.electronAPI.tags.getByMedia(mediaType, image.id).then(setCurrentImageTags);
-  }, [image?.id, mediaType]);
 
   // Fetch tag counts for child images
   useEffect(() => {
@@ -583,18 +549,22 @@ export default function ImageLightbox({
       }
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (e.key === 'ArrowLeft' && selectedIndex > 0) {
-        onNavigate(selectedIndex - 1);
-      } else if (e.key === 'ArrowRight' && selectedIndex < images.length - 1) {
-        onNavigate(selectedIndex + 1);
+      if (e.key === 'ArrowLeft') {
+        if (selectedChildId == null && selectedIndex > 0) onNavigate(selectedIndex - 1);
+      } else if (e.key === 'ArrowRight') {
+        if (selectedChildId == null && selectedIndex < images.length - 1) onNavigate(selectedIndex + 1);
       } else if (e.key === 'Escape') {
-        onClose();
+        if (selectedChildId != null) {
+          setSelectedChildId(null);
+        } else {
+          onClose();
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIndex, images.length, onNavigate, onClose, imageContextMenu]);
+  }, [selectedIndex, images.length, onNavigate, onClose, imageContextMenu, selectedChildId]);
 
   // Backdrop click: close at 1x, reset zoom at >1x, or dismiss context menu
   const handleBackdropClick = useCallback(() => {
@@ -697,9 +667,9 @@ export default function ImageLightbox({
           } : undefined}
         />
 
-        {/* Audio buttons + caption — anchored to bottom of image area */}
-        <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-2 px-4 pointer-events-none">
-          {currentImageAudios.length > 0 && (
+        {/* Audio buttons — shown floating only when strip is not visible (child lightbox) */}
+        {disableChildImages && currentImageAudios.length > 0 && (
+          <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-2 px-4 pointer-events-none">
             <div className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 pointer-events-auto">
               {currentImageAudios.map((audio, i) => (
                 <div key={audio.id} className="flex flex-col items-center gap-0.5">
@@ -727,7 +697,6 @@ export default function ImageLightbox({
                       </button>
                     )}
                   </div>
-                  {/* Per-audio caption */}
                   {onUpdateImageAudioCaption && image?.id && (
                     editingAudioCaptionId === audio.id ? (
                       <textarea
@@ -737,13 +706,8 @@ export default function ImageLightbox({
                         onBlur={() => saveAudioCaption(audio.id, image.id!)}
                         onKeyDown={(e) => {
                           e.stopPropagation();
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            saveAudioCaption(audio.id, image.id!);
-                          } else if (e.key === 'Escape') {
-                            setEditingAudioCaptionId(null);
-                            setAudioCaptionText('');
-                          }
+                          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveAudioCaption(audio.id, image.id!); }
+                          else if (e.key === 'Escape') { setEditingAudioCaptionId(null); setAudioCaptionText(''); }
                         }}
                         onClick={(e) => e.stopPropagation()}
                         rows={2}
@@ -751,25 +715,23 @@ export default function ImageLightbox({
                         placeholder="Add caption…"
                       />
                     ) : (
-                      <AudioCaptionText
-                        caption={audio.caption}
-                        onEdit={() => {
-                          setEditingAudioCaptionId(audio.id);
-                          setAudioCaptionText(audio.caption ?? '');
-                        }}
-                      />
+                      <AudioCaptionText caption={audio.caption} onEdit={() => { setEditingAudioCaptionId(audio.id); setAudioCaptionText(audio.caption ?? ''); }} />
                     )
                   )}
                 </div>
               ))}
             </div>
-          )}
-          {image.caption && (
-            <p className="text-sm text-white/90 text-center italic font-light max-w-2xl pointer-events-none">
+          </div>
+        )}
+
+        {/* Image caption — always floats at bottom */}
+        {image.caption && (
+          <div className="absolute bottom-4 left-0 right-0 flex justify-center px-4 pointer-events-none">
+            <p className="text-sm text-white/90 text-center italic font-light max-w-2xl">
               {image.caption}
             </p>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Next button */}
         {selectedIndex < images.length - 1 && (
@@ -843,6 +805,234 @@ export default function ImageLightbox({
           />
         )}
       </div>
+
+      {/* ── Strip: related images (left) + main image audios (right) ── */}
+      {!disableChildImages && mediaType && image?.id && (
+        <div
+          className="flex-shrink-0 bg-black/80 border-t border-white/10 px-4 py-2 flex items-center gap-3"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Left: thumbnail row */}
+          <div className="flex-1 min-w-0">
+            <p className="text-white/40 text-[10px] mb-1">Related images</p>
+            <div className="flex gap-2 overflow-x-auto pb-0.5">
+              {imageChildren.map(child => (
+                <div
+                  key={child.id}
+                  className="relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden cursor-pointer group border border-white/10 hover:border-white/40 transition-colors"
+                  onClick={() => setSelectedChildId(child.id)}
+                >
+                  <img
+                    src={window.electronAPI.paths.getFileUrl(child.thumbnail_path ?? child.file_path)}
+                    alt={child.caption ?? ''}
+                    className="w-full h-full object-cover"
+                  />
+                  {/* Audio count badge — top-right */}
+                  {(childAudiosMap[child.id] ?? []).length > 0 && (
+                    <span className="absolute top-0.5 right-0.5 bg-blue-500/80 text-white text-[9px] rounded px-0.5 leading-4 pointer-events-none">
+                      {(childAudiosMap[child.id] ?? []).length}🔊
+                    </span>
+                  )}
+                  {/* Tag count badge — stacked below audio if both, otherwise top-right */}
+                  {(childTagCountMap[child.id] ?? 0) > 0 && (
+                    <span className={`absolute right-0.5 bg-orange-500/90 text-white text-[9px] rounded px-0.5 leading-4 pointer-events-none ${
+                      (childAudiosMap[child.id] ?? []).length > 0 ? 'top-4' : 'top-0.5'
+                    }`}>
+                      {childTagCountMap[child.id]}🏷
+                    </span>
+                  )}
+                  {/* Delete button — top-left corner, small × */}
+                  <button
+                    className="absolute top-0.5 left-0.5 w-4 h-4 bg-black/70 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity z-10"
+                    onClick={(e) => { e.stopPropagation(); setPendingDeleteChild(child.id); }}
+                    title="Delete"
+                  >
+                    <span className="text-red-400 text-[11px] leading-none">×</span>
+                  </button>
+                </div>
+              ))}
+              {/* Add placeholder */}
+              <button
+                className="flex-shrink-0 w-14 h-14 rounded-lg border-2 border-dashed border-white/20 hover:border-white/40 flex items-center justify-center transition-colors"
+                onClick={handleAddChild}
+                title="Paste image from clipboard (Cmd+V)"
+              >
+                <span className="text-white/40 text-2xl leading-none">+</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Right: main image audio badges */}
+          {currentImageAudios.length > 0 && (
+            <>
+              <div className="w-px self-stretch bg-white/10 flex-shrink-0" />
+              <div className="flex flex-col gap-1 flex-shrink-0 max-w-[180px]">
+                {currentImageAudios.map((audio, i) => (
+                  <div key={audio.id} className="flex flex-col gap-0.5">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const label = image.caption || `Image ${selectedIndex + 1}`;
+                          onPlayImageAudio?.(audio, label);
+                        }}
+                        className="bg-white/15 hover:bg-white/25 text-white rounded-full px-2 py-0.5 text-xs flex items-center gap-1 transition-colors whitespace-nowrap"
+                      >
+                        🔊 {i + 1}{audio.duration ? ` (${fmtSecs(audio.duration)})` : ''}
+                      </button>
+                      {onDeleteImageAudio && image?.id && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPendingDeleteAudio({ audioId: audio.id, imageId: image.id!, index: i });
+                          }}
+                          className="text-white/30 hover:text-red-400 text-xs transition-colors"
+                          title="Delete audio"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                    {onUpdateImageAudioCaption && image?.id && (
+                      editingAudioCaptionId === audio.id ? (
+                        <textarea
+                          autoFocus
+                          value={audioCaptionText}
+                          onChange={(e) => setAudioCaptionText(e.target.value)}
+                          onBlur={() => saveAudioCaption(audio.id, image.id!)}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveAudioCaption(audio.id, image.id!); }
+                            else if (e.key === 'Escape') { setEditingAudioCaptionId(null); setAudioCaptionText(''); }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          rows={2}
+                          className="w-36 text-xs bg-black/60 text-white/90 rounded px-2 py-1 border border-white/30 focus:outline-none focus:border-white/60 resize-none italic"
+                          placeholder="Add caption…"
+                        />
+                      ) : (
+                        <AudioCaptionText caption={audio.caption} onEdit={() => { setEditingAudioCaptionId(audio.id); setAudioCaptionText(audio.caption ?? ''); }} />
+                      )
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Child image lightbox ── */}
+      {selectedChildId != null && (() => {
+        const selectedChildIndex = imageChildren.findIndex(c => c.id === selectedChildId);
+        if (selectedChildIndex === -1) return null;
+        const child = imageChildren[selectedChildIndex];
+        const childAudiosMapForLightbox = Object.fromEntries(
+          imageChildren.map(c => [c.id, (childAudiosMap[c.id] ?? []) as AnyImageAudio[]])
+        );
+        return (
+          <ImageLightbox
+            images={imageChildren.map(c => ({ id: c.id, file_path: c.file_path, caption: c.caption }))}
+            selectedIndex={selectedChildIndex}
+            onClose={() => {
+              // Refresh tag counts for all children when child lightbox closes
+              Promise.all(
+                imageChildren.map(c =>
+                  window.electronAPI.tags.getByMedia('image_child', c.id)
+                    .then((tags: { name: string }[]) => [c.id, tags.length] as const)
+                )
+              ).then(entries => setChildTagCountMap(Object.fromEntries(entries)));
+              setSelectedChildId(null);
+            }}
+            onNavigate={(newIndex) => setSelectedChildId(imageChildren[newIndex].id)}
+            mediaType="image_child"
+            disableChildImages={true}
+            imageAudiosMap={childAudiosMapForLightbox}
+            onRecordForImage={onRecordForImage ? (imageId) => handleRecordForChild(imageId) : undefined}
+            onDeleteImageAudio={(audioId, imageId) => handleDeleteChildAudio(audioId, imageId)}
+            onPlayImageAudio={onPlayImageAudio}
+            onUpdateImageAudioCaption={(audioId, imageId, caption) =>
+              handleUpdateChildAudioCaption(audioId, imageId, caption)
+            }
+            onEditCaption={() => {
+              setChildCaptionEdit({ childId: child.id, value: child.caption ?? '' });
+            }}
+            onDelete={() => setPendingDeleteChild(child.id)}
+          />
+        );
+      })()}
+
+      {/* ── Child caption editor ── */}
+      {childCaptionEdit != null && (
+        <div
+          className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl px-6 py-5 flex flex-col gap-3 max-w-xs w-full mx-4">
+            <p className="text-white text-sm">Edit caption</p>
+            <textarea
+              autoFocus
+              value={childCaptionEdit.value}
+              onChange={(e) => setChildCaptionEdit(prev => prev ? { ...prev, value: e.target.value } : null)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Escape') setChildCaptionEdit(null);
+              }}
+              rows={3}
+              className="w-full text-sm bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:outline-none focus:border-white/50 resize-none"
+              placeholder="Add caption…"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setChildCaptionEdit(null)}
+                className="flex-1 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const { childId, value } = childCaptionEdit;
+                  const updated = await window.electronAPI.imageChildren.updateCaption(childId, value.trim() || null);
+                  setImageChildren(prev => prev.map(c => c.id === childId ? { ...c, caption: updated.caption } : c));
+                  setChildCaptionEdit(null);
+                }}
+                className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete child confirmation ── */}
+      {pendingDeleteChild != null && (
+        <div
+          className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl px-6 py-5 flex flex-col items-center gap-4 max-w-xs w-full mx-4">
+            <p className="text-white text-sm text-center">
+              Delete this related image?<br />
+              <span className="text-gray-400 text-xs">This cannot be undone.</span>
+            </p>
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setPendingDeleteChild(null)}
+                className="flex-1 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteChild(pendingDeleteChild)}
+                className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Embedded recording bar ── */}
       {showRecordingBar && (
