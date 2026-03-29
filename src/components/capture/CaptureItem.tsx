@@ -57,6 +57,8 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   const [tagModal, setTagModal] = useState<TagModalState>(null);
   const [localAudios, setLocalAudios] = useState<QuickCaptureAudio[]>(capture.audios);
   const [audioMarkersMap, setAudioMarkersMap] = useState<Record<number, import('../../types').AudioMarker[]>>({});
+  const [imageTagCountMap, setImageTagCountMap] = useState<Record<number, number>>({});
+  const [audioTagCountMap, setAudioTagCountMap] = useState<Record<number, number>>({});
 
   // Map QuickCaptureImage → SortableImageItem (color: null = no color bars)
   const [localImages, setLocalImages] = useState<SortableImageItem[]>(() =>
@@ -101,6 +103,29 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
       setAudioMarkersMap(Object.fromEntries(entries));
     });
   }, [localAudios]);
+
+  const fetchTagCounts = useCallback(async () => {
+    const [imgEntries, audioEntries] = await Promise.all([
+      Promise.all(
+        localImages.map(async img => {
+          const tags = await window.electronAPI.tags.getByMedia('quick_capture_image', img.id);
+          return [img.id, tags.length] as const;
+        })
+      ),
+      Promise.all(
+        localAudios.map(async audio => {
+          const tags = await window.electronAPI.tags.getByMedia('quick_capture_audio', audio.id);
+          return [audio.id, tags.length] as const;
+        })
+      ),
+    ]);
+    setImageTagCountMap(Object.fromEntries(imgEntries));
+    setAudioTagCountMap(Object.fromEntries(audioEntries));
+  }, [localImages, localAudios]);
+
+  useEffect(() => {
+    fetchTagCounts();
+  }, [fetchTagCounts]);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -336,6 +361,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
             onContextMenu={handleImageContextMenu}
             onDelete={handleDeleteImage}
             onReorder={handleReorder}
+            tagCountMap={imageTagCountMap}
             pastePlaceholder={
               <div className="flex flex-col items-center">
                 <div className="relative w-full max-w-[160px]">
@@ -372,6 +398,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
                 markers={audioMarkersMap[audio.id] ?? []}
                 onPlayInBar={() => handlePlayCaptureAudio(audio, audio.caption || `Audio ${idx + 1}`)}
                 onContextMenu={(e) => handleAudioContextMenu(e, audio)}
+                tagCount={audioTagCountMap[audio.id] ?? 0}
               />
             ))}
           </div>
@@ -500,7 +527,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
           mediaType={tagModal.kind === 'image' ? 'quick_capture_image' : 'quick_capture_audio'}
           mediaId={tagModal.id}
           title={tagModal.kind === 'image' ? 'Image Tags' : 'Audio Tags'}
-          onClose={() => setTagModal(null)}
+          onClose={() => { setTagModal(null); fetchTagCounts(); }}
         />
       )}
     </div>
@@ -521,9 +548,10 @@ interface AudioRowProps {
   markers: import('../../types').AudioMarker[];
   onPlayInBar: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  tagCount?: number;
 }
 
-function AudioRow({ index, caption, createdAt, markers, onPlayInBar, onContextMenu }: AudioRowProps) {
+function AudioRow({ index, caption, createdAt, markers, onPlayInBar, onContextMenu, tagCount = 0 }: AudioRowProps) {
   return (
     <div
       className="flex flex-col gap-1 py-1.5 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30"
@@ -548,6 +576,12 @@ function AudioRow({ index, caption, createdAt, markers, onPlayInBar, onContextMe
         <span className="flex-1 text-xs text-blue-300 truncate">
           {caption || 'Voice note'}
         </span>
+
+        {tagCount > 0 && (
+          <span className="flex-shrink-0 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-blue-900/40 border border-blue-700/50 text-blue-300 text-[10px] font-medium">
+            🏷️{tagCount}
+          </span>
+        )}
 
         <span
           className="text-[10px] text-blue-500 dark:text-blue-600 flex-shrink-0 tabular-nums"
