@@ -179,7 +179,28 @@ export interface QuickCaptureImageAudio {
   created_at: string;
 }
 
-export type AnyImageAudio = DurationImageAudio | ImageAudio | QuickCaptureImageAudio;
+export interface ImageChildAudio {
+  id: number;
+  image_child_id: number;
+  file_path: string;
+  caption: string | null;
+  duration: number | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface ImageChild {
+  id: number;
+  parent_type: 'duration_image' | 'image' | 'quick_capture_image';
+  parent_id: number;
+  file_path: string;
+  thumbnail_path: string | null;
+  caption: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export type AnyImageAudio = DurationImageAudio | ImageAudio | QuickCaptureImageAudio | ImageChildAudio;
 
 // Screen Recording types
 
@@ -725,6 +746,19 @@ export interface ElectronAPI {
     deleteAudio: (audioId: number) => Promise<void>;
     updateAudioCaption: (audioId: number, caption: string | null) => Promise<QuickCaptureAudio>;
   };
+  imageChildren: {
+    getByParent: (parentType: string, parentId: number) => Promise<ImageChild[]>;
+    addFromClipboard: (parentType: string, parentId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<ImageChild>;
+    delete: (id: number) => Promise<void>;
+    updateCaption: (id: number, caption: string | null) => Promise<ImageChild>;
+    reorder: (parentType: string, parentId: number, orderedIds: number[]) => Promise<void>;
+  };
+  imageChildAudios: {
+    getByChild: (imageChildId: number) => Promise<ImageChildAudio[]>;
+    addFromBuffer: (imageChildId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<ImageChildAudio>;
+    delete: (id: number) => Promise<void>;
+    updateCaption: (id: number, caption: string | null) => Promise<ImageChildAudio>;
+  };
 }
 
 export interface GlobalSearchResult {
@@ -755,7 +789,7 @@ export interface SearchNavState {
   query: string;
 }
 
-export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio' | 'quick_capture_image' | 'quick_capture_audio';
+export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio' | 'quick_capture_image' | 'quick_capture_audio' | 'image_child';
 
 export interface Tag {
   id: number;
