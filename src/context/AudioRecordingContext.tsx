@@ -7,9 +7,10 @@ export type RecordingTarget =
   | { type: 'recording'; recordingId: number; label: string }
   | { type: 'duration_image'; durationImageId: number; durationId: number; recordingId: number; label: string }
   | { type: 'recording_image'; imageId: number; recordingId: number; label: string }
-  | { type: 'capture_image'; captureImageId: number; label: string };
+  | { type: 'capture_image'; captureImageId: number; label: string }
+  | { type: 'capture'; label: string };
 
-interface PendingMarker {
+export interface PendingMarker {
   marker_type: AudioMarkerType;
   start_time: number;
   end_time: number | null;
@@ -25,6 +26,7 @@ interface AudioRecordingContextValue {
   target: RecordingTarget | null;
   isSaving: boolean;
   activeToggles: Set<AudioMarkerType>;
+  pendingCaptureAudio: { blob: Blob; durationSec: number; markers: PendingMarker[] } | null;
   // Actions
   startRecording: (target: RecordingTarget) => Promise<void>;
   pauseRecording: () => void;
@@ -32,6 +34,7 @@ interface AudioRecordingContextValue {
   stopAndSave: () => Promise<void>;
   cancelRecording: () => void;
   addMarkerToggle: (type: AudioMarkerType) => void;
+  clearPendingCaptureAudio: () => void;
 }
 
 const AudioRecordingContext = createContext<AudioRecordingContextValue | null>(null);
@@ -53,6 +56,7 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
   const [isSaving, setIsSaving] = useState(false);
   const [activeToggles, setActiveToggles] = useState<Set<AudioMarkerType>>(new Set());
   const [pendingMarkers, setPendingMarkers] = useState<PendingMarker[]>([]);
+  const [pendingCaptureAudio, setPendingCaptureAudio] = useState<{ blob: Blob; durationSec: number; markers: PendingMarker[] } | null>(null);
 
   // Warn before closing while recording
   useEffect(() => {
@@ -218,6 +222,8 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
         target,
         isSaving,
         activeToggles,
+        pendingCaptureAudio,
+        clearPendingCaptureAudio,
         startRecording,
         pauseRecording,
         resumeRecording,

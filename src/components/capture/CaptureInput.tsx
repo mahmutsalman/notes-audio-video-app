@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import TagInput from '../common/TagInput';
-import { useSimpleAudioRecorder } from '../../hooks/useSimpleAudioRecorder';
+import { useAudioRecording, type PendingMarker } from '../../context/AudioRecordingContext';
 import type { QuickCapture } from '../../types';
 import PendingImageGrid, { type PendingImage } from './PendingImageGrid';
 
 interface PendingAudio {
   blob: Blob;
   durationSec: number;
+  markers: PendingMarker[];
 }
 
 interface CaptureInputProps {
@@ -27,7 +28,7 @@ export default function CaptureInput({ onSaved }: CaptureInputProps) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const recorder = useSimpleAudioRecorder();
+  const { startRecording, isRecording, pendingCaptureAudio, clearPendingCaptureAudio } = useAudioRecording();
 
   // Paste image from clipboard
   const pasteImage = useCallback(async () => {
@@ -54,13 +55,6 @@ export default function CaptureInput({ onSaved }: CaptureInputProps) {
     return () => window.removeEventListener('paste', handler);
   }, []);
 
-  const handleStopRecording = useCallback(async () => {
-    const blob = await recorder.stopRecording();
-    if (blob) {
-      setPendingAudio({ blob, durationSec: recorder.duration });
-    }
-  }, [recorder]);
-
   const removeImage = (uid: number) => {
     setPendingImages(prev => {
       const img = prev.find(i => i.uid === uid);
@@ -70,9 +64,15 @@ export default function CaptureInput({ onSaved }: CaptureInputProps) {
   };
 
   const removeAudio = () => {
-    recorder.reset();
     setPendingAudio(null);
   };
+
+  useEffect(() => {
+    if (pendingCaptureAudio) {
+      setPendingAudio({ blob: pendingCaptureAudio.blob, durationSec: pendingCaptureAudio.durationSec, markers: pendingCaptureAudio.markers });
+      clearPendingCaptureAudio();
+    }
+  }, [pendingCaptureAudio, clearPendingCaptureAudio]);
 
   const isEmpty = !note.trim() && pendingImages.length === 0 && !pendingAudio;
 
@@ -92,13 +92,24 @@ export default function CaptureInput({ onSaved }: CaptureInputProps) {
       }
       if (pendingAudio) {
         const buf = await pendingAudio.blob.arrayBuffer();
-        await window.electronAPI.quickCaptures.addAudio(id, buf, 'webm');
+        const savedAudio = await window.electronAPI.quickCaptures.addAudio(id, buf, 'webm');
+        if (pendingAudio.markers.length > 0) {
+          await window.electronAPI.audioMarkers.addBatch(
+            pendingAudio.markers.map(m => ({
+              audio_id: savedAudio.id,
+              audio_type: 'quick_capture_audio' as const,
+              marker_type: m.marker_type,
+              start_time: m.start_time,
+              end_time: m.end_time,
+              caption: null as string | null,
+            }))
+          );
+        }
       }
       const recent = await window.electronAPI.quickCaptures.getRecent();
       const saved = recent.find(c => c.id === id);
       if (saved) onSaved(saved);
       setNote(''); setTags([]); setPendingImages([]); setPendingAudio(null);
-      recorder.reset();
       textareaRef.current?.focus();
     } catch (err) {
       console.error('[CaptureInput] save failed:', err);
@@ -106,7 +117,7 @@ export default function CaptureInput({ onSaved }: CaptureInputProps) {
     } finally {
       setSaving(false);
     }
-  }, [note, tags, pendingImages, pendingAudio, isEmpty, saving, onSaved, recorder]);
+  }, [note, tags, pendingImages, pendingAudio, isEmpty, saving, onSaved]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -172,22 +183,16 @@ export default function CaptureInput({ onSaved }: CaptureInputProps) {
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
-            Audio{pendingAudio ? ' (1)' : recorder.isRecording ? ' — recording…' : ''}
+            Audio{pendingAudio ? ' (1)' : ''}
           </h3>
           <button
-            onClick={recorder.isRecording ? handleStopRecording : recorder.startRecording}
+            onClick={() => startRecording({ type: 'capture', label: 'Quick Capture' })}
+            disabled={isRecording}
             className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-40 transition-colors"
           >
-            {recorder.isRecording ? '⏹ Stop' : '🎙️ Record'}
+            🎙️ Record
           </button>
         </div>
-
-        {recorder.isRecording && (
-          <div className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30">
-            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
-            <span className="text-xs text-blue-300 flex-1">Recording… {fmt(recorder.duration)}</span>
-          </div>
-        )}
 
         {pendingAudio && (
           <div className="group flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30">
