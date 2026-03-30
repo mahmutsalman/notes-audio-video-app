@@ -751,6 +751,7 @@ export interface ElectronAPI {
     updateImageCaption: (imageId: number, caption: string | null) => Promise<QuickCaptureImage>;
     deleteAudio: (audioId: number) => Promise<void>;
     updateAudioCaption: (audioId: number, caption: string | null) => Promise<QuickCaptureAudio>;
+    replaceImageFromClipboard: (imageId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<QuickCaptureImage>;
   };
   imageChildren: {
     getByParent: (parentType: string, parentId: number) => Promise<ImageChild[]>;
@@ -758,6 +759,7 @@ export interface ElectronAPI {
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<ImageChild>;
     reorder: (parentType: string, parentId: number, orderedIds: number[]) => Promise<void>;
+    replaceFromClipboard: (id: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<ImageChild>;
   };
   imageChildAudios: {
     getByChild: (imageChildId: number) => Promise<ImageChildAudio[]>;

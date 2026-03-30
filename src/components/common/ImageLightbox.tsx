@@ -160,6 +160,17 @@ export default function ImageLightbox({
     setAudioCaptionText('');
   };
 
+  const handleReplaceChildWithClipboard = useCallback(async () => {
+    if (selectedChildId == null) return;
+    const result = await window.electronAPI.clipboard.readImage();
+    if (!result.success || !result.buffer) {
+      alert('No image found in clipboard. Copy an image first.');
+      return;
+    }
+    const updated = await window.electronAPI.imageChildren.replaceFromClipboard(selectedChildId, result.buffer, result.extension || 'png');
+    setImageChildren(prev => prev.map(c => c.id === selectedChildId ? { ...c, file_path: updated.file_path, thumbnail_path: updated.thumbnail_path } : c));
+  }, [selectedChildId]);
+
   // Keep scaleRef in sync with scale state
   useEffect(() => { scaleRef.current = scale; }, [scale]);
   // Keep mirror refs in sync
@@ -805,7 +816,7 @@ export default function ImageLightbox({
   };
 
   return (
-    <div className={`fixed inset-0 z-50 bg-black/90 flex flex-col titlebar-no-drag${playerBarVisible ? ' pb-14' : ''}`}>
+    <div className={`fixed inset-0 z-50 bg-black/90 flex flex-col titlebar-no-drag${(playerBarVisible || showRecordingBar) ? ' pb-14' : ''}`}>
 
       {/* ── Image area (shrinks when bottom bars appear) ── */}
       <div
@@ -1278,6 +1289,7 @@ export default function ImageLightbox({
             onUpdateImageAudioCaption={(audioId, imageId, caption) =>
               handleUpdateChildAudioCaption(audioId, imageId, caption)
             }
+            onReplaceWithClipboard={handleReplaceChildWithClipboard}
             onEditCaption={() => {
               setChildCaptionEdit({ childId: child.id, value: child.caption ?? '' });
             }}
@@ -1361,7 +1373,7 @@ export default function ImageLightbox({
       {/* ── Embedded recording bar ── */}
       {showRecordingBar && (
         <div
-          className="flex-shrink-0 bg-gray-900 border-t border-gray-700"
+          className="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 z-10"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center gap-3 px-4 h-14">
