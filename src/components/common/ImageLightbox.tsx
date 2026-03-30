@@ -195,6 +195,10 @@ export default function ImageLightbox({
   const [childTagCountMap, setChildTagCountMap] = useState<Record<number, number>>({});
   const [pendingDeleteChild, setPendingDeleteChild] = useState<number | null>(null);
   const [childCaptionEdit, setChildCaptionEdit] = useState<{ childId: number; value: string } | null>(null);
+  const [draggingChildId, setDraggingChildId] = useState<number | null>(null);
+
+  // Drag-and-drop sensors for the related images strip
+  const childSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   // Annotation state
   const [annotations, setAnnotations] = useState<ImageAnnotation[]>([]);
