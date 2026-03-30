@@ -736,6 +736,8 @@ const electronAPI = {
       ipcRenderer.invoke('quickCaptures:deleteAudio', audioId),
     updateAudioCaption: (audioId: number, caption: string | null): Promise<import('../src/types').QuickCaptureAudio> =>
       ipcRenderer.invoke('quickCaptures:updateAudioCaption', audioId, caption),
+    replaceImageFromClipboard: (imageId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<import('../src/types').QuickCaptureImage> =>
+      ipcRenderer.invoke('quickCaptures:replaceImageFromClipboard', imageId, imageBuffer, extension),
   },
   // Image Children
   imageChildren: {
@@ -749,6 +751,8 @@ const electronAPI = {
       ipcRenderer.invoke('imageChildren:updateCaption', id, caption),
     reorder: (parentType: string, parentId: number, orderedIds: number[]): Promise<void> =>
       ipcRenderer.invoke('imageChildren:reorder', parentType, parentId, orderedIds),
+    replaceFromClipboard: (id: number, imageBuffer: ArrayBuffer, extension?: string): Promise<import('../src/types').ImageChild> =>
+      ipcRenderer.invoke('imageChildren:replaceFromClipboard', id, imageBuffer, extension),
   },
 
   // Image Child Audios

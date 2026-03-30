@@ -603,6 +603,33 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
     }
   }, [lightbox, result.content_type]);
 
+  const handleReplaceWithClipboard = useCallback(async () => {
+    if (!lightbox) return;
+    const img = lightbox.images[lightbox.index];
+    if (!img.id) return;
+    const clipResult = await window.electronAPI.clipboard.readImage();
+    if (!clipResult.success || !clipResult.buffer) {
+      alert('No image found in clipboard. Copy an image first.');
+      return;
+    }
+    const ext = clipResult.extension || 'png';
+    let newFilePath: string;
+    if (result.content_type === 'image') {
+      const updated = await window.electronAPI.media.replaceImageFromClipboard(img.id, result.recording_id!, clipResult.buffer, ext);
+      newFilePath = updated.file_path;
+    } else if (result.content_type === 'quick_capture_image') {
+      const updated = await window.electronAPI.quickCaptures.replaceImageFromClipboard(img.id, clipResult.buffer, ext);
+      newFilePath = updated.file_path;
+    } else {
+      const updated = await window.electronAPI.durationImages.replaceFromClipboard(img.id, result.duration_id!, clipResult.buffer, ext);
+      newFilePath = updated.file_path;
+    }
+    setLightbox(lb => lb ? {
+      ...lb,
+      images: lb.images.map((im, i) => i === lb.index ? { ...im, file_path: newFilePath } : im),
+    } : lb);
+  }, [lightbox, result.content_type, result.recording_id, result.duration_id]);
+
   if (isDeleted) return null;
 
   return (
@@ -783,6 +810,7 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
           onDeleteImageAudio={handleDeleteImageAudio}
           onPlayImageAudio={handlePlayImageAudio}
           onUpdateImageAudioCaption={handleUpdateImageAudioCaption}
+          onReplaceWithClipboard={isImageType ? handleReplaceWithClipboard : undefined}
           onEditCaption={handleEditLightboxImageCaption}
           onDelete={handleDeleteLightboxImage}
           mediaType={result.content_type as MediaTagType}
@@ -967,6 +995,35 @@ function ImageResultSection({
     return (activeItems.find(r => r.source_id === img.id)?.content_type ?? 'duration_image') as MediaTagType;
   };
 
+  const handleReplaceWithClipboard = useCallback(async () => {
+    if (!lightbox) return;
+    const img = lightbox.images[lightbox.index];
+    if (!img.id) return;
+    const result = activeItems.find(r => r.source_id === img.id);
+    if (!result) return;
+    const clipResult = await window.electronAPI.clipboard.readImage();
+    if (!clipResult.success || !clipResult.buffer) {
+      alert('No image found in clipboard. Copy an image first.');
+      return;
+    }
+    const ext = clipResult.extension || 'png';
+    let newFilePath: string;
+    if (result.content_type === 'image') {
+      const updated = await window.electronAPI.media.replaceImageFromClipboard(img.id, result.recording_id!, clipResult.buffer, ext);
+      newFilePath = updated.file_path;
+    } else if (result.content_type === 'quick_capture_image') {
+      const updated = await window.electronAPI.quickCaptures.replaceImageFromClipboard(img.id, clipResult.buffer, ext);
+      newFilePath = updated.file_path;
+    } else {
+      const updated = await window.electronAPI.durationImages.replaceFromClipboard(img.id, result.duration_id!, clipResult.buffer, ext);
+      newFilePath = updated.file_path;
+    }
+    setLightbox(lb => lb ? {
+      ...lb,
+      images: lb.images.map((im, i) => i === lb.index ? { ...im, file_path: newFilePath } : im),
+    } : lb);
+  }, [lightbox, activeItems]);
+
   if (activeItems.length === 0) return null;
 
   return (
@@ -1006,6 +1063,7 @@ function ImageResultSection({
           onDeleteImageAudio={handleDeleteImageAudio}
           onPlayImageAudio={handlePlayImageAudio}
           onUpdateImageAudioCaption={handleUpdateImageAudioCaption}
+          onReplaceWithClipboard={handleReplaceWithClipboard}
           onEditCaption={handleEditLightboxCaption}
           onDelete={handleDeleteFromLightbox}
           mediaType={getLightboxMediaType()}

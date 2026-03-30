@@ -1751,9 +1751,20 @@ export const QuickCaptureOperations = {
     return { filePath: row.file_path, thumbnailPath: row.thumbnail_path };
   },
 
+  getImageById(imageId: number): import('../../src/types').QuickCaptureImage | null {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM quick_capture_images WHERE id = ?').get(imageId) as import('../../src/types').QuickCaptureImage ?? null;
+  },
+
   updateImageCaption(imageId: number, caption: string | null): import('../../src/types').QuickCaptureImage {
     const db = getDatabase();
     db.prepare('UPDATE quick_capture_images SET caption = ? WHERE id = ?').run(caption, imageId);
+    return db.prepare('SELECT * FROM quick_capture_images WHERE id = ?').get(imageId) as import('../../src/types').QuickCaptureImage;
+  },
+
+  updateImageFilePaths(imageId: number, filePath: string, thumbnailPath: string | null): import('../../src/types').QuickCaptureImage {
+    const db = getDatabase();
+    db.prepare('UPDATE quick_capture_images SET file_path = ?, thumbnail_path = ? WHERE id = ?').run(filePath, thumbnailPath, imageId);
     return db.prepare('SELECT * FROM quick_capture_images WHERE id = ?').get(imageId) as import('../../src/types').QuickCaptureImage;
   },
 
@@ -1828,6 +1839,12 @@ export const ImageChildrenOperations = {
   updateCaption(id: number, caption: string | null) {
     const db = getDatabase();
     db.prepare('UPDATE image_children SET caption = ? WHERE id = ?').run(caption, id);
+    return this.getById(id)!;
+  },
+
+  updateFilePaths(id: number, filePath: string, thumbnailPath: string | null) {
+    const db = getDatabase();
+    db.prepare('UPDATE image_children SET file_path = ?, thumbnail_path = ? WHERE id = ?').run(filePath, thumbnailPath, id);
     return this.getById(id)!;
   },
 
