@@ -184,6 +184,22 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
     }
   }, [currentRow, captionText, lightboxIsRecordingLevel, lightboxIndex]);
 
+  const handleReplaceWithClipboard = useCallback(async () => {
+    if (!currentRow) return;
+    const result = await window.electronAPI.clipboard.readImage();
+    if (!result.success || !result.buffer) {
+      alert('No image found in clipboard. Copy an image first.');
+      return;
+    }
+    if (lightboxIsRecordingLevel) {
+      const updated = await window.electronAPI.media.replaceImageFromClipboard(currentRow.id, currentRow.recording_id, result.buffer, result.extension || 'png');
+      setLightboxRows(rows => rows ? rows.map((r, i) => i === lightboxIndex ? { ...r, file_path: updated.file_path } : r) : rows);
+    } else {
+      const updated = await window.electronAPI.durationImages.replaceFromClipboard(currentRow.id, currentRow.duration_id!, result.buffer, result.extension || 'png');
+      setLightboxRows(rows => rows ? rows.map((r, i) => i === lightboxIndex ? { ...r, file_path: updated.file_path } : r) : rows);
+    }
+  }, [currentRow, lightboxIsRecordingLevel, lightboxIndex]);
+
   const handleDeleteImage = useCallback(async () => {
     if (!currentRow || !lightboxRows) return;
     if (!window.confirm('Delete this image?')) return;
@@ -332,6 +348,36 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
     }
   }, [captureLightbox]);
 
+  const handleCaptureReplaceWithClipboard = useCallback(async () => {
+    if (!currentCaptureRow) return;
+    const result = await window.electronAPI.clipboard.readImage();
+    if (!result.success || !result.buffer) {
+      alert('No image found in clipboard. Copy an image first.');
+      return;
+    }
+    const updated = await window.electronAPI.quickCaptures.replaceImageFromClipboard(currentCaptureRow.id, result.buffer, result.extension || 'png');
+    setCaptureLightbox(lb => lb ? {
+      ...lb,
+      rows: lb.rows.map((r, i) => i === lb.index ? { ...r, file_path: updated.file_path, thumbnail_path: updated.thumbnail_path } : r),
+    } : lb);
+  }, [currentCaptureRow]);
+
+  const handleChildReplaceWithClipboard = useCallback(async () => {
+    if (!childLightbox) return;
+    const row = childLightbox.rows[childLightbox.index];
+    if (!row) return;
+    const result = await window.electronAPI.clipboard.readImage();
+    if (!result.success || !result.buffer) {
+      alert('No image found in clipboard. Copy an image first.');
+      return;
+    }
+    const updated = await window.electronAPI.imageChildren.replaceFromClipboard(row.id, result.buffer, result.extension || 'png');
+    setChildLightbox(lb => lb ? {
+      ...lb,
+      rows: lb.rows.map((r, i) => i === lb.index ? { ...r, file_path: updated.file_path, thumbnail_path: updated.thumbnail_path } : r),
+    } : lb);
+  }, [childLightbox]);
+
   if (loading) return <p className="text-sm text-gray-400 py-4">Loading…</p>;
   if (!items) return null;
 
@@ -402,6 +448,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
               [imageId]: (prev[imageId] ?? []).map(a => a.id === audioId ? { ...a, caption: cap } : a),
             }));
           }}
+          onReplaceWithClipboard={handleChildReplaceWithClipboard}
           onEditCaption={() => {}}
           onDelete={async () => {
             if (!childLightbox) return;
@@ -433,6 +480,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
           onRecordForImage={handleRecordForCaptureImage}
           onDeleteImageAudio={handleDeleteCaptureImageAudio}
           onUpdateImageAudioCaption={handleUpdateCaptureImageAudioCaption}
+          onReplaceWithClipboard={handleCaptureReplaceWithClipboard}
           onEditCaption={handleCaptureEditCaption}
           onDelete={handleCaptureDeleteImage}
         />
@@ -477,6 +525,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
           onRecordForImage={handleRecordForImage}
           onDeleteImageAudio={handleDeleteImageAudio}
           onUpdateImageAudioCaption={handleUpdateImageAudioCaption}
+          onReplaceWithClipboard={handleReplaceWithClipboard}
           onEditCaption={handleEditCaption}
           onDelete={handleDeleteImage}
           mediaType={lightboxIsRecordingLevel ? 'image' : 'duration_image'}

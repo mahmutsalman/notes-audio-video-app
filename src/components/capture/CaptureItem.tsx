@@ -307,6 +307,19 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     await window.electronAPI.quickCaptures.deleteImage(img.id);
   };
 
+  const handleLightboxReplaceWithClipboard = async () => {
+    if (lightboxIndex === null) return;
+    const img = localImages[lightboxIndex];
+    if (!img?.id) return;
+    const result = await window.electronAPI.clipboard.readImage();
+    if (!result.success || !result.buffer) {
+      alert('No image found in clipboard. Copy an image first.');
+      return;
+    }
+    const updated = await window.electronAPI.quickCaptures.replaceImageFromClipboard(img.id, result.buffer, result.extension || 'png');
+    setLocalImages(prev => prev.map(i => i.id === updated.id ? { ...i, file_path: updated.file_path, thumbnail_path: updated.thumbnail_path } : i));
+  };
+
   return (
     <div className="bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
 
@@ -451,6 +464,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
           onRecordForImage={handleRecordForCaptureImage}
           onDeleteImageAudio={handleDeleteCaptureImageAudio}
           onUpdateImageAudioCaption={handleUpdateCaptureImageAudioCaption}
+          onReplaceWithClipboard={handleLightboxReplaceWithClipboard}
           onEditCaption={handleLightboxEditCaption}
           onDelete={handleLightboxDeleteImage}
         />
