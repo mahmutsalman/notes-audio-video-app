@@ -5,6 +5,22 @@ import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
 import WaveformVisualizer from '../audio/WaveformVisualizer';
 import { formatDuration } from '../../utils/formatters';
 import { TagModal } from './TagModal';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragOverlay,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface LightboxImage {
   file_path: string;
@@ -55,6 +71,59 @@ const ANNOTATION_COLORS = [
 const STROKE_WIDTH = 0.6; // SVG viewBox units (0 0 100 100)
 const HANDLE_SIZE = 1.8;  // handle square/circle radius in viewBox units
 
+/* ── Sortable thumbnail for the related-images strip ─────────────────────── */
+function SortableChildThumb({
+  child,
+  audioCount,
+  tagCount,
+  onOpen,
+  onDelete,
+}: {
+  child: ImageChild;
+  audioCount: number;
+  tagCount: number;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: child.id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.3 : 1 }}
+      className="relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden cursor-grab active:cursor-grabbing group border border-white/10 hover:border-white/40 transition-colors"
+      onClick={onOpen}
+      {...attributes}
+      {...listeners}
+    >
+      <img
+        src={window.electronAPI.paths.getFileUrl(child.thumbnail_path ?? child.file_path)}
+        alt={child.caption ?? ''}
+        className="w-full h-full object-cover pointer-events-none"
+      />
+      {audioCount > 0 && (
+        <span className="absolute top-0.5 right-0.5 bg-blue-500/80 text-white text-[9px] rounded px-0.5 leading-4 pointer-events-none">
+          {audioCount}
+        </span>
+      )}
+      {tagCount > 0 && (
+        <span className={`absolute right-0.5 bg-orange-500/90 text-white text-[9px] rounded px-0.5 leading-4 pointer-events-none ${
+          audioCount > 0 ? 'top-4' : 'top-0.5'
+        }`}>
+          {tagCount}
+        </span>
+      )}
+      <button
+        className="absolute top-0.5 left-0.5 w-4 h-4 bg-black/70 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity z-10"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        title="Delete"
+      >
+        <span className="text-red-400 text-[11px] leading-none">×</span>
+      </button>
+    </div>
+  );
+}
+
 export default function ImageLightbox({
   images,
   selectedIndex,
@@ -88,6 +157,10 @@ export default function ImageLightbox({
   const [childTagCountMap, setChildTagCountMap] = useState<Record<number, number>>({});
   const [pendingDeleteChild, setPendingDeleteChild] = useState<number | null>(null);
   const [childCaptionEdit, setChildCaptionEdit] = useState<{ childId: number; value: string } | null>(null);
+  const [draggingChildId, setDraggingChildId] = useState<number | null>(null);
+
+  // Drag-and-drop sensors for the related images strip
+  const childSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   // Annotation state
   const [annotations, setAnnotations] = useState<ImageAnnotation[]>([]);
@@ -170,6 +243,20 @@ export default function ImageLightbox({
     const updated = await window.electronAPI.imageChildren.replaceFromClipboard(selectedChildId, result.buffer, result.extension || 'png');
     setImageChildren(prev => prev.map(c => c.id === selectedChildId ? { ...c, file_path: updated.file_path, thumbnail_path: updated.thumbnail_path } : c));
   }, [selectedChildId]);
+
+  const handleChildDragEnd = useCallback(async (event: DragEndEvent) => {
+    setDraggingChildId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = imageChildren.findIndex(c => c.id === active.id);
+    const newIndex = imageChildren.findIndex(c => c.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const reordered = arrayMove(imageChildren, oldIndex, newIndex);
+    setImageChildren(reordered);
+    if (mediaType && image?.id) {
+      await window.electronAPI.imageChildren.reorder(mediaType, image.id, reordered.map(c => c.id));
+    }
+  }, [imageChildren, mediaType, image?.id]);
 
   // Keep scaleRef in sync with scale state
   useEffect(() => { scaleRef.current = scale; }, [scale]);
@@ -1144,51 +1231,49 @@ export default function ImageLightbox({
           {/* Left: thumbnail row — only in parent lightbox */}
           {!disableChildImages && <div className="flex-1 min-w-0">
             <p className="text-white/40 text-[10px] mb-1">Related images</p>
-            <div className="flex gap-2 overflow-x-auto pb-0.5">
-              {imageChildren.map(child => (
-                <div
-                  key={child.id}
-                  className="relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden cursor-pointer group border border-white/10 hover:border-white/40 transition-colors"
-                  onClick={() => setSelectedChildId(child.id)}
-                >
-                  <img
-                    src={window.electronAPI.paths.getFileUrl(child.thumbnail_path ?? child.file_path)}
-                    alt={child.caption ?? ''}
-                    className="w-full h-full object-cover"
-                  />
-                  {/* Audio count badge — top-right */}
-                  {(childAudiosMap[child.id] ?? []).length > 0 && (
-                    <span className="absolute top-0.5 right-0.5 bg-blue-500/80 text-white text-[9px] rounded px-0.5 leading-4 pointer-events-none">
-                      {(childAudiosMap[child.id] ?? []).length}
-                    </span>
-                  )}
-                  {/* Tag count badge — stacked below audio if both, otherwise top-right */}
-                  {(childTagCountMap[child.id] ?? 0) > 0 && (
-                    <span className={`absolute right-0.5 bg-orange-500/90 text-white text-[9px] rounded px-0.5 leading-4 pointer-events-none ${
-                      (childAudiosMap[child.id] ?? []).length > 0 ? 'top-4' : 'top-0.5'
-                    }`}>
-                      {childTagCountMap[child.id]}
-                    </span>
-                  )}
-                  {/* Delete button — top-left corner, small × */}
+            <DndContext
+              sensors={childSensors}
+              collisionDetection={closestCenter}
+              onDragStart={({ active }) => setDraggingChildId(active.id as number)}
+              onDragEnd={handleChildDragEnd}
+            >
+              <SortableContext items={imageChildren.map(c => c.id)} strategy={horizontalListSortingStrategy}>
+                <div className="flex gap-2 overflow-x-auto pb-0.5">
+                  {imageChildren.map(child => (
+                    <SortableChildThumb
+                      key={child.id}
+                      child={child}
+                      audioCount={(childAudiosMap[child.id] ?? []).length}
+                      tagCount={childTagCountMap[child.id] ?? 0}
+                      onOpen={() => setSelectedChildId(child.id)}
+                      onDelete={() => setPendingDeleteChild(child.id)}
+                    />
+                  ))}
+                  {/* Add placeholder — outside SortableContext so it's not draggable */}
                   <button
-                    className="absolute top-0.5 left-0.5 w-4 h-4 bg-black/70 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity z-10"
-                    onClick={(e) => { e.stopPropagation(); setPendingDeleteChild(child.id); }}
-                    title="Delete"
+                    className="flex-shrink-0 w-14 h-14 rounded-lg border-2 border-dashed border-white/20 hover:border-white/40 flex items-center justify-center transition-colors"
+                    onClick={handleAddChild}
+                    title="Paste image from clipboard (Cmd+V)"
                   >
-                    <span className="text-red-400 text-[11px] leading-none">×</span>
+                    <span className="text-white/40 text-2xl leading-none">+</span>
                   </button>
                 </div>
-              ))}
-              {/* Add placeholder */}
-              <button
-                className="flex-shrink-0 w-14 h-14 rounded-lg border-2 border-dashed border-white/20 hover:border-white/40 flex items-center justify-center transition-colors"
-                onClick={handleAddChild}
-                title="Paste image from clipboard (Cmd+V)"
-              >
-                <span className="text-white/40 text-2xl leading-none">+</span>
-              </button>
-            </div>
+              </SortableContext>
+              <DragOverlay>
+                {draggingChildId != null && (() => {
+                  const child = imageChildren.find(c => c.id === draggingChildId);
+                  if (!child) return null;
+                  return (
+                    <div className="w-14 h-14 rounded-lg overflow-hidden shadow-2xl ring-2 ring-white/50 opacity-90">
+                      <img
+                        src={window.electronAPI.paths.getFileUrl(child.thumbnail_path ?? child.file_path)}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  );
+                })()}
+              </DragOverlay>
+            </DndContext>
           </div>}
 
           {/* Right: main image audios — compact horizontal chip row */}
