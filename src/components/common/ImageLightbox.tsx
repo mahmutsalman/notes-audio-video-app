@@ -893,6 +893,11 @@ export default function ImageLightbox({
               e.stopPropagation();
               if (!drawMode) setSelectedAnnId(null);
             }}
+            onContextMenu={(onReplaceWithClipboard || onEditCaption || onDelete || mediaType) ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setImageContextMenu({ x: e.clientX, y: e.clientY });
+            } : undefined}
           >
             {/* Transparent background to catch clicks for deselect / draw start */}
             <rect x="0" y="0" width="100" height="100" fill="transparent" />
