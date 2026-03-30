@@ -59,6 +59,8 @@ interface SortableImageGridProps {
   tagCountMap?: Record<number, number>;
   /** Map of imageId → tag name array for showing above image */
   tagNamesMap?: Record<number, string[]>;
+  /** Map of imageId → child image count for showing red badge */
+  childCountMap?: Record<number, number>;
   /** Image ID to highlight (from search navigation) */
   highlightedId?: number;
   /** Disable drag-and-drop and hide the delete button (read-only display mode) */
@@ -80,6 +82,7 @@ interface SortableImageProps {
   audioCount?: number;
   tagCount?: number;
   tags?: string[];
+  childCount?: number;
   isHighlighted?: boolean;
 }
 
@@ -96,6 +99,7 @@ function SortableImage({
   audioCount = 0,
   tagCount = 0,
   tags = [],
+  childCount = 0,
   isHighlighted = false,
 }: SortableImageProps) {
   const [captionExpanded, setCaptionExpanded] = useState(false);
@@ -175,6 +179,15 @@ function SortableImage({
                           rounded-full w-4 h-4 flex items-center justify-center font-bold z-10
                           group-hover:opacity-0 transition-opacity">
             {tagCount > 9 ? '9+' : tagCount}
+          </div>
+        )}
+        {/* Child image count badge (red) */}
+        {childCount > 0 && (
+          <div className={`absolute right-1 bg-red-500 text-white text-[10px]
+                          rounded-full w-4 h-4 flex items-center justify-center font-bold z-10
+                          group-hover:opacity-0 transition-opacity
+                          ${audioCount > 0 && tagCount > 0 ? 'top-11' : audioCount > 0 || tagCount > 0 ? 'top-6' : 'top-1'}`}>
+            {childCount > 9 ? '9+' : childCount}
           </div>
         )}
         {/* Left color indicator */}
@@ -357,6 +370,7 @@ export default function SortableImageGrid({
   audioCountMap,
   tagCountMap,
   tagNamesMap,
+  childCountMap,
   highlightedId,
   readOnly = false,
 }: SortableImageGridProps) {
@@ -457,6 +471,7 @@ export default function SortableImageGrid({
                 audioCount={audioCountMap?.[img.id] ?? 0}
                 tagCount={tagCountMap?.[img.id] ?? 0}
                 tags={tagNamesMap?.[img.id] ?? []}
+                childCount={childCountMap?.[img.id] ?? 0}
                 isHighlighted={highlightedId === img.id}
               />
             );

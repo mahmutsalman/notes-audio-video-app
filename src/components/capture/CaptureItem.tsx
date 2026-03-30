@@ -60,6 +60,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   const [imageTagCountMap, setImageTagCountMap] = useState<Record<number, number>>({});
   const [imageTagNamesMap, setImageTagNamesMap] = useState<Record<number, string[]>>({});
   const [audioTagCountMap, setAudioTagCountMap] = useState<Record<number, number>>({});
+  const [imageChildCountMap, setImageChildCountMap] = useState<Record<number, number>>({});
 
   // Map QuickCaptureImage → SortableImageItem (color: null = no color bars)
   const [localImages, setLocalImages] = useState<SortableImageItem[]>(() =>
@@ -149,6 +150,17 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   useEffect(() => {
     if (localImages.length > 0) fetchCaptureImageAudios(localImages);
   }, [localImages, fetchCaptureImageAudios]);
+
+  // Fetch child image counts for badge display
+  useEffect(() => {
+    if (localImages.length === 0) return;
+    Promise.all(
+      localImages.map(async img => {
+        const children = await window.electronAPI.imageChildren.getByParent('quick_capture_image', img.id);
+        return [img.id, children.length] as const;
+      })
+    ).then(entries => setImageChildCountMap(Object.fromEntries(entries)));
+  }, [localImages]);
 
   const openLightbox = useCallback(async (index: number) => {
     setLightboxIndex(index);
@@ -394,6 +406,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
             audioCountMap={Object.fromEntries(localImages.map(img => [img.id, (captureImageAudiosMap[img.id] ?? []).length]))}
             tagCountMap={imageTagCountMap}
             tagNamesMap={imageTagNamesMap}
+            childCountMap={imageChildCountMap}
             pastePlaceholder={
               <div className="flex flex-col items-center">
                 <div className="relative w-full">
@@ -456,7 +469,17 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
         <ImageLightbox
           images={localImages}
           selectedIndex={lightboxIndex}
-          onClose={() => { setLightboxIndex(null); setCaptureImageAudiosMap({}); }}
+          onClose={() => {
+            setLightboxIndex(null);
+            setCaptureImageAudiosMap({});
+            // Refresh child counts in case children were added/removed in lightbox
+            Promise.all(
+              localImages.map(async img => {
+                const children = await window.electronAPI.imageChildren.getByParent('quick_capture_image', img.id);
+                return [img.id, children.length] as const;
+              })
+            ).then(entries => setImageChildCountMap(Object.fromEntries(entries)));
+          }}
           onNavigate={setLightboxIndex}
           mediaType="quick_capture_image"
           imageAudiosMap={captureImageAudiosMap}
