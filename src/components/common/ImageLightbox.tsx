@@ -702,12 +702,24 @@ export default function ImageLightbox({
         if (selectedChildId == null && selectedIndex > 0) onNavigate(selectedIndex - 1);
       } else if (e.key === 'ArrowRight') {
         if (selectedChildId == null && selectedIndex < images.length - 1) onNavigate(selectedIndex + 1);
+      } else if (e.key === 'ArrowDown') {
+        // Open first related image when viewing a parent
+        if (!disableChildImages && selectedChildId == null && imageChildren.length > 0) {
+          e.preventDefault();
+          setSelectedChildId(imageChildren[0].id);
+        }
+      } else if (e.key === 'ArrowUp') {
+        // Go back to parent from a child
+        if (selectedChildId != null) {
+          e.preventDefault();
+          setSelectedChildId(null);
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIndex, images.length, onNavigate, onClose, imageContextMenu, selectedChildId, drawMode, selectedAnnId]);
+  }, [selectedIndex, images.length, onNavigate, onClose, imageContextMenu, selectedChildId, drawMode, selectedAnnId, imageChildren, disableChildImages]);
 
   // Backdrop click: close at 1x, reset zoom at >1x, or dismiss context menu
   const handleBackdropClick = useCallback(() => {
