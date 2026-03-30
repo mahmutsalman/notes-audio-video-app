@@ -1851,6 +1851,18 @@ export function setupIpcHandlers(): void {
     return result;
   });
 
+  ipcMain.handle('quickCaptures:replaceImageFromClipboard', async (_, imageId: number, imageBuffer: ArrayBuffer, extension: string = 'png') => {
+    const old = QuickCaptureOperations.getImageById(imageId);
+    const { filePath, thumbnailPath } = await saveQuickCaptureImage(imageBuffer, extension);
+    if (old) {
+      await deleteFile(old.file_path);
+      if (old.thumbnail_path && old.thumbnail_path !== old.file_path) {
+        await deleteFile(old.thumbnail_path);
+      }
+    }
+    return QuickCaptureOperations.updateImageFilePaths(imageId, filePath, thumbnailPath);
+  });
+
   // ============ Image Children ============
   ipcMain.handle('imageChildren:getByParent', async (_, parentType: string, parentId: number) => {
     return ImageChildrenOperations.getByParent(parentType, parentId);
@@ -1885,6 +1897,18 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('imageChildren:reorder', async (_, parentType: string, parentId: number, orderedIds: number[]) => {
     ImageChildrenOperations.reorder(parentType, parentId, orderedIds);
+  });
+
+  ipcMain.handle('imageChildren:replaceFromClipboard', async (_, childId: number, imageBuffer: ArrayBuffer, extension: string = 'png') => {
+    const old = ImageChildrenOperations.getById(childId) as { file_path: string; thumbnail_path: string | null; parent_id: number } | null;
+    const { filePath, thumbnailPath } = await saveImageChildFromBuffer(old?.parent_id ?? 0, imageBuffer, extension);
+    if (old) {
+      await deleteFile(old.file_path);
+      if (old.thumbnail_path && old.thumbnail_path !== old.file_path) {
+        await deleteFile(old.thumbnail_path);
+      }
+    }
+    return ImageChildrenOperations.updateFilePaths(childId, filePath, thumbnailPath);
   });
 
   // ============ Image Child Audios ============
