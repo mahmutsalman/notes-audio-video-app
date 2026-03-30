@@ -806,6 +806,8 @@ const electronAPI = {
       ipcRenderer.invoke('imageChildren:updateCaption', id, caption),
     reorder: (parentType: string, parentId: number, orderedIds: number[]): Promise<void> =>
       ipcRenderer.invoke('imageChildren:reorder', parentType, parentId, orderedIds),
+    replaceFromClipboard: (id: number, imageBuffer: ArrayBuffer, extension?: string): Promise<import('../src/types').ImageChild> =>
+      ipcRenderer.invoke('imageChildren:replaceFromClipboard', id, imageBuffer, extension),
   },
 
   // Image Child Audios
