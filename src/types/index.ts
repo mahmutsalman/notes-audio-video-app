@@ -774,6 +774,12 @@ export interface ElectronAPI {
     update: (id: number, partial: { x1?: number; y1?: number; x2?: number; y2?: number; color?: string }) => Promise<ImageAnnotation>;
     delete: (id: number) => Promise<void>;
   };
+  ocr: {
+    recognizeRegion: (
+      imagePath: string,
+      rect: { x: number; y: number; width: number; height: number }
+    ) => Promise<{ text: string; slug: string }>;
+  };
 }
 
 export interface GlobalSearchResult {
