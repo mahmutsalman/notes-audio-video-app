@@ -29,6 +29,11 @@ type TagModalState =
   | { kind: 'audio'; id: number }
   | null;
 
+type PendingDeleteState =
+  | { kind: 'image'; id: number }
+  | { kind: 'audio'; id: number }
+  | null;
+
 function relativeTime(dateStr: string): string {
   const now = Date.now();
   const iso = dateStr.replace(' ', 'T') + (dateStr.includes('Z') ? '' : 'Z');
@@ -53,6 +58,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   const captureAudioPlayer = useCaptureAudioPlayer();
   const audioRecording = useAudioRecording();
   const [captionModal, setCaptionModal] = useState<CaptionModalState>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDeleteState>(null);
   const [captionText, setCaptionText] = useState('');
   const [tagModal, setTagModal] = useState<TagModalState>(null);
   const [localAudios, setLocalAudios] = useState<QuickCaptureAudio[]>(capture.audios);
@@ -401,7 +407,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
             captionColorClass="text-blue-600 dark:text-blue-400"
             onImageClick={openLightbox}
             onContextMenu={handleImageContextMenu}
-            onDelete={handleDeleteImage}
+            onDelete={(id) => setPendingDelete({ kind: 'image', id })}
             onReorder={handleReorder}
             audioCountMap={Object.fromEntries(localImages.map(img => [img.id, (captureImageAudiosMap[img.id] ?? []).length]))}
             tagCountMap={imageTagCountMap}
@@ -528,8 +534,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
             onClick={() => {
               const { kind, item } = contextMenu;
               setContextMenu(null);
-              if (kind === 'image') handleDeleteImage(item.id);
-              else handleDeleteAudio(item.id);
+              setPendingDelete({ kind, id: item.id });
             }}
           >
             <span>🗑️</span> Delete
@@ -585,6 +590,43 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
           title={tagModal.kind === 'image' ? 'Image Tags' : 'Audio Tags'}
           onClose={() => { setTagModal(null); fetchTagCounts(); }}
         />
+      )}
+
+      {/* ── Delete confirmation modal ── */}
+      {pendingDelete && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50"
+          onClick={() => setPendingDelete(null)}
+        >
+          <div
+            className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[320px] max-w-[90vw] p-5 flex flex-col items-center gap-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 text-center">
+              Delete this {pendingDelete.kind}?<br />
+              <span className="text-xs font-normal text-gray-400">This cannot be undone.</span>
+            </p>
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setPendingDelete(null)}
+                className="flex-1 py-2 rounded-lg bg-gray-100 dark:bg-dark-hover text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const { kind, id } = pendingDelete;
+                  setPendingDelete(null);
+                  if (kind === 'image') handleDeleteImage(id);
+                  else handleDeleteAudio(id);
+                }}
+                className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
