@@ -278,6 +278,7 @@ export function setupIpcHandlers(): void {
       }
     }
     ImagesOperations.delete(id);
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('media:deleteVideo', async (_, id: number) => {
@@ -1832,6 +1833,7 @@ export function setupIpcHandlers(): void {
     const { filePath, thumbnailPath } = QuickCaptureOperations.deleteImage(imageId);
     if (filePath) await fs.unlink(filePath).catch(() => {});
     if (thumbnailPath && thumbnailPath !== filePath) await fs.unlink(thumbnailPath).catch(() => {});
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('quickCaptures:updateImageCaption', async (_, imageId: number, caption: string | null) => {
@@ -1889,6 +1891,7 @@ export function setupIpcHandlers(): void {
       }
     }
     ImageChildrenOperations.delete(id);
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('imageChildren:updateCaption', async (_, id: number, caption: string | null) => {
@@ -2001,6 +2004,60 @@ export function setupIpcHandlers(): void {
         await worker.terminate();
       }
     }
+  });
+
+  // OCR: extract full-image text and store as caption2
+  ipcMain.handle('ocr:extractCaption2', async (
+    _,
+    imageType: string,
+    imageId: number,
+    filePath: string
+  ): Promise<string> => {
+    const { nativeImage } = await import('electron');
+    const { width, height } = nativeImage.createFromPath(filePath).getSize();
+    if (!width || !height) throw new Error('Could not read image dimensions');
+
+    let ocrText = '';
+    if (process.platform === 'darwin') {
+      const { execFile } = await import('child_process');
+      const path = await import('path');
+      const { app } = await import('electron');
+      const binaryPath = app.isPackaged
+        ? path.join(process.resourcesPath, 'native', 'ocr_helper')
+        : path.join(__dirname, '../electron/native/ocr_helper');
+      ocrText = await new Promise<string>((resolve, reject) => {
+        execFile(
+          binaryPath,
+          [filePath, '0', '0', String(width), String(height)],
+          { timeout: 60000 },
+          (err, stdout, stderr) => {
+            if (err) { console.error('OCR error:', stderr); return reject(err); }
+            resolve(stdout.trim());
+          }
+        );
+      });
+    } else {
+      const { createWorker } = await import('tesseract.js');
+      const worker = await createWorker('eng', 1, { logger: () => {} });
+      try {
+        const { data: { text } } = await worker.recognize(filePath, {
+          rectangle: { left: 0, top: 0, width, height },
+        });
+        ocrText = text.trim();
+      } finally {
+        await worker.terminate();
+      }
+    }
+
+    switch (imageType) {
+      case 'image':               ImagesOperations.updateCaption2(imageId, ocrText || null); break;
+      case 'duration_image':      DurationImagesOperations.updateCaption2(imageId, ocrText || null); break;
+      case 'quick_capture_image': QuickCaptureOperations.updateImageCaption2(imageId, ocrText || null); break;
+      case 'image_child':         ImageChildrenOperations.updateCaption2(imageId, ocrText || null); break;
+      default: throw new Error(`Unknown imageType for caption2: ${imageType}`);
+    }
+    scheduleSearchReindex();
+    return ocrText;
   });
 
   console.log('IPC handlers registered');

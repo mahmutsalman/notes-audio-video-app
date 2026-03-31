@@ -787,6 +787,12 @@ const electronAPI = {
       rect: { x: number; y: number; width: number; height: number }
     ): Promise<{ text: string; slug: string }> =>
       ipcRenderer.invoke('ocr:recognizeRegion', imagePath, rect),
+    extractCaption2: (
+      imageType: string,
+      imageId: number,
+      filePath: string
+    ): Promise<string> =>
+      ipcRenderer.invoke('ocr:extractCaption2', imageType, imageId, filePath),
   },
 };
 

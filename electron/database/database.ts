@@ -821,6 +821,31 @@ function runMigrations(db: Database.Database): void {
     console.log('Created image_annotations table');
   }
 
+  // Migration: Add caption2 column (OCR text, search-only) to all image tables
+  const imagesCols2 = db.prepare("PRAGMA table_info(images)").all() as { name: string }[];
+  if (!imagesCols2.some(c => c.name === 'caption2')) {
+    db.exec('ALTER TABLE images ADD COLUMN caption2 TEXT');
+    console.log('Added caption2 column to images table');
+  }
+
+  const diCols2 = db.prepare("PRAGMA table_info(duration_images)").all() as { name: string }[];
+  if (!diCols2.some(c => c.name === 'caption2')) {
+    db.exec('ALTER TABLE duration_images ADD COLUMN caption2 TEXT');
+    console.log('Added caption2 column to duration_images table');
+  }
+
+  const qciCols2 = db.prepare("PRAGMA table_info(quick_capture_images)").all() as { name: string }[];
+  if (!qciCols2.some(c => c.name === 'caption2')) {
+    db.exec('ALTER TABLE quick_capture_images ADD COLUMN caption2 TEXT');
+    console.log('Added caption2 column to quick_capture_images table');
+  }
+
+  const icCols2 = db.prepare("PRAGMA table_info(image_children)").all() as { name: string }[];
+  if (!icCols2.some(c => c.name === 'caption2')) {
+    db.exec('ALTER TABLE image_children ADD COLUMN caption2 TEXT');
+    console.log('Added caption2 column to image_children table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index
@@ -997,6 +1022,42 @@ export function rebuildSearchIndex(): void {
       } catch { /* skip on error */ }
       markerInsert.run(am.id, recordingId, am.caption + ' ' + am.marker_type);
     }
+
+    // OCR text — recording-level images (parent_id = recording_id)
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'image_ocr', id, recording_id, caption2
+      FROM images WHERE caption2 IS NOT NULL AND caption2 != ''
+    `);
+
+    // OCR text — duration images (parent_id = recording_id via durations join)
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'duration_image_ocr', di.id, d.recording_id, di.caption2
+      FROM duration_images di JOIN durations d ON d.id = di.duration_id
+      WHERE di.caption2 IS NOT NULL AND di.caption2 != ''
+    `);
+
+    // OCR text — quick capture images (parent_id = capture_id, same as quick_capture_image)
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'quick_capture_image_ocr', id, capture_id, caption2
+      FROM quick_capture_images WHERE caption2 IS NOT NULL AND caption2 != ''
+    `);
+
+    // OCR text — child images (parent_id resolved to recording_id where possible)
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'image_child_ocr', ic.id,
+        COALESCE(
+          (SELECT i.recording_id FROM images i WHERE ic.parent_type = 'image' AND i.id = ic.parent_id),
+          (SELECT d.recording_id FROM duration_images di JOIN durations d ON d.id = di.duration_id
+           WHERE ic.parent_type = 'duration_image' AND di.id = ic.parent_id),
+          0
+        ),
+        ic.caption2
+      FROM image_children ic WHERE ic.caption2 IS NOT NULL AND ic.caption2 != ''
+    `);
   });
 
   rebuild();

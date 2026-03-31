@@ -496,6 +496,10 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
           onReplaceWithClipboard={handleLightboxReplaceWithClipboard}
           onEditCaption={handleLightboxEditCaption}
           onDelete={handleLightboxDeleteImage}
+          onExtractOcr={lightboxIndex !== null && localImages[lightboxIndex]?.id ? async () => {
+            const img = localImages[lightboxIndex!];
+            await window.electronAPI.ocr.extractCaption2('quick_capture_image', img.id, img.file_path);
+          } : undefined}
         />
       )}
 
@@ -528,6 +532,19 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
           >
             <span>🏷️</span> Tags
           </button>
+          {contextMenu.kind === 'image' && (
+            <>
+              <button
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+                onClick={async () => {
+                  setContextMenu(null);
+                  await window.electronAPI.ocr.extractCaption2('quick_capture_image', contextMenu.item.id, contextMenu.item.file_path);
+                }}
+              >
+                <span>🔍</span> Extract OCR text
+              </button>
+            </>
+          )}
           <div className="border-t border-gray-100 dark:border-dark-border my-1" />
           <button
             className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
