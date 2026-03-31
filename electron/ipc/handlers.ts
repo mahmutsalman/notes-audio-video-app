@@ -1959,5 +1959,49 @@ export function setupIpcHandlers(): void {
     ImageAnnotationsOperations.delete(id);
   });
 
+  // ============ OCR ============
+  ipcMain.handle('ocr:recognizeRegion', async (_, imagePath: string, rect: { x: number; y: number; width: number; height: number }) => {
+    function toSlug(text: string): string {
+      return text.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '-');
+    }
+
+    if (process.platform === 'darwin') {
+      // macOS: use Vision framework via compiled Swift binary
+      const { execFile } = await import('child_process');
+      const path = await import('path');
+      const { app } = await import('electron');
+
+      const binaryPath = app.isPackaged
+        ? path.join(process.resourcesPath, 'native', 'ocr_helper')
+        : path.join(__dirname, '../electron/native/ocr_helper');
+
+      return new Promise<{ text: string; slug: string }>((resolve, reject) => {
+        execFile(
+          binaryPath,
+          [imagePath, String(rect.x), String(rect.y), String(rect.width), String(rect.height)],
+          { timeout: 15000 },
+          (err, stdout, stderr) => {
+            if (err) { console.error('OCR error:', stderr); return reject(err); }
+            const text = stdout.trim();
+            resolve({ text, slug: toSlug(text) });
+          }
+        );
+      });
+    } else {
+      // Windows / Linux: use Tesseract.js
+      const { createWorker } = await import('tesseract.js');
+      const worker = await createWorker('eng', 1, { logger: () => {} });
+      try {
+        const { data: { text } } = await worker.recognize(imagePath, {
+          rectangle: { left: rect.x, top: rect.y, width: rect.width, height: rect.height },
+        });
+        const trimmed = text.trim();
+        return { text: trimmed, slug: toSlug(trimmed) };
+      } finally {
+        await worker.terminate();
+      }
+    }
+  });
+
   console.log('IPC handlers registered');
 }
