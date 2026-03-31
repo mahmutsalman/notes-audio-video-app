@@ -2243,6 +2243,10 @@ export default function RecordingPage() {
             const img = images[selectedImageIndex!];
             if (img?.id) openCaptionModal('image', img.id, img.caption);
           }}
+          onExtractOcr={selectedImageIndex !== null && images[selectedImageIndex]?.id ? async () => {
+            const img = images[selectedImageIndex!];
+            await window.electronAPI.ocr.extractCaption2('image', img.id!, img.file_path);
+          } : undefined}
           mediaType="image"
         />
       )}
@@ -2296,6 +2300,10 @@ export default function RecordingPage() {
             const img = activeDurationImages[selectedDurationImageIndex!];
             if (img?.id) openCaptionModal('durationImage', img.id, img.caption);
           }}
+          onExtractOcr={selectedDurationImageIndex !== null && activeDurationImages[selectedDurationImageIndex]?.id ? async () => {
+            const img = activeDurationImages[selectedDurationImageIndex!];
+            await window.electronAPI.ocr.extractCaption2('duration_image', img.id!, img.file_path);
+          } : undefined}
           mediaType="duration_image"
         />
       )}
@@ -2565,6 +2573,19 @@ export default function RecordingPage() {
             >
               <span>🏷️</span>
               Tags
+            </button>
+          )}
+          {(contextMenu.type === 'image' || contextMenu.type === 'durationImage') && (
+            <button
+              className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+              onClick={async () => {
+                const imageType = contextMenu.type === 'image' ? 'image' : 'duration_image';
+                setContextMenu(null);
+                await window.electronAPI.ocr.extractCaption2(imageType, contextMenu.item.id, contextMenu.item.file_path);
+              }}
+            >
+              <span>🔍</span>
+              Extract OCR text
             </button>
           )}
           <button

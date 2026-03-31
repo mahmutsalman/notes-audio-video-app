@@ -400,6 +400,11 @@ export const ImagesOperations = {
     return this.getById(id)!;
   },
 
+  updateCaption2(id: number, caption2: string | null): void {
+    const db = getDatabase();
+    db.prepare('UPDATE images SET caption2 = ? WHERE id = ?').run(caption2, id);
+  },
+
   updateColor(id: number, color: DurationColor): Image {
     const db = getDatabase();
     db.prepare('UPDATE images SET color = ? WHERE id = ?').run(color, id);
@@ -674,6 +679,11 @@ export const DurationImagesOperations = {
     const db = getDatabase();
     db.prepare('UPDATE duration_images SET caption = ? WHERE id = ?').run(caption, id);
     return this.getById(id)!;
+  },
+
+  updateCaption2(id: number, caption2: string | null): void {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_images SET caption2 = ? WHERE id = ?').run(caption2, id);
   },
 
   updateColor(id: number, color: DurationColor): DurationImage {
@@ -1362,7 +1372,7 @@ export const SearchOperations = {
     // Step 4: Batch fetch type-specific extra fields (file paths, thumbnails, code, marker_type)
     const extraByType = new Map<string, Map<number, any>>();
     const typeToIds = new Map<string, number[]>();
-    const typesNeedingExtra = new Set(['image', 'video', 'audio', 'duration_image', 'duration_video', 'duration_audio', 'code_snippet', 'duration_code_snippet', 'audio_marker', 'duration_image_audio', 'image_audio', 'quick_capture_image']);
+    const typesNeedingExtra = new Set(['image', 'video', 'audio', 'duration_image', 'duration_video', 'duration_audio', 'code_snippet', 'duration_code_snippet', 'audio_marker', 'duration_image_audio', 'image_audio', 'quick_capture_image', 'image_ocr', 'duration_image_ocr', 'quick_capture_image_ocr', 'image_child_ocr']);
     for (const m of matches) {
       if (typesNeedingExtra.has(m.content_type)) {
         if (!typeToIds.has(m.content_type)) typeToIds.set(m.content_type, []);
@@ -1383,6 +1393,10 @@ export const SearchOperations = {
       duration_image_audio: 'SELECT dia.id, dia.file_path, NULL as thumbnail_path, di.duration_id FROM duration_image_audios dia JOIN duration_images di ON di.id = dia.duration_image_id WHERE dia.id IN',
       image_audio: 'SELECT id, file_path, NULL as thumbnail_path, NULL as duration_id FROM image_audios WHERE id IN',
       quick_capture_image: 'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM quick_capture_images WHERE id IN',
+      image_ocr:               'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM images WHERE id IN',
+      duration_image_ocr:      'SELECT id, file_path, thumbnail_path, duration_id FROM duration_images WHERE id IN',
+      quick_capture_image_ocr: 'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM quick_capture_images WHERE id IN',
+      image_child_ocr:         'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM image_children WHERE id IN',
     };
 
     for (const [type, ids] of typeToIds) {
@@ -1762,6 +1776,11 @@ export const QuickCaptureOperations = {
     return db.prepare('SELECT * FROM quick_capture_images WHERE id = ?').get(imageId) as import('../../src/types').QuickCaptureImage;
   },
 
+  updateImageCaption2(imageId: number, caption2: string | null): void {
+    const db = getDatabase();
+    db.prepare('UPDATE quick_capture_images SET caption2 = ? WHERE id = ?').run(caption2, imageId);
+  },
+
   updateImageFilePaths(imageId: number, filePath: string, thumbnailPath: string | null): import('../../src/types').QuickCaptureImage {
     const db = getDatabase();
     db.prepare('UPDATE quick_capture_images SET file_path = ?, thumbnail_path = ? WHERE id = ?').run(filePath, thumbnailPath, imageId);
@@ -1840,6 +1859,11 @@ export const ImageChildrenOperations = {
     const db = getDatabase();
     db.prepare('UPDATE image_children SET caption = ? WHERE id = ?').run(caption, id);
     return this.getById(id)!;
+  },
+
+  updateCaption2(id: number, caption2: string | null): void {
+    const db = getDatabase();
+    db.prepare('UPDATE image_children SET caption2 = ? WHERE id = ?').run(caption2, id);
   },
 
   updateFilePaths(id: number, filePath: string, thumbnailPath: string | null) {

@@ -45,6 +45,8 @@ interface ImageLightboxProps {
   onEditCaption?: () => void;
   // Delete current image
   onDelete?: () => void;
+  // Extract full-image OCR text into caption2
+  onExtractOcr?: () => Promise<void>;
   // Tag editing
   mediaType?: MediaTagType;
   // Disable child images (used by child lightbox to prevent recursion)
@@ -137,6 +139,7 @@ export default function ImageLightbox({
   onReplaceWithClipboard,
   onEditCaption,
   onDelete,
+  onExtractOcr,
   mediaType,
   disableChildImages = false,
 }: ImageLightboxProps) {
@@ -149,6 +152,9 @@ export default function ImageLightbox({
   const [audioCaptionText, setAudioCaptionText] = useState('');
   const [showTagModal, setShowTagModal] = useState(false);
   const [currentImageTags, setCurrentImageTags] = useState<{ name: string }[]>([]);
+
+  // OCR caption2 extraction status
+  const [ocrCaption2Status, setOcrCaption2Status] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
 
   // OCR region selection state
   const [ocrSelectStart, setOcrSelectStart] = useState<{ x: number; y: number } | null>(null);
@@ -308,6 +314,7 @@ export default function ImageLightbox({
     setDrawPreview(null);
     isDrawingRef.current = false;
     isAnnDragging.current = false;
+    setOcrCaption2Status('idle');
   }, [selectedIndex]);
 
   // Load annotations when image changes
@@ -1023,6 +1030,23 @@ export default function ImageLightbox({
           </div>
         )}
 
+        {/* OCR caption2 extraction status */}
+        {ocrCaption2Status !== 'idle' && (
+          <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-black/80 text-white px-4 py-2 rounded-full text-sm font-medium z-20 flex items-center gap-2">
+            {ocrCaption2Status === 'running' && (
+              <>
+                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Extracting OCR text…
+              </>
+            )}
+            {ocrCaption2Status === 'done' && <><span>✓</span> OCR text saved</>}
+            {ocrCaption2Status === 'error' && <><span>✗</span> OCR extraction failed</>}
+          </div>
+        )}
+
         {/* Previous button */}
         {selectedIndex > 0 && (
           <button
@@ -1046,7 +1070,7 @@ export default function ImageLightbox({
           onMouseDown={drawMode ? undefined : (e) => { handleOcrMouseDown(e); if (!e.shiftKey) handleMouseDown(e); }}
           onDoubleClick={handleDoubleClick}
           onLoad={handleImageLoad}
-          onContextMenu={(onReplaceWithClipboard || onEditCaption || onDelete || mediaType) ? (e) => {
+          onContextMenu={(onReplaceWithClipboard || onEditCaption || onDelete || mediaType || onExtractOcr) ? (e) => {
             e.preventDefault();
             e.stopPropagation();
             setImageContextMenu({ x: e.clientX, y: e.clientY });
@@ -1072,7 +1096,7 @@ export default function ImageLightbox({
               e.stopPropagation();
               if (!drawMode) setSelectedAnnId(null);
             }}
-            onContextMenu={(onReplaceWithClipboard || onEditCaption || onDelete || mediaType) ? (e) => {
+            onContextMenu={(onReplaceWithClipboard || onEditCaption || onDelete || mediaType || onExtractOcr) ? (e) => {
               e.preventDefault();
               e.stopPropagation();
               setImageContextMenu({ x: e.clientX, y: e.clientY });
@@ -1205,6 +1229,27 @@ export default function ImageLightbox({
                 onClick={() => { setImageContextMenu(null); onDelete(); }}
               >
                 <span>🗑️</span> Delete
+              </button>
+            )}
+            {onExtractOcr && (onDelete || mediaType || onEditCaption || onReplaceWithClipboard) && (
+              <div className="border-t border-gray-700 my-1" />
+            )}
+            {onExtractOcr && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                onClick={async () => {
+                  setImageContextMenu(null);
+                  setOcrCaption2Status('running');
+                  try {
+                    await onExtractOcr();
+                    setOcrCaption2Status('done');
+                  } catch {
+                    setOcrCaption2Status('error');
+                  }
+                  setTimeout(() => setOcrCaption2Status('idle'), 3000);
+                }}
+              >
+                <span>🔍</span> Extract OCR text
               </button>
             )}
           </div>
@@ -1490,6 +1535,9 @@ export default function ImageLightbox({
             onReplaceWithClipboard={handleReplaceChildWithClipboard}
             onEditCaption={() => {
               setChildCaptionEdit({ childId: child.id, value: child.caption ?? '' });
+            }}
+            onExtractOcr={async () => {
+              await window.electronAPI.ocr.extractCaption2('image_child', child.id, child.file_path);
             }}
             onDelete={() => setPendingDeleteChild(child.id)}
           />
