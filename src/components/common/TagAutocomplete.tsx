@@ -9,6 +9,7 @@ interface Props {
 }
 
 const MAX_SECTION = 6;
+const LAST_TAG_KEY = 'tagAutocomplete_lastTag';
 
 function SuggestionRow({
   tag,
@@ -275,6 +276,7 @@ export function TagAutocomplete({ mediaType, mediaId, className, ocrSuggestion }
   const [typedValue, setTypedValue] = useState('');
   // inputValue = what's shown in the input (may mirror a highlighted suggestion)
   const [inputValue, setInputValue] = useState('');
+  const [lastTag, setLastTag] = useState<string>(() => localStorage.getItem(LAST_TAG_KEY) ?? '');
   const [suggestions, setSuggestions] = useState<Tag[]>([]);
   const [lastUsedTags, setLastUsedTags] = useState<Tag[]>([]);
   const [mostUsedTags, setMostUsedTags] = useState<Tag[]>([]);
@@ -349,6 +351,8 @@ export function TagAutocomplete({ mediaType, mediaId, className, ocrSuggestion }
     setTags(next);
     saveTags(next);
     setSuggestions([]);
+    localStorage.setItem(LAST_TAG_KEY, trimmed);
+    setLastTag(trimmed);
     // Keep panel open so user can keep adding
     inputRef.current?.focus();
   }
@@ -467,6 +471,21 @@ export function TagAutocomplete({ mediaType, mediaId, className, ocrSuggestion }
           autoFocus={!ocrSuggestion}
         />
       </div>
+
+      {/* Last tag quick-apply button */}
+      {lastTag && !tags.includes(lastTag) && (
+        <div className="mt-1.5">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-300/40 dark:border-orange-700/40 transition-colors font-mono"
+            onMouseDown={(e) => { e.preventDefault(); confirmTag(lastTag); }}
+            title="Add last used tag"
+          >
+            <span className="text-[10px] text-orange-400/70 dark:text-orange-500/60 font-sans not-italic">last:</span>
+            {lastTag}
+          </button>
+        </div>
+      )}
 
       {/* Suggestions panel */}
       {panelVisible && (
