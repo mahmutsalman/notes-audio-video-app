@@ -787,6 +787,13 @@ const electronAPI = {
     delete: (id: number): Promise<void> =>
       ipcRenderer.invoke('imageAnnotations:delete', id),
   },
+  ocr: {
+    recognizeRegion: (
+      imagePath: string,
+      rect: { x: number; y: number; width: number; height: number }
+    ): Promise<{ text: string; slug: string }> =>
+      ipcRenderer.invoke('ocr:recognizeRegion', imagePath, rect),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
