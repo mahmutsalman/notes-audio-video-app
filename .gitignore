@@ -58,6 +58,14 @@ TODO.md
 scratch/
 CLAUDE.local.md
 
+# Project docs (contain personal infrastructure details)
+CLAUDE.md
+docs/architecture.md
+docs/conventions.md
+docs/glossary.md
+docs/requirements.md
+docs/use-cases.md
+
 # Temporary files
 *.tmp
 *.temp
