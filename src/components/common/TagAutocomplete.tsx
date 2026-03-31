@@ -5,6 +5,7 @@ interface Props {
   mediaType: MediaTagType;
   mediaId: number;
   className?: string;
+  ocrSuggestion?: { text: string; slug: string };
 }
 
 const MAX_SECTION = 6;
@@ -43,7 +44,232 @@ function SuggestionRow({
   );
 }
 
-export function TagAutocomplete({ mediaType, mediaId, className }: Props) {
+// ── OCR prefix picker section ──────────────────────────────────────────────
+
+function extractPrefixes(allTags: Tag[]): string[] {
+  const seen = new Set<string>();
+  for (const t of allTags) {
+    const parts = t.name.split('/');
+    for (let i = 1; i < parts.length; i++) {
+      seen.add(parts.slice(0, i).join('/') + '/');
+    }
+  }
+  return [...seen].sort();
+}
+
+function OcrSection({
+  suggestion,
+  tags,
+  onAddTag,
+}: {
+  suggestion: { text: string; slug: string };
+  tags: string[];
+  onAddTag: (tag: string) => void;
+}) {
+  const [slug, setSlug] = useState(suggestion.slug);
+  const [selectedPrefix, setSelectedPrefix] = useState('');
+  const [prefixInput, setPrefixInput] = useState('');
+  const [allPrefixes, setAllPrefixes] = useState<string[]>([]);
+  const [showPrefixPanel, setShowPrefixPanel] = useState(false);
+  const [highlightedPrefix, setHighlightedPrefix] = useState(-1);
+  const [ocrAdded, setOcrAdded] = useState(false);
+  const prefixInputRef = useRef<HTMLInputElement>(null);
+  const prefixPanelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    window.electronAPI.tags.getAll().then((allTags) => {
+      setAllPrefixes(extractPrefixes(allTags));
+    });
+  }, []);
+
+  // Close prefix panel on outside click
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      const t = e.target as Node;
+      if (
+        prefixPanelRef.current && !prefixPanelRef.current.contains(t) &&
+        prefixInputRef.current && !prefixInputRef.current.contains(t)
+      ) {
+        setShowPrefixPanel(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  const filteredPrefixes = prefixInput
+    ? allPrefixes.filter((p) => p.toLowerCase().includes(prefixInput.toLowerCase()))
+    : allPrefixes;
+
+  function selectPrefix(p: string) {
+    setSelectedPrefix(p);
+    setPrefixInput(p);
+    setShowPrefixPanel(false);
+    setHighlightedPrefix(-1);
+    setOcrAdded(false);
+  }
+
+  function clearPrefix() {
+    setSelectedPrefix('');
+    setPrefixInput('');
+    setOcrAdded(false);
+    prefixInputRef.current?.focus();
+  }
+
+  function handlePrefixKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedPrefix((i) => Math.min(i + 1, filteredPrefixes.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedPrefix((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightedPrefix >= 0 && filteredPrefixes[highlightedPrefix]) {
+        selectPrefix(filteredPrefixes[highlightedPrefix]);
+      } else if (prefixInput) {
+        // Accept freeform prefix if it ends with /
+        const p = prefixInput.endsWith('/') ? prefixInput : prefixInput + '/';
+        selectPrefix(p);
+      }
+    } else if (e.key === 'Escape') {
+      setShowPrefixPanel(false);
+    } else if (e.key === 'Backspace' && prefixInput === '') {
+      clearPrefix();
+    }
+  }
+
+  const finalTag = selectedPrefix + slug;
+  const alreadyAdded = tags.includes(finalTag);
+
+  function handleAdd() {
+    if (!finalTag || alreadyAdded) return;
+    onAddTag(finalTag);
+    setOcrAdded(true);
+  }
+
+  return (
+    <div className="mb-3 rounded-lg border border-blue-200 dark:border-blue-800/60 bg-blue-50/50 dark:bg-blue-950/30">
+      {/* Detected text */}
+      <div className="px-3 pt-2.5 pb-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400 dark:text-blue-500">
+          Detected text
+        </span>
+        <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400 font-mono bg-white/60 dark:bg-black/20 px-2 py-1 rounded truncate" title={suggestion.text}>
+          "{suggestion.text}"
+        </p>
+      </div>
+
+      {/* Editable slug */}
+      <div className="px-3 pt-1 pb-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400 dark:text-blue-500">
+          Tag slug
+        </span>
+        <input
+          type="text"
+          value={slug}
+          onChange={(e) => {
+            setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'));
+            setOcrAdded(false);
+          }}
+          className="mt-0.5 w-full bg-white dark:bg-gray-900 text-xs text-gray-800 dark:text-gray-200 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 focus:border-blue-400 outline-none font-mono"
+        />
+      </div>
+
+      {/* Prefix autocomplete */}
+      <div className="px-3 pt-1 pb-1 relative">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400 dark:text-blue-500">
+          Prefix (optional)
+        </span>
+        <div className="mt-0.5 relative flex items-center">
+          <input
+            ref={prefixInputRef}
+            type="text"
+            value={prefixInput}
+            placeholder="e.g. unity/ui/"
+            onChange={(e) => {
+              setPrefixInput(e.target.value);
+              setSelectedPrefix('');
+              setHighlightedPrefix(-1);
+              setShowPrefixPanel(true);
+              setOcrAdded(false);
+            }}
+            onFocus={() => setShowPrefixPanel(true)}
+            onKeyDown={handlePrefixKeyDown}
+            className={`w-full bg-white dark:bg-gray-900 text-xs px-2 py-1 rounded border outline-none font-mono pr-6 ${
+              selectedPrefix
+                ? 'border-blue-400 text-blue-600 dark:text-blue-400'
+                : 'border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200'
+            } focus:border-blue-400`}
+          />
+          {prefixInput && (
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); clearPrefix(); }}
+              className="absolute right-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm leading-none"
+              tabIndex={-1}
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        {/* Prefix suggestions dropdown */}
+        {showPrefixPanel && filteredPrefixes.length > 0 && (
+          <div
+            ref={prefixPanelRef}
+            className="absolute left-3 right-3 z-50 mt-0.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg overflow-hidden"
+          >
+            <div className="min-h-[84px] max-h-40 overflow-y-auto">
+              {filteredPrefixes.map((p, i) => (
+                <button
+                  key={p}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); selectPrefix(p); }}
+                  onMouseEnter={() => setHighlightedPrefix(i)}
+                  className={`w-full text-left px-3 py-1.5 text-xs font-mono transition-colors ${
+                    highlightedPrefix === i
+                      ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Preview + Add button */}
+      <div className="px-3 pt-1.5 pb-2.5 flex items-center gap-2">
+        {finalTag ? (
+          <span className="text-xs font-mono text-blue-600 dark:text-blue-400 flex-1 truncate" title={finalTag}>
+            → {finalTag}
+          </span>
+        ) : (
+          <span className="flex-1" />
+        )}
+        {ocrAdded ? (
+          <span className="text-xs text-green-600 dark:text-green-400 font-medium">Added ✓</span>
+        ) : (
+          <button
+            type="button"
+            disabled={!finalTag || alreadyAdded}
+            onMouseDown={(e) => { e.preventDefault(); handleAdd(); }}
+            className="text-xs bg-blue-500 hover:bg-blue-400 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1 rounded transition-colors"
+          >
+            {alreadyAdded ? 'Already added' : 'Add tag'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────
+
+export function TagAutocomplete({ mediaType, mediaId, className, ocrSuggestion }: Props) {
   const [tags, setTags] = useState<string[]>([]);
   // typedValue = what the user actually typed (preserved across navigation)
   const [typedValue, setTypedValue] = useState('');
@@ -194,6 +420,20 @@ export function TagAutocomplete({ mediaType, mediaId, className }: Props) {
 
   return (
     <div className={`relative ${className ?? ''}`}>
+      {/* OCR suggestion section — shown at top when coming from Shift+drag */}
+      {ocrSuggestion && (
+        <OcrSection
+          suggestion={ocrSuggestion}
+          tags={tags}
+          onAddTag={(tag) => {
+            if (tags.includes(tag)) return;
+            const next = [...tags, tag];
+            setTags(next);
+            saveTags(next);
+          }}
+        />
+      )}
+
       {/* Tag pills + input */}
       <div
         className="flex flex-wrap gap-1 items-center min-h-[36px] px-2 py-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 cursor-text"
@@ -224,7 +464,7 @@ export function TagAutocomplete({ mediaType, mediaId, className }: Props) {
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           onFocus={() => setShowPanel(true)}
-          autoFocus
+          autoFocus={!ocrSuggestion}
         />
       </div>
 

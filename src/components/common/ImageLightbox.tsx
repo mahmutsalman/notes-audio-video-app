@@ -150,6 +150,14 @@ export default function ImageLightbox({
   const [showTagModal, setShowTagModal] = useState(false);
   const [currentImageTags, setCurrentImageTags] = useState<{ name: string }[]>([]);
 
+  // OCR region selection state
+  const [ocrSelectStart, setOcrSelectStart] = useState<{ x: number; y: number } | null>(null);
+  const [ocrSelectEnd, setOcrSelectEnd] = useState<{ x: number; y: number } | null>(null);
+  const [isOcrLoading, setIsOcrLoading] = useState(false);
+  const [ocrSuggestion, setOcrSuggestion] = useState<{ text: string; slug: string } | null>(null);
+  const ocrSelectStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [isShiftHeld, setIsShiftHeld] = useState(false);
+
   // Child images state
   const [imageChildren, setImageChildren] = useState<ImageChild[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
@@ -506,8 +514,60 @@ export default function ImageLightbox({
     return () => container.removeEventListener('wheel', handleWheel);
   }, [flashZoomIndicator, clampTranslate]);
 
+  // OCR region selection: Shift+drag to detect text and tag
+  const handleOcrMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!e.shiftKey || !mediaType || !image?.file_path) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const pos = { x: e.clientX, y: e.clientY };
+    ocrSelectStartRef.current = pos;
+    setOcrSelectStart(pos);
+    setOcrSelectEnd(pos);
+
+    const onMove = (me: MouseEvent) => {
+      setOcrSelectEnd({ x: me.clientX, y: me.clientY });
+    };
+    const onUp = async (me: MouseEvent) => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      const start = ocrSelectStartRef.current;
+      if (!start) { setOcrSelectStart(null); setOcrSelectEnd(null); return; }
+      const end = { x: me.clientX, y: me.clientY };
+      setOcrSelectStart(null);
+      setOcrSelectEnd(null);
+      ocrSelectStartRef.current = null;
+
+      const img = imageRef.current;
+      if (!img) return;
+      const imgRect = img.getBoundingClientRect();
+      const rect = {
+        x: Math.round((Math.min(start.x, end.x) - imgRect.left) / imgRect.width  * img.naturalWidth),
+        y: Math.round((Math.min(start.y, end.y) - imgRect.top)  / imgRect.height * img.naturalHeight),
+        width:  Math.round(Math.abs(end.x - start.x) / imgRect.width  * img.naturalWidth),
+        height: Math.round(Math.abs(end.y - start.y) / imgRect.height * img.naturalHeight),
+      };
+      if (rect.width < 5 || rect.height < 5) return;
+
+      setIsOcrLoading(true);
+      try {
+        const result = await window.electronAPI.ocr.recognizeRegion(image.file_path, rect);
+        if (result.text) {
+          setOcrSuggestion(result);
+          setShowTagModal(true);
+        }
+      } catch (err) {
+        console.error('OCR failed:', err);
+      } finally {
+        setIsOcrLoading(false);
+      }
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [mediaType, image]);
+
   // Drag to pan (only when not in draw mode)
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.shiftKey) return; // let OCR handler take Shift+drag
     if (scale <= 1 || drawMode) return;
     e.preventDefault();
     isDragging.current = true;
@@ -721,6 +781,15 @@ export default function ImageLightbox({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedIndex, images.length, onNavigate, onClose, imageContextMenu, selectedChildId, drawMode, selectedAnnId, imageChildren, disableChildImages]);
 
+  // Track Shift key for OCR cursor hint
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent) => { if (e.key === 'Shift') setIsShiftHeld(true); };
+    const onUp   = (e: KeyboardEvent) => { if (e.key === 'Shift') setIsShiftHeld(false); };
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    return () => { window.removeEventListener('keydown', onDown); window.removeEventListener('keyup', onUp); };
+  }, []);
+
   // Backdrop click: close at 1x, reset zoom at >1x, or dismiss context menu
   const handleBackdropClick = useCallback(() => {
     if (imageContextMenu) {
@@ -909,7 +978,7 @@ export default function ImageLightbox({
   const imgTransformStyle = {
     transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
     transformOrigin: 'center center',
-    cursor: drawMode ? 'crosshair' : (scale > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'default'),
+    cursor: drawMode ? 'crosshair' : (isShiftHeld && mediaType ? 'crosshair' : (scale > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'default')),
     transition: isDragging.current ? 'none' : 'transform 0.1s ease-out',
     userSelect: 'none' as const,
   };
@@ -974,7 +1043,7 @@ export default function ImageLightbox({
           style={imgTransformStyle}
           draggable={false}
           onClick={handleImageClick}
-          onMouseDown={drawMode ? undefined : handleMouseDown}
+          onMouseDown={drawMode ? undefined : (e) => { handleOcrMouseDown(e); if (!e.shiftKey) handleMouseDown(e); }}
           onDoubleClick={handleDoubleClick}
           onLoad={handleImageLoad}
           onContextMenu={(onReplaceWithClipboard || onEditCaption || onDelete || mediaType) ? (e) => {
@@ -1037,6 +1106,36 @@ export default function ImageLightbox({
                 #{tag.name}
               </span>
             ))}
+          </div>
+        )}
+
+        {/* OCR selection rectangle overlay */}
+        {ocrSelectStart && ocrSelectEnd && (() => {
+          const x = Math.min(ocrSelectStart.x, ocrSelectEnd.x);
+          const y = Math.min(ocrSelectStart.y, ocrSelectEnd.y);
+          const w = Math.abs(ocrSelectEnd.x - ocrSelectStart.x);
+          const h = Math.abs(ocrSelectEnd.y - ocrSelectStart.y);
+          return (
+            <div
+              style={{ position: 'fixed', left: x, top: y, width: w, height: h, pointerEvents: 'none', zIndex: 55 }}
+              className="border-2 border-dashed border-blue-400 bg-blue-400/15"
+            />
+          );
+        })()}
+
+        {/* OCR loading spinner */}
+        {isOcrLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-50">
+            <div className="text-white text-sm bg-black/70 px-4 py-2 rounded-lg">
+              Detecting text…
+            </div>
+          </div>
+        )}
+
+        {/* Shift+drag hint */}
+        {!isOcrLoading && !ocrSelectStart && mediaType && image?.id && (
+          <div className="absolute bottom-2 right-2 text-[11px] text-white/25 pointer-events-none select-none">
+            Shift + drag to tag from text
           </div>
         )}
 
@@ -1117,8 +1216,10 @@ export default function ImageLightbox({
             mediaType={mediaType}
             mediaId={image.id}
             title={image.caption ?? undefined}
+            ocrSuggestion={ocrSuggestion ?? undefined}
             onClose={() => {
               setShowTagModal(false);
+              setOcrSuggestion(null);
               window.electronAPI.tags.getByMedia(mediaType, image.id!).then(setCurrentImageTags);
             }}
           />
