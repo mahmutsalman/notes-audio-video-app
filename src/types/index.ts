@@ -785,6 +785,11 @@ export interface ElectronAPI {
       imagePath: string,
       rect: { x: number; y: number; width: number; height: number }
     ) => Promise<{ text: string; slug: string }>;
+    extractCaption2: (
+      imageType: string,
+      imageId: number,
+      filePath: string
+    ) => Promise<string>;
   };
 }
 
@@ -793,7 +798,8 @@ export interface GlobalSearchResult {
     | 'duration_image' | 'duration_video' | 'duration_audio'
     | 'code_snippet' | 'duration_code_snippet'
     | 'audio_marker' | 'duration_image_audio' | 'image_audio'
-    | 'quick_capture_image';
+    | 'quick_capture_image'
+    | 'image_ocr' | 'duration_image_ocr' | 'quick_capture_image_ocr' | 'image_child_ocr';
   source_id: number;
   parent_id: number;
   snippet: string;

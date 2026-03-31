@@ -50,6 +50,10 @@ const SECTION_ORDER: Array<{
   { key: 'duration_image_audio', label: 'Image Audios (Mark)',  icon: '🔊' },
   { key: 'image_audio',          label: 'Image Audios',         icon: '🔊' },
   { key: 'quick_capture_image',  label: 'Capture Images',       icon: '📸' },
+  { key: 'image_ocr',               label: 'OCR Text — Recording Images', icon: '🔍' },
+  { key: 'duration_image_ocr',      label: 'OCR Text — Mark Images',      icon: '🔍' },
+  { key: 'quick_capture_image_ocr', label: 'OCR Text — Capture Images',   icon: '🔍' },
+  { key: 'image_child_ocr',         label: 'OCR Text — Child Images',     icon: '🔍' },
 ];
 
 const MARKER_COLORS: Record<string, string> = {
@@ -310,7 +314,7 @@ function Snippet({ html }: { html: string }) {
   );
 }
 
-const CONTEXT_MENU_TYPES = new Set(['duration_image', 'image', 'duration_audio', 'audio', 'quick_capture_image']);
+const CONTEXT_MENU_TYPES = new Set(['duration_image', 'image', 'duration_audio', 'audio', 'quick_capture_image', 'image_ocr', 'duration_image_ocr', 'quick_capture_image_ocr', 'image_child_ocr']);
 
 interface ResultCardProps {
   result: GlobalSearchResult;
@@ -321,7 +325,7 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
   const hasNav = result.recording_id !== null;
   const previewKind = getPreviewKind(result);
   const supportsContextMenu = CONTEXT_MENU_TYPES.has(result.content_type);
-  const isImageType = result.content_type === 'duration_image' || result.content_type === 'image' || result.content_type === 'quick_capture_image';
+  const isImageType = result.content_type === 'duration_image' || result.content_type === 'image' || result.content_type === 'quick_capture_image' || result.content_type === 'image_ocr' || result.content_type === 'duration_image_ocr' || result.content_type === 'quick_capture_image_ocr' || result.content_type === 'image_child_ocr';
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
@@ -365,8 +369,8 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
 
   // Refresh image audios when audio saved
   const fetchImageAudios = useCallback(async (images: LightboxImage[]) => {
-    const isRecordingImage = result.content_type === 'image';
-    const isCaptureImage = result.content_type === 'quick_capture_image';
+    const isRecordingImage = baseType(result.content_type) === 'image';
+    const isCaptureImage = baseType(result.content_type) === 'quick_capture_image';
     const entries = await Promise.all(
       images
         .filter(img => img.id !== undefined)
@@ -426,7 +430,7 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
   const handleSaveCaption = useCallback(async () => {
     const cap = captionText.trim() || null;
     try {
-      switch (result.content_type) {
+      switch (baseType(result.content_type)) {
         case 'duration_image':
           await window.electronAPI.durationImages.updateCaption(result.source_id, cap);
           break;
@@ -442,6 +446,9 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
         case 'quick_capture_image':
           await window.electronAPI.quickCaptures.updateImageCaption(result.source_id, cap);
           break;
+        case 'image_child':
+          await window.electronAPI.imageChildren.updateCaption(result.source_id, cap);
+          break;
       }
     } finally {
       setCaptionModal(false);
@@ -451,7 +458,7 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
   const handleDelete = useCallback(async () => {
     setContextMenu(null);
     if (!window.confirm('Delete this item?')) return;
-    switch (result.content_type) {
+    switch (baseType(result.content_type)) {
       case 'duration_image':
         await window.electronAPI.durationImages.delete(result.source_id);
         break;
@@ -467,6 +474,9 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
       case 'quick_capture_image':
         await window.electronAPI.quickCaptures.deleteImage(result.source_id);
         break;
+      case 'image_child':
+        await window.electronAPI.imageChildren.delete(result.source_id);
+        break;
     }
     setIsDeleted(true);
   }, [result.content_type, result.source_id]);
@@ -478,19 +488,22 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
 
   const handleRecordForImage = useCallback((imageId: number) => {
     const label = result.snippet.replace(/<[^>]*>/g, '').slice(0, 40) || 'Image';
-    if (result.content_type === 'image') {
+    const bt = baseType(result.content_type);
+    if (bt === 'image') {
       audioRecording.startRecording({
         type: 'recording_image',
         imageId,
         recordingId: result.recording_id!,
         label,
       });
-    } else if (result.content_type === 'quick_capture_image') {
+    } else if (bt === 'quick_capture_image') {
       audioRecording.startRecording({
         type: 'capture_image',
         captureImageId: imageId,
         label,
       });
+    } else if (bt === 'image_child') {
+      // image_child does not support audio recording
     } else {
       audioRecording.startRecording({
         type: 'duration_image',
@@ -503,26 +516,28 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
   }, [result, audioRecording]);
 
   const handlePlayImageAudio = useCallback(async (audio: AnyImageAudio, label: string) => {
-    const audioType = result.content_type === 'image' ? 'recording_image'
-      : result.content_type === 'quick_capture_image' ? 'capture_image'
+    const bt = baseType(result.content_type);
+    const audioType = bt === 'image' ? 'recording_image'
+      : bt === 'quick_capture_image' ? 'capture_image'
       : 'duration_image';
     const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, audioType);
     imageAudioPlayer.play(
       audio,
       label,
       markers,
-      (id, cap) => result.content_type === 'image'
+      (id, cap) => bt === 'image'
         ? window.electronAPI.imageAudios.updateCaption(id, cap)
-        : result.content_type === 'quick_capture_image'
+        : bt === 'quick_capture_image'
         ? window.electronAPI.captureImageAudios.updateCaption(id, cap)
         : window.electronAPI.durationImageAudios.updateCaption(id, cap),
     );
   }, [result.content_type, imageAudioPlayer]);
 
   const handleDeleteImageAudio = useCallback(async (audioId: number, imageId: number) => {
-    if (result.content_type === 'image') {
+    const bt = baseType(result.content_type);
+    if (bt === 'image') {
       await window.electronAPI.imageAudios.delete(audioId);
-    } else if (result.content_type === 'quick_capture_image') {
+    } else if (bt === 'quick_capture_image') {
       await window.electronAPI.captureImageAudios.delete(audioId);
     } else {
       await window.electronAPI.durationImageAudios.delete(audioId);
@@ -534,9 +549,10 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
   }, [result.content_type]);
 
   const handleUpdateImageAudioCaption = useCallback(async (audioId: number, imageId: number, cap: string | null) => {
-    if (result.content_type === 'image') {
+    const bt = baseType(result.content_type);
+    if (bt === 'image') {
       await window.electronAPI.imageAudios.updateCaption(audioId, cap);
-    } else if (result.content_type === 'quick_capture_image') {
+    } else if (bt === 'quick_capture_image') {
       await window.electronAPI.captureImageAudios.updateCaption(audioId, cap);
     } else {
       await window.electronAPI.durationImageAudios.updateCaption(audioId, cap);
@@ -563,10 +579,13 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
     if (!img.id) return;
     const cap = captionText.trim() || null;
     try {
-      if (result.content_type === 'image') {
+      const bt = baseType(result.content_type);
+      if (bt === 'image') {
         await window.electronAPI.media.updateImageCaption(img.id, cap);
-      } else if (result.content_type === 'quick_capture_image') {
+      } else if (bt === 'quick_capture_image') {
         await window.electronAPI.quickCaptures.updateImageCaption(img.id, cap);
+      } else if (bt === 'image_child') {
+        await window.electronAPI.imageChildren.updateCaption(img.id, cap);
       } else {
         await window.electronAPI.durationImages.updateCaption(img.id, cap);
       }
@@ -587,10 +606,13 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
     const img = lightbox.images[lightbox.index];
     if (!img.id) return;
     if (!window.confirm('Delete this image?')) return;
-    if (result.content_type === 'image') {
+    const bt = baseType(result.content_type);
+    if (bt === 'image') {
       await window.electronAPI.media.deleteImage(img.id);
-    } else if (result.content_type === 'quick_capture_image') {
+    } else if (bt === 'quick_capture_image') {
       await window.electronAPI.quickCaptures.deleteImage(img.id);
+    } else if (bt === 'image_child') {
+      await window.electronAPI.imageChildren.delete(img.id);
     } else {
       await window.electronAPI.durationImages.delete(img.id);
     }
@@ -614,11 +636,15 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
     }
     const ext = clipResult.extension || 'png';
     let newFilePath: string;
-    if (result.content_type === 'image') {
+    const bt = baseType(result.content_type);
+    if (bt === 'image') {
       const updated = await window.electronAPI.media.replaceImageFromClipboard(img.id, result.recording_id!, clipResult.buffer, ext);
       newFilePath = updated.file_path;
-    } else if (result.content_type === 'quick_capture_image') {
+    } else if (bt === 'quick_capture_image') {
       const updated = await window.electronAPI.quickCaptures.replaceImageFromClipboard(img.id, clipResult.buffer, ext);
+      newFilePath = updated.file_path;
+    } else if (bt === 'image_child') {
+      const updated = await window.electronAPI.imageChildren.replaceFromClipboard(img.id, clipResult.buffer, ext);
       newFilePath = updated.file_path;
     } else {
       const updated = await window.electronAPI.durationImages.replaceFromClipboard(img.id, result.duration_id!, clipResult.buffer, ext);
@@ -791,7 +817,7 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
       {/* Tag modal */}
       {showTagModal && (
         <TagModal
-          mediaType={result.content_type as MediaTagType}
+          mediaType={baseType(result.content_type) as MediaTagType}
           mediaId={result.source_id}
           title="Tags"
           onClose={() => setShowTagModal(false)}
@@ -799,21 +825,21 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
       )}
 
       {/* Image lightbox with audio */}
-      {lightbox && (result.content_type === 'duration_image' || result.content_type === 'image' || result.content_type === 'quick_capture_image') && (
+      {lightbox && isImageType && (
         <ImageLightbox
           images={lightbox.images}
           selectedIndex={lightbox.index}
           onClose={() => { setLightbox(null); setImageAudiosMap({}); }}
           onNavigate={i => setLightbox(lb => lb ? { ...lb, index: i } : null)}
           imageAudiosMap={imageAudiosMap}
-          onRecordForImage={result.recording_id !== null || result.content_type === 'quick_capture_image' ? handleRecordForImage : undefined}
-          onDeleteImageAudio={handleDeleteImageAudio}
-          onPlayImageAudio={handlePlayImageAudio}
-          onUpdateImageAudioCaption={handleUpdateImageAudioCaption}
+          onRecordForImage={(result.recording_id !== null || baseType(result.content_type) === 'quick_capture_image') && baseType(result.content_type) !== 'image_child' ? handleRecordForImage : undefined}
+          onDeleteImageAudio={baseType(result.content_type) !== 'image_child' ? handleDeleteImageAudio : undefined}
+          onPlayImageAudio={baseType(result.content_type) !== 'image_child' ? handlePlayImageAudio : undefined}
+          onUpdateImageAudioCaption={baseType(result.content_type) !== 'image_child' ? handleUpdateImageAudioCaption : undefined}
           onReplaceWithClipboard={isImageType ? handleReplaceWithClipboard : undefined}
           onEditCaption={handleEditLightboxImageCaption}
           onDelete={handleDeleteLightboxImage}
-          mediaType={result.content_type as MediaTagType}
+          mediaType={baseType(result.content_type) as MediaTagType}
         />
       )}
     </div>
@@ -822,7 +848,12 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
 
 // ─── Section ──────────────────────────────────────────────────────────────────
 const INITIAL_SHOW = 5;
-const IMAGE_SECTION_KEYS = new Set(['duration_image', 'image', 'quick_capture_image']);
+const IMAGE_SECTION_KEYS = new Set(['duration_image', 'image', 'quick_capture_image', 'image_ocr', 'duration_image_ocr', 'quick_capture_image_ocr', 'image_child_ocr']);
+
+// Normalise _ocr content types to their base type for all DB/IPC operations
+function baseType(ct: string): string {
+  return ct.replace('_ocr', '');
+}
 
 // ─── Image section: grid layout (like capture tab) ───────────────────────────
 function ImageResultSection({
@@ -854,8 +885,10 @@ function ImageResultSection({
     const entries = await Promise.all(
       resultItems.map(async r => {
         let audios: AnyImageAudio[];
-        if (r.content_type === 'image') audios = await window.electronAPI.imageAudios.getByImage(r.source_id);
-        else if (r.content_type === 'quick_capture_image') audios = await window.electronAPI.captureImageAudios.getByImage(r.source_id);
+        const rbt = baseType(r.content_type);
+        if (rbt === 'image') audios = await window.electronAPI.imageAudios.getByImage(r.source_id);
+        else if (rbt === 'quick_capture_image') audios = await window.electronAPI.captureImageAudios.getByImage(r.source_id);
+        else if (rbt === 'image_child') audios = [];
         else audios = await window.electronAPI.durationImageAudios.getByDurationImage(r.source_id);
         return [r.source_id, audios] as [number, AnyImageAudio[]];
       })
@@ -893,10 +926,11 @@ function ImageResultSection({
   }, [activeItems]);
 
   const deleteResult = useCallback(async (result: GlobalSearchResult) => {
-    switch (result.content_type) {
+    switch (baseType(result.content_type)) {
       case 'duration_image': await window.electronAPI.durationImages.delete(result.source_id); break;
       case 'image': await window.electronAPI.media.deleteImage(result.source_id); break;
       case 'quick_capture_image': await window.electronAPI.quickCaptures.deleteImage(result.source_id); break;
+      case 'image_child': await window.electronAPI.imageChildren.delete(result.source_id); break;
     }
     setDeletedIds(prev => new Set([...prev, result.source_id]));
     setLightbox(lb => {
@@ -926,10 +960,11 @@ function ImageResultSection({
     if (!captionModal) return;
     const cap = captionModal.text.trim() || null;
     const { result } = captionModal;
-    switch (result.content_type) {
+    switch (baseType(result.content_type)) {
       case 'duration_image': await window.electronAPI.durationImages.updateCaption(result.source_id, cap); break;
       case 'image': await window.electronAPI.media.updateImageCaption(result.source_id, cap); break;
       case 'quick_capture_image': await window.electronAPI.quickCaptures.updateImageCaption(result.source_id, cap); break;
+      case 'image_child': await window.electronAPI.imageChildren.updateCaption(result.source_id, cap); break;
     }
     setLightbox(lb => lb ? { ...lb, images: lb.images.map(img => img.id === result.source_id ? { ...img, caption: cap } : img) } : lb);
     setCaptionModal(null);
@@ -946,8 +981,10 @@ function ImageResultSection({
     const result = activeItems.find(r => r.source_id === imageId);
     if (!result) return;
     const label = result.snippet.replace(/<[^>]*>/g, '').slice(0, 40) || 'Image';
-    if (result.content_type === 'image') audioRecording.startRecording({ type: 'recording_image', imageId, recordingId: result.recording_id!, label });
-    else if (result.content_type === 'quick_capture_image') audioRecording.startRecording({ type: 'capture_image', captureImageId: imageId, label });
+    const bt = baseType(result.content_type);
+    if (bt === 'image') audioRecording.startRecording({ type: 'recording_image', imageId, recordingId: result.recording_id!, label });
+    else if (bt === 'quick_capture_image') audioRecording.startRecording({ type: 'capture_image', captureImageId: imageId, label });
+    else if (bt === 'image_child') { /* image_child does not support audio recording */ }
     else audioRecording.startRecording({ type: 'duration_image', durationImageId: imageId, durationId: result.duration_id!, recordingId: result.recording_id!, label });
   }, [activeItems, audioRecording]);
 
@@ -955,27 +992,30 @@ function ImageResultSection({
     if (!lightbox) return;
     const img = lightbox.images[lightbox.index];
     const result = activeItems.find(r => r.source_id === img.id);
-    const audioType = result?.content_type === 'image' ? 'recording_image' : result?.content_type === 'quick_capture_image' ? 'capture_image' : 'duration_image';
+    const rbt = result ? baseType(result.content_type) : 'duration_image';
+    const audioType = rbt === 'image' ? 'recording_image' : rbt === 'quick_capture_image' ? 'capture_image' : 'duration_image';
     const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, audioType);
     imageAudioPlayer.play(audio, label, markers,
-      (id, cap) => result?.content_type === 'image' ? window.electronAPI.imageAudios.updateCaption(id, cap)
-        : result?.content_type === 'quick_capture_image' ? window.electronAPI.captureImageAudios.updateCaption(id, cap)
+      (id, cap) => rbt === 'image' ? window.electronAPI.imageAudios.updateCaption(id, cap)
+        : rbt === 'quick_capture_image' ? window.electronAPI.captureImageAudios.updateCaption(id, cap)
         : window.electronAPI.durationImageAudios.updateCaption(id, cap),
     );
   }, [lightbox, activeItems, imageAudioPlayer]);
 
   const handleDeleteImageAudio = useCallback(async (audioId: number, imageId: number) => {
     const result = activeItems.find(r => r.source_id === imageId);
-    if (result?.content_type === 'image') await window.electronAPI.imageAudios.delete(audioId);
-    else if (result?.content_type === 'quick_capture_image') await window.electronAPI.captureImageAudios.delete(audioId);
+    const rbt = result ? baseType(result.content_type) : 'duration_image';
+    if (rbt === 'image') await window.electronAPI.imageAudios.delete(audioId);
+    else if (rbt === 'quick_capture_image') await window.electronAPI.captureImageAudios.delete(audioId);
     else await window.electronAPI.durationImageAudios.delete(audioId);
     setImageAudiosMap(prev => ({ ...prev, [imageId]: (prev[imageId] ?? []).filter(a => a.id !== audioId) }));
   }, [activeItems]);
 
   const handleUpdateImageAudioCaption = useCallback(async (audioId: number, imageId: number, cap: string | null) => {
     const result = activeItems.find(r => r.source_id === imageId);
-    if (result?.content_type === 'image') await window.electronAPI.imageAudios.updateCaption(audioId, cap);
-    else if (result?.content_type === 'quick_capture_image') await window.electronAPI.captureImageAudios.updateCaption(audioId, cap);
+    const rbt = result ? baseType(result.content_type) : 'duration_image';
+    if (rbt === 'image') await window.electronAPI.imageAudios.updateCaption(audioId, cap);
+    else if (rbt === 'quick_capture_image') await window.electronAPI.captureImageAudios.updateCaption(audioId, cap);
     else await window.electronAPI.durationImageAudios.updateCaption(audioId, cap);
     setImageAudiosMap(prev => ({ ...prev, [imageId]: (prev[imageId] ?? []).map(a => a.id === audioId ? { ...a, caption: cap } : a) }));
   }, [activeItems]);
@@ -992,7 +1032,8 @@ function ImageResultSection({
   const getLightboxMediaType = (): MediaTagType => {
     if (!lightbox) return 'duration_image';
     const img = lightbox.images[lightbox.index];
-    return (activeItems.find(r => r.source_id === img.id)?.content_type ?? 'duration_image') as MediaTagType;
+    const ct = activeItems.find(r => r.source_id === img.id)?.content_type ?? 'duration_image';
+    return baseType(ct) as MediaTagType;
   };
 
   const handleReplaceWithClipboard = useCallback(async () => {
@@ -1008,11 +1049,15 @@ function ImageResultSection({
     }
     const ext = clipResult.extension || 'png';
     let newFilePath: string;
-    if (result.content_type === 'image') {
+    const bt = baseType(result.content_type);
+    if (bt === 'image') {
       const updated = await window.electronAPI.media.replaceImageFromClipboard(img.id, result.recording_id!, clipResult.buffer, ext);
       newFilePath = updated.file_path;
-    } else if (result.content_type === 'quick_capture_image') {
+    } else if (bt === 'quick_capture_image') {
       const updated = await window.electronAPI.quickCaptures.replaceImageFromClipboard(img.id, clipResult.buffer, ext);
+      newFilePath = updated.file_path;
+    } else if (bt === 'image_child') {
+      const updated = await window.electronAPI.imageChildren.replaceFromClipboard(img.id, clipResult.buffer, ext);
       newFilePath = updated.file_path;
     } else {
       const updated = await window.electronAPI.durationImages.replaceFromClipboard(img.id, result.duration_id!, clipResult.buffer, ext);
@@ -1124,7 +1169,7 @@ function ImageResultSection({
 
       {/* Tag modal */}
       {showTagModal && (
-        <TagModal mediaType={showTagModal.content_type as MediaTagType} mediaId={showTagModal.source_id} title="Tags" onClose={() => setShowTagModal(null)} />
+        <TagModal mediaType={baseType(showTagModal.content_type) as MediaTagType} mediaId={showTagModal.source_id} title="Tags" onClose={() => setShowTagModal(null)} />
       )}
     </section>
   );
