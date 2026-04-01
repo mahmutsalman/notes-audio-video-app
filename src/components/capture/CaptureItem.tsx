@@ -70,6 +70,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   const [imageChildCountMap, setImageChildCountMap] = useState<Record<number, number>>({});
   const [imageColorsMap, setImageColorsMap] = useState<Record<number, string[]>>({});
   const [audioColorsMap, setAudioColorsMap] = useState<Record<number, string[]>>({});
+  const [captureImageAudioColorsMap, setCaptureImageAudioColorsMap] = useState<Record<number, string[]>>({});
   const [contextMenuShowColors, setContextMenuShowColors] = useState(false);
 
   // Map QuickCaptureImage → SortableImageItem (color: null = no color bars)
@@ -185,6 +186,14 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     window.electronAPI.mediaColors.getBatch('quick_capture_audio', localAudios.map(a => a.id))
       .then(setAudioColorsMap);
   }, [localAudios]);
+
+  // Fetch color labels for quick capture image audios
+  useEffect(() => {
+    const allAudioIds = Object.values(captureImageAudiosMap).flat().map(a => a.id);
+    if (allAudioIds.length === 0) { setCaptureImageAudioColorsMap({}); return; }
+    window.electronAPI.mediaColors.getBatch('quick_capture_image_audio', allAudioIds)
+      .then(setCaptureImageAudioColorsMap);
+  }, [captureImageAudiosMap]);
 
   const openLightbox = useCallback(async (index: number) => {
     setLightboxIndex(index);
@@ -519,6 +528,18 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
             const img = localImages[lightboxIndex!];
             await window.electronAPI.ocr.extractCaption2('quick_capture_image', img.id, img.file_path);
           } : undefined}
+          imageType="quick_capture_image"
+          imageColors={lightboxIndex !== null && localImages[lightboxIndex]?.id ? imageColorsMap[localImages[lightboxIndex].id] ?? [] : []}
+          onToggleColor={lightboxIndex !== null && localImages[lightboxIndex]?.id ? async (key) => {
+            const imageId = localImages[lightboxIndex!].id;
+            const updated = await window.electronAPI.mediaColors.toggle('quick_capture_image', imageId, key);
+            setImageColorsMap(prev => ({ ...prev, [imageId]: updated }));
+          } : undefined}
+          audioColorsMap={captureImageAudioColorsMap}
+          onToggleAudioColor={async (audioId, colorKey) => {
+            const updated = await window.electronAPI.mediaColors.toggle('quick_capture_image_audio', audioId, colorKey);
+            setCaptureImageAudioColorsMap(prev => ({ ...prev, [audioId]: updated }));
+          }}
         />
       )}
 
