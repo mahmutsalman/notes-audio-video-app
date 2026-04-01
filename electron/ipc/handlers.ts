@@ -19,6 +19,7 @@ import {
   SettingsOperations,
   AudioMarkersOperations,
   SearchOperations,
+  FilteredSearchOperations,
   TagOperations,
   QuickCaptureOperations,
   ImageAnnotationsOperations,
