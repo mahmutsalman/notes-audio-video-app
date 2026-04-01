@@ -2,8 +2,17 @@
 
 - `main`: desktop-only code, pushed to GitHub (public)
 - `personal`: local-only branch with mobile app, FastAPI server, VPS sync pipeline
-- NEVER push `personal` branch to GitHub
+- **NEVER push `personal` branch to GitHub** — it contains `mobile/`, `server/`, `sync/`
 - Build for personal use from `personal` branch
+
+## Rules
+
+| Rule | Detail |
+|---|---|
+| Never push `personal` | `git push origin personal` is forbidden — it would leak mobile/server code |
+| Never merge `personal → main` directly | A full merge pulls in mobile/, server/, sync/ — always cherry-pick instead |
+| Desktop commits go on `main` | Commit desktop-only work on `main`, push, then merge into `personal` |
+| After every `main` commit | Run the sync block below to keep `personal` up to date |
 
 ## After Every Commit on main
 
@@ -13,7 +22,60 @@ git merge main
 git checkout main
 ```
 
-If a merge conflict occurs, resolve it on `personal`, then switch back to `main`.
+If a merge conflict occurs (e.g. `handlers.ts` VPS config differs), keep `personal`'s version for that file:
+```bash
+git checkout personal -- electron/ipc/handlers.ts
+git add electron/ipc/handlers.ts
+git merge --continue
+```
+
+## Cherry-Pick Strategy (personal → main, bulk)
+
+Use this when backfilling many commits from `personal` onto `main`. The awk filter keeps only desktop-only commits (skips merge commits and anything touching `mobile/`, `server/`, `sync/`, `localResources/`).
+
+```bash
+git checkout main
+
+git log --oneline main..personal --name-only --format="%H %s" | awk '
+/^[0-9a-f]{40}/ {
+    if (hash && !(hm||hs||hsy||hl) && !is_merge) print hash
+    hash=$1; msg=substr($0,42); hm=hs=hsy=hl=0
+    is_merge=(msg~/^(Merge branch|merge:)/)
+}
+/^mobile\// {hm=1} /^server\// {hs=1} /^sync\// {hsy=1} /^localResources\// {hl=1}
+END { if (hash && !(hm||hs||hsy||hl) && !is_merge) print hash }
+' | tail -r | xargs git cherry-pick
+
+git push origin main
+git checkout personal
+```
+
+**If a conflict occurs during cherry-pick:**
+- All conflicts so far follow the pattern "HEAD is empty, incoming adds new code" → take theirs:
+  ```bash
+  python3 -c "
+  import re, sys
+  fp = sys.argv[1]
+  c = open(fp).read()
+  r = re.sub(r'<<<<<<< HEAD\n(.*?)=======\n(.*?)>>>>>>> [^\n]+\n', lambda m: m.group(2), c, flags=re.DOTALL)
+  open(fp, 'w').write(r)
+  " <conflicted-file>
+  git add <conflicted-file>
+  git cherry-pick --continue
+  ```
+- Skip commits that only touch `CLAUDE.local.md` or other gitignored files: `git cherry-pick --skip`
+- Skip empty commits (already applied): `git cherry-pick --skip`
+
+## Pre-Commit Hook (blocks mobile/server/sync on main)
+
+The hook lives at `scripts/hooks/pre-commit`. It is already committed to both branches.
+
+**Activate once per machine:**
+```bash
+git config core.hooksPath scripts/hooks
+```
+
+After this, any attempt to commit `mobile/`, `server/`, or `sync/` files while on `main` will be blocked with a clear error. The hook is branch-aware — it only fires on `main`, never on `personal`.
 
 # Architecture — Three Apps, One Database
 
