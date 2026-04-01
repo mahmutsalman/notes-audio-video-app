@@ -259,7 +259,7 @@ export default function ImageLightbox({
   // Only show embedded bars when lightbox is in "image audio" mode
   const imageAudioMode = onRecordForImage !== undefined;
   const showRecordingBar = imageAudioMode && (isRecording || isSaving) &&
-    (recTarget?.type === 'duration_image' || recTarget?.type === 'recording_image' || recTarget?.type === 'image_child');
+    (recTarget?.type === 'duration_image' || recTarget?.type === 'recording_image' || recTarget?.type === 'image_child' || recTarget?.type === 'capture_image');
 
   const image = images[selectedIndex];
   const currentImageAudios = (image?.id && imageAudiosMap) ? (imageAudiosMap[image.id] ?? []) : [];
@@ -1293,6 +1293,21 @@ export default function ImageLightbox({
                 setCurrentImageTags(tags);
                 onTagsChanged?.(image.id!, tags.map((t: { name: string }) => t.name));
               });
+            }}
+          />
+        )}
+
+        {/* Audio tag modal */}
+        {audioTagModalId != null && audioTagMediaType && (
+          <TagModal
+            mediaType={audioTagMediaType as import('../../types').MediaTagType}
+            mediaId={audioTagModalId}
+            title="Audio Tags"
+            onClose={() => {
+              const closingId = audioTagModalId;
+              setAudioTagModalId(null);
+              setAudioTagMediaType(null);
+              onAudioTagsChanged?.(closingId);
             }}
           />
         )}

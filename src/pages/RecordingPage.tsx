@@ -1919,6 +1919,12 @@ export default function RecordingPage() {
                       ))}
                     </div>
                   )}
+                  {/* Tag count badge */}
+                  {(durationAudioTagCountMap[audio.id] ?? 0) > 0 && (
+                    <span className="absolute top-1 right-7 text-[9px] bg-orange-500 text-white rounded-full px-1.5 py-0.5 leading-none pointer-events-none">
+                      🏷️{durationAudioTagCountMap[audio.id]}
+                    </span>
+                  )}
                 </div>
               </div>
               );
@@ -2229,6 +2235,12 @@ export default function RecordingPage() {
                           style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }} />
                       ))}
                     </div>
+                  )}
+                  {/* Tag count badge */}
+                  {(recordingAudioTagCountMap[audio.id] ?? 0) > 0 && (
+                    <span className="absolute top-1 right-7 text-[9px] bg-orange-500 text-white rounded-full px-1.5 py-0.5 leading-none pointer-events-none">
+                      🏷️{recordingAudioTagCountMap[audio.id]}
+                    </span>
                   )}
                 </div>
               </div>
@@ -2706,6 +2718,18 @@ export default function RecordingPage() {
                 .then(tags => setDurationImageTagsCache(prev => ({
                   ...prev,
                   [tagModal.mediaId]: tags.map((t: { name: string }) => t.name),
+                })));
+            } else if (tagModal.mediaType === 'audio') {
+              window.electronAPI.tags.getByMedia('audio', tagModal.mediaId)
+                .then((tags: { name: string }[]) => setRecordingAudioTagCountMap(prev => ({
+                  ...prev,
+                  [tagModal.mediaId]: tags.length,
+                })));
+            } else if (tagModal.mediaType === 'duration_audio') {
+              window.electronAPI.tags.getByMedia('duration_audio', tagModal.mediaId)
+                .then((tags: { name: string }[]) => setDurationAudioTagCountMap(prev => ({
+                  ...prev,
+                  [tagModal.mediaId]: tags.length,
                 })));
             }
             setTagModal(null);

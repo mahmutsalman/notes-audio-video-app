@@ -3,7 +3,9 @@ import { useDurationAudioPlayer } from '../context/DurationAudioPlayerContext';
 import { useRecordingAudioPlayer } from '../context/RecordingAudioPlayerContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGlobalSearch } from '../hooks/useGlobalSearch';
+import { useFilteredSearch } from '../hooks/useFilteredSearch';
 import { useTabTitle } from '../hooks/useTabTitle';
+import SearchConditionBuilder from '../components/search/SearchConditionBuilder';
 import { TagBrowser } from '../components/tags/TagBrowser';
 import { TagResultsView } from '../components/tags/TagResultsView';
 import ImageLightbox from '../components/common/ImageLightbox';
@@ -24,6 +26,7 @@ import type {
   MediaTagType,
   DurationColor,
   DurationGroupColor,
+  FilteredSearchParams,
 } from '../types';
 
 // ─── Local types ─────────────────────────────────────────────────────────────
@@ -885,6 +888,9 @@ function ImageResultSection({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; result: GlobalSearchResult } | null>(null);
   const [captionModal, setCaptionModal] = useState<{ result: GlobalSearchResult; text: string } | null>(null);
   const [showTagModal, setShowTagModal] = useState<GlobalSearchResult | null>(null);
+  const [captionOverrides, setCaptionOverrides] = useState<Record<number, string | null>>({});
+  const [tagNamesMap, setTagNamesMap] = useState<Record<number, string[]>>({});
+  const [imageColorsMap, setImageColorsMap] = useState<Record<number, string[]>>({});
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   const audioRecording = useAudioRecording();
@@ -892,8 +898,10 @@ function ImageResultSection({
 
   const activeItems = useMemo(() => items.filter(r => !deletedIds.has(r.source_id)), [items, deletedIds]);
 
+  const IMAGE_TYPES = new Set(['image', 'duration_image', 'quick_capture_image', 'image_child']);
+
   const toLightboxImages = (resultItems: GlobalSearchResult[]): LightboxImage[] =>
-    resultItems.map(r => ({ file_path: r.file_path!, caption: r.snippet.replace(/<[^>]*>/g, '') || null, id: r.source_id }));
+    resultItems.map(r => ({ file_path: r.file_path!, caption: r.source_id in captionOverrides ? captionOverrides[r.source_id] : (r.snippet.replace(/<[^>]*>/g, '') || null), id: r.source_id }));
 
   const fetchImageAudios = useCallback(async (resultItems: GlobalSearchResult[]) => {
     const entries = await Promise.all(
@@ -902,13 +910,58 @@ function ImageResultSection({
         const rbt = baseType(r.content_type);
         if (rbt === 'image') audios = await window.electronAPI.imageAudios.getByImage(r.source_id);
         else if (rbt === 'quick_capture_image') audios = await window.electronAPI.captureImageAudios.getByImage(r.source_id);
-        else if (rbt === 'image_child') audios = [];
+        else if (rbt === 'image_child') audios = await window.electronAPI.imageChildAudios.getByChild(r.source_id);
         else audios = await window.electronAPI.durationImageAudios.getByDurationImage(r.source_id);
         return [r.source_id, audios] as [number, AnyImageAudio[]];
       })
     );
     setImageAudiosMap(Object.fromEntries(entries));
   }, []);
+
+  // Fetch audio counts on mount / when items change (for grid badges)
+  useEffect(() => {
+    if (activeItems.length > 0) fetchImageAudios(activeItems);
+  }, [activeItems, fetchImageAudios]);
+
+  // Fetch tag names on mount / when items change (for grid badges + overlay)
+  const fetchTagNames = useCallback(async (resultItems: GlobalSearchResult[]) => {
+    const entries = await Promise.all(
+      resultItems
+        .filter(r => IMAGE_TYPES.has(baseType(r.content_type)))
+        .map(async r => {
+          const tags = await window.electronAPI.tags.getByMedia(baseType(r.content_type) as any, r.source_id);
+          return [r.source_id, (tags as { name: string }[]).map(t => t.name)] as [number, string[]];
+        })
+    );
+    setTagNamesMap(prev => ({ ...prev, ...Object.fromEntries(entries) }));
+  }, []);
+
+  useEffect(() => {
+    if (activeItems.length > 0) fetchTagNames(activeItems);
+  }, [activeItems, fetchTagNames]);
+
+  // Fetch color labels for each image (for grid color dots)
+  useEffect(() => {
+    if (!activeItems.length) return;
+    Promise.all(
+      activeItems
+        .filter(r => IMAGE_TYPES.has(baseType(r.content_type)))
+        .map(async r => {
+          const colors = await window.electronAPI.mediaColors.getByMedia(baseType(r.content_type), r.source_id);
+          return [r.source_id, colors] as [number, string[]];
+        })
+    ).then(entries => setImageColorsMap(prev => ({ ...prev, ...Object.fromEntries(entries) })));
+  }, [activeItems]);
+
+  const audioCountMap = useMemo(() =>
+    Object.fromEntries(Object.entries(imageAudiosMap).map(([id, a]) => [parseInt(id), a.length])),
+    [imageAudiosMap]
+  );
+
+  const tagCountMap = useMemo(() =>
+    Object.fromEntries(Object.entries(tagNamesMap).map(([id, names]) => [parseInt(id), names.length])),
+    [tagNamesMap]
+  );
 
   const openLightbox = useCallback((index: number) => {
     const lbImages = toLightboxImages(activeItems);
@@ -980,6 +1033,7 @@ function ImageResultSection({
       case 'quick_capture_image': await window.electronAPI.quickCaptures.updateImageCaption(result.source_id, cap); break;
       case 'image_child': await window.electronAPI.imageChildren.updateCaption(result.source_id, cap); break;
     }
+    setCaptionOverrides(prev => ({ ...prev, [result.source_id]: cap }));
     setLightbox(lb => lb ? { ...lb, images: lb.images.map(img => img.id === result.source_id ? { ...img, caption: cap } : img) } : lb);
     setCaptionModal(null);
   }, [captionModal]);
@@ -1038,7 +1092,7 @@ function ImageResultSection({
     id: r.source_id,
     file_path: r.file_path!,
     thumbnail_path: r.thumbnail_path,
-    caption: r.snippet.replace(/<[^>]*>/g, '') || null,
+    caption: r.source_id in captionOverrides ? captionOverrides[r.source_id] : (r.snippet.replace(/<[^>]*>/g, '') || null),
     color: null as unknown as DurationColor,
     group_color: null as unknown as DurationGroupColor,
   }));
@@ -1102,6 +1156,10 @@ function ImageResultSection({
             captionColorClass="text-blue-600 dark:text-blue-400"
             colorOverrides={{}}
             groupColorOverrides={{}}
+            audioCountMap={audioCountMap}
+            tagCountMap={tagCountMap}
+            tagNamesMap={tagNamesMap}
+            imageColorsMap={imageColorsMap}
             onImageClick={openLightbox}
             onContextMenu={handleContextMenu}
             onDelete={() => {}}
@@ -1139,7 +1197,7 @@ function ImageResultSection({
         >
           <button
             className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
-            onClick={() => { setContextMenu(null); setCaptionModal({ result: contextMenu.result, text: contextMenu.result.snippet.replace(/<[^>]*>/g, '') }); }}
+            onClick={() => { setContextMenu(null); const r = contextMenu.result; setCaptionModal({ result: r, text: r.source_id in captionOverrides ? (captionOverrides[r.source_id] ?? '') : r.snippet.replace(/<[^>]*>/g, '') }); }}
           >
             <span>✏️</span> Add Caption
           </button>
@@ -1183,7 +1241,17 @@ function ImageResultSection({
 
       {/* Tag modal */}
       {showTagModal && (
-        <TagModal mediaType={baseType(showTagModal.content_type) as MediaTagType} mediaId={showTagModal.source_id} title="Tags" onClose={() => setShowTagModal(null)} />
+        <TagModal
+          mediaType={baseType(showTagModal.content_type) as MediaTagType}
+          mediaId={showTagModal.source_id}
+          title="Tags"
+          onClose={async () => {
+            const r = showTagModal;
+            setShowTagModal(null);
+            const tags = await window.electronAPI.tags.getByMedia(baseType(r.content_type) as any, r.source_id);
+            setTagNamesMap(prev => ({ ...prev, [r.source_id]: (tags as { name: string }[]).map(t => t.name) }));
+          }}
+        />
       )}
     </section>
   );
@@ -1239,6 +1307,8 @@ export default function SearchPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [showTagBrowser, setShowTagBrowser] = useState(false);
   const [activeTags, setActiveTags] = useState<string[]>([]);
+  const [searchMode, setSearchMode] = useState<'simple' | 'advanced'>('simple');
+  const [filteredParams, setFilteredParams] = useState<FilteredSearchParams | null>(null);
 
   const {
     query, setQuery,
@@ -1248,6 +1318,36 @@ export default function SearchPage() {
     activeQuery,
     totalCount, categoriesWithResults,
   } = useGlobalSearch();
+
+  const { results: filteredResults, loading: filteredLoading } = useFilteredSearch(filteredParams);
+
+  const filteredGrouped = useMemo(() => {
+    const g = {
+      duration: [] as GlobalSearchResult[], recording: [] as GlobalSearchResult[], topic: [] as GlobalSearchResult[],
+      image: [] as GlobalSearchResult[], video: [] as GlobalSearchResult[], audio: [] as GlobalSearchResult[],
+      duration_image: [] as GlobalSearchResult[], duration_video: [] as GlobalSearchResult[], duration_audio: [] as GlobalSearchResult[],
+      code_snippet: [] as GlobalSearchResult[], duration_code_snippet: [] as GlobalSearchResult[],
+      audio_marker: [] as GlobalSearchResult[], duration_image_audio: [] as GlobalSearchResult[], image_audio: [] as GlobalSearchResult[],
+      quick_capture_image: [] as GlobalSearchResult[],
+      image_ocr: [] as GlobalSearchResult[], duration_image_ocr: [] as GlobalSearchResult[],
+      quick_capture_image_ocr: [] as GlobalSearchResult[], image_child_ocr: [] as GlobalSearchResult[],
+    };
+    for (const r of filteredResults) {
+      const key = r.content_type as keyof typeof g;
+      if (key in g) g[key].push(r);
+    }
+    return g;
+  }, [filteredResults]);
+
+  const activeGrouped = searchMode === 'simple' ? grouped : filteredGrouped;
+  const activeLoading = searchMode === 'simple' ? loading : filteredLoading;
+  const activeIsTyping = searchMode === 'simple' ? isTyping : false;
+  const activeHasQuery = searchMode === 'simple' ? hasQuery : (filteredParams?.conditions.some(c => c.value.trim()) ?? false);
+  const activeTotalCount = searchMode === 'simple' ? totalCount : filteredResults.length;
+  const activeCategoriesWithResults = searchMode === 'simple'
+    ? categoriesWithResults
+    : Object.values(filteredGrouped).filter(a => a.length > 0).length;
+
   useTabTitle(query ? `Search: ${query}` : 'Search');
 
   // Pre-populate from ?q= URL param on mount
@@ -1258,9 +1358,10 @@ export default function SearchPage() {
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const activeResultsForNav = searchMode === 'simple' ? results : filteredResults;
   const navigableResults = useMemo(
-    () => results.filter(r => r.recording_id !== null),
-    [results],
+    () => activeResultsForNav.filter(r => r.recording_id !== null),
+    [activeResultsForNav],
   );
 
   const handleNavigate = useCallback((result: GlobalSearchResult) => {
@@ -1280,32 +1381,66 @@ export default function SearchPage() {
     setActiveTags(prev => prev.includes(tagName) ? prev.filter(t => t !== tagName) : [...prev, tagName]);
   }, []);
 
-  const sectionsWithResults = SECTION_ORDER.filter(s => grouped[s.key].length > 0);
+  const sectionsWithResults = SECTION_ORDER.filter(s => activeGrouped[s.key].length > 0);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6">
-      {/* Search input */}
-      <div className="relative mb-3">
-        <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={e => { setQuery(e.target.value); setActiveTags([]); }}
-          placeholder="Search marks, images, audios, code, notes…"
-          className="w-full pl-12 pr-4 py-3 text-base rounded-xl border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 shadow-sm"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        {(loading || isTyping) && (
-          <svg className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-        )}
+      {/* Mode toggle */}
+      <div className="flex items-center gap-1 mb-3">
+        <button
+          onClick={() => setSearchMode('simple')}
+          className={`text-xs px-3 py-1 rounded-full border transition-colors ${searchMode === 'simple' ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 dark:border-dark-border text-gray-500 dark:text-gray-400 hover:border-blue-400'}`}
+        >
+          Simple
+        </button>
+        <button
+          onClick={() => setSearchMode('advanced')}
+          className={`text-xs px-3 py-1 rounded-full border transition-colors ${searchMode === 'advanced' ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 dark:border-dark-border text-gray-500 dark:text-gray-400 hover:border-blue-400'}`}
+        >
+          Advanced
+        </button>
       </div>
+
+      {/* Search input — Simple mode */}
+      {searchMode === 'simple' && (
+        <div className="relative mb-3">
+          <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={e => { setQuery(e.target.value); setActiveTags([]); }}
+            placeholder="Search marks, images, audios, code, notes…"
+            className="w-full pl-12 pr-4 py-3 text-base rounded-xl border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 shadow-sm"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {(loading || isTyping) && (
+            <svg className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          )}
+        </div>
+      )}
+
+      {/* Condition builder — Advanced mode */}
+      {searchMode === 'advanced' && (
+        <div className="mb-3 p-3 rounded-xl border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface shadow-sm">
+          <SearchConditionBuilder onChange={setFilteredParams} />
+          {filteredLoading && (
+            <div className="flex items-center gap-1.5 mt-2 text-xs text-gray-400">
+              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Searching…
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tag browser toggle */}
       <div className="flex items-center gap-2 mb-5">
@@ -1351,34 +1486,37 @@ export default function SearchPage() {
       {activeTags.length === 0 && (
         <>
           {/* Summary bar */}
-          {hasQuery && !loading && !isTyping && (
+          {activeHasQuery && !activeLoading && !activeIsTyping && (
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
-              {totalCount === 0
+              {activeTotalCount === 0
                 ? 'No results found'
-                : `${totalCount} result${totalCount !== 1 ? 's' : ''} across ${categoriesWithResults} categor${categoriesWithResults !== 1 ? 'ies' : 'y'}`}
+                : `${activeTotalCount} result${activeTotalCount !== 1 ? 's' : ''} across ${activeCategoriesWithResults} categor${activeCategoriesWithResults !== 1 ? 'ies' : 'y'}`}
             </p>
           )}
 
           {/* Empty state */}
-          {!hasQuery && !showTagBrowser && (
+          {!activeHasQuery && !showTagBrowser && (
             <div className="text-center py-16 text-gray-400 dark:text-gray-500">
               <svg className="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <p className="text-sm">Search across all marks, images, audios, videos, code and notes</p>
-              <p className="text-xs mt-1 opacity-70">Prefix matching enabled — type partial words</p>
+              {searchMode === 'simple'
+                ? <p className="text-xs mt-1 opacity-70">Prefix matching enabled — type partial words</p>
+                : <p className="text-xs mt-1 opacity-70">Add conditions above to filter by text, tag, or color</p>
+              }
             </div>
           )}
 
           {/* Results */}
           {sectionsWithResults.map(({ key, label, icon }) => (
             IMAGE_SECTION_KEYS.has(key)
-              ? <ImageResultSection key={key} label={label} icon={icon} items={grouped[key]} />
+              ? <ImageResultSection key={key} label={label} icon={icon} items={activeGrouped[key]} />
               : <ResultSection
                   key={key}
                   label={label}
                   icon={icon}
-                  items={grouped[key]}
+                  items={activeGrouped[key]}
                   onNavigate={handleNavigate}
                 />
           ))}
