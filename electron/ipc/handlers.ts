@@ -1531,11 +1531,10 @@ export function setupIpcHandlers(): void {
     const localDb = path.join(userDataPath, 'NotesWithAudioAndVideo.db');
     const localMedia = path.join(userDataPath, 'media');
 
-    const vpsUser = 'root';
-    const vpsHost = 'mahmutsalman.cloud';
-    const vpsKey = path.join(process.env.HOME || '~', '.ssh', 'vps1_key');
-    const vpsDataDir = '/var/www/notes/data';
-    const vpsUploadsDir = `${vpsDataDir}/uploads`;
+    const vpsUser = 'root'; // your SSH user
+    const vpsHost = 'yourvps.com'; // your VPS hostname or IP
+    const vpsDataDir = '/var/www/notes/data'; // data directory on your VPS
+    const vpsKey = path.join(process.env.HOME || '~', '.ssh', 'your_vps_key'); // path to your SSH private key
 
     const sshOpts = `-i "${vpsKey}" -o StrictHostKeyChecking=accept-new`;
 
