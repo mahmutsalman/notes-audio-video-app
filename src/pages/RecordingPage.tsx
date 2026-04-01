@@ -31,6 +31,7 @@ import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
 import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
+import { IMAGE_COLOR_KEYS, IMAGE_COLORS } from '../utils/imageColors';
 import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState } from '../types';
 import SearchNavBanner from '../components/search/SearchNavBanner';
 import { TagModal } from '../components/common/TagModal';
@@ -1090,7 +1091,7 @@ export default function RecordingPage() {
 
   // Close context menu when clicking elsewhere
   useEffect(() => {
-    const handleClick = () => setContextMenu(null);
+    const handleClick = () => { setContextMenu(null); setContextMenuShowColors(false); };
     if (contextMenu) {
       window.addEventListener('click', handleClick);
       return () => window.removeEventListener('click', handleClick);
@@ -1866,7 +1867,7 @@ export default function RecordingPage() {
                     style={{ backgroundColor: groupColorConfig.color }}
                   />
                 )}
-                <div className={`flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30 ${groupColorConfig ? 'mt-1' : ''}`}>
+                <div className={`relative flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30 overflow-hidden ${groupColorConfig ? 'mt-1' : ''}`}>
                   <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
                     {index + 1}
                   </span>
@@ -1909,6 +1910,15 @@ export default function RecordingPage() {
                   >
                     ×
                   </button>
+                  {/* Bottom color bar */}
+                  {(durationAudioColorsCache[audio.id] ?? []).length > 0 && (
+                    <div className="absolute bottom-0 left-0 right-0 flex h-[3px] pointer-events-none">
+                      {(durationAudioColorsCache[audio.id] ?? []).slice(0, 5).map(key => (
+                        <div key={key} className="flex-1 h-full"
+                          style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }} />
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               );
@@ -2211,6 +2221,15 @@ export default function RecordingPage() {
                   >
                     ×
                   </button>
+                  {/* Bottom color bar */}
+                  {(recordingAudioColorsCache[audio.id] ?? []).length > 0 && (
+                    <div className="absolute bottom-0 left-0 right-0 flex h-[3px] pointer-events-none">
+                      {(recordingAudioColorsCache[audio.id] ?? []).slice(0, 5).map(key => (
+                        <div key={key} className="flex-1 h-full"
+                          style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }} />
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               );
@@ -2582,6 +2601,45 @@ export default function RecordingPage() {
             <span>✏️</span>
             {contextMenu.item.caption ? 'Edit Caption' : 'Add Caption'}
           </button>
+          {(contextMenu.type === 'audio' || contextMenu.type === 'durationAudio') && (
+            contextMenuShowColors ? (
+              <div className="px-2 py-2">
+                <div className="grid grid-cols-5 gap-1">
+                  {IMAGE_COLOR_KEYS.map(key => {
+                    const audioColors = contextMenu.type === 'audio'
+                      ? (recordingAudioColorsCache[contextMenu.item.id] ?? [])
+                      : (durationAudioColorsCache[contextMenu.item.id] ?? []);
+                    const active = audioColors.includes(key);
+                    return (
+                      <button
+                        key={key}
+                        title={IMAGE_COLORS[key].label}
+                        onClick={() => contextMenu.type === 'audio'
+                          ? handleToggleRecordingAudioColor(contextMenu.item.id, key)
+                          : handleToggleDurationAudioColor(contextMenu.item.id, key)
+                        }
+                        className="w-6 h-6 rounded-full flex items-center justify-center relative border-2 transition-transform hover:scale-110"
+                        style={{
+                          backgroundColor: IMAGE_COLORS[key].hex,
+                          borderColor: active ? 'white' : 'transparent',
+                        }}
+                      >
+                        {active && <span className="text-white text-[10px] font-bold">✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <button
+                className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+                onClick={(e) => { e.stopPropagation(); setContextMenuShowColors(true); }}
+              >
+                <span>🎨</span>
+                Colors
+              </button>
+            )
+          )}
           {(contextMenu.type === 'image' || contextMenu.type === 'durationImage' || contextMenu.type === 'audio' || contextMenu.type === 'durationAudio') && (
             <button
               className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
