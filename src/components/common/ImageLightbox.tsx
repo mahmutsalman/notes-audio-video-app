@@ -52,6 +52,13 @@ interface ImageLightboxProps {
   onTagsChanged?: (imageId: number, tagNames: string[]) => void;
   // Disable child images (used by child lightbox to prevent recursion)
   disableChildImages?: boolean;
+  // Color labels (many-to-many)
+  imageColors?: string[];
+  onToggleColor?: (colorKey: string) => void;
+  imageType?: 'image' | 'duration_image' | 'quick_capture_image' | 'image_child';
+  // Color labels for image-attached audios
+  audioColorsMap?: Record<number, string[]>;
+  onToggleAudioColor?: (audioId: number, colorKey: string) => void;
 }
 
 function fmtSecs(secs: number): string {
@@ -144,6 +151,11 @@ export default function ImageLightbox({
   mediaType,
   onTagsChanged,
   disableChildImages = false,
+  imageColors = [],
+  onToggleColor,
+  imageType,
+  audioColorsMap = {},
+  onToggleAudioColor,
 }: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
@@ -154,6 +166,9 @@ export default function ImageLightbox({
   const [audioCaptionText, setAudioCaptionText] = useState('');
   const [showTagModal, setShowTagModal] = useState(false);
   const [currentImageTags, setCurrentImageTags] = useState<{ name: string }[]>([]);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [audioColorPickerId, setAudioColorPickerId] = useState<number | null>(null);
+  const [childAudioColorsMap, setChildAudioColorsMap] = useState<Record<number, string[]>>({});
 
   // OCR caption2 extraction status
   const [ocrCaption2Status, setOcrCaption2Status] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
@@ -309,6 +324,8 @@ export default function ImageLightbox({
     setScale(1);
     setTranslate({ x: 0, y: 0 });
     setShowTagModal(false);
+    setShowColorPicker(false);
+    setAudioColorPickerId(null);
     setSelectedChildId(null);
     setDisplayedSize(null);
     setAnnotations([]);
@@ -464,6 +481,19 @@ export default function ImageLightbox({
       ),
     }));
   }, []);
+
+  const handleToggleChildAudioColor = async (audioId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('image_child_audio', audioId, colorKey);
+    setChildAudioColorsMap(prev => ({ ...prev, [audioId]: updated }));
+  };
+
+  // Fetch color labels for child image audios
+  useEffect(() => {
+    const allAudioIds = Object.values(childAudiosMap).flatMap(audios => audios.map(a => a.id));
+    if (allAudioIds.length === 0) { setChildAudioColorsMap({}); return; }
+    window.electronAPI.mediaColors.getBatch('image_child_audio', allAudioIds)
+      .then(setChildAudioColorsMap);
+  }, [childAudiosMap]);
 
   // Show zoom indicator briefly
   const flashZoomIndicator = useCallback(() => {
@@ -1457,11 +1487,16 @@ export default function ImageLightbox({
                         onContextMenu={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
+                          setAudioColorPickerId(onToggleAudioColor ? audio.id : null);
                           setEditingAudioCaptionId(audio.id);
                           setAudioCaptionText(audio.caption ?? '');
                         }}
                         className="flex items-center gap-1 bg-white/15 hover:bg-white/25 text-white rounded-full px-2.5 py-1 text-[11px] transition-colors whitespace-nowrap"
                       >
+                        {(audioColorsMap[audio.id] ?? []).slice(0, 3).map(key => (
+                          <span key={key} className="w-1.5 h-1.5 rounded-full flex-shrink-0 inline-block"
+                            style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }} />
+                        ))}
                         ▶ {i + 1}{audio.duration ? ` · ${fmtSecs(audio.duration)}` : ''}
                       </button>
                       {onDeleteImageAudio && image?.id && (
@@ -1474,26 +1509,52 @@ export default function ImageLightbox({
                           title="Delete audio"
                         >×</button>
                       )}
-                      {editingAudioCaptionId === audio.id && onUpdateImageAudioCaption && image?.id && (
+                      {(editingAudioCaptionId === audio.id || audioColorPickerId === audio.id) && (onUpdateImageAudioCaption || onToggleAudioColor) && image?.id && (
                         <div
-                          className="absolute bottom-full mb-2 left-0 z-20 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl p-2.5 w-48"
+                          className="absolute bottom-full mb-2 left-0 z-20 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl p-2.5 w-52"
                           onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
                         >
-                          <p className="text-white/40 text-[10px] mb-1.5">Caption (right-click to edit)</p>
-                          <textarea
-                            autoFocus
-                            value={audioCaptionText}
-                            onChange={(e) => setAudioCaptionText(e.target.value)}
-                            onBlur={() => saveAudioCaption(audio.id, image.id!)}
-                            onKeyDown={(e) => {
-                              e.stopPropagation();
-                              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveAudioCaption(audio.id, image.id!); }
-                              else if (e.key === 'Escape') { setEditingAudioCaptionId(null); setAudioCaptionText(''); }
-                            }}
-                            rows={2}
-                            className="w-full text-xs bg-black/60 text-white/90 rounded-lg px-2 py-1.5 border border-white/20 focus:outline-none focus:border-white/50 resize-none"
-                            placeholder="Add caption…"
-                          />
+                          {onUpdateImageAudioCaption && (
+                            <>
+                              <p className="text-white/40 text-[10px] mb-1.5">Caption</p>
+                              <textarea
+                                autoFocus
+                                value={audioCaptionText}
+                                onChange={(e) => setAudioCaptionText(e.target.value)}
+                                onBlur={() => { saveAudioCaption(audio.id, image.id!); setAudioColorPickerId(null); }}
+                                onKeyDown={(e) => {
+                                  e.stopPropagation();
+                                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveAudioCaption(audio.id, image.id!); setAudioColorPickerId(null); }
+                                  else if (e.key === 'Escape') { setEditingAudioCaptionId(null); setAudioCaptionText(''); setAudioColorPickerId(null); }
+                                }}
+                                rows={2}
+                                className="w-full text-xs bg-black/60 text-white/90 rounded-lg px-2 py-1.5 border border-white/20 focus:outline-none focus:border-white/50 resize-none"
+                                placeholder="Add caption…"
+                              />
+                            </>
+                          )}
+                          {onToggleAudioColor && (
+                            <div className={onUpdateImageAudioCaption ? 'mt-2 pt-2 border-t border-white/10' : ''}>
+                              <p className="text-white/40 text-[10px] mb-1.5">Colors</p>
+                              <div className="grid grid-cols-5 gap-1">
+                                {IMAGE_COLOR_KEYS.map(key => {
+                                  const isActive = (audioColorsMap[audio.id] ?? []).includes(key);
+                                  return (
+                                    <button
+                                      key={key}
+                                      title={IMAGE_COLORS[key].label}
+                                      onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); onToggleAudioColor(audio.id, key); }}
+                                      className={`w-5 h-5 rounded-full relative flex items-center justify-center border-2 ${isActive ? 'border-white' : 'border-transparent hover:border-white/50'}`}
+                                      style={{ backgroundColor: IMAGE_COLORS[key].hex }}
+                                    >
+                                      {isActive && <span className="text-white text-[9px] font-bold leading-none">✓</span>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1545,6 +1606,8 @@ export default function ImageLightbox({
               await window.electronAPI.ocr.extractCaption2('image_child', child.id, child.file_path);
             }}
             onDelete={() => setPendingDeleteChild(child.id)}
+            audioColorsMap={childAudioColorsMap}
+            onToggleAudioColor={handleToggleChildAudioColor}
           />
         );
       })()}

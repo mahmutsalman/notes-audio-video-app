@@ -123,6 +123,8 @@ export default function RecordingPage() {
   const [durationImageColorsCache, setDurationImageColorsCache] = useState<Record<number, string[]>>({});
   const [recordingAudioColorsCache, setRecordingAudioColorsCache] = useState<Record<number, string[]>>({});
   const [durationAudioColorsCache, setDurationAudioColorsCache] = useState<Record<number, string[]>>({});
+  const [recordingImageAudioColorsCache, setRecordingImageAudioColorsCache] = useState<Record<number, string[]>>({});
+  const [durationImageAudioColorsCache, setDurationImageAudioColorsCache] = useState<Record<number, string[]>>({});
   const [contextMenuShowColors, setContextMenuShowColors] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [isContentPressed, setIsContentPressed] = useState(false);
@@ -1228,6 +1230,23 @@ export default function RecordingPage() {
       .then(setRecordingAudioColorsCache);
   }, [recordingAudios]);
 
+  // Fetch color labels for recording-level image audios
+  useEffect(() => {
+    const allAudioIds = Object.values(recordingImageAudiosCache).flat().map(a => a.id);
+    if (allAudioIds.length === 0) { setRecordingImageAudioColorsCache({}); return; }
+    window.electronAPI.mediaColors.getBatch('image_audio', allAudioIds)
+      .then(setRecordingImageAudioColorsCache);
+  }, [recordingImageAudiosCache]);
+
+  // Fetch color labels for duration image audios
+  useEffect(() => {
+    const allAudioIds = activeDurationImages.flatMap(img => durationImageAudiosCache[img.id] ?? []).map(a => a.id);
+    if (allAudioIds.length === 0) { setDurationImageAudioColorsCache({}); return; }
+    window.electronAPI.mediaColors.getBatch('duration_image_audio', allAudioIds)
+      .then(setDurationImageAudioColorsCache);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDurationId, durationImageAudiosCache]);
+
   const handleRecordForImage = (imageId: number) => {
     if (!activeDurationId || !id) return;
     const img = activeDurationImages.find(i => i.id === imageId);
@@ -1290,6 +1309,16 @@ export default function RecordingPage() {
     const updated = await window.electronAPI.mediaColors.toggle('duration_audio', audioId, colorKey);
     setDurationAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
     setContextMenuShowColors(false);
+  };
+
+  const handleToggleRecordingImageAudioColor = async (audioId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('image_audio', audioId, colorKey);
+    setRecordingImageAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
+  };
+
+  const handleToggleDurationImageAudioColor = async (audioId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('duration_image_audio', audioId, colorKey);
+    setDurationImageAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
   };
 
   const handleRecordForRecordingImage = (imageId: number) => {
@@ -2558,6 +2587,11 @@ export default function RecordingPage() {
             await window.electronAPI.ocr.extractCaption2('image', img.id!, img.file_path);
           } : undefined}
           mediaType="image"
+          imageType="image"
+          imageColors={selectedImageIndex !== null && images[selectedImageIndex]?.id ? recordingImageColorsCache[images[selectedImageIndex].id!] ?? [] : []}
+          onToggleColor={selectedImageIndex !== null && images[selectedImageIndex]?.id ? (key) => handleToggleRecordingImageColor(images[selectedImageIndex!].id!, key) : undefined}
+          audioColorsMap={recordingImageAudioColorsCache}
+          onToggleAudioColor={handleToggleRecordingImageAudioColor}
         />
       )}
 
@@ -2618,6 +2652,8 @@ export default function RecordingPage() {
           onTagsChanged={(imageId, tagNames) => {
             setDurationImageTagsCache(prev => ({ ...prev, [imageId]: tagNames }));
           }}
+          audioColorsMap={durationImageAudioColorsCache}
+          onToggleAudioColor={handleToggleDurationImageAudioColor}
         />
       )}
 
