@@ -49,6 +49,7 @@ interface ImageLightboxProps {
   onExtractOcr?: () => Promise<void>;
   // Tag editing
   mediaType?: MediaTagType;
+  onTagsChanged?: (imageId: number, tagNames: string[]) => void;
   // Disable child images (used by child lightbox to prevent recursion)
   disableChildImages?: boolean;
 }
@@ -141,6 +142,7 @@ export default function ImageLightbox({
   onDelete,
   onExtractOcr,
   mediaType,
+  onTagsChanged,
   disableChildImages = false,
 }: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
@@ -1265,7 +1267,10 @@ export default function ImageLightbox({
             onClose={() => {
               setShowTagModal(false);
               setOcrSuggestion(null);
-              window.electronAPI.tags.getByMedia(mediaType, image.id!).then(setCurrentImageTags);
+              window.electronAPI.tags.getByMedia(mediaType, image.id!).then(tags => {
+                setCurrentImageTags(tags);
+                onTagsChanged?.(image.id!, tags.map((t: { name: string }) => t.name));
+              });
             }}
           />
         )}
