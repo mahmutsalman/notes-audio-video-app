@@ -1,0 +1,22 @@
+#!/bin/bash
+# Pre-commit hook: block mobile/, server/, sync/ files from being committed on main.
+# Install once with: git config core.hooksPath scripts/hooks
+
+BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+
+if [ "$BRANCH" = "main" ]; then
+  FORBIDDEN=$(git diff --cached --name-only | grep -E '^(mobile|server|sync)/')
+  if [ -n "$FORBIDDEN" ]; then
+    echo ""
+    echo "  BLOCKED: The following paths must never be committed on main:"
+    echo "$FORBIDDEN" | sed 's/^/    /'
+    echo ""
+    echo "  These directories belong on the personal branch only."
+    echo "  If you're trying to cherry-pick desktop changes, make sure"
+    echo "  you're not accidentally staging mobile/server/sync files."
+    echo ""
+    exit 1
+  fi
+fi
+
+exit 0
