@@ -31,6 +31,7 @@ import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
 import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
+import { IMAGE_COLOR_KEYS, IMAGE_COLORS } from '../utils/imageColors';
 import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState } from '../types';
 import SearchNavBanner from '../components/search/SearchNavBanner';
 import { TagModal } from '../components/common/TagModal';
@@ -118,6 +119,11 @@ export default function RecordingPage() {
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [recordingImageAudiosCache, setRecordingImageAudiosCache] = useState<Record<number, ImageAudio[]>>({});
   const [durationImageTagsCache, setDurationImageTagsCache] = useState<Record<number, string[]>>({});
+  const [recordingImageColorsCache, setRecordingImageColorsCache] = useState<Record<number, string[]>>({});
+  const [durationImageColorsCache, setDurationImageColorsCache] = useState<Record<number, string[]>>({});
+  const [recordingAudioColorsCache, setRecordingAudioColorsCache] = useState<Record<number, string[]>>({});
+  const [durationAudioColorsCache, setDurationAudioColorsCache] = useState<Record<number, string[]>>({});
+  const [contextMenuShowColors, setContextMenuShowColors] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [isContentPressed, setIsContentPressed] = useState(false);
   const [activeDurationId, setActiveDurationId] = useState<number | null>(null);
@@ -1187,6 +1193,41 @@ export default function RecordingPage() {
     ).then(entries => setDurationImageTagsCache(Object.fromEntries(entries)));
   }, [activeDurationId, durationImagesCache]);
 
+  // Fetch color labels for active duration images
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (activeDurationImages.length === 0) {
+      setDurationImageColorsCache({});
+      return;
+    }
+    window.electronAPI.mediaColors.getBatch('duration_image', activeDurationImages.map(i => i.id))
+      .then(setDurationImageColorsCache);
+  }, [activeDurationId, durationImagesCache]);
+
+  // Fetch color labels for recording-level images
+  useEffect(() => {
+    if (images.length === 0) {
+      setRecordingImageColorsCache({});
+      return;
+    }
+    window.electronAPI.mediaColors.getBatch('image', images.map(i => i.id))
+      .then(setRecordingImageColorsCache);
+  }, [images]);
+
+  // Fetch color labels for duration-level audios
+  useEffect(() => {
+    if (!activeDurationAudios.length) { setDurationAudioColorsCache({}); return; }
+    window.electronAPI.mediaColors.getBatch('duration_audio', activeDurationAudios.map(a => a.id))
+      .then(setDurationAudioColorsCache);
+  }, [activeDurationAudios]);
+
+  // Fetch color labels for recording-level audios
+  useEffect(() => {
+    if (!recordingAudios.length) { setRecordingAudioColorsCache({}); return; }
+    window.electronAPI.mediaColors.getBatch('audio', recordingAudios.map(a => a.id))
+      .then(setRecordingAudioColorsCache);
+  }, [recordingAudios]);
+
   const handleRecordForImage = (imageId: number) => {
     if (!activeDurationId || !id) return;
     const img = activeDurationImages.find(i => i.id === imageId);
@@ -1215,6 +1256,88 @@ export default function RecordingPage() {
 
   const handleUpdateImageAudioCaption = async (audioId: number, imageId: number, caption: string | null) => {
     const updated = await updateDurationImageAudioCaption(audioId, imageId, caption);
+    imageAudioPlayer.syncCurrentAudio(updated);
+  };
+
+  // Recording-level image audio helpers
+  const loadRecordingImageAudios = async (imageId: number) => {
+    const audios = await window.electronAPI.imageAudios.getByImage(imageId);
+    setRecordingImageAudiosCache(prev => ({ ...prev, [imageId]: audios }));
+  };
+
+  const recordingImageAudiosMap: Record<number, AnyImageAudio[]> = {};
+  for (const img of images) {
+    recordingImageAudiosMap[img.id] = recordingImageAudiosCache[img.id] ?? [];
+  }
+
+  const handleToggleRecordingImageColor = async (imageId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('image', imageId, colorKey);
+    setRecordingImageColorsCache(prev => ({ ...prev, [imageId]: updated }));
+  };
+
+  const handleToggleDurationImageColor = async (imageId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('duration_image', imageId, colorKey);
+    setDurationImageColorsCache(prev => ({ ...prev, [imageId]: updated }));
+  };
+
+  const handleToggleRecordingAudioColor = async (audioId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('audio', audioId, colorKey);
+    setRecordingAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
+    setContextMenuShowColors(false);
+  };
+
+  const handleToggleDurationAudioColor = async (audioId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('duration_audio', audioId, colorKey);
+    setDurationAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
+    setContextMenuShowColors(false);
+  };
+
+  const handleRecordForRecordingImage = (imageId: number) => {
+    if (!id) return;
+    const img = images.find(i => i.id === imageId);
+    audioRecording.startRecording({
+      type: 'recording_image',
+      imageId,
+      recordingId: id,
+      label: img?.caption || `Image ${imageId}`,
+    });
+  };
+
+  const handlePlayRecordingImageAudio = async (audio: AnyImageAudio, label: string) => {
+    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'recording_image');
+    const imageAudio = audio as ImageAudio;
+    imageAudioPlayer.play(
+      audio,
+      label,
+      markers,
+      async (audioId, caption) => {
+        const updated = await window.electronAPI.imageAudios.updateCaption(audioId, caption);
+        setRecordingImageAudiosCache(prev => ({
+          ...prev,
+          [imageAudio.image_id]: (prev[imageAudio.image_id] ?? []).map(a => a.id === audioId ? updated : a),
+        }));
+        return updated;
+      }
+    );
+  };
+
+  const handleDeleteRecordingImageAudio = async (audioId: number, imageId: number) => {
+    const audio = (recordingImageAudiosCache[imageId] ?? []).find(a => a.id === audioId);
+    if (audio) {
+      await window.electronAPI.imageAudios.delete(audioId);
+      setRecordingImageAudiosCache(prev => ({
+        ...prev,
+        [imageId]: (prev[imageId] ?? []).filter(a => a.id !== audioId),
+      }));
+    }
+  };
+
+  const handleUpdateRecordingImageAudioCaption = async (audioId: number, imageId: number, caption: string | null) => {
+    const updated = await window.electronAPI.imageAudios.updateCaption(audioId, caption);
+    setRecordingImageAudiosCache(prev => ({
+      ...prev,
+      [imageId]: (prev[imageId] ?? []).map(a => a.id === audioId ? updated : a),
+    }));
     imageAudioPlayer.syncCurrentAudio(updated);
   };
 
@@ -1996,7 +2119,7 @@ export default function RecordingPage() {
                     style={{ backgroundColor: groupColorConfig.color }}
                   />
                 )}
-                <div className={`flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30 ${groupColorConfig ? 'mt-1' : ''}`}>
+                <div className={`relative flex items-center gap-2 py-1 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30 overflow-hidden ${groupColorConfig ? 'mt-1' : ''}`}>
                   <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
                     {index + 1}
                   </span>
@@ -2047,12 +2170,6 @@ export default function RecordingPage() {
                           style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }} />
                       ))}
                     </div>
-                  )}
-                  {/* Tag count badge */}
-                  {(durationAudioTagCountMap[audio.id] ?? 0) > 0 && (
-                    <span className="absolute top-1 right-7 text-[9px] bg-orange-500 text-white rounded-full px-1.5 py-0.5 leading-none pointer-events-none">
-                      🏷️{durationAudioTagCountMap[audio.id]}
-                    </span>
                   )}
                 </div>
               </div>
@@ -2352,8 +2469,8 @@ export default function RecordingPage() {
                     style={{ backgroundColor: groupColorConfig.color }}
                   />
                 )}
-                <div className={`flex items-start gap-2 ${groupColorConfig ? 'pt-1' : ''}`}>
-                  <span className="w-4 h-4 mt-2 bg-violet-500/30 border border-violet-400/50 text-violet-300 rounded-full flex items-center justify-center text-[10px] font-bold">
+                <div className={`relative flex items-center gap-2 py-1 px-2 rounded-lg bg-violet-900/20 border border-violet-800/30 overflow-hidden ${groupColorConfig ? 'mt-1' : ''}`}>
+                  <span className="w-4 h-4 bg-violet-500/30 border border-violet-400/50 text-violet-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
                     {index + 1}
                   </span>
                   <div className="flex-1">
@@ -2383,12 +2500,6 @@ export default function RecordingPage() {
                           style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }} />
                       ))}
                     </div>
-                  )}
-                  {/* Tag count badge */}
-                  {(recordingAudioTagCountMap[audio.id] ?? 0) > 0 && (
-                    <span className="absolute top-1 right-7 text-[9px] bg-orange-500 text-white rounded-full px-1.5 py-0.5 leading-none pointer-events-none">
-                      🏷️{recordingAudioTagCountMap[audio.id]}
-                    </span>
                   )}
                 </div>
               </div>
@@ -2761,6 +2872,45 @@ export default function RecordingPage() {
             <span>✏️</span>
             {contextMenu.item.caption ? 'Edit Caption' : 'Add Caption'}
           </button>
+          {(contextMenu.type === 'audio' || contextMenu.type === 'durationAudio') && (
+            contextMenuShowColors ? (
+              <div className="px-2 py-2">
+                <div className="grid grid-cols-5 gap-1">
+                  {IMAGE_COLOR_KEYS.map(key => {
+                    const audioColors = contextMenu.type === 'audio'
+                      ? (recordingAudioColorsCache[contextMenu.item.id] ?? [])
+                      : (durationAudioColorsCache[contextMenu.item.id] ?? []);
+                    const active = audioColors.includes(key);
+                    return (
+                      <button
+                        key={key}
+                        title={IMAGE_COLORS[key].label}
+                        onClick={() => contextMenu.type === 'audio'
+                          ? handleToggleRecordingAudioColor(contextMenu.item.id, key)
+                          : handleToggleDurationAudioColor(contextMenu.item.id, key)
+                        }
+                        className="w-6 h-6 rounded-full flex items-center justify-center relative border-2 transition-transform hover:scale-110"
+                        style={{
+                          backgroundColor: IMAGE_COLORS[key].hex,
+                          borderColor: active ? 'white' : 'transparent',
+                        }}
+                      >
+                        {active && <span className="text-white text-[10px] font-bold">✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <button
+                className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+                onClick={(e) => { e.stopPropagation(); setContextMenuShowColors(true); }}
+              >
+                <span>🎨</span>
+                Colors
+              </button>
+            )
+          )}
           {(contextMenu.type === 'image' || contextMenu.type === 'durationImage' || contextMenu.type === 'audio' || contextMenu.type === 'durationAudio') && (
             <button
               className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
