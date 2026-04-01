@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { QuickCapture, QuickCaptureImage, QuickCaptureAudio, DurationColor, DurationGroupColor, AnyImageAudio } from '../../types';
+import { IMAGE_COLOR_KEYS, IMAGE_COLORS } from '../../utils/imageColors';
 import SortableImageGrid from '../common/SortableImageGrid';
 import type { SortableImageItem } from '../common/SortableImageGrid';
 import ImageLightbox from '../common/ImageLightbox';
@@ -67,6 +68,9 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   const [imageTagNamesMap, setImageTagNamesMap] = useState<Record<number, string[]>>({});
   const [audioTagCountMap, setAudioTagCountMap] = useState<Record<number, number>>({});
   const [imageChildCountMap, setImageChildCountMap] = useState<Record<number, number>>({});
+  const [imageColorsMap, setImageColorsMap] = useState<Record<number, string[]>>({});
+  const [audioColorsMap, setAudioColorsMap] = useState<Record<number, string[]>>({});
+  const [contextMenuShowColors, setContextMenuShowColors] = useState(false);
 
   // Map QuickCaptureImage → SortableImageItem (color: null = no color bars)
   const [localImages, setLocalImages] = useState<SortableImageItem[]>(() =>
@@ -139,7 +143,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   // Close context menu on outside click
   useEffect(() => {
     if (!contextMenu) return;
-    const close = () => setContextMenu(null);
+    const close = () => { setContextMenu(null); setContextMenuShowColors(false); };
     window.addEventListener('mousedown', close);
     return () => window.removeEventListener('mousedown', close);
   }, [contextMenu]);
@@ -167,6 +171,20 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
       })
     ).then(entries => setImageChildCountMap(Object.fromEntries(entries)));
   }, [localImages]);
+
+  // Fetch color labels for quick capture images
+  useEffect(() => {
+    if (localImages.length === 0) { setImageColorsMap({}); return; }
+    window.electronAPI.mediaColors.getBatch('quick_capture_image', localImages.map(i => i.id))
+      .then(setImageColorsMap);
+  }, [localImages]);
+
+  // Fetch color labels for quick capture audios
+  useEffect(() => {
+    if (localAudios.length === 0) { setAudioColorsMap({}); return; }
+    window.electronAPI.mediaColors.getBatch('quick_capture_audio', localAudios.map(a => a.id))
+      .then(setAudioColorsMap);
+  }, [localAudios]);
 
   const openLightbox = useCallback(async (index: number) => {
     setLightboxIndex(index);
@@ -450,6 +468,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
                 onPlayInBar={() => handlePlayCaptureAudio(audio, audio.caption || `Audio ${idx + 1}`)}
                 onContextMenu={(e) => handleAudioContextMenu(e, audio)}
                 tagCount={audioTagCountMap[audio.id] ?? 0}
+                colors={audioColorsMap[audio.id] ?? []}
               />
             ))}
           </div>
@@ -523,6 +542,42 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
           >
             <span>✏️</span> Add Caption
           </button>
+          {contextMenu.kind === 'audio' && (
+            contextMenuShowColors ? (
+              <div className="px-2 py-2">
+                <div className="grid grid-cols-5 gap-1">
+                  {IMAGE_COLOR_KEYS.map(key => {
+                    const active = (audioColorsMap[contextMenu.item.id] ?? []).includes(key);
+                    return (
+                      <button
+                        key={key}
+                        title={IMAGE_COLORS[key].label}
+                        onMouseDown={async (e) => {
+                          e.stopPropagation();
+                          const updated = await window.electronAPI.mediaColors.toggle('quick_capture_audio', contextMenu.item.id, key);
+                          setAudioColorsMap(prev => ({ ...prev, [contextMenu.item.id]: updated }));
+                        }}
+                        className="w-6 h-6 rounded-full flex items-center justify-center border-2 transition-transform hover:scale-110"
+                        style={{
+                          backgroundColor: IMAGE_COLORS[key].hex,
+                          borderColor: active ? 'white' : 'transparent',
+                        }}
+                      >
+                        {active && <span className="text-white text-[10px] font-bold">✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <button
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+                onMouseDown={(e) => { e.stopPropagation(); setContextMenuShowColors(true); }}
+              >
+                <span>🎨</span> Colors
+              </button>
+            )
+          )}
           <button
             className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
             onClick={() => {
@@ -664,12 +719,13 @@ interface AudioRowProps {
   onPlayInBar: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   tagCount?: number;
+  colors?: string[];
 }
 
-function AudioRow({ index, caption, createdAt, markers, onPlayInBar, onContextMenu, tagCount = 0 }: AudioRowProps) {
+function AudioRow({ index, caption, createdAt, markers, onPlayInBar, onContextMenu, tagCount = 0, colors = [] }: AudioRowProps) {
   return (
     <div
-      className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30"
+      className="relative flex items-center gap-2 py-1.5 px-2 rounded-lg bg-blue-900/20 border border-blue-800/30 overflow-hidden"
       onContextMenu={onContextMenu}
     >
       <span className="w-4 h-4 bg-blue-500/30 border border-blue-400/50 text-blue-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
@@ -716,6 +772,14 @@ function AudioRow({ index, caption, createdAt, markers, onPlayInBar, onContextMe
       >
         {relativeTime(createdAt)}
       </span>
+      {colors.length > 0 && (
+        <div className="absolute bottom-0 left-0 right-0 flex h-[3px] pointer-events-none">
+          {colors.slice(0, 5).map(key => (
+            <div key={key} className="flex-1 h-full"
+              style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

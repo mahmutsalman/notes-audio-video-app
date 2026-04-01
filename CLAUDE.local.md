@@ -268,6 +268,43 @@ Same logic exists in `electron/ipc/handlers.ts` sync:upload handler.
 | `mobile/components/recordings/DurationList.tsx` | Duration marks with photo/audio upload UI |
 | `sync/sync_to_vps.sh` | Bash sync script (pull + push) |
 
+# VPS Color Coverage
+
+Server endpoints that return `colors: []` on image responses:
+- `GET /api/recordings/{id}/images` — recording-level images (`media_type='image'`)
+- `GET /api/durations/{id}/images` — duration mark images (`media_type='duration_image'`)
+
+**Not covered on VPS yet** (future work):
+- Quick capture images
+- Image children (`image_children` table)
+- Audio colors (not yet implemented on desktop either)
+
+**Deploy server changes:**
+```bash
+rsync -avz -e "ssh -i ~/.ssh/vps1_key" server/app/ root@mahmutsalman.cloud:/var/www/notes/app/
+ssh -i ~/.ssh/vps1_key root@mahmutsalman.cloud "cd /var/www/notes && docker compose up --build -d"
+```
+
+**DB side is automatic** — `media_color_assignments` table is created by desktop migration and copied to VPS on every `sync:upload`. No manual DB migration needed on VPS.
+
+# Audio Types — Color & Tag Scope
+
+Six audio tables exist. The **3 standalone** types get full color + tag support:
+
+| Table | Context |
+|-------|---------|
+| `audios` | Recording-level audio clips |
+| `duration_audios` | Clips attached to duration marks |
+| `quick_capture_audios` | Capture tab audio recordings |
+
+The **3 image-attached** types are annotation recordings tied directly to a parent image. They are **in scope for colors and tags too**, but treated as a separate concern from standalone audios:
+
+| Table | Parent |
+|-------|--------|
+| `image_audios` | Recording-level images |
+| `duration_image_audios` | Duration mark images |
+| `image_child_audios` | Child images |
+
 # Personal Directories
 
 These exist only on `personal` branch and are gitignored on `main`:
