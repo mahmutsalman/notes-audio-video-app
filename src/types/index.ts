@@ -725,6 +725,7 @@ export interface ElectronAPI {
   search: {
     global: (query: string, limit?: number) => Promise<GlobalSearchResult[]>;
     rebuildIndex: () => Promise<void>;
+    filtered: (params: FilteredSearchParams) => Promise<GlobalSearchResult[]>;
   };
   tags: {
     getAll: () => Promise<Tag[]>;
@@ -822,7 +823,7 @@ export interface SearchNavState {
   query: string;
 }
 
-export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio' | 'quick_capture_image' | 'quick_capture_audio' | 'image_child';
+export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio' | 'quick_capture_image' | 'quick_capture_audio' | 'image_child' | 'image_audio' | 'duration_image_audio' | 'quick_capture_image_audio' | 'image_child_audio';
 
 export interface Tag {
   id: number;
@@ -934,6 +935,20 @@ export interface ImageAnnotation {
   color: string;
   stroke_width: number;
   created_at: string;
+}
+
+export type SearchConditionType = 'text' | 'tag' | 'color';
+
+export interface SearchCondition {
+  id: string;
+  type: SearchConditionType;
+  value: string;
+}
+
+export interface FilteredSearchParams {
+  conditions: SearchCondition[];
+  op: 'AND' | 'OR';
+  limit?: number;
 }
 
 declare global {

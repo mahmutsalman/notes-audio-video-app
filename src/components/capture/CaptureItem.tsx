@@ -71,6 +71,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
   const [imageColorsMap, setImageColorsMap] = useState<Record<number, string[]>>({});
   const [audioColorsMap, setAudioColorsMap] = useState<Record<number, string[]>>({});
   const [captureImageAudioColorsMap, setCaptureImageAudioColorsMap] = useState<Record<number, string[]>>({});
+  const [captureImageAudioTagCountMap, setCaptureImageAudioTagCountMap] = useState<Record<number, number>>({});
   const [contextMenuShowColors, setContextMenuShowColors] = useState(false);
 
   // Map QuickCaptureImage → SortableImageItem (color: null = no color bars)
@@ -193,6 +194,18 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
     if (allAudioIds.length === 0) { setCaptureImageAudioColorsMap({}); return; }
     window.electronAPI.mediaColors.getBatch('quick_capture_image_audio', allAudioIds)
       .then(setCaptureImageAudioColorsMap);
+  }, [captureImageAudiosMap]);
+
+  // Fetch tag counts for quick capture image audios
+  useEffect(() => {
+    const allAudios = Object.values(captureImageAudiosMap).flat();
+    if (!allAudios.length) { setCaptureImageAudioTagCountMap({}); return; }
+    Promise.all(
+      allAudios.map(a =>
+        window.electronAPI.tags.getByMedia('quick_capture_image_audio', a.id)
+          .then((tags: { name: string }[]) => [a.id, tags.length] as const)
+      )
+    ).then(entries => setCaptureImageAudioTagCountMap(Object.fromEntries(entries)));
   }, [captureImageAudiosMap]);
 
   const openLightbox = useCallback(async (index: number) => {
@@ -539,6 +552,13 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
           onToggleAudioColor={async (audioId, colorKey) => {
             const updated = await window.electronAPI.mediaColors.toggle('quick_capture_image_audio', audioId, colorKey);
             setCaptureImageAudioColorsMap(prev => ({ ...prev, [audioId]: updated }));
+          }}
+          audioTagCountMap={captureImageAudioTagCountMap}
+          onAudioTagsChanged={(audioId) => {
+            window.electronAPI.tags.getByMedia('quick_capture_image_audio', audioId)
+              .then((tags: { name: string }[]) =>
+                setCaptureImageAudioTagCountMap(prev => ({ ...prev, [audioId]: tags.length }))
+              );
           }}
         />
       )}

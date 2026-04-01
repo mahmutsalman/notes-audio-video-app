@@ -19,6 +19,7 @@ import {
   SettingsOperations,
   AudioMarkersOperations,
   SearchOperations,
+  FilteredSearchOperations,
   TagOperations,
   QuickCaptureOperations,
   ImageAnnotationsOperations,
@@ -1788,6 +1789,10 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('search:rebuildIndex', async () => {
     rebuildSearchIndex();
+  });
+
+  ipcMain.handle('search:filtered', (_event, params) => {
+    return FilteredSearchOperations.search(params);
   });
 
   // ============ Tags ============
