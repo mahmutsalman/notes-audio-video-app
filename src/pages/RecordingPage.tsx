@@ -2504,6 +2504,9 @@ export default function RecordingPage() {
             await window.electronAPI.ocr.extractCaption2('duration_image', img.id!, img.file_path);
           } : undefined}
           mediaType="duration_image"
+          onTagsChanged={(imageId, tagNames) => {
+            setDurationImageTagsCache(prev => ({ ...prev, [imageId]: tagNames }));
+          }}
         />
       )}
 
