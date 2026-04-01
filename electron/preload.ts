@@ -680,6 +680,8 @@ const electronAPI = {
       ipcRenderer.invoke('search:global', query, limit),
     rebuildIndex: (): Promise<void> =>
       ipcRenderer.invoke('search:rebuildIndex'),
+    filtered: (params: import('../src/types').FilteredSearchParams): Promise<import('../src/types').GlobalSearchResult[]> =>
+      ipcRenderer.invoke('search:filtered', params),
   },
 
   // Audio Markers

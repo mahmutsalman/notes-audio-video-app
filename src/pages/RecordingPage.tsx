@@ -125,6 +125,10 @@ export default function RecordingPage() {
   const [durationAudioColorsCache, setDurationAudioColorsCache] = useState<Record<number, string[]>>({});
   const [recordingImageAudioColorsCache, setRecordingImageAudioColorsCache] = useState<Record<number, string[]>>({});
   const [durationImageAudioColorsCache, setDurationImageAudioColorsCache] = useState<Record<number, string[]>>({});
+  const [recordingAudioTagCountMap, setRecordingAudioTagCountMap] = useState<Record<number, number>>({});
+  const [durationAudioTagCountMap, setDurationAudioTagCountMap] = useState<Record<number, number>>({});
+  const [recordingImageAudioTagCountMap, setRecordingImageAudioTagCountMap] = useState<Record<number, number>>({});
+  const [durationImageAudioTagCountMap, setDurationImageAudioTagCountMap] = useState<Record<number, number>>({});
   const [contextMenuShowColors, setContextMenuShowColors] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [isContentPressed, setIsContentPressed] = useState(false);
@@ -1247,6 +1251,54 @@ export default function RecordingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDurationId, durationImageAudiosCache]);
 
+  // Fetch tag counts for recording-level audios
+  useEffect(() => {
+    if (!recordingAudios.length) { setRecordingAudioTagCountMap({}); return; }
+    Promise.all(
+      recordingAudios.map(a =>
+        window.electronAPI.tags.getByMedia('audio', a.id)
+          .then((tags: { name: string }[]) => [a.id, tags.length] as const)
+      )
+    ).then(entries => setRecordingAudioTagCountMap(Object.fromEntries(entries)));
+  }, [recordingAudios]);
+
+  // Fetch tag counts for duration-level audios
+  useEffect(() => {
+    if (!activeDurationAudios.length) { setDurationAudioTagCountMap({}); return; }
+    Promise.all(
+      activeDurationAudios.map(a =>
+        window.electronAPI.tags.getByMedia('duration_audio', a.id)
+          .then((tags: { name: string }[]) => [a.id, tags.length] as const)
+      )
+    ).then(entries => setDurationAudioTagCountMap(Object.fromEntries(entries)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDurationId, activeDurationAudios]);
+
+  // Fetch tag counts for recording-level image audios
+  useEffect(() => {
+    const allAudios = Object.values(recordingImageAudiosCache).flat();
+    if (!allAudios.length) { setRecordingImageAudioTagCountMap({}); return; }
+    Promise.all(
+      allAudios.map(a =>
+        window.electronAPI.tags.getByMedia('image_audio', a.id)
+          .then((tags: { name: string }[]) => [a.id, tags.length] as const)
+      )
+    ).then(entries => setRecordingImageAudioTagCountMap(Object.fromEntries(entries)));
+  }, [recordingImageAudiosCache]);
+
+  // Fetch tag counts for duration image audios
+  useEffect(() => {
+    const allAudios = activeDurationImages.flatMap(img => durationImageAudiosCache[img.id] ?? []);
+    if (!allAudios.length) { setDurationImageAudioTagCountMap({}); return; }
+    Promise.all(
+      allAudios.map(a =>
+        window.electronAPI.tags.getByMedia('duration_image_audio', a.id)
+          .then((tags: { name: string }[]) => [a.id, tags.length] as const)
+      )
+    ).then(entries => setDurationImageAudioTagCountMap(Object.fromEntries(entries)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDurationId, durationImageAudiosCache]);
+
   const handleRecordForImage = (imageId: number) => {
     if (!activeDurationId || !id) return;
     const img = activeDurationImages.find(i => i.id === imageId);
@@ -2200,6 +2252,12 @@ export default function RecordingPage() {
                       ))}
                     </div>
                   )}
+                  {/* Tag count badge */}
+                  {(durationAudioTagCountMap[audio.id] ?? 0) > 0 && (
+                    <span className="absolute top-1 right-7 text-[9px] bg-orange-500 text-white rounded-full px-1.5 py-0.5 leading-none pointer-events-none">
+                      🏷️{durationAudioTagCountMap[audio.id]}
+                    </span>
+                  )}
                 </div>
               </div>
               );
@@ -2530,6 +2588,12 @@ export default function RecordingPage() {
                       ))}
                     </div>
                   )}
+                  {/* Tag count badge */}
+                  {(recordingAudioTagCountMap[audio.id] ?? 0) > 0 && (
+                    <span className="absolute top-1 right-7 text-[9px] bg-orange-500 text-white rounded-full px-1.5 py-0.5 leading-none pointer-events-none">
+                      🏷️{recordingAudioTagCountMap[audio.id]}
+                    </span>
+                  )}
                 </div>
               </div>
               );
@@ -2592,6 +2656,13 @@ export default function RecordingPage() {
           onToggleColor={selectedImageIndex !== null && images[selectedImageIndex]?.id ? (key) => handleToggleRecordingImageColor(images[selectedImageIndex!].id!, key) : undefined}
           audioColorsMap={recordingImageAudioColorsCache}
           onToggleAudioColor={handleToggleRecordingImageAudioColor}
+          audioTagCountMap={recordingImageAudioTagCountMap}
+          onAudioTagsChanged={(audioId) => {
+            window.electronAPI.tags.getByMedia('image_audio', audioId)
+              .then((tags: { name: string }[]) =>
+                setRecordingImageAudioTagCountMap(prev => ({ ...prev, [audioId]: tags.length }))
+              );
+          }}
         />
       )}
 
@@ -2654,6 +2725,13 @@ export default function RecordingPage() {
           }}
           audioColorsMap={durationImageAudioColorsCache}
           onToggleAudioColor={handleToggleDurationImageAudioColor}
+          audioTagCountMap={durationImageAudioTagCountMap}
+          onAudioTagsChanged={(audioId) => {
+            window.electronAPI.tags.getByMedia('duration_image_audio', audioId)
+              .then((tags: { name: string }[]) =>
+                setDurationImageAudioTagCountMap(prev => ({ ...prev, [audioId]: tags.length }))
+              );
+          }}
         />
       )}
 
@@ -3013,6 +3091,18 @@ export default function RecordingPage() {
                 .then(tags => setDurationImageTagsCache(prev => ({
                   ...prev,
                   [tagModal.mediaId]: tags.map((t: { name: string }) => t.name),
+                })));
+            } else if (tagModal.mediaType === 'audio') {
+              window.electronAPI.tags.getByMedia('audio', tagModal.mediaId)
+                .then((tags: { name: string }[]) => setRecordingAudioTagCountMap(prev => ({
+                  ...prev,
+                  [tagModal.mediaId]: tags.length,
+                })));
+            } else if (tagModal.mediaType === 'duration_audio') {
+              window.electronAPI.tags.getByMedia('duration_audio', tagModal.mediaId)
+                .then((tags: { name: string }[]) => setDurationAudioTagCountMap(prev => ({
+                  ...prev,
+                  [tagModal.mediaId]: tags.length,
                 })));
             }
             setTagModal(null);

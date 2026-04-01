@@ -1473,6 +1473,191 @@ export const SearchOperations = {
   },
 };
 
+// Queries to get recording_id (parent_id) directly from source tables.
+// This bypasses search_index so items without captions are still found.
+const PARENT_ID_QUERIES: Record<string, string> = {
+  image:                  'SELECT id as source_id, recording_id as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM images WHERE id IN',
+  video:                  'SELECT id as source_id, recording_id as parent_id, file_path, thumbnail_path, NULL as duration_id, NULL as caption, NULL as language, NULL as code, NULL as marker_type FROM videos WHERE id IN',
+  audio:                  'SELECT id as source_id, recording_id as parent_id, file_path, NULL as thumbnail_path, NULL as duration_id, NULL as caption, NULL as language, NULL as code, NULL as marker_type FROM audios WHERE id IN',
+  duration_image:         'SELECT di.id as source_id, d.recording_id as parent_id, di.file_path, di.thumbnail_path, di.duration_id, di.caption, NULL as language, NULL as code, NULL as marker_type FROM duration_images di JOIN durations d ON d.id = di.duration_id WHERE di.id IN',
+  duration_video:         'SELECT dv.id as source_id, d.recording_id as parent_id, dv.file_path, dv.thumbnail_path, dv.duration_id, NULL as caption, NULL as language, NULL as code, NULL as marker_type FROM duration_videos dv JOIN durations d ON d.id = dv.duration_id WHERE dv.id IN',
+  duration_audio:         'SELECT da.id as source_id, d.recording_id as parent_id, da.file_path, NULL as thumbnail_path, da.duration_id, NULL as caption, NULL as language, NULL as code, NULL as marker_type FROM duration_audios da JOIN durations d ON d.id = da.duration_id WHERE da.id IN',
+  duration:               'SELECT id as source_id, recording_id as parent_id, NULL as file_path, NULL as thumbnail_path, NULL as duration_id, NULL as caption, NULL as language, NULL as code, NULL as marker_type FROM durations WHERE id IN',
+  recording:              'SELECT id as source_id, id as parent_id, NULL as file_path, NULL as thumbnail_path, NULL as duration_id, NULL as caption, NULL as language, NULL as code, NULL as marker_type FROM recordings WHERE id IN',
+  topic:                  'SELECT id as source_id, 0 as parent_id, NULL as file_path, NULL as thumbnail_path, NULL as duration_id, NULL as caption, NULL as language, NULL as code, NULL as marker_type FROM topics WHERE id IN',
+  code_snippet:           'SELECT id as source_id, recording_id as parent_id, NULL as file_path, NULL as thumbnail_path, NULL as duration_id, NULL as caption, language, code, NULL as marker_type FROM code_snippets WHERE id IN',
+  duration_code_snippet:  'SELECT dcs.id as source_id, d.recording_id as parent_id, NULL as file_path, NULL as thumbnail_path, dcs.duration_id, NULL as caption, dcs.language, dcs.code, NULL as marker_type FROM duration_code_snippets dcs JOIN durations d ON d.id = dcs.duration_id WHERE dcs.id IN',
+  audio_marker:           'SELECT am.id as source_id, a.recording_id as parent_id, NULL as file_path, NULL as thumbnail_path, NULL as duration_id, NULL as caption, NULL as language, NULL as code, am.marker_type FROM audio_markers am JOIN audios a ON a.id = am.audio_id WHERE am.id IN',
+  duration_image_audio:   'SELECT dia.id as source_id, d.recording_id as parent_id, dia.file_path, NULL as thumbnail_path, di.duration_id, NULL as caption, NULL as language, NULL as code, NULL as marker_type FROM duration_image_audios dia JOIN duration_images di ON di.id = dia.duration_image_id JOIN durations d ON d.id = di.duration_id WHERE dia.id IN',
+  image_audio:            'SELECT ia.id as source_id, i.recording_id as parent_id, ia.file_path, NULL as thumbnail_path, NULL as duration_id, NULL as caption, NULL as language, NULL as code, NULL as marker_type FROM image_audios ia JOIN images i ON i.id = ia.image_id WHERE ia.id IN',
+  quick_capture_image:    'SELECT id as source_id, NULL as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM quick_capture_images WHERE id IN',
+  image_child:            'SELECT id as source_id, NULL as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM image_children WHERE id IN',
+  image_ocr:              'SELECT id as source_id, recording_id as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM images WHERE id IN',
+  duration_image_ocr:     'SELECT di.id as source_id, d.recording_id as parent_id, di.file_path, di.thumbnail_path, di.duration_id, di.caption, NULL as language, NULL as code, NULL as marker_type FROM duration_images di JOIN durations d ON d.id = di.duration_id WHERE di.id IN',
+  quick_capture_image_ocr:'SELECT id as source_id, NULL as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM quick_capture_images WHERE id IN',
+  image_child_ocr:        'SELECT id as source_id, NULL as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM image_children WHERE id IN',
+};
+
+export const FilteredSearchOperations = {
+  search(params: { conditions: { id: string; type: 'text' | 'tag' | 'color'; value: string }[]; op: 'AND' | 'OR'; limit?: number }): GlobalSearchResult[] {
+    const { conditions, op, limit = 200 } = params;
+    if (!conditions.length) return [];
+
+    const db = getDatabase();
+
+    // Build a Set<"content_type:source_id"> per condition
+    const perConditionSets: Set<string>[] = [];
+    const textResultsMap = new Map<string, GlobalSearchResult>();
+
+    for (const cond of conditions) {
+      const s = new Set<string>();
+      if (cond.type === 'text' && cond.value.trim()) {
+        const rows = SearchOperations.search(cond.value, limit);
+        for (const r of rows) {
+          const k = `${r.content_type}:${r.source_id}`;
+          s.add(k);
+          if (!textResultsMap.has(k)) textResultsMap.set(k, r);
+        }
+      } else if (cond.type === 'tag' && cond.value.trim()) {
+        const rows = db.prepare(
+          `SELECT mt.media_type, mt.media_id FROM media_tags mt
+           JOIN tags t ON t.id = mt.tag_id WHERE t.name = ?`
+        ).all(cond.value) as { media_type: string; media_id: number }[];
+        for (const r of rows) s.add(`${r.media_type}:${r.media_id}`);
+      } else if (cond.type === 'color' && cond.value.trim()) {
+        const rows = db.prepare(
+          `SELECT media_type, media_id FROM media_color_assignments WHERE color_key = ?`
+        ).all(cond.value) as { media_type: string; media_id: number }[];
+        for (const r of rows) s.add(`${r.media_type}:${r.media_id}`);
+      }
+      if (s.size > 0) perConditionSets.push(s);
+    }
+
+    if (!perConditionSets.length) return [];
+
+    // AND = intersection, OR = union
+    let matchKeys: Set<string>;
+    if (op === 'AND') {
+      matchKeys = new Set(perConditionSets[0]);
+      for (let i = 1; i < perConditionSets.length; i++) {
+        for (const k of matchKeys) {
+          if (!perConditionSets[i].has(k)) matchKeys.delete(k);
+        }
+      }
+    } else {
+      matchKeys = new Set<string>();
+      for (const s of perConditionSets) for (const k of s) matchKeys.add(k);
+    }
+
+    if (!matchKeys.size) return [];
+
+    // Partition: already enriched by text search vs needs direct table lookup
+    const results: GlobalSearchResult[] = [];
+    const byType = new Map<string, number[]>();
+
+    for (const key of matchKeys) {
+      if (textResultsMap.has(key)) {
+        results.push(textResultsMap.get(key)!);
+      } else {
+        const [content_type, idStr] = key.split(':');
+        if (!byType.has(content_type)) byType.set(content_type, []);
+        byType.get(content_type)!.push(parseInt(idStr, 10));
+      }
+    }
+
+    if (!byType.size) return results;
+
+    // Query source tables directly — no reliance on search_index
+    // so items without captions (not indexed) are still returned.
+    const rawRows: Array<{ content_type: string; source_id: number; parent_id: number | null; file_path: string | null; thumbnail_path: string | null; duration_id: number | null; caption: string | null; language: string | null; code: string | null; marker_type: string | null }> = [];
+
+    for (const [ct, ids] of byType) {
+      const sql = PARENT_ID_QUERIES[ct];
+      if (!sql) continue;
+      const ph = ids.map(() => '?').join(',');
+      const rows = db.prepare(`${sql} (${ph})`).all(...ids) as any[];
+      for (const row of rows) rawRows.push({ content_type: ct, ...row });
+    }
+
+    if (!rawRows.length) return results;
+
+    // Batch recording context
+    const recIds = new Set<number>();
+    const topicIds = new Set<number>();
+    for (const r of rawRows) {
+      if (r.content_type === 'topic') topicIds.add(r.source_id);
+      else if (r.parent_id) recIds.add(r.parent_id);
+    }
+
+    const recCtxMap = new Map<number, { recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }>();
+    if (recIds.size > 0) {
+      const ids = Array.from(recIds);
+      const ph = ids.map(() => '?').join(',');
+      const rows = db.prepare(
+        `SELECT r.id as recording_id, r.name as recording_name, t.id as topic_id, t.name as topic_name
+         FROM recordings r JOIN topics t ON t.id = r.topic_id WHERE r.id IN (${ph})`
+      ).all(...ids) as any[];
+      for (const row of rows) recCtxMap.set(row.recording_id, row);
+    }
+    const topicCtxMap = new Map<number, { topic_id: number; topic_name: string }>();
+    if (topicIds.size > 0) {
+      const ids = Array.from(topicIds);
+      const ph = ids.map(() => '?').join(',');
+      const rows = db.prepare(`SELECT id as topic_id, name as topic_name FROM topics WHERE id IN (${ph})`).all(...ids) as any[];
+      for (const row of rows) topicCtxMap.set(row.topic_id, row);
+    }
+
+    for (const row of rawRows) {
+      let topic_id: number | null = null;
+      let topic_name: string | null = null;
+      let recording_id: number | null = null;
+      let recording_name: string | null = null;
+
+      if (row.content_type === 'topic') {
+        const ctx = topicCtxMap.get(row.source_id);
+        topic_id = ctx?.topic_id ?? null;
+        topic_name = ctx?.topic_name ?? null;
+      } else if (row.parent_id) {
+        const ctx = recCtxMap.get(row.parent_id);
+        topic_id = ctx?.topic_id ?? null;
+        topic_name = ctx?.topic_name ?? null;
+        recording_id = row.parent_id;
+        recording_name = ctx?.recording_name ?? null;
+      }
+
+      results.push({
+        content_type: row.content_type,
+        source_id: row.source_id,
+        parent_id: row.parent_id ?? 0,
+        snippet: row.caption ?? '',
+        rank: 0,
+        topic_id,
+        topic_name,
+        recording_id,
+        recording_name,
+        duration_id: row.duration_id ?? null,
+        file_path: row.file_path ?? null,
+        thumbnail_path: row.thumbnail_path ?? null,
+        marker_type: row.marker_type ?? null,
+        language: row.language ?? null,
+        code: row.code ?? null,
+      } as GlobalSearchResult);
+    }
+
+    // Text results first (by rank), then tag/color results
+    results.sort((a, b) => {
+      const aIsText = textResultsMap.has(`${a.content_type}:${a.source_id}`);
+      const bIsText = textResultsMap.has(`${b.content_type}:${b.source_id}`);
+      if (aIsText && !bIsText) return -1;
+      if (!aIsText && bIsText) return 1;
+      if (aIsText && bIsText) return a.rank - b.rank;
+      return 0;
+    });
+
+    return results;
+  },
+};
+
 // ============ Tags Operations ============
 
 export const TagOperations = {

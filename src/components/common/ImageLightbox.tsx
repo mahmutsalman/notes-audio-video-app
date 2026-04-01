@@ -59,6 +59,19 @@ interface ImageLightboxProps {
   // Color labels for image-attached audios
   audioColorsMap?: Record<number, string[]>;
   onToggleAudioColor?: (audioId: number, colorKey: string) => void;
+  // Tag counts + change handler for image-attached audio chips
+  audioTagCountMap?: Record<number, number>;
+  onAudioTagsChanged?: (audioId: number) => void;
+}
+
+function resolveAudioMediaType(imageType?: string): string {
+  switch (imageType) {
+    case 'image': return 'image_audio';
+    case 'duration_image': return 'duration_image_audio';
+    case 'quick_capture_image': return 'quick_capture_image_audio';
+    case 'image_child': return 'image_child_audio';
+    default: return 'image_audio';
+  }
 }
 
 function fmtSecs(secs: number): string {
@@ -156,6 +169,8 @@ export default function ImageLightbox({
   imageType,
   audioColorsMap = {},
   onToggleAudioColor,
+  audioTagCountMap = {},
+  onAudioTagsChanged,
 }: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
@@ -168,7 +183,10 @@ export default function ImageLightbox({
   const [currentImageTags, setCurrentImageTags] = useState<{ name: string }[]>([]);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [audioColorPickerId, setAudioColorPickerId] = useState<number | null>(null);
+  const [audioTagModalId, setAudioTagModalId] = useState<number | null>(null);
+  const [audioTagMediaType, setAudioTagMediaType] = useState<string | null>(null);
   const [childAudioColorsMap, setChildAudioColorsMap] = useState<Record<number, string[]>>({});
+  const [childAudioTagCountMap, setChildAudioTagCountMap] = useState<Record<number, number>>({});
 
   // OCR caption2 extraction status
   const [ocrCaption2Status, setOcrCaption2Status] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
@@ -252,7 +270,7 @@ export default function ImageLightbox({
   // Only show embedded bars when lightbox is in "image audio" mode
   const imageAudioMode = onRecordForImage !== undefined;
   const showRecordingBar = imageAudioMode && (isRecording || isSaving) &&
-    (recTarget?.type === 'duration_image' || recTarget?.type === 'recording_image' || recTarget?.type === 'image_child');
+    (recTarget?.type === 'duration_image' || recTarget?.type === 'recording_image' || recTarget?.type === 'image_child' || recTarget?.type === 'capture_image');
 
   const image = images[selectedIndex];
   const currentImageAudios = (image?.id && imageAudiosMap) ? (imageAudiosMap[image.id] ?? []) : [];
@@ -326,6 +344,8 @@ export default function ImageLightbox({
     setShowTagModal(false);
     setShowColorPicker(false);
     setAudioColorPickerId(null);
+    setAudioTagModalId(null);
+    setAudioTagMediaType(null);
     setSelectedChildId(null);
     setDisplayedSize(null);
     setAnnotations([]);
@@ -493,6 +513,18 @@ export default function ImageLightbox({
     if (allAudioIds.length === 0) { setChildAudioColorsMap({}); return; }
     window.electronAPI.mediaColors.getBatch('image_child_audio', allAudioIds)
       .then(setChildAudioColorsMap);
+  }, [childAudiosMap]);
+
+  // Fetch tag counts for child image audios
+  useEffect(() => {
+    const allAudios = Object.values(childAudiosMap).flatMap(audios => audios);
+    if (!allAudios.length) { setChildAudioTagCountMap({}); return; }
+    Promise.all(
+      allAudios.map(a =>
+        window.electronAPI.tags.getByMedia('image_child_audio', a.id)
+          .then((tags: { name: string }[]) => [a.id, tags.length] as const)
+      )
+    ).then(entries => setChildAudioTagCountMap(Object.fromEntries(entries)));
   }, [childAudiosMap]);
 
   // Show zoom indicator briefly
@@ -1304,6 +1336,21 @@ export default function ImageLightbox({
             }}
           />
         )}
+
+        {/* Audio tag modal */}
+        {audioTagModalId != null && audioTagMediaType && (
+          <TagModal
+            mediaType={audioTagMediaType as import('../../types').MediaTagType}
+            mediaId={audioTagModalId}
+            title="Audio Tags"
+            onClose={() => {
+              const closingId = audioTagModalId;
+              setAudioTagModalId(null);
+              setAudioTagMediaType(null);
+              onAudioTagsChanged?.(closingId);
+            }}
+          />
+        )}
       </div>
 
       {/* ── Annotation toolbar (only when mediaType present so we can persist) ── */}
@@ -1497,6 +1544,11 @@ export default function ImageLightbox({
                           <span key={key} className="w-1.5 h-1.5 rounded-full flex-shrink-0 inline-block"
                             style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }} />
                         ))}
+                        {(audioTagCountMap[audio.id] ?? 0) > 0 && (
+                          <span className="text-[8px] bg-orange-500/80 text-white rounded-full px-1 leading-none flex-shrink-0">
+                            {audioTagCountMap[audio.id]}
+                          </span>
+                        )}
                         ▶ {i + 1}{audio.duration ? ` · ${fmtSecs(audio.duration)}` : ''}
                       </button>
                       {onDeleteImageAudio && image?.id && (
@@ -1555,6 +1607,23 @@ export default function ImageLightbox({
                               </div>
                             </div>
                           )}
+                          {onAudioTagsChanged && (
+                            <div className="mt-2 pt-2 border-t border-white/10">
+                              <button
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  setAudioTagModalId(audio.id);
+                                  setAudioTagMediaType(resolveAudioMediaType(imageType));
+                                  setEditingAudioCaptionId(null);
+                                  setAudioColorPickerId(null);
+                                }}
+                                className="text-white/60 hover:text-white text-[10px] w-full text-left"
+                              >
+                                🏷️ Tags{(audioTagCountMap[audio.id] ?? 0) > 0 ? ` (${audioTagCountMap[audio.id]})` : ''}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1608,6 +1677,13 @@ export default function ImageLightbox({
             onDelete={() => setPendingDeleteChild(child.id)}
             audioColorsMap={childAudioColorsMap}
             onToggleAudioColor={handleToggleChildAudioColor}
+            audioTagCountMap={childAudioTagCountMap}
+            onAudioTagsChanged={(audioId) => {
+              window.electronAPI.tags.getByMedia('image_child_audio', audioId)
+                .then((tags: { name: string }[]) =>
+                  setChildAudioTagCountMap(prev => ({ ...prev, [audioId]: tags.length }))
+                );
+            }}
           />
         );
       })()}
