@@ -13,8 +13,8 @@ export default function TabsShell() {
         {tabs.map(tab => (
           <div
             key={tab.id}
-            style={{ display: tab.id === activeTabId ? 'flex' : 'none' }}
-            className="flex-col h-full"
+            className="absolute inset-0 flex flex-col"
+            style={tab.id !== activeTabId ? { display: 'none' } : undefined}
           >
             <TabInstanceProvider tabId={tab.id}>
               <MemoryRouter initialEntries={[tab.initialPath]}>

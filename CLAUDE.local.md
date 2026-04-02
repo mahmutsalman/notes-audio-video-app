@@ -212,7 +212,7 @@ Same logic exists in `electron/ipc/handlers.ts` sync:upload handler.
 | `src/components/common/SortableImageGrid.tsx` | Drag-and-drop image grid used in RecordingPage and CaptureItem. Accepts `audioCountMap` (blue badge), `tagCountMap` (orange badge), `tagNamesMap` (tag overlay at top of cell). |
 | `src/components/common/TagModal.tsx` | Tag assignment modal — used everywhere tags can be set. |
 | `src/components/capture/CaptureItem.tsx` | Quick Capture item — shows image grid + audio list. Fetches `captureImageAudiosMap` on mount for audio badges. |
-
+ 
 ## Contexts
 | File | Purpose |
 |------|---------|

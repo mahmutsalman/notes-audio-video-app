@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { app } from 'electron';
 
-const LOG_PATH = path.join(app.getAppPath(), 'localResources', 'extendLog.txt');
+const LOG_PATH = path.join(app.getPath('userData'), 'extendLog.txt');
 
 export async function appendExtendLog(message: string, data?: Record<string, unknown>) {
   const payload = data ? ` ${JSON.stringify(data)}` : '';
