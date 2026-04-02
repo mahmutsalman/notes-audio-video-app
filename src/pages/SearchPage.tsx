@@ -877,10 +877,12 @@ function ImageResultSection({
   label,
   icon,
   items,
+  onNavigate,
 }: {
   label: string;
   icon: string;
   items: GlobalSearchResult[];
+  onNavigate: (result: GlobalSearchResult) => void;
 }) {
   const [deletedIds, setDeletedIds] = useState<Set<number>>(new Set());
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
@@ -1207,6 +1209,14 @@ function ImageResultSection({
           >
             <span>🏷️</span> Tags
           </button>
+          {contextMenu.result.recording_id !== null && baseType(contextMenu.result.content_type) !== 'quick_capture_image' && (
+            <button
+              className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+              onClick={() => { setContextMenu(null); onNavigate(contextMenu.result); }}
+            >
+              <span>↗️</span> Go to recording
+            </button>
+          )}
           <div className="border-t border-gray-100 dark:border-dark-border my-1" />
           <button
             className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
@@ -1511,7 +1521,7 @@ export default function SearchPage() {
           {/* Results */}
           {sectionsWithResults.map(({ key, label, icon }) => (
             IMAGE_SECTION_KEYS.has(key)
-              ? <ImageResultSection key={key} label={label} icon={icon} items={activeGrouped[key]} />
+              ? <ImageResultSection key={key} label={label} icon={icon} items={activeGrouped[key]} onNavigate={handleNavigate} />
               : <ResultSection
                   key={key}
                   label={label}
