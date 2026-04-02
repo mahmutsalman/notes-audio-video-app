@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTabTitle } from '../hooks/useTabTitle';
+import { useIsActiveTab } from '../context/TabsContext';
 import { useTopic } from '../hooks/useTopics';
 import { useRecordings } from '../hooks/useRecordings';
 import RecordingList from '../components/recordings/RecordingList';
@@ -219,18 +220,6 @@ export default function TopicDetailPage() {
         topicId={id!}
         onRecordingSaved={handleRecordingSaved}
       />}
-
-      {/* Quick Book Note FAB */}
-      <QuickBookNote
-        topicId={id!}
-        onRecordingSaved={handleRecordingSaved}
-      />
-
-      {/* Quick Reader Note FAB */}
-      <QuickReaderNote
-        topicId={id!}
-        onRecordingSaved={handleRecordingSaved}
-      />
 
       {/* Edit topic modal */}
       <Modal
