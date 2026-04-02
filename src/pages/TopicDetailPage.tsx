@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTabTitle } from '../hooks/useTabTitle';
+import { useIsActiveTab } from '../context/TabsContext';
 import { useTopic } from '../hooks/useTopics';
 import { useRecordings } from '../hooks/useRecordings';
 import RecordingList from '../components/recordings/RecordingList';
@@ -20,6 +21,7 @@ export default function TopicDetailPage() {
   const { topicId } = useParams<{ topicId: string }>();
   const navigate = useNavigate();
   const id = topicId ? parseInt(topicId, 10) : null;
+  const isActiveTab = useIsActiveTab();
 
   const { topic, loading: topicLoading, refetch: refetchTopic } = useTopic(id);
   useTabTitle(topic?.name ?? 'Topic');
@@ -192,32 +194,32 @@ export default function TopicDetailPage() {
       </div>
 
       {/* Quick Record FAB */}
-      <QuickRecord topicId={id!} onRecordingSaved={handleRecordingSaved} />
+      {isActiveTab && <QuickRecord topicId={id!} onRecordingSaved={handleRecordingSaved} />}
 
       {/* Quick Screen Record FAB - now with Cmd+D support */}
-      <QuickScreenRecord
+      {isActiveTab && <QuickScreenRecord
         topicId={id!}
         onRecordingSaved={handleRecordingSavedWithClear}
         pendingRegion={pendingRegion}
-      />
+      />}
 
       {/* Quick Written Note FAB */}
-      <QuickWrittenNote
+      {isActiveTab && <QuickWrittenNote
         topicId={id!}
         onRecordingSaved={handleRecordingSaved}
-      />
+      />}
 
       {/* Quick Book Note FAB */}
-      <QuickBookNote
+      {isActiveTab && <QuickBookNote
         topicId={id!}
         onRecordingSaved={handleRecordingSaved}
-      />
+      />}
 
       {/* Quick Reader Note FAB */}
-      <QuickReaderNote
+      {isActiveTab && <QuickReaderNote
         topicId={id!}
         onRecordingSaved={handleRecordingSaved}
-      />
+      />}
 
       {/* Edit topic modal */}
       <Modal
