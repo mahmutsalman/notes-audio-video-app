@@ -62,6 +62,8 @@ interface ImageLightboxProps {
   // Tag counts + change handler for image-attached audio chips
   audioTagCountMap?: Record<number, number>;
   onAudioTagsChanged?: (audioId: number) => void;
+  // Navigate to the recording/mark that contains this image (search context only)
+  onGoToRecording?: () => void;
 }
 
 function resolveAudioMediaType(imageType?: string): string {
@@ -171,6 +173,7 @@ export default function ImageLightbox({
   onToggleAudioColor,
   audioTagCountMap = {},
   onAudioTagsChanged,
+  onGoToRecording,
 }: ImageLightboxProps) {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
@@ -1079,6 +1082,20 @@ export default function ImageLightbox({
             title="Record audio for this image"
           >
             🎙️
+          </button>
+        )}
+
+        {/* Go to recording — shown only when navigating from search results */}
+        {onGoToRecording && (
+          <button
+            className="absolute top-4 left-4 z-10 flex items-center gap-1.5 bg-black/50 hover:bg-black/70 text-white/80 hover:text-white px-2 py-1 rounded text-xs transition-colors"
+            onClick={(e) => { e.stopPropagation(); onGoToRecording(); }}
+            title="Go to mark in recording"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+            Go to mark
           </button>
         )}
 
