@@ -3,6 +3,7 @@ import type { Duration } from '../../types';
 import { formatDuration, formatDurationLength } from '../../utils/formatters';
 import { DURATION_COLORS } from '../../utils/durationColors';
 import { getGroupColorConfig } from '../../utils/durationGroupColors';
+import { useIsActiveTab } from '../../context/TabsContext';
 
 interface DurationNotesSidebarProps {
   durations: Duration[];
@@ -17,6 +18,8 @@ export default function DurationNotesSidebar({
   onDurationSelect,
   isWrittenNote = false,
 }: DurationNotesSidebarProps) {
+  const isActiveTab = useIsActiveTab();
+
   // Filter durations that have notes
   const durationsWithNotes = durations.filter(d => d.note && d.note.trim() !== '');
 
@@ -29,6 +32,9 @@ export default function DurationNotesSidebar({
       }
     }
   }, [activeDurationId]);
+
+  // Don't render when tab is hidden (prevents position:fixed leak)
+  if (!isActiveTab) return null;
 
   // Don't render if no notes exist
   if (durationsWithNotes.length === 0) {
