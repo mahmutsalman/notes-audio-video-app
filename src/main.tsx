@@ -9,6 +9,11 @@ import { RecordingAudioPlayerProvider } from './context/RecordingAudioPlayerCont
 import { CaptureAudioPlayerProvider } from './context/CaptureAudioPlayerContext';
 import { TabsProvider } from './context/TabsContext';
 import TabsShell from './components/tabs/TabsShell';
+import AudioRecordingBar from './components/audio/AudioRecordingBar';
+import ImageAudioPlayerBar from './components/audio/ImageAudioPlayerBar';
+import DurationAudioPlayerBar from './components/audio/DurationAudioPlayerBar';
+import RecordingAudioPlayerBar from './components/audio/RecordingAudioPlayerBar';
+import CaptureAudioPlayerBar from './components/audio/CaptureAudioPlayerBar';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -22,6 +27,16 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 <CaptureAudioPlayerProvider>
                   <TabsProvider>
                     <TabsShell />
+                    {/* Audio/recording bars live here — outside TabsShell so only ONE
+                        instance exists regardless of how many tabs are open. Previously
+                        each tab's MainLayout rendered its own copy; with 3+ tabs the
+                        hidden copies' position:fixed elements leaked through display:none
+                        in Electron's Chromium and blocked all click events. */}
+                    <ImageAudioPlayerBar />
+                    <DurationAudioPlayerBar />
+                    <RecordingAudioPlayerBar />
+                    <CaptureAudioPlayerBar />
+                    <AudioRecordingBar />
                   </TabsProvider>
                 </CaptureAudioPlayerProvider>
               </RecordingAudioPlayerProvider>

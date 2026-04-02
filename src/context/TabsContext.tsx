@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 
 export interface Tab {
   id: string;
@@ -178,8 +178,9 @@ export function TabsProvider({ children }: { children: ReactNode }) {
 }
 
 export function TabInstanceProvider({ tabId, children }: { tabId: string; children: ReactNode }) {
+  const value = useMemo(() => ({ tabId }), [tabId]);
   return (
-    <TabInstanceContext.Provider value={{ tabId }}>
+    <TabInstanceContext.Provider value={value}>
       {children}
     </TabInstanceContext.Provider>
   );
@@ -193,4 +194,11 @@ export function useTabs(): TabsContextValue {
 
 export function useTabInstance(): TabInstanceContextValue {
   return useContext(TabInstanceContext);
+}
+
+/** Returns true only when this tab is the currently active (visible) tab. */
+export function useIsActiveTab(): boolean {
+  const { tabId } = useTabInstance();
+  const { activeTabId } = useTabs();
+  return tabId === activeTabId;
 }

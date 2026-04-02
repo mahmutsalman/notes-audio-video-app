@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useIsActiveTab } from '../context/TabsContext';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTabTitle } from '../hooks/useTabTitle';
 import { useRecording, useRecordings } from '../hooks/useRecordings';
@@ -44,6 +45,7 @@ export default function RecordingPage() {
   const searchNav = (location.state as { searchNav?: SearchNavState } | null)?.searchNav ?? null;
   const id = recordingId ? parseInt(recordingId, 10) : null;
 
+  const isActiveTab = useIsActiveTab();
   const { recording, loading, refetch, setRecording } = useRecording(id);
   const { topic } = useTopic(recording?.topic_id ?? null);
   useTabTitle(recording?.name ?? 'Recording');
@@ -1210,6 +1212,16 @@ export default function RecordingPage() {
       .then(setDurationImageColorsCache);
   }, [activeDurationId, durationImagesCache]);
 
+  // Pre-fetch audios for all recording-level images so badges render in the grid
+  useEffect(() => {
+    for (const img of images) {
+      if (img.id !== undefined && recordingImageAudiosCache[img.id] === undefined) {
+        loadRecordingImageAudios(img.id);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [images]);
+
   // Fetch color labels for recording-level images
   useEffect(() => {
     if (images.length === 0) {
@@ -1337,8 +1349,11 @@ export default function RecordingPage() {
   };
 
   const recordingImageAudiosMap: Record<number, AnyImageAudio[]> = {};
+  const recordingImageAudioCountMap: Record<number, number> = {};
   for (const img of images) {
-    recordingImageAudiosMap[img.id] = recordingImageAudiosCache[img.id] ?? [];
+    const audios = recordingImageAudiosCache[img.id] ?? [];
+    recordingImageAudiosMap[img.id] = audios;
+    recordingImageAudioCountMap[img.id] = audios.length;
   }
 
   const handleToggleRecordingImageColor = async (imageId: number, colorKey: string) => {
@@ -1435,7 +1450,7 @@ export default function RecordingPage() {
   }, [activeDurationId, activeDurationImages.length, activeDurationVideos.length, activeDurationAudios.length, durationImagesCache]);
   // ESC key handler for recording video lightbox
   useEffect(() => {
-    if (!selectedVideo) return;
+    if (!selectedVideo || !isActiveTab) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -1445,11 +1460,11 @@ export default function RecordingPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedVideo]);
+  }, [selectedVideo, isActiveTab]);
 
   // ESC key handler for duration video lightbox
   useEffect(() => {
-    if (!selectedDurationVideoPath) return;
+    if (!selectedDurationVideoPath || !isActiveTab) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -1459,7 +1474,7 @@ export default function RecordingPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedDurationVideoPath]);
+  }, [selectedDurationVideoPath, isActiveTab]);
 
   // Close all fixed-position overlays when this tab becomes inactive.
   // position:fixed elements leak through display:none in Electron's Chromium and block
@@ -1494,7 +1509,9 @@ export default function RecordingPage() {
   }, [isActiveTab]);
 
   // Keyboard navigation for recording navigation (between recordings in same topic)
+  // Only active tab should respond to keyboard navigation
   useEffect(() => {
+    if (!isActiveTab) return;
     const handleRecordingNav = (e: KeyboardEvent) => {
       // Skip if image lightbox is open (image navigation takes priority)
       if (selectedImageIndex !== null) return;
@@ -1530,7 +1547,7 @@ export default function RecordingPage() {
 
     window.addEventListener('keydown', handleRecordingNav);
     return () => window.removeEventListener('keydown', handleRecordingNav);
-  }, [selectedImageIndex, selectedDurationImageIndex, selectedVideo, isEditing, prevRecordingId, nextRecordingId, navigate, activeDurationId]);
+  }, [isActiveTab, selectedImageIndex, selectedDurationImageIndex, selectedVideo, isEditing, prevRecordingId, nextRecordingId, navigate, activeDurationId]);
 
   if (loading) {
     return (
@@ -2389,8 +2406,6 @@ export default function RecordingPage() {
             onDelete={handleDeleteImage}
             onReorder={handleReorderImages}
             audioCountMap={recordingImageAudioCountMap}
-            childCountMap={recordingImageChildCountMap}
-            ocrMap={recordingImageOcrMap}
             imageColorsMap={recordingImageColorsCache}
             pastePlaceholder={
               <div className="flex flex-col items-center">
