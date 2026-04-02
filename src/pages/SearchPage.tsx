@@ -843,6 +843,15 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
           onEditCaption={handleEditLightboxImageCaption}
           onDelete={handleDeleteLightboxImage}
           mediaType={baseType(result.content_type) as MediaTagType}
+          imageType={['image', 'duration_image', 'quick_capture_image', 'image_child'].includes(baseType(result.content_type)) ? baseType(result.content_type) as 'image' | 'duration_image' | 'quick_capture_image' | 'image_child' : undefined}
+          imageColors={lightboxImageColors}
+          onToggleColor={lightbox && lightbox.images[lightbox.index]?.id ? async (key) => {
+            const img = lightbox.images[lightbox.index];
+            const imgType = baseType(result.content_type);
+            const updated = await window.electronAPI.mediaColors.toggle(imgType, img.id!, key);
+            setLightboxImageColors(updated);
+          } : undefined}
+          onGoToRecording={result.recording_id !== null && baseType(result.content_type) !== 'quick_capture_image' ? () => { setLightbox(null); onNavigate(result); } : undefined}
         />
       )}
     </div>
@@ -863,10 +872,12 @@ function ImageResultSection({
   label,
   icon,
   items,
+  onNavigate,
 }: {
   label: string;
   icon: string;
   items: GlobalSearchResult[];
+  onNavigate: (result: GlobalSearchResult) => void;
 }) {
   const [deletedIds, setDeletedIds] = useState<Set<number>>(new Set());
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
@@ -1155,38 +1166,43 @@ function ImageResultSection({
       </div>
 
       {/* Lightbox */}
-      {lightbox && (
-        <ImageLightbox
-          images={lightbox.images}
-          selectedIndex={lightbox.index}
-          onClose={() => { setLightbox(null); setImageAudiosMap({}); }}
-          onNavigate={i => setLightbox(lb => lb ? { ...lb, index: i } : null)}
-          imageAudiosMap={imageAudiosMap}
-          onRecordForImage={handleRecordForImage}
-          onDeleteImageAudio={handleDeleteImageAudio}
-          onPlayImageAudio={handlePlayImageAudio}
-          onUpdateImageAudioCaption={handleUpdateImageAudioCaption}
-          onReplaceWithClipboard={handleReplaceWithClipboard}
-          onEditCaption={handleEditLightboxCaption}
-          onDelete={handleDeleteFromLightbox}
-          mediaType={getLightboxMediaType()}
-          imageType={['image', 'duration_image', 'quick_capture_image', 'image_child'].includes(baseType(lightbox.contentType)) ? baseType(lightbox.contentType) as 'image' | 'duration_image' | 'quick_capture_image' | 'image_child' : undefined}
-          imageColors={lightboxImageColors}
-          onToggleColor={lightbox.images[lightbox.index]?.id ? async (key) => {
-            const img = lightbox.images[lightbox.index];
-            const imgType = baseType(lightbox.contentType);
-            const updated = await window.electronAPI.mediaColors.toggle(imgType, img.id!, key);
-            setLightboxImageColors(updated);
-            setImageColorsMap(prev => ({ ...prev, [img.id!]: updated }));
-          } : undefined}
-          onTagsChanged={async () => {
-            const img = lightbox.images[lightbox.index];
-            if (!img?.id) return;
-            const tags = await window.electronAPI.tags.getByMedia(baseType(lightbox.contentType) as any, img.id);
-            setTagNamesMap(prev => ({ ...prev, [img.id!]: (tags as { name: string }[]).map(t => t.name) }));
-          }}
-        />
-      )}
+      {lightbox && (() => {
+        const currentLbResult = activeItems.find(r => r.source_id === lightbox.images[lightbox.index]?.id);
+        const canGoToRecording = currentLbResult?.recording_id != null && baseType(currentLbResult.content_type) !== 'quick_capture_image';
+        return (
+          <ImageLightbox
+            images={lightbox.images}
+            selectedIndex={lightbox.index}
+            onClose={() => { setLightbox(null); setImageAudiosMap({}); }}
+            onNavigate={i => setLightbox(lb => lb ? { ...lb, index: i } : null)}
+            imageAudiosMap={imageAudiosMap}
+            onRecordForImage={handleRecordForImage}
+            onDeleteImageAudio={handleDeleteImageAudio}
+            onPlayImageAudio={handlePlayImageAudio}
+            onUpdateImageAudioCaption={handleUpdateImageAudioCaption}
+            onReplaceWithClipboard={handleReplaceWithClipboard}
+            onEditCaption={handleEditLightboxCaption}
+            onDelete={handleDeleteFromLightbox}
+            mediaType={getLightboxMediaType()}
+            imageType={['image', 'duration_image', 'quick_capture_image', 'image_child'].includes(baseType(lightbox.contentType)) ? baseType(lightbox.contentType) as 'image' | 'duration_image' | 'quick_capture_image' | 'image_child' : undefined}
+            imageColors={lightboxImageColors}
+            onToggleColor={lightbox.images[lightbox.index]?.id ? async (key) => {
+              const img = lightbox.images[lightbox.index];
+              const imgType = baseType(lightbox.contentType);
+              const updated = await window.electronAPI.mediaColors.toggle(imgType, img.id!, key);
+              setLightboxImageColors(updated);
+              setImageColorsMap(prev => ({ ...prev, [img.id!]: updated }));
+            } : undefined}
+            onTagsChanged={async () => {
+              const img = lightbox.images[lightbox.index];
+              if (!img?.id) return;
+              const tags = await window.electronAPI.tags.getByMedia(baseType(lightbox.contentType) as any, img.id);
+              setTagNamesMap(prev => ({ ...prev, [img.id!]: (tags as { name: string }[]).map(t => t.name) }));
+            }}
+            onGoToRecording={canGoToRecording ? () => { setLightbox(null); setImageAudiosMap({}); onNavigate(currentLbResult!); } : undefined}
+          />
+        );
+      })()}
 
       {/* Context menu */}
       {contextMenu && (
@@ -1208,6 +1224,14 @@ function ImageResultSection({
           >
             <span>🏷️</span> Tags
           </button>
+          {contextMenu.result.recording_id !== null && baseType(contextMenu.result.content_type) !== 'quick_capture_image' && (
+            <button
+              className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+              onClick={() => { setContextMenu(null); onNavigate(contextMenu.result); }}
+            >
+              <span>↗️</span> Go to recording
+            </button>
+          )}
           <div className="border-t border-gray-100 dark:border-dark-border my-1" />
           <button
             className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
@@ -1512,7 +1536,7 @@ export default function SearchPage() {
           {/* Results */}
           {sectionsWithResults.map(({ key, label, icon }) => (
             IMAGE_SECTION_KEYS.has(key)
-              ? <ImageResultSection key={key} label={label} icon={icon} items={activeGrouped[key]} />
+              ? <ImageResultSection key={key} label={label} icon={icon} items={activeGrouped[key]} onNavigate={handleNavigate} />
               : <ResultSection
                   key={key}
                   label={label}
