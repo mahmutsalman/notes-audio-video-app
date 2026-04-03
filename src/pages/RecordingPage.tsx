@@ -1205,7 +1205,12 @@ export default function RecordingPage() {
       audio,
       label,
       markers,
-      (audioId, caption) => updateDurationImageAudioCaption(audioId, audio.duration_image_id, caption)
+      async (audioId, caption) => {
+        if ('duration_image_id' in audio) {
+          return updateDurationImageAudioCaption(audioId, audio.duration_image_id, caption);
+        }
+      },
+      'duration_image_audio'
     );
   };
 
@@ -1215,6 +1220,102 @@ export default function RecordingPage() {
 
   const handleUpdateImageAudioCaption = async (audioId: number, imageId: number, caption: string | null) => {
     const updated = await updateDurationImageAudioCaption(audioId, imageId, caption);
+    imageAudioPlayer.syncCurrentAudio(updated);
+  };
+
+  // Recording-level image audio helpers
+  const loadRecordingImageAudios = async (imageId: number) => {
+    const audios = await window.electronAPI.imageAudios.getByImage(imageId);
+    setRecordingImageAudiosCache(prev => ({ ...prev, [imageId]: audios }));
+  };
+
+  const recordingImageAudiosMap: Record<number, AnyImageAudio[]> = {};
+  const recordingImageAudioCountMap: Record<number, number> = {};
+  for (const img of images) {
+    const audios = recordingImageAudiosCache[img.id] ?? [];
+    recordingImageAudiosMap[img.id] = audios;
+    recordingImageAudioCountMap[img.id] = audios.length;
+  }
+
+  const handleToggleRecordingImageColor = async (imageId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('image', imageId, colorKey);
+    setRecordingImageColorsCache(prev => ({ ...prev, [imageId]: updated }));
+  };
+
+  const handleToggleDurationImageColor = async (imageId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('duration_image', imageId, colorKey);
+    setDurationImageColorsCache(prev => ({ ...prev, [imageId]: updated }));
+  };
+
+  const handleToggleRecordingAudioColor = async (audioId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('audio', audioId, colorKey);
+    setRecordingAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
+    setContextMenuShowColors(false);
+  };
+
+  const handleToggleDurationAudioColor = async (audioId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('duration_audio', audioId, colorKey);
+    setDurationAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
+    setContextMenuShowColors(false);
+  };
+
+  const handleToggleRecordingImageAudioColor = async (audioId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('image_audio', audioId, colorKey);
+    setRecordingImageAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
+  };
+
+  const handleToggleDurationImageAudioColor = async (audioId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('duration_image_audio', audioId, colorKey);
+    setDurationImageAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
+  };
+
+  const handleRecordForRecordingImage = (imageId: number) => {
+    if (!id) return;
+    const img = images.find(i => i.id === imageId);
+    audioRecording.startRecording({
+      type: 'recording_image',
+      imageId,
+      recordingId: id,
+      label: img?.caption || `Image ${imageId}`,
+    });
+  };
+
+  const handlePlayRecordingImageAudio = async (audio: AnyImageAudio, label: string) => {
+    const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'recording_image');
+    const imageAudio = audio as ImageAudio;
+    imageAudioPlayer.play(
+      audio,
+      label,
+      markers,
+      async (audioId, caption) => {
+        const updated = await window.electronAPI.imageAudios.updateCaption(audioId, caption);
+        setRecordingImageAudiosCache(prev => ({
+          ...prev,
+          [imageAudio.image_id]: (prev[imageAudio.image_id] ?? []).map(a => a.id === audioId ? updated : a),
+        }));
+        return updated;
+      },
+      'image_audio'
+    );
+  };
+
+  const handleDeleteRecordingImageAudio = async (audioId: number, imageId: number) => {
+    const audio = (recordingImageAudiosCache[imageId] ?? []).find(a => a.id === audioId);
+    if (audio) {
+      await window.electronAPI.imageAudios.delete(audioId);
+      setRecordingImageAudiosCache(prev => ({
+        ...prev,
+        [imageId]: (prev[imageId] ?? []).filter(a => a.id !== audioId),
+      }));
+    }
+  };
+
+  const handleUpdateRecordingImageAudioCaption = async (audioId: number, imageId: number, caption: string | null) => {
+    const updated = await window.electronAPI.imageAudios.updateCaption(audioId, caption);
+    setRecordingImageAudiosCache(prev => ({
+      ...prev,
+      [imageId]: (prev[imageId] ?? []).map(a => a.id === audioId ? updated : a),
+    }));
     imageAudioPlayer.syncCurrentAudio(updated);
   };
 

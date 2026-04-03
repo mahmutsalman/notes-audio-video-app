@@ -1,10 +1,11 @@
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
-import type { DurationImageAudio, AudioMarker, AudioMarkerType } from '../types';
+import type { AnyImageAudio, AudioMarker, AudioMarkerType, MediaTagType } from '../types';
 import type { ThemedAudioPlayerHandle } from '../components/audio/ThemedAudioPlayer';
 
 interface ImageAudioPlayerContextValue {
   currentAudio: DurationImageAudio | null;
   imageLabel: string;
+  mediaType: MediaTagType | null;
   markers: AudioMarker[];
   markerSeekIndex: Record<AudioMarkerType, number>;
   canEditCaption: boolean;
@@ -13,7 +14,8 @@ interface ImageAudioPlayerContextValue {
     audio: DurationImageAudio,
     imageLabel: string,
     markers?: AudioMarker[],
-    onUpdateCaption?: (audioId: number, caption: string | null) => Promise<DurationImageAudio | void>
+    onUpdateCaption?: (audioId: number, caption: string | null) => Promise<AnyImageAudio | void>,
+    mediaType?: MediaTagType
   ) => void;
   syncCurrentAudio: (audio: DurationImageAudio) => void;
   updateCurrentAudioCaption: (caption: string | null) => Promise<void>;
@@ -35,6 +37,7 @@ export function useImageAudioPlayer(): ImageAudioPlayerContextValue {
 export function ImageAudioPlayerProvider({ children }: { children: ReactNode }) {
   const [currentAudio, setCurrentAudio] = useState<DurationImageAudio | null>(null);
   const [imageLabel, setImageLabel] = useState('');
+  const [mediaType, setMediaType] = useState<MediaTagType | null>(null);
   const [markers, setMarkers] = useState<AudioMarker[]>([]);
   const [markerSeekIndex, setMarkerSeekIndex] = useState<Record<AudioMarkerType, number>>({
     important: 0,
@@ -48,10 +51,12 @@ export function ImageAudioPlayerProvider({ children }: { children: ReactNode }) 
     audio: DurationImageAudio,
     label: string,
     audioMarkers?: AudioMarker[],
-    updateCaptionHandler?: (audioId: number, caption: string | null) => Promise<DurationImageAudio | void>
+    updateCaptionHandler?: (audioId: number, caption: string | null) => Promise<AnyImageAudio | void>,
+    audioMediaType?: MediaTagType
   ) => {
     setCurrentAudio(audio);
     setImageLabel(label);
+    setMediaType(audioMediaType ?? null);
     setMarkers(audioMarkers ?? []);
     setMarkerSeekIndex({ important: 0, question: 0, similar_question: 0 });
     setOnUpdateCaption(() => updateCaptionHandler ?? null);
@@ -87,6 +92,7 @@ export function ImageAudioPlayerProvider({ children }: { children: ReactNode }) 
   const dismiss = useCallback(() => {
     setCurrentAudio(null);
     setImageLabel('');
+    setMediaType(null);
     setMarkers([]);
     setMarkerSeekIndex({ important: 0, question: 0, similar_question: 0 });
     setOnUpdateCaption(null);
@@ -97,6 +103,7 @@ export function ImageAudioPlayerProvider({ children }: { children: ReactNode }) 
       value={{
         currentAudio,
         imageLabel,
+        mediaType,
         markers,
         markerSeekIndex,
         canEditCaption: onUpdateCaption !== null,

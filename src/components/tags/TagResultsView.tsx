@@ -112,6 +112,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
       (id, cap) => lightboxIsRecordingLevel
         ? window.electronAPI.imageAudios.updateCaption(id, cap)
         : window.electronAPI.durationImageAudios.updateCaption(id, cap),
+      lightboxIsRecordingLevel ? 'image_audio' : 'duration_image_audio',
     );
   };
 
@@ -282,6 +283,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
       label,
       markers,
       (id, cap) => window.electronAPI.captureImageAudios.updateCaption(id, cap),
+      'quick_capture_image_audio',
     );
   };
 
@@ -424,6 +426,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
               label,
               markers,
               (id, cap) => window.electronAPI.imageChildAudios.updateCaption(id, cap),
+              'image_child_audio',
             );
           }}
           onRecordForImage={(imageId) => {

@@ -191,6 +191,7 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
       label,
       markers,
       (id, cap) => window.electronAPI.captureImageAudios.updateCaption(id, cap),
+      'quick_capture_image_audio',
     );
   }, [imageAudioPlayer]);
 
