@@ -1329,7 +1329,12 @@ export default function RecordingPage() {
       audio,
       label,
       markers,
-      (audioId, caption) => updateDurationImageAudioCaption(audioId, audio.duration_image_id, caption)
+      async (audioId, caption) => {
+        if ('duration_image_id' in audio) {
+          return updateDurationImageAudioCaption(audioId, audio.duration_image_id, caption);
+        }
+      },
+      'duration_image_audio'
     );
   };
 
@@ -1413,7 +1418,8 @@ export default function RecordingPage() {
           [imageAudio.image_id]: (prev[imageAudio.image_id] ?? []).map(a => a.id === audioId ? updated : a),
         }));
         return updated;
-      }
+      },
+      'image_audio'
     );
   };
 
