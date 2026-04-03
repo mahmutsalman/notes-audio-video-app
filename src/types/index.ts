@@ -851,7 +851,7 @@ export interface SearchNavState {
   query: string;
 }
 
-export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio' | 'quick_capture_image' | 'quick_capture_audio' | 'image_child' | 'image_audio' | 'duration_image_audio' | 'quick_capture_image_audio' | 'image_child_audio';
+export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio' | 'quick_capture_image' | 'quick_capture_audio' | 'image_child' | 'image_audio' | 'duration_image_audio' | 'quick_capture_image_audio' | 'image_child_audio' | 'video' | 'duration_video';
 
 export interface Tag {
   id: number;
