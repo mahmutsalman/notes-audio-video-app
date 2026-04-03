@@ -93,6 +93,22 @@ Desktop (Electron)          VPS (FastAPI + Docker)          Mobile (Expo RN)
 
 **Desktop** is the source of truth. **VPS** is the hub. **Mobile** reads and uploads.
 
+# Build & Install
+
+```bash
+osascript -e 'quit app "Notes With Audio And Video"' 2>/dev/null; sleep 1 && npm run build 2>&1 | tail -8 && cp -R "release/mac-arm64/Notes With Audio And Video.app" /Applications/
+```
+
+- **Must quit the app first** — `cp -R` over a running bundle causes a "different Team IDs" DYLD crash
+- The `build` script automatically runs `npm run resign` after electron-builder finishes, re-signing with the Apple Development certificate (required on macOS 26+)
+
+**One-time setup** — add to `~/.zshrc` and then `source ~/.zshrc`:
+```bash
+export CODESIGN_IDENTITY="Apple Development: csmahmutsalman@gmail.com (JT52RUPZ2T)"
+```
+
+If `CODESIGN_IDENTITY` is unset, `resign` falls back to ad-hoc signing (`-`) which causes a team ID mismatch crash.
+
 # Desktop App (main branch)
 
 - Electron + React + TypeScript + Vite
