@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type React from 'react';
 import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
 import ThemedAudioPlayer, { type ThemedAudioPlayerHandle } from './ThemedAudioPlayer';
 import type { AudioMarkerType } from '../../types';
+import { IMAGE_COLORS, IMAGE_COLOR_KEYS } from '../../utils/imageColors';
+import { TagModal } from '../common/TagModal';
 
 const MARKER_CONFIGS: { type: AudioMarkerType; icon: string; label: string; color: string; badgeColor: string }[] = [
   { type: 'important', icon: '❗', label: 'Important', color: 'text-red-400 hover:bg-red-900/40', badgeColor: 'text-red-300 bg-red-900/30 border-red-800/40' },
@@ -20,6 +22,7 @@ export default function ImageAudioPlayerBar() {
   const {
     currentAudio,
     imageLabel,
+    mediaType,
     markers,
     canEditCaption,
     playerRef,
@@ -35,21 +38,37 @@ export default function ImageAudioPlayerBar() {
   const [editingMarkerId, setEditingMarkerId] = useState<number | null>(null);
   const [markerCaptionDraft, setMarkerCaptionDraft] = useState('');
 
+  // Context menu state
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [audioColors, setAudioColors] = useState<string[]>([]);
+  const [tagCount, setTagCount] = useState(0);
+  const [showTagModal, setShowTagModal] = useState(false);
+
+  // Fetch colors and tag count when audio changes
+  useEffect(() => {
+    if (!currentAudio || !mediaType) {
+      setAudioColors([]);
+      setTagCount(0);
+      return;
+    }
+    window.electronAPI.mediaColors.getBatch(mediaType, [currentAudio.id])
+      .then((result: Record<number, string[]>) => setAudioColors(result[currentAudio.id] ?? []));
+    window.electronAPI.tags.getByMedia(mediaType, currentAudio.id)
+      .then((tags: { name: string }[]) => setTagCount(tags.length));
+  }, [currentAudio?.id, mediaType]);
+
+  const refreshTagCount = useCallback(() => {
+    if (!currentAudio || !mediaType) return;
+    window.electronAPI.tags.getByMedia(mediaType, currentAudio.id)
+      .then((tags: { name: string }[]) => setTagCount(tags.length));
+  }, [currentAudio?.id, mediaType]);
+
   if (!currentAudio) return null;
 
   const src = window.electronAPI.paths.getFileUrl(currentAudio.file_path);
   const label = currentAudio.caption || imageLabel;
   const hasMarkers = markers.length > 0;
 
-  const startEditing = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!canEditCaption) return;
-    setDraftCaption(currentAudio.caption ?? '');
-    setEditing(true);
-    setExpanded(true);
-  };
-
   const cancelEditing = () => {
     setEditing(false);
     setDraftCaption('');
@@ -75,38 +94,21 @@ export default function ImageAudioPlayerBar() {
     cancelEditingMarker();
   };
 
-  const startEditing = (e: React.MouseEvent) => {
+  const openContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!canEditCaption) return;
+    setShowContextMenu(true);
     setDraftCaption(currentAudio.caption ?? '');
-    setEditing(true);
-    setExpanded(true);
   };
 
-  const cancelEditing = () => {
-    setEditing(false);
-    setDraftCaption('');
+  const closeContextMenu = () => {
+    setShowContextMenu(false);
   };
 
-  const saveCaption = async () => {
-    await updateCurrentAudioCaption(draftCaption.trim() || null);
-    cancelEditing();
-  };
-
-  const startEditingMarker = (markerId: number, currentCaption: string | null) => {
-    setEditingMarkerId(markerId);
-    setMarkerCaptionDraft(currentCaption ?? '');
-  };
-
-  const cancelEditingMarker = () => {
-    setEditingMarkerId(null);
-    setMarkerCaptionDraft('');
-  };
-
-  const saveMarkerCaption = async (markerId: number) => {
-    await updateMarkerCaption(markerId, markerCaptionDraft.trim() || null);
-    cancelEditingMarker();
+  const handleToggleColor = async (colorKey: string) => {
+    if (!mediaType) return;
+    const updated = await window.electronAPI.mediaColors.toggle(mediaType, currentAudio.id, colorKey);
+    setAudioColors(updated);
   };
 
   return (
@@ -177,7 +179,7 @@ export default function ImageAudioPlayerBar() {
       {/* Compact bar */}
       <div className="flex items-center gap-3 px-4 py-2 max-w-screen-2xl mx-auto">
         {/* Icon + label */}
-        <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
+        <div className="relative flex items-center gap-2 min-w-0 flex-shrink-0">
           <span className="text-blue-400 text-base">🔊</span>
           {editing ? (
             <textarea
@@ -201,17 +203,127 @@ export default function ImageAudioPlayerBar() {
               placeholder="Add caption..."
             />
           ) : (
-            <span
-              className={`text-sm text-blue-300 cursor-pointer ${expanded ? 'max-w-[280px] whitespace-normal break-words' : 'truncate max-w-[200px]'}`}
-              title={expanded ? undefined : label}
-              onClick={(e) => {
-                e.stopPropagation();
-                setExpanded(prev => !prev);
-              }}
-              onContextMenu={startEditing}
-            >
-              {label}
-            </span>
+            <>
+              {/* Color dots */}
+              {audioColors.length > 0 && (
+                <div className="flex items-center gap-0.5 flex-shrink-0">
+                  {audioColors.slice(0, 3).map(key => (
+                    <span
+                      key={key}
+                      className="w-2 h-2 rounded-full flex-shrink-0 inline-block"
+                      style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }}
+                    />
+                  ))}
+                </div>
+              )}
+              <span
+                className={`text-sm text-blue-300 cursor-pointer ${expanded ? 'max-w-[280px] whitespace-normal break-words' : 'truncate max-w-[200px]'}`}
+                title={expanded ? undefined : label}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpanded(prev => !prev);
+                }}
+                onContextMenu={openContextMenu}
+              >
+                {label}
+              </span>
+              {tagCount > 0 && (
+                <span className="text-[9px] bg-orange-500/80 text-white rounded-full px-1.5 leading-none flex-shrink-0 py-0.5">
+                  {tagCount}
+                </span>
+              )}
+            </>
+          )}
+
+          {/* Right-click context menu popup */}
+          {showContextMenu && (
+            <>
+              {/* Backdrop */}
+              <div
+                className="fixed inset-0 z-[69]"
+                onClick={closeContextMenu}
+                onContextMenu={(e) => { e.preventDefault(); closeContextMenu(); }}
+              />
+              <div
+                className="absolute bottom-full mb-2 left-0 z-[70] bg-gray-900 border border-white/20 rounded-xl shadow-2xl p-3 w-56"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => { if (e.key === 'Escape') closeContextMenu(); }}
+              >
+                {/* Caption */}
+                {canEditCaption && (
+                  <>
+                    <p className="text-white/40 text-[10px] mb-1.5">Caption</p>
+                    <textarea
+                      autoFocus
+                      value={draftCaption}
+                      onChange={(e) => setDraftCaption(e.target.value)}
+                      onBlur={async () => {
+                        const trimmed = draftCaption.trim() || null;
+                        await updateCurrentAudioCaption(trimmed);
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          void updateCurrentAudioCaption(draftCaption.trim() || null).then(closeContextMenu);
+                        } else if (e.key === 'Escape') {
+                          closeContextMenu();
+                        }
+                      }}
+                      rows={2}
+                      className="w-full text-xs bg-black/60 text-white/90 rounded-lg px-2 py-1.5 border border-white/20 focus:outline-none focus:border-white/50 resize-none mb-3"
+                      placeholder="Add caption…"
+                    />
+                  </>
+                )}
+
+                {/* Colors */}
+                {mediaType && (
+                  <>
+                    <p className="text-white/40 text-[10px] mb-1.5">Color</p>
+                    <div className="grid grid-cols-5 gap-1 mb-3">
+                      {IMAGE_COLOR_KEYS.map(key => {
+                        const isActive = audioColors.includes(key);
+                        return (
+                          <button
+                            key={key}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void handleToggleColor(key);
+                            }}
+                            className="w-7 h-7 rounded-full flex items-center justify-center transition-transform hover:scale-110 relative"
+                            style={{ backgroundColor: IMAGE_COLORS[key].hex }}
+                            title={IMAGE_COLORS[key].label}
+                          >
+                            {isActive && (
+                              <span className="text-white text-[10px] font-bold drop-shadow">✓</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                {/* Tags */}
+                {mediaType && (
+                  <div className="border-t border-white/10 pt-2">
+                    <button
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setShowTagModal(true);
+                        closeContextMenu();
+                      }}
+                      className="text-white/60 hover:text-white text-[10px] w-full text-left"
+                    >
+                      🏷️ Tags{tagCount > 0 ? ` (${tagCount})` : ''}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
 
@@ -259,6 +371,19 @@ export default function ImageAudioPlayerBar() {
           ✕
         </button>
       </div>
+
+      {/* Tag modal */}
+      {showTagModal && mediaType && (
+        <TagModal
+          mediaType={mediaType}
+          mediaId={currentAudio.id}
+          title={label}
+          onClose={() => {
+            setShowTagModal(false);
+            refreshTagCount();
+          }}
+        />
+      )}
     </div>
   );
 }
