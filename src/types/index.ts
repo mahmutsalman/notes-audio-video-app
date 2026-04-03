@@ -59,6 +59,7 @@ export interface Image {
   file_path: string;
   thumbnail_path: string | null;
   caption: string | null;
+  caption2: string | null;
   color: DurationColor;
   group_color: DurationGroupColor;
   sort_order: number;
@@ -113,6 +114,7 @@ export interface DurationImage {
   file_path: string;
   thumbnail_path: string | null;
   caption: string | null;
+  caption2: string | null;
   color: DurationColor;
   group_color: DurationGroupColor;
   sort_order: number;
@@ -196,6 +198,7 @@ export interface ImageChild {
   file_path: string;
   thumbnail_path: string | null;
   caption: string | null;
+  caption2: string | null;
   sort_order: number;
   created_at: string;
 }
@@ -925,6 +928,7 @@ export interface QuickCaptureImage {
   file_path: string;
   thumbnail_path: string | null;
   caption: string | null;
+  caption2?: string | null;
   sort_order: number;
   created_at: string;
 }
