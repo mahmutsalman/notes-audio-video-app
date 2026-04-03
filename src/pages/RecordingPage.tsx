@@ -123,6 +123,8 @@ export default function RecordingPage() {
   const [durationImageTagsCache, setDurationImageTagsCache] = useState<Record<number, string[]>>({});
   const [recordingImageColorsCache, setRecordingImageColorsCache] = useState<Record<number, string[]>>({});
   const [durationImageColorsCache, setDurationImageColorsCache] = useState<Record<number, string[]>>({});
+  const [recordingImageChildCountMap, setRecordingImageChildCountMap] = useState<Record<number, number>>({});
+  const [durationImageChildCountMap, setDurationImageChildCountMap] = useState<Record<number, number>>({});
   const [recordingAudioColorsCache, setRecordingAudioColorsCache] = useState<Record<number, string[]>>({});
   const [durationAudioColorsCache, setDurationAudioColorsCache] = useState<Record<number, string[]>>({});
   const [recordingImageAudioColorsCache, setRecordingImageAudioColorsCache] = useState<Record<number, string[]>>({});
@@ -1232,6 +1234,29 @@ export default function RecordingPage() {
       .then(setRecordingImageColorsCache);
   }, [images]);
 
+  // Fetch child image counts for recording-level images
+  useEffect(() => {
+    if (images.length === 0) { setRecordingImageChildCountMap({}); return; }
+    Promise.all(
+      images.map(img =>
+        window.electronAPI.imageChildren.getByParent('image', img.id)
+          .then((children: { id: number }[]) => [img.id, children.length] as const)
+      )
+    ).then(entries => setRecordingImageChildCountMap(Object.fromEntries(entries)));
+  }, [images]);
+
+  // Fetch child image counts for active duration images
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (activeDurationImages.length === 0) { setDurationImageChildCountMap({}); return; }
+    Promise.all(
+      activeDurationImages.map(img =>
+        window.electronAPI.imageChildren.getByParent('duration_image', img.id)
+          .then((children: { id: number }[]) => [img.id, children.length] as const)
+      )
+    ).then(entries => setDurationImageChildCountMap(Object.fromEntries(entries)));
+  }, [activeDurationId, durationImagesCache]);
+
   // Fetch color labels for duration-level audios
   useEffect(() => {
     if (!activeDurationAudios.length) { setDurationAudioColorsCache({}); return; }
@@ -2025,6 +2050,9 @@ export default function RecordingPage() {
             audioCountMap={audioCountMap}
             tagCountMap={tagCountMap}
             tagNamesMap={tagNamesMap}
+            childCountMap={durationImageChildCountMap}
+            ocrMap={durationImageOcrMap}
+            imageColorsMap={durationImageColorsCache}
             pastePlaceholder={
               <div className="flex flex-col items-center">
                 <div className="relative w-full max-w-[160px]">
@@ -2412,6 +2440,8 @@ export default function RecordingPage() {
             onDelete={handleDeleteImage}
             onReorder={handleReorderImages}
             audioCountMap={recordingImageAudioCountMap}
+            childCountMap={recordingImageChildCountMap}
+            ocrMap={recordingImageOcrMap}
             imageColorsMap={recordingImageColorsCache}
             pastePlaceholder={
               <div className="flex flex-col items-center">
