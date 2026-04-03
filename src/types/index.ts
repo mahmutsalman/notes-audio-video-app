@@ -198,6 +198,7 @@ export interface ImageChild {
   file_path: string;
   thumbnail_path: string | null;
   caption: string | null;
+  caption2: string | null;
   sort_order: number;
   created_at: string;
 }
@@ -900,6 +901,7 @@ export interface QuickCaptureImage {
   file_path: string;
   thumbnail_path: string | null;
   caption: string | null;
+  caption2?: string | null;
   sort_order: number;
   created_at: string;
 }
