@@ -131,6 +131,10 @@ export default function RecordingPage() {
   const [durationImageAudioColorsCache, setDurationImageAudioColorsCache] = useState<Record<number, string[]>>({});
   const [recordingAudioTagCountMap, setRecordingAudioTagCountMap] = useState<Record<number, number>>({});
   const [durationAudioTagCountMap, setDurationAudioTagCountMap] = useState<Record<number, number>>({});
+  const [videoColorsCache, setVideoColorsCache] = useState<Record<number, string[]>>({});
+  const [durationVideoColorsCache, setDurationVideoColorsCache] = useState<Record<number, string[]>>({});
+  const [videoTagCountMap, setVideoTagCountMap] = useState<Record<number, number>>({});
+  const [durationVideoTagCountMap, setDurationVideoTagCountMap] = useState<Record<number, number>>({});
   const [recordingImageAudioTagCountMap, setRecordingImageAudioTagCountMap] = useState<Record<number, number>>({});
   const [durationImageAudioTagCountMap, setDurationImageAudioTagCountMap] = useState<Record<number, number>>({});
   const [contextMenuShowColors, setContextMenuShowColors] = useState(false);
@@ -1291,6 +1295,45 @@ export default function RecordingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDurationId, durationImageAudiosCache]);
 
+  // Fetch color labels for recording-level videos
+  useEffect(() => {
+    const recordingVideos = recording?.videos ?? [];
+    if (!recordingVideos.length) { setVideoColorsCache({}); return; }
+    window.electronAPI.mediaColors.getBatch('video', recordingVideos.map(v => v.id))
+      .then(setVideoColorsCache);
+  }, [recording?.videos]);
+
+  // Fetch color labels for duration-level videos
+  useEffect(() => {
+    if (!activeDurationVideos.length) { setDurationVideoColorsCache({}); return; }
+    window.electronAPI.mediaColors.getBatch('duration_video', activeDurationVideos.map(v => v.id))
+      .then(setDurationVideoColorsCache);
+  }, [activeDurationVideos]);
+
+  // Fetch tag counts for recording-level videos
+  useEffect(() => {
+    const recordingVideos = recording?.videos ?? [];
+    if (!recordingVideos.length) { setVideoTagCountMap({}); return; }
+    Promise.all(
+      recordingVideos.map(v =>
+        window.electronAPI.tags.getByMedia('video', v.id)
+          .then((tags: { name: string }[]) => [v.id, tags.length] as const)
+      )
+    ).then(entries => setVideoTagCountMap(Object.fromEntries(entries)));
+  }, [recording?.videos]);
+
+  // Fetch tag counts for duration-level videos
+  useEffect(() => {
+    if (!activeDurationVideos.length) { setDurationVideoTagCountMap({}); return; }
+    Promise.all(
+      activeDurationVideos.map(v =>
+        window.electronAPI.tags.getByMedia('duration_video', v.id)
+          .then((tags: { name: string }[]) => [v.id, tags.length] as const)
+      )
+    ).then(entries => setDurationVideoTagCountMap(Object.fromEntries(entries)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDurationId, activeDurationVideos.length]);
+
   // Fetch tag counts for recording-level audios
   useEffect(() => {
     if (!recordingAudios.length) { setRecordingAudioTagCountMap({}); return; }
@@ -1408,6 +1451,18 @@ export default function RecordingPage() {
   const handleToggleDurationAudioColor = async (audioId: number, colorKey: string) => {
     const updated = await window.electronAPI.mediaColors.toggle('duration_audio', audioId, colorKey);
     setDurationAudioColorsCache(prev => ({ ...prev, [audioId]: updated }));
+    setContextMenuShowColors(false);
+  };
+
+  const handleToggleVideoColor = async (videoId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('video', videoId, colorKey);
+    setVideoColorsCache(prev => ({ ...prev, [videoId]: updated }));
+    setContextMenuShowColors(false);
+  };
+
+  const handleToggleDurationVideoColor = async (videoId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('duration_video', videoId, colorKey);
+    setDurationVideoColorsCache(prev => ({ ...prev, [videoId]: updated }));
     setContextMenuShowColors(false);
   };
 
@@ -2165,6 +2220,21 @@ export default function RecordingPage() {
                   >
                     ×
                   </button>
+                  {/* Bottom color bar */}
+                  {(durationVideoColorsCache[video.id] ?? []).length > 0 && (
+                    <div className="absolute bottom-0 left-0 right-0 flex h-[3px] pointer-events-none">
+                      {(durationVideoColorsCache[video.id] ?? []).slice(0, 5).map(key => (
+                        <div key={key} className="flex-1 h-full"
+                          style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }} />
+                      ))}
+                    </div>
+                  )}
+                  {/* Tag count badge */}
+                  {(durationVideoTagCountMap[video.id] ?? 0) > 0 && (
+                    <span className="absolute top-1 right-6 text-[9px] bg-orange-500 text-white rounded-full px-1 py-0.5 leading-none pointer-events-none z-20">
+                      🏷️{durationVideoTagCountMap[video.id]}
+                    </span>
+                  )}
                 </div>
                 {/* Caption */}
                 {video.caption && (
@@ -2529,6 +2599,21 @@ export default function RecordingPage() {
                   >
                     ×
                   </button>
+                  {/* Bottom color bar */}
+                  {(videoColorsCache[video.id] ?? []).length > 0 && (
+                    <div className="absolute bottom-0 left-0 right-0 flex h-[3px] pointer-events-none">
+                      {(videoColorsCache[video.id] ?? []).slice(0, 5).map(key => (
+                        <div key={key} className="flex-1 h-full"
+                          style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }} />
+                      ))}
+                    </div>
+                  )}
+                  {/* Tag count badge */}
+                  {(videoTagCountMap[video.id] ?? 0) > 0 && (
+                    <span className="absolute top-1 right-7 text-[9px] bg-orange-500 text-white rounded-full px-1.5 py-0.5 leading-none pointer-events-none z-20">
+                      🏷️{videoTagCountMap[video.id]}
+                    </span>
+                  )}
                 </div>
                 {/* Caption */}
                 {video.caption && (
@@ -2987,22 +3072,27 @@ export default function RecordingPage() {
             <span>✏️</span>
             {contextMenu.item.caption ? 'Edit Caption' : 'Add Caption'}
           </button>
-          {(contextMenu.type === 'audio' || contextMenu.type === 'durationAudio') && (
+          {(contextMenu.type === 'audio' || contextMenu.type === 'durationAudio' ||
+            contextMenu.type === 'video' || contextMenu.type === 'durationVideo') && (
             contextMenuShowColors ? (
               <div className="px-2 py-2">
                 <div className="grid grid-cols-5 gap-1">
                   {IMAGE_COLOR_KEYS.map(key => {
-                    const audioColors = contextMenu.type === 'audio'
-                      ? (recordingAudioColorsCache[contextMenu.item.id] ?? [])
-                      : (durationAudioColorsCache[contextMenu.item.id] ?? []);
-                    const active = audioColors.includes(key);
+                    const itemColors =
+                      contextMenu.type === 'audio' ? (recordingAudioColorsCache[contextMenu.item.id] ?? []) :
+                      contextMenu.type === 'durationAudio' ? (durationAudioColorsCache[contextMenu.item.id] ?? []) :
+                      contextMenu.type === 'video' ? (videoColorsCache[contextMenu.item.id] ?? []) :
+                      (durationVideoColorsCache[contextMenu.item.id] ?? []);
+                    const active = itemColors.includes(key);
                     return (
                       <button
                         key={key}
                         title={IMAGE_COLORS[key].label}
-                        onClick={() => contextMenu.type === 'audio'
-                          ? handleToggleRecordingAudioColor(contextMenu.item.id, key)
-                          : handleToggleDurationAudioColor(contextMenu.item.id, key)
+                        onClick={() =>
+                          contextMenu.type === 'audio' ? handleToggleRecordingAudioColor(contextMenu.item.id, key) :
+                          contextMenu.type === 'durationAudio' ? handleToggleDurationAudioColor(contextMenu.item.id, key) :
+                          contextMenu.type === 'video' ? handleToggleVideoColor(contextMenu.item.id, key) :
+                          handleToggleDurationVideoColor(contextMenu.item.id, key)
                         }
                         className="w-6 h-6 rounded-full flex items-center justify-center relative border-2 transition-transform hover:scale-110"
                         style={{
@@ -3026,15 +3116,19 @@ export default function RecordingPage() {
               </button>
             )
           )}
-          {(contextMenu.type === 'image' || contextMenu.type === 'durationImage' || contextMenu.type === 'audio' || contextMenu.type === 'durationAudio') && (
+          {(contextMenu.type === 'image' || contextMenu.type === 'durationImage' ||
+            contextMenu.type === 'audio' || contextMenu.type === 'durationAudio' ||
+            contextMenu.type === 'video' || contextMenu.type === 'durationVideo') && (
             <button
               className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
               onClick={() => {
                 const mediaType: MediaTagType =
                   contextMenu.type === 'image' ? 'image' :
                   contextMenu.type === 'durationImage' ? 'duration_image' :
-                  contextMenu.type === 'audio' ? 'audio' : 'duration_audio';
-                setTagModal({ mediaType, mediaId: contextMenu.item.id, title: contextMenu.item.caption || 'Media' });
+                  contextMenu.type === 'audio' ? 'audio' :
+                  contextMenu.type === 'durationAudio' ? 'duration_audio' :
+                  contextMenu.type === 'video' ? 'video' : 'duration_video';
+                setTagModal({ mediaType, mediaId: contextMenu.item.id, title: contextMenu.item.caption || 'Video' });
                 setContextMenu(null);
               }}
             >
@@ -3102,6 +3196,18 @@ export default function RecordingPage() {
             } else if (tagModal.mediaType === 'duration_audio') {
               window.electronAPI.tags.getByMedia('duration_audio', tagModal.mediaId)
                 .then((tags: { name: string }[]) => setDurationAudioTagCountMap(prev => ({
+                  ...prev,
+                  [tagModal.mediaId]: tags.length,
+                })));
+            } else if (tagModal.mediaType === 'video') {
+              window.electronAPI.tags.getByMedia('video', tagModal.mediaId)
+                .then((tags: { name: string }[]) => setVideoTagCountMap(prev => ({
+                  ...prev,
+                  [tagModal.mediaId]: tags.length,
+                })));
+            } else if (tagModal.mediaType === 'duration_video') {
+              window.electronAPI.tags.getByMedia('duration_video', tagModal.mediaId)
+                .then((tags: { name: string }[]) => setDurationVideoTagCountMap(prev => ({
                   ...prev,
                   [tagModal.mediaId]: tags.length,
                 })));
