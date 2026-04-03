@@ -533,6 +533,7 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
         : bt === 'quick_capture_image'
         ? window.electronAPI.captureImageAudios.updateCaption(id, cap)
         : window.electronAPI.durationImageAudios.updateCaption(id, cap),
+      bt === 'image' ? 'image_audio' : bt === 'quick_capture_image' ? 'quick_capture_image_audio' : 'duration_image_audio',
     );
   }, [result.content_type, imageAudioPlayer]);
 
@@ -1064,6 +1065,7 @@ function ImageResultSection({
       (id, cap) => rbt === 'image' ? window.electronAPI.imageAudios.updateCaption(id, cap)
         : rbt === 'quick_capture_image' ? window.electronAPI.captureImageAudios.updateCaption(id, cap)
         : window.electronAPI.durationImageAudios.updateCaption(id, cap),
+      rbt === 'image' ? 'image_audio' : rbt === 'quick_capture_image' ? 'quick_capture_image_audio' : 'duration_image_audio',
     );
   }, [lightbox, activeItems, imageAudioPlayer]);
 
