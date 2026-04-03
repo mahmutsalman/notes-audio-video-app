@@ -101,12 +101,14 @@ function SortableChildThumb({
   child,
   audioCount,
   tagCount,
+  colors,
   onOpen,
   onDelete,
 }: {
   child: ImageChild;
   audioCount: number;
   tagCount: number;
+  colors: string[];
   onOpen: () => void;
   onDelete: () => void;
 }) {
@@ -136,6 +138,17 @@ function SortableChildThumb({
         }`}>
           {tagCount}
         </span>
+      )}
+      {colors.length > 0 && (
+        <div className="absolute bottom-0.5 left-0 right-0 flex justify-center gap-0.5 pointer-events-none">
+          {colors.slice(0, 4).map(key => (
+            <span
+              key={key}
+              className="w-2 h-2 rounded-full border border-black/30"
+              style={{ backgroundColor: (IMAGE_COLORS as Record<string, { hex: string }>)[key]?.hex ?? '#888' }}
+            />
+          ))}
+        </div>
       )}
       <button
         className="absolute top-0.5 left-0.5 w-4 h-4 bg-black/70 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity z-10"
@@ -190,6 +203,7 @@ export default function ImageLightbox({
   const [audioTagMediaType, setAudioTagMediaType] = useState<string | null>(null);
   const [childAudioColorsMap, setChildAudioColorsMap] = useState<Record<number, string[]>>({});
   const [childAudioTagCountMap, setChildAudioTagCountMap] = useState<Record<number, number>>({});
+  const [childImageColorsMap, setChildImageColorsMap] = useState<Record<number, string[]>>({});
 
   // OCR caption2 extraction status
   const [ocrCaption2Status, setOcrCaption2Status] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
@@ -517,6 +531,18 @@ export default function ImageLightbox({
     window.electronAPI.mediaColors.getBatch('image_child_audio', allAudioIds)
       .then(setChildAudioColorsMap);
   }, [childAudiosMap]);
+
+  // Fetch color labels for child images
+  useEffect(() => {
+    if (imageChildren.length === 0) { setChildImageColorsMap({}); return; }
+    window.electronAPI.mediaColors.getBatch('image_child', imageChildren.map(c => c.id))
+      .then(setChildImageColorsMap);
+  }, [imageChildren]);
+
+  const handleToggleChildImageColor = useCallback(async (childId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('image_child', childId, colorKey);
+    setChildImageColorsMap(prev => ({ ...prev, [childId]: updated }));
+  }, []);
 
   // Fetch tag counts for child image audios
   useEffect(() => {
@@ -1502,6 +1528,7 @@ export default function ImageLightbox({
                       child={child}
                       audioCount={(childAudiosMap[child.id] ?? []).length}
                       tagCount={childTagCountMap[child.id] ?? 0}
+                      colors={childImageColorsMap[child.id] ?? []}
                       onOpen={() => setSelectedChildId(child.id)}
                       onDelete={() => setPendingDeleteChild(child.id)}
                     />
@@ -1665,17 +1692,20 @@ export default function ImageLightbox({
             images={imageChildren.map(c => ({ id: c.id, file_path: c.file_path, caption: c.caption }))}
             selectedIndex={selectedChildIndex}
             onClose={() => {
-              // Refresh tag counts for all children when child lightbox closes
+              // Refresh tag counts and colors for all children when child lightbox closes
               Promise.all(
                 imageChildren.map(c =>
                   window.electronAPI.tags.getByMedia('image_child', c.id)
                     .then((tags: { name: string }[]) => [c.id, tags.length] as const)
                 )
               ).then(entries => setChildTagCountMap(Object.fromEntries(entries)));
+              window.electronAPI.mediaColors.getBatch('image_child', imageChildren.map(c => c.id))
+                .then(setChildImageColorsMap);
               setSelectedChildId(null);
             }}
             onNavigate={(newIndex) => setSelectedChildId(imageChildren[newIndex].id)}
             mediaType="image_child"
+            imageType="image_child"
             disableChildImages={true}
             imageAudiosMap={childAudiosMapForLightbox}
             onRecordForImage={onRecordForImage ? (imageId) => handleRecordForChild(imageId) : undefined}
@@ -1692,6 +1722,8 @@ export default function ImageLightbox({
               await window.electronAPI.ocr.extractCaption2('image_child', child.id, child.file_path);
             }}
             onDelete={() => setPendingDeleteChild(child.id)}
+            imageColors={childImageColorsMap[child.id] ?? []}
+            onToggleColor={(colorKey) => handleToggleChildImageColor(child.id, colorKey)}
             audioColorsMap={childAudioColorsMap}
             onToggleAudioColor={handleToggleChildAudioColor}
             audioTagCountMap={childAudioTagCountMap}
