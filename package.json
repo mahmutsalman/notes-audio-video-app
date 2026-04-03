@@ -5,9 +5,10 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder",
-    "build:ci": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder --publish never",
-    "build:dmg": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder -m dmg",
+    "build": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder && npm run resign",
+    "build:ci": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder --publish never && npm run resign",
+    "build:dmg": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder -m dmg && npm run resign",
+    "resign": "codesign --deep --force --sign \"${CODESIGN_IDENTITY:--}\" --entitlements build/entitlements.mac.plist --options runtime 'release/mac-arm64/Notes With Audio And Video.app'",
     "backfill:video-size": "node scripts/backfill-video-size.js",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5174 && electron .\"",
