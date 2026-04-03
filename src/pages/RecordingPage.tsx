@@ -1248,6 +1248,38 @@ export default function RecordingPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedDurationVideoPath]);
 
+  // Close all fixed-position overlays when this tab becomes inactive.
+  // position:fixed elements leak through display:none in Electron's Chromium and block
+  // all click events — same root cause as the FAB/sidebar fix (commit 99d8c63).
+  useEffect(() => {
+    if (isActiveTab) return;
+    setSelectedImageIndex(null);
+    setSelectedVideo(null);
+    setSelectedDurationImageIndex(null);
+    setSelectedDurationVideoPath(null);
+    setContextMenu(null);
+    setContextMenuShowColors(false);
+    setTagModal(null);
+    setCaptionModal(null);
+    setCaptionText('');
+    setShowCodeSnippetModal(false);
+    setEditingCodeSnippet(null);
+    setShowDurationCodeSnippetModal(false);
+    setEditingDurationCodeSnippet(null);
+    setShowDeleteConfirm(false);
+    setCodeSnippetToDelete(null);
+    setDurationCodeSnippetToDelete(null);
+    setIsScreenRecording(false);
+    setAutoTriggerRegionSelection(false);
+    setPendingRegion(null);
+    setImageToDelete(null);
+    setVideoToDelete(null);
+    setDurationToDelete(null);
+    setDurationVideoToDelete(null);
+    setDurationAudioToDelete(null);
+    setRecordingAudioToDelete(null);
+  }, [isActiveTab]);
+
   // Keyboard navigation for recording navigation (between recordings in same topic)
   useEffect(() => {
     const handleRecordingNav = (e: KeyboardEvent) => {

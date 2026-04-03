@@ -14,6 +14,8 @@ export default function Header() {
   });
   const hideBackupStatusTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const isActiveTab = useIsActiveTab();
+
   const isHome = location.pathname === '/';
 
   const showBackupStatus = (success: boolean, message: string) => {
@@ -77,7 +79,7 @@ export default function Header() {
   };
 
   return (
-    <header className="h-12 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border flex items-center px-4 titlebar-drag">
+    <header className={`h-12 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border flex items-center px-4 ${isActiveTab ? 'titlebar-drag' : ''}`}>
       {/* Traffic light spacing for macOS */}
       <div className="w-16 flex-shrink-0" />
 
