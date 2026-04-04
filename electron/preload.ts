@@ -50,6 +50,8 @@ const electronAPI = {
       lastGroupColor: DurationGroupColor,
       toggleActive: boolean
     ): Promise<Recording> => ipcRenderer.invoke('recordings:updateGroupColorState', id, lastGroupColor, toggleActive),
+    loadCanvas: (recordingId: number): Promise<string | null> => ipcRenderer.invoke('recordings:loadCanvas', recordingId),
+    saveCanvas: (recordingId: number, data: string): Promise<void> => ipcRenderer.invoke('recordings:saveCanvas', { recordingId, data }),
   },
 
   // Audio

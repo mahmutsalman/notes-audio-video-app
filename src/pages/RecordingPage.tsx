@@ -36,6 +36,7 @@ import type { Duration, DurationColor, DurationGroupColor, Image, Video, Duratio
 import SearchNavBanner from '../components/search/SearchNavBanner';
 import { TagModal } from '../components/common/TagModal';
 import type { MediaTagType } from '../types';
+import RecordingCanvas from '../components/canvas/RecordingCanvas';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -104,6 +105,7 @@ export default function RecordingPage() {
     ? topicRecordings[currentIndex + 1].id
     : null;
 
+  const [canvasMode, setCanvasMode] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -1425,15 +1427,50 @@ export default function RecordingPage() {
             {formatDate(recording.created_at)}
           </p>
         </div>
-        <Button
-          variant="danger"
-          size="sm"
-          onClick={() => setShowDeleteConfirm(true)}
-        >
-          Delete
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setCanvasMode(prev => !prev)}
+            title={canvasMode ? 'Back to recording' : 'Open canvas'}
+            className={`p-2 rounded-lg transition-colors ${
+              canvasMode
+                ? 'bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400'
+                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1" fill="none" stroke="currentColor" />
+              <rect x="14" y="3" width="7" height="7" rx="1" fill="none" stroke="currentColor" />
+              <rect x="3" y="14" width="7" height="7" rx="1" fill="none" stroke="currentColor" />
+              <rect x="14" y="14" width="7" height="7" rx="1" fill="none" stroke="currentColor" />
+            </svg>
+          </button>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            Delete
+          </Button>
+        </div>
       </div>
 
+      {/* Canvas view */}
+      {canvasMode && id && (
+        <div className="relative" style={{ height: 'calc(100vh - 130px)', marginLeft: '-1.5rem', marginRight: '-1.5rem' }}>
+          <button
+            onClick={() => setCanvasMode(false)}
+            className="absolute top-3 left-3 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border border-gray-200 dark:border-gray-600"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            Recording
+          </button>
+          <RecordingCanvas recordingId={id} />
+        </div>
+      )}
+
+      {!canvasMode && (<>
       {/* Audio/Video player - hidden for written notes */}
       {!isMarkBasedRecording && (
         <div
@@ -2912,6 +2949,7 @@ export default function RecordingPage() {
           pendingRegion={pendingRegion}
         />
       )}
+      </>)}
 
         </div>
       </div>

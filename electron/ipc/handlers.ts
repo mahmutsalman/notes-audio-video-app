@@ -136,6 +136,28 @@ export function setupIpcHandlers(): void {
     }
   );
 
+  // Canvas load/save
+  ipcMain.handle('recordings:loadCanvas', async (_, recordingId: number) => {
+    const filePath = RecordingsOperations.getCanvasFilePath(recordingId);
+    if (!filePath) return null;
+    try {
+      const fsModule = await import('fs/promises');
+      return await fsModule.readFile(filePath, 'utf-8');
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle('recordings:saveCanvas', async (_, { recordingId, data }: { recordingId: number; data: string }) => {
+    const pathModule = await import('path');
+    const fsModule = await import('fs/promises');
+    const canvasDir = pathModule.join(getMediaDir(), 'canvas');
+    await fsModule.mkdir(canvasDir, { recursive: true });
+    const filePath = pathModule.join(canvasDir, `${recordingId}.json`);
+    await fsModule.writeFile(filePath, data, 'utf-8');
+    RecordingsOperations.setCanvasFilePath(recordingId, filePath);
+  });
+
   // ============ Audio ============
   ipcMain.handle('audio:save', async (_, recordingId: number, audioBuffer: ArrayBuffer, filename: string) => {
     const buffer = Buffer.from(audioBuffer);
