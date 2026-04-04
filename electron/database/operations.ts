@@ -336,6 +336,17 @@ export const RecordingsOperations = {
       toggleActive: Boolean(recording.group_toggle_active),
     };
   },
+
+  getCanvasFilePath(id: number): string | null {
+    const db = getDatabase();
+    const row = db.prepare('SELECT canvas_file_path FROM recordings WHERE id = ?').get(id) as { canvas_file_path: string | null } | undefined;
+    return row?.canvas_file_path ?? null;
+  },
+
+  setCanvasFilePath(id: number, filePath: string): void {
+    const db = getDatabase();
+    db.prepare('UPDATE recordings SET canvas_file_path = ? WHERE id = ?').run(filePath, id);
+  },
 };
 
 // Images Operations

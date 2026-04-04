@@ -427,6 +427,8 @@ export interface ElectronAPI {
       lastGroupColor: DurationGroupColor,
       toggleActive: boolean
     ) => Promise<Recording>;
+    loadCanvas: (recordingId: number) => Promise<string | null>;
+    saveCanvas: (recordingId: number, data: string) => Promise<void>;
   };
   audio: {
     save: (recordingId: number, audioBuffer: ArrayBuffer, filename: string) => Promise<string>;
