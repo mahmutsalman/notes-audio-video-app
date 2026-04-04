@@ -37,6 +37,7 @@ import type { Duration, DurationColor, DurationGroupColor, Image, Video, Duratio
 import SearchNavBanner from '../components/search/SearchNavBanner';
 import { TagModal } from '../components/common/TagModal';
 import type { MediaTagType } from '../types';
+import RecordingCanvas from '../components/canvas/RecordingCanvas';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -107,7 +108,6 @@ export default function RecordingPage() {
     : null;
 
   const [canvasMode, setCanvasMode] = useState(false);
-  const [durationCanvasMode, setDurationCanvasMode] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -1262,11 +1262,12 @@ export default function RecordingPage() {
   }, [activeDurationId, durationImagesCache]);
 
   // Fetch color labels for duration-level audios
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!activeDurationAudios.length) { setDurationAudioColorsCache({}); return; }
     window.electronAPI.mediaColors.getBatch('duration_audio', activeDurationAudios.map(a => a.id))
       .then(setDurationAudioColorsCache);
-  }, [activeDurationAudios]);
+  }, [activeDurationId, durationAudiosCache]);
 
   // Fetch color labels for recording-level audios
   useEffect(() => {
@@ -1301,11 +1302,12 @@ export default function RecordingPage() {
   }, [recording?.videos]);
 
   // Fetch color labels for duration-level videos
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!activeDurationVideos.length) { setDurationVideoColorsCache({}); return; }
     window.electronAPI.mediaColors.getBatch('duration_video', activeDurationVideos.map(v => v.id))
       .then(setDurationVideoColorsCache);
-  }, [activeDurationVideos]);
+  }, [activeDurationId, durationVideosCache]);
 
   // Fetch tag counts for recording-level videos
   useEffect(() => {
@@ -1343,6 +1345,7 @@ export default function RecordingPage() {
   }, [recordingAudios]);
 
   // Fetch tag counts for duration-level audios
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!activeDurationAudios.length) { setDurationAudioTagCountMap({}); return; }
     Promise.all(
@@ -1351,8 +1354,7 @@ export default function RecordingPage() {
           .then((tags: { name: string }[]) => [a.id, tags.length] as const)
       )
     ).then(entries => setDurationAudioTagCountMap(Object.fromEntries(entries)));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDurationId, activeDurationAudios]);
+  }, [activeDurationId, durationAudiosCache]);
 
   // Fetch tag counts for recording-level image audios
   useEffect(() => {

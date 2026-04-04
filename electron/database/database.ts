@@ -846,6 +846,63 @@ function runMigrations(db: Database.Database): void {
     console.log('Added caption2 column to image_children table');
   }
 
+  // Migration: Create image_color_assignments table (many-to-many: image ↔ color label)
+  // NOTE: superseded by media_color_assignments below — kept so the guard runs on fresh DBs too
+  const imageColorAssignmentsTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='image_color_assignments'"
+  ).get();
+  if (!imageColorAssignmentsTableExists) {
+    db.exec(`
+      CREATE TABLE image_color_assignments (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        image_type TEXT NOT NULL CHECK(image_type IN ('image','duration_image','quick_capture_image','image_child')),
+        image_id   INTEGER NOT NULL,
+        color_key  TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(image_type, image_id, color_key)
+      );
+      CREATE INDEX idx_image_color_type_id ON image_color_assignments(image_type, image_id);
+    `);
+    console.log('Created image_color_assignments table');
+  }
+
+  // Migration: Rename image_color_assignments → media_color_assignments (generalised for all media types)
+  const mediaColorAssignmentsTableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='media_color_assignments'"
+  ).get();
+  if (!mediaColorAssignmentsTableExists) {
+    db.exec(`
+      CREATE TABLE media_color_assignments (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        media_type TEXT NOT NULL,
+        media_id   INTEGER NOT NULL,
+        color_key  TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(media_type, media_id, color_key)
+      );
+      CREATE INDEX idx_media_color_type_id ON media_color_assignments(media_type, media_id);
+    `);
+    // Copy any existing data from the old table
+    const oldExists = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='image_color_assignments'"
+    ).get();
+    if (oldExists) {
+      db.exec(`
+        INSERT INTO media_color_assignments (id, media_type, media_id, color_key, created_at)
+          SELECT id, image_type, image_id, color_key, created_at FROM image_color_assignments;
+        DROP TABLE image_color_assignments;
+      `);
+    }
+    console.log('Created media_color_assignments table (generalised from image_color_assignments)');
+  }
+
+  // Migration: Add canvas_file_path to recordings
+  const recCols = db.prepare("PRAGMA table_info(recordings)").all() as { name: string }[];
+  if (!recCols.some(c => c.name === 'canvas_file_path')) {
+    db.exec("ALTER TABLE recordings ADD COLUMN canvas_file_path TEXT");
+    console.log('Added canvas_file_path to recordings');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

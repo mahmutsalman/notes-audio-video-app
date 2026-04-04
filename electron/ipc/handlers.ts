@@ -158,28 +158,6 @@ export function setupIpcHandlers(): void {
     RecordingsOperations.setCanvasFilePath(recordingId, filePath);
   });
 
-  // Duration canvas load/save
-  ipcMain.handle('durations:loadCanvas', async (_, durationId: number) => {
-    const filePath = DurationsOperations.getCanvasFilePath(durationId);
-    if (!filePath) return null;
-    try {
-      const fsModule = await import('fs/promises');
-      return await fsModule.readFile(filePath, 'utf-8');
-    } catch {
-      return null;
-    }
-  });
-
-  ipcMain.handle('durations:saveCanvas', async (_, { durationId, data }: { durationId: number; data: string }) => {
-    const pathModule = await import('path');
-    const fsModule = await import('fs/promises');
-    const canvasDir = pathModule.join(getMediaDir(), 'canvas');
-    await fsModule.mkdir(canvasDir, { recursive: true });
-    const filePath = pathModule.join(canvasDir, `duration_${durationId}.json`);
-    await fsModule.writeFile(filePath, data, 'utf-8');
-    DurationsOperations.setCanvasFilePath(durationId, filePath);
-  });
-
   // ============ Audio ============
   ipcMain.handle('audio:save', async (_, recordingId: number, audioBuffer: ArrayBuffer, filename: string) => {
     const buffer = Buffer.from(audioBuffer);
