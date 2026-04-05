@@ -37,6 +37,7 @@ import SearchNavBanner from '../components/search/SearchNavBanner';
 import { TagModal } from '../components/common/TagModal';
 import type { MediaTagType } from '../types';
 import RecordingCanvas from '../components/canvas/RecordingCanvas';
+import DurationCanvas from '../components/canvas/DurationCanvas';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -106,6 +107,7 @@ export default function RecordingPage() {
     : null;
 
   const [canvasMode, setCanvasMode] = useState(false);
+  const [durationCanvasMode, setDurationCanvasMode] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -199,6 +201,11 @@ export default function RecordingPage() {
       window.scrollTo(0, scrollY);
     });
   };
+
+  // Reset duration canvas mode when active duration changes
+  useEffect(() => {
+    setDurationCanvasMode(false);
+  }, [activeDurationId]);
 
   // Reset loop state and media loaded state when changing recordings
   useEffect(() => {
@@ -1713,8 +1720,46 @@ export default function RecordingPage() {
         />
       )}
 
+      {/* Duration canvas toggle button */}
+      {activeDurationId && (
+        <div className="mb-2 flex justify-end">
+          <button
+            onClick={() => setDurationCanvasMode(prev => !prev)}
+            title={durationCanvasMode ? 'Back to mark content' : 'Open mark canvas'}
+            className={`p-1.5 rounded-lg transition-colors ${
+              durationCanvasMode
+                ? 'bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400'
+                : 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1" fill="none" stroke="currentColor" />
+              <rect x="14" y="3" width="7" height="7" rx="1" fill="none" stroke="currentColor" />
+              <rect x="3" y="14" width="7" height="7" rx="1" fill="none" stroke="currentColor" />
+              <rect x="14" y="14" width="7" height="7" rx="1" fill="none" stroke="currentColor" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Duration canvas view */}
+      {durationCanvasMode && activeDurationId && (
+        <div className="relative mb-4" style={{ height: 'calc(100vh - 200px)' }}>
+          <button
+            onClick={() => setDurationCanvasMode(false)}
+            className="absolute top-3 left-3 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border border-gray-200 dark:border-gray-600"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            Mark
+          </button>
+          <DurationCanvas durationId={activeDurationId} />
+        </div>
+      )}
+
       {/* Duration Images - shown when a duration is active and has images */}
-      {activeDurationId && activeDurationImages.length > 0 && (
+      {!durationCanvasMode && activeDurationId && activeDurationImages.length > 0 && (
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
@@ -1775,7 +1820,7 @@ export default function RecordingPage() {
       )}
 
       {/* Add Image prompt when duration is active but has no images */}
-      {activeDurationId && activeDurationImages.length === 0 && (
+      {!durationCanvasMode && activeDurationId && activeDurationImages.length === 0 && (
         <div className="mb-4 p-3 bg-gray-50 dark:bg-dark-hover border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
           <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <span>No images for this section</span>
@@ -1790,7 +1835,7 @@ export default function RecordingPage() {
       )}
 
       {/* Duration Videos - shown when a duration is active and has videos */}
-      {activeDurationId && activeDurationVideos.length > 0 && (
+      {!durationCanvasMode && activeDurationId && activeDurationVideos.length > 0 && (
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
@@ -1879,7 +1924,7 @@ export default function RecordingPage() {
       )}
 
       {/* Add Video prompt when duration is active but has no videos */}
-      {activeDurationId && activeDurationVideos.length === 0 && (
+      {!durationCanvasMode && activeDurationId && activeDurationVideos.length === 0 && (
         <div className="mb-4 p-3 bg-gray-50 dark:bg-dark-hover border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
           <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <span>No videos for this section</span>
@@ -1894,7 +1939,7 @@ export default function RecordingPage() {
       )}
 
       {/* Duration Audios - shown when a duration is active and has audios */}
-      {activeDurationId && activeDurationAudios.length > 0 && (
+      {!durationCanvasMode && activeDurationId && activeDurationAudios.length > 0 && (
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
@@ -2003,7 +2048,7 @@ export default function RecordingPage() {
       )}
 
       {/* Add Audio prompt when duration is active but has no audios */}
-      {activeDurationId && activeDurationAudios.length === 0 && (
+      {!durationCanvasMode && activeDurationId && activeDurationAudios.length === 0 && (
         <div className="mb-4 p-3 bg-gray-50 dark:bg-dark-hover border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
           <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <span>No audio recordings for this section</span>
@@ -2018,7 +2063,7 @@ export default function RecordingPage() {
       )}
 
       {/* Duration Code Snippets - shown when a duration is active */}
-      {activeDurationId && (
+      {!durationCanvasMode && activeDurationId && (
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">

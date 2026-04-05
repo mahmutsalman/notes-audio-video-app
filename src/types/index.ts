@@ -484,6 +484,8 @@ export interface ElectronAPI {
     updateGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<Duration>;
     delete: (id: number) => Promise<void>;
     reorder: (recordingId: number, orderedIds: number[]) => Promise<Duration[]>;
+    loadCanvas: (durationId: number) => Promise<string | null>;
+    saveCanvas: (durationId: number, data: string) => Promise<void>;
   };
   durationImages: {
     getByDuration: (durationId: number) => Promise<DurationImage[]>;
