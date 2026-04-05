@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
-
+import { emitSyncCompleted } from '../../utils/events';
 export default function Header() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -13,8 +13,6 @@ export default function Header() {
     message: '',
   });
   const hideBackupStatusTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const isActiveTab = useIsActiveTab();
 
   const isHome = location.pathname === '/';
 
@@ -79,7 +77,7 @@ export default function Header() {
   };
 
   return (
-    <header className={`h-12 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border flex items-center px-4 ${isActiveTab ? 'titlebar-drag' : ''}`}>
+    <header className="h-12 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border flex items-center px-4">
       {/* Traffic light spacing for macOS */}
       <div className="w-16 flex-shrink-0" />
 
