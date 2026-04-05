@@ -13,6 +13,7 @@ export default function TabsShell() {
         {tabs.map(tab => (
           <div
             key={tab.id}
+            data-tab-id={tab.id}
             className="absolute inset-0 flex flex-col"
             style={tab.id !== activeTabId ? { display: 'none' } : undefined}
           >
