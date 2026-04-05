@@ -602,6 +602,17 @@ export const DurationsOperations = {
     db.prepare('DELETE FROM durations WHERE id = ?').run(id);
   },
 
+  getCanvasFilePath(id: number): string | null {
+    const db = getDatabase();
+    const row = db.prepare('SELECT canvas_file_path FROM durations WHERE id = ?').get(id) as { canvas_file_path: string | null } | undefined;
+    return row?.canvas_file_path ?? null;
+  },
+
+  setCanvasFilePath(id: number, filePath: string): void {
+    const db = getDatabase();
+    db.prepare('UPDATE durations SET canvas_file_path = ? WHERE id = ?').run(filePath, id);
+  },
+
   reorder(recordingId: number, orderedIds: number[]): Duration[] {
     const db = getDatabase();
     const stmt = db.prepare('UPDATE durations SET sort_order = ? WHERE id = ? AND recording_id = ?');

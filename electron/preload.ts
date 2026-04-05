@@ -191,6 +191,10 @@ const electronAPI = {
       ipcRenderer.invoke('durations:delete', id),
     reorder: (recordingId: number, orderedIds: number[]): Promise<Duration[]> =>
       ipcRenderer.invoke('durations:reorder', recordingId, orderedIds),
+    loadCanvas: (durationId: number): Promise<string | null> =>
+      ipcRenderer.invoke('durations:loadCanvas', durationId),
+    saveCanvas: (durationId: number, data: string): Promise<void> =>
+      ipcRenderer.invoke('durations:saveCanvas', { durationId, data }),
   },
 
   // Duration Images (images attached to duration marks)
