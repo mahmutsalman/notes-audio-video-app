@@ -1,7 +1,24 @@
+import { useEffect, useRef, useState } from 'react';
 import { useTabs } from '../../context/TabsContext';
+import { logNavDebug } from '../../utils/debugNavigation';
 
 export default function TabBar() {
   const { tabs, activeTabId, switchTab, closeTab, createTab } = useTabs();
+  const [interceptorCount, setInterceptorCount] = useState(0);
+  const prevActiveTabId = useRef<string>(activeTabId);
+
+  // After every tab switch, give React one frame to apply display:none on the
+  // old tab, then scan for fixed elements that are still intercepting clicks.
+  useEffect(() => {
+    if (tabs.length <= 1) { setInterceptorCount(0); return; }
+    // Short delay so display:none propagates to computed styles before we scan
+    const id = setTimeout(() => {
+      const count = logNavDebug(activeTabId);
+      setInterceptorCount(count);
+    }, 100);
+    prevActiveTabId.current = activeTabId;
+    return () => clearTimeout(id);
+  }, [activeTabId, tabs.length]);
 
   return (
     <div className="h-8 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border flex items-stretch titlebar-drag flex-shrink-0">
@@ -48,6 +65,18 @@ export default function TabBar() {
           );
         })}
       </div>
+
+      {/* Nav-stuck warning indicator — only shown when interceptors detected */}
+      {interceptorCount > 0 && (
+        <button
+          onClick={() => logNavDebug(activeTabId)}
+          className="titlebar-no-drag flex-shrink-0 flex items-center gap-1 px-2 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+          title={`⚠️ ${interceptorCount} fixed element(s) from inactive tabs may be blocking navigation — click to log details`}
+        >
+          <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+          <span className="text-[10px] font-mono font-bold">{interceptorCount}</span>
+        </button>
+      )}
 
       {/* New tab button */}
       <button
