@@ -38,6 +38,7 @@ import SearchNavBanner from '../components/search/SearchNavBanner';
 import { TagModal } from '../components/common/TagModal';
 import type { MediaTagType } from '../types';
 import RecordingCanvas from '../components/canvas/RecordingCanvas';
+import DurationCanvas from '../components/canvas/DurationCanvas';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -108,6 +109,7 @@ export default function RecordingPage() {
     : null;
 
   const [canvasMode, setCanvasMode] = useState(false);
+  const [durationCanvasMode, setDurationCanvasMode] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);

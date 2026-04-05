@@ -903,6 +903,13 @@ function runMigrations(db: Database.Database): void {
     console.log('Added canvas_file_path to recordings');
   }
 
+  // Migration: Add canvas_file_path to durations
+  const durCols = db.prepare("PRAGMA table_info(durations)").all() as { name: string }[];
+  if (!durCols.some(c => c.name === 'canvas_file_path')) {
+    db.exec("ALTER TABLE durations ADD COLUMN canvas_file_path TEXT");
+    console.log('Added canvas_file_path to durations');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index
