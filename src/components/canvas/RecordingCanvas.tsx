@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import type { ExcalidrawImperativeAPI, ExcalidrawInitialDataState, AppState, BinaryFiles } from '@excalidraw/excalidraw/types';
@@ -108,36 +107,30 @@ export default function RecordingCanvas({ recordingId }: RecordingCanvasProps) {
     </button>
   );
 
-  const excalidraw = (
-    <Excalidraw
-      excalidrawAPI={(api) => { apiRef.current = api; }}
-      initialData={initialData ?? undefined}
-      theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
-      onChange={handleChange}
-      UIOptions={{
-        canvasActions: {
-          export: false,
-          loadScene: false,
-          saveAsImage: true,
-          saveToActiveFile: false,
-        },
-      }}
-    />
-  );
-
-  if (fullscreen) {
-    return createPortal(
-      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999, background: resolvedTheme === 'dark' ? '#1e1e2e' : '#ffffff' }}>
-        {excalidraw}
-        {toggleBtn}
-      </div>,
-      document.body
-    );
-  }
-
   return (
-    <div className="relative w-full h-full">
-      {excalidraw}
+    <div
+      className={fullscreen ? '' : 'relative w-full h-full'}
+      style={fullscreen ? {
+        position: 'fixed', top: 0, left: 0,
+        width: '100vw', height: '100vh',
+        zIndex: 9999,
+        background: resolvedTheme === 'dark' ? '#1e1e2e' : '#ffffff',
+      } : undefined}
+    >
+      <Excalidraw
+        excalidrawAPI={(api) => { apiRef.current = api; }}
+        initialData={initialData ?? undefined}
+        theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
+        onChange={handleChange}
+        UIOptions={{
+          canvasActions: {
+            export: false,
+            loadScene: false,
+            saveAsImage: true,
+            saveToActiveFile: false,
+          },
+        }}
+      />
       {toggleBtn}
     </div>
   );

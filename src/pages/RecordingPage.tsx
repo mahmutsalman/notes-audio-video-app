@@ -2065,7 +2065,7 @@ export default function RecordingPage() {
             </svg>
             Mark
           </button>
-          <DurationCanvas durationId={activeDurationId} />
+          <DurationCanvas key={activeDurationId} durationId={activeDurationId} />
         </div>
       )}
 
