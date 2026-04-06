@@ -2065,7 +2065,11 @@ export default function RecordingPage() {
             </svg>
             Mark
           </button>
-          <DurationCanvas key={activeDurationId} durationId={activeDurationId} />
+          <DurationCanvas
+            key={activeDurationId}
+            durationId={activeDurationId}
+            onImageAttached={() => getDurationImages(activeDurationId!, true)}
+          />
         </div>
       )}
 
