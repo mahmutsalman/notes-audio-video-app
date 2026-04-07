@@ -812,6 +812,18 @@ export interface ElectronAPI {
     update: (id: number, updates: UpdateDurationPlan) => Promise<DurationPlan>;
     delete: (id: number) => Promise<void>;
   };
+  studyTracker: {
+    createSession: (startedAt: string) => Promise<{ id: number; started_at: string }>;
+    endSession: (id: number, endedAt: string, totalSeconds: number) => Promise<void>;
+    createEvent: (event: CreateStudyEvent) => Promise<number>;
+    updateEvent: (id: number, endedAt: string, seconds: number) => Promise<void>;
+    logIdle: (log: StudyIdleLog) => Promise<void>;
+    getHeatmap: (fromDate: string, toDate: string) => Promise<{ date: string; total_seconds: number }[]>;
+    getSessionsForDay: (date: string) => Promise<StudySessionWithEvents[]>;
+    getStats: (fromDate: string, toDate: string) => Promise<StudyStats>;
+    onAppBlur: (cb: () => void) => () => void;
+    onAppFocus: (cb: () => void) => () => void;
+  };
 }
 
 // Plans
@@ -851,6 +863,85 @@ export interface DurationPlanWithContext extends DurationPlan {
   topic_id: number;
   topic_name: string;
   duration_caption: string | null;
+}
+
+// ─── Study Tracking ───────────────────────────────────────────────────────────
+
+export type StudyEventType = 'view_recording' | 'view_mark' | 'view_image' | 'play_audio' | 'play_video';
+export type StudySource = 'direct' | 'search' | 'study_mode';
+
+export interface CreateStudyEvent {
+  session_id: number;
+  event_type: StudyEventType;
+  topic_id?: number | null;
+  topic_name?: string | null;
+  recording_id?: number | null;
+  recording_name?: string | null;
+  duration_id?: number | null;
+  duration_caption?: string | null;
+  resource_id?: number | null;
+  resource_type?: string | null;
+  started_at: string;
+  source?: StudySource;
+}
+
+export interface StudyEvent extends CreateStudyEvent {
+  id: number;
+  ended_at: string | null;
+  seconds: number;
+}
+
+export interface StudyIdleLog {
+  session_id: number;
+  detected_at: string;
+  idle_seconds: number;
+  credited_seconds: number;
+}
+
+export interface StudySession {
+  id: number;
+  started_at: string;
+  ended_at: string | null;
+  total_seconds: number;
+}
+
+export interface StudySessionWithEvents extends StudySession {
+  events: StudyEvent[];
+}
+
+export interface StudyStats {
+  byTopic: {
+    topic_id: number;
+    topic_name: string;
+    total_seconds: number;
+    session_count: number;
+  }[];
+  byRecording: {
+    recording_id: number;
+    recording_name: string;
+    topic_name: string;
+    total_seconds: number;
+    session_count: number;
+    open_count: number;
+  }[];
+  byMark: {
+    duration_id: number;
+    duration_caption: string;
+    recording_name: string;
+    topic_name: string;
+    total_seconds: number;
+    image_opens: number;
+  }[];
+}
+
+export interface StudyTrackingContext {
+  topicId: number | null;
+  topicName: string | null;
+  recordingId: number | null;
+  recordingName: string | null;
+  durationId: number | null;
+  durationCaption: string | null;
+  source: StudySource;
 }
 
 export interface GlobalSearchResult {

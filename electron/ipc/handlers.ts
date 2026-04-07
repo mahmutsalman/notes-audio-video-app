@@ -26,6 +26,7 @@ import {
   MediaColorOperations,
   RecordingPlansOperations,
   DurationPlansOperations,
+  StudyTrackingOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
@@ -2165,6 +2166,39 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationPlans:delete', async (_, id: number) => {
     DurationPlansOperations.delete(id);
+  });
+
+  // Study Tracking
+  ipcMain.handle('studyTracker:createSession', async (_, startedAt: string) => {
+    return StudyTrackingOperations.createSession(startedAt);
+  });
+
+  ipcMain.handle('studyTracker:endSession', async (_, id: number, endedAt: string, totalSeconds: number) => {
+    StudyTrackingOperations.endSession(id, endedAt, totalSeconds);
+  });
+
+  ipcMain.handle('studyTracker:createEvent', async (_, event) => {
+    return StudyTrackingOperations.createEvent(event);
+  });
+
+  ipcMain.handle('studyTracker:updateEvent', async (_, id: number, endedAt: string, seconds: number) => {
+    StudyTrackingOperations.updateEvent(id, endedAt, seconds);
+  });
+
+  ipcMain.handle('studyTracker:logIdle', async (_, log) => {
+    StudyTrackingOperations.logIdle(log);
+  });
+
+  ipcMain.handle('studyTracker:getHeatmap', async (_, fromDate: string, toDate: string) => {
+    return StudyTrackingOperations.getHeatmap(fromDate, toDate);
+  });
+
+  ipcMain.handle('studyTracker:getSessionsForDay', async (_, date: string) => {
+    return StudyTrackingOperations.getSessionsForDay(date);
+  });
+
+  ipcMain.handle('studyTracker:getStats', async (_, fromDate: string, toDate: string) => {
+    return StudyTrackingOperations.getStats(fromDate, toDate);
   });
 
   console.log('IPC handlers registered');

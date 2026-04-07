@@ -2361,3 +2361,170 @@ export const DurationPlansOperations = {
     db.prepare('DELETE FROM duration_plans WHERE id = ?').run(id);
   },
 };
+
+// ─── Study Tracking ──────────────────────────────────────────────────────────
+
+export const StudyTrackingOperations = {
+  createSession(startedAt: string): { id: number; started_at: string } {
+    const db = getDatabase();
+    const result = db.prepare(
+      'INSERT INTO study_sessions (started_at, total_seconds) VALUES (?, 0)'
+    ).run(startedAt);
+    return { id: result.lastInsertRowid as number, started_at: startedAt };
+  },
+
+  endSession(id: number, endedAt: string, totalSeconds: number): void {
+    const db = getDatabase();
+    db.prepare(
+      'UPDATE study_sessions SET ended_at = ?, total_seconds = ? WHERE id = ?'
+    ).run(endedAt, totalSeconds, id);
+  },
+
+  createEvent(event: {
+    session_id: number;
+    event_type: string;
+    topic_id?: number | null;
+    topic_name?: string | null;
+    recording_id?: number | null;
+    recording_name?: string | null;
+    duration_id?: number | null;
+    duration_caption?: string | null;
+    resource_id?: number | null;
+    resource_type?: string | null;
+    started_at: string;
+    source?: string;
+  }): number {
+    const db = getDatabase();
+    const result = db.prepare(`
+      INSERT INTO study_events (
+        session_id, event_type, topic_id, topic_name, recording_id, recording_name,
+        duration_id, duration_caption, resource_id, resource_type, started_at, source
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.session_id,
+      event.event_type,
+      event.topic_id ?? null,
+      event.topic_name ?? null,
+      event.recording_id ?? null,
+      event.recording_name ?? null,
+      event.duration_id ?? null,
+      event.duration_caption ?? null,
+      event.resource_id ?? null,
+      event.resource_type ?? null,
+      event.started_at,
+      event.source ?? 'direct',
+    );
+    return result.lastInsertRowid as number;
+  },
+
+  updateEvent(id: number, endedAt: string, seconds: number): void {
+    const db = getDatabase();
+    db.prepare(
+      'UPDATE study_events SET ended_at = ?, seconds = ? WHERE id = ?'
+    ).run(endedAt, seconds, id);
+  },
+
+  logIdle(log: {
+    session_id: number;
+    detected_at: string;
+    idle_seconds: number;
+    credited_seconds: number;
+  }): void {
+    const db = getDatabase();
+    db.prepare(
+      'INSERT INTO study_idle_logs (session_id, detected_at, idle_seconds, credited_seconds) VALUES (?, ?, ?, ?)'
+    ).run(log.session_id, log.detected_at, log.idle_seconds, log.credited_seconds);
+    // Adjust session total_seconds by credited - idle (add back credited portion)
+    // The session ticker handles total_seconds, but we store idle logs for audit
+  },
+
+  getHeatmap(fromDate: string, toDate: string): { date: string; total_seconds: number }[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT
+        substr(se.started_at, 1, 10) as date,
+        SUM(se.seconds) as total_seconds
+      FROM study_events se
+      JOIN study_sessions ss ON ss.id = se.session_id
+      WHERE substr(se.started_at, 1, 10) BETWEEN ? AND ?
+        AND se.seconds > 0
+      GROUP BY substr(se.started_at, 1, 10)
+      ORDER BY date
+    `).all(fromDate, toDate) as { date: string; total_seconds: number }[];
+  },
+
+  getSessionsForDay(date: string): {
+    id: number;
+    started_at: string;
+    ended_at: string | null;
+    total_seconds: number;
+    events: unknown[];
+  }[] {
+    const db = getDatabase();
+    const sessions = db.prepare(`
+      SELECT * FROM study_sessions
+      WHERE substr(started_at, 1, 10) = ?
+      ORDER BY started_at
+    `).all(date) as { id: number; started_at: string; ended_at: string | null; total_seconds: number }[];
+
+    return sessions.map(s => {
+      const events = db.prepare(`
+        SELECT * FROM study_events WHERE session_id = ? ORDER BY started_at
+      `).all(s.id);
+      return { ...s, events };
+    });
+  },
+
+  getStats(fromDate: string, toDate: string): {
+    byTopic: { topic_id: number; topic_name: string; total_seconds: number; session_count: number }[];
+    byRecording: { recording_id: number; recording_name: string; topic_name: string; total_seconds: number; session_count: number; open_count: number }[];
+    byMark: { duration_id: number; duration_caption: string; recording_name: string; topic_name: string; total_seconds: number; image_opens: number }[];
+  } {
+    const db = getDatabase();
+
+    const byTopic = db.prepare(`
+      SELECT
+        topic_id,
+        topic_name,
+        SUM(seconds) as total_seconds,
+        COUNT(DISTINCT session_id) as session_count
+      FROM study_events
+      WHERE substr(started_at, 1, 10) BETWEEN ? AND ?
+        AND topic_id IS NOT NULL AND seconds > 0
+      GROUP BY topic_id
+      ORDER BY total_seconds DESC
+    `).all(fromDate, toDate) as { topic_id: number; topic_name: string; total_seconds: number; session_count: number }[];
+
+    const byRecording = db.prepare(`
+      SELECT
+        recording_id,
+        recording_name,
+        topic_name,
+        SUM(seconds) as total_seconds,
+        COUNT(DISTINCT session_id) as session_count,
+        COUNT(CASE WHEN event_type = 'view_recording' THEN 1 END) as open_count
+      FROM study_events
+      WHERE substr(started_at, 1, 10) BETWEEN ? AND ?
+        AND recording_id IS NOT NULL AND seconds > 0
+      GROUP BY recording_id
+      ORDER BY total_seconds DESC
+    `).all(fromDate, toDate) as { recording_id: number; recording_name: string; topic_name: string; total_seconds: number; session_count: number; open_count: number }[];
+
+    const byMark = db.prepare(`
+      SELECT
+        duration_id,
+        duration_caption,
+        recording_name,
+        topic_name,
+        SUM(CASE WHEN event_type IN ('view_mark') THEN seconds ELSE 0 END) as total_seconds,
+        COUNT(CASE WHEN event_type = 'view_image' THEN 1 END) as image_opens
+      FROM study_events
+      WHERE substr(started_at, 1, 10) BETWEEN ? AND ?
+        AND duration_id IS NOT NULL
+      GROUP BY duration_id
+      ORDER BY total_seconds DESC
+    `).all(fromDate, toDate) as { duration_id: number; duration_caption: string; recording_name: string; topic_name: string; total_seconds: number; image_opens: number }[];
+
+    return { byTopic, byRecording, byMark };
+  },
+};

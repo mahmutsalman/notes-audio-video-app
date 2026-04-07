@@ -952,6 +952,69 @@ function runMigrations(db: Database.Database): void {
     console.log('Created duration_plans table');
   }
 
+  // Migration: Create study_sessions table
+  const studySessionsExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='study_sessions'"
+  ).get();
+  if (!studySessionsExists) {
+    db.exec(`
+      CREATE TABLE study_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        total_seconds INTEGER DEFAULT 0
+      );
+    `);
+    console.log('Created study_sessions table');
+  }
+
+  // Migration: Create study_events table
+  const studyEventsExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='study_events'"
+  ).get();
+  if (!studyEventsExists) {
+    db.exec(`
+      CREATE TABLE study_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL REFERENCES study_sessions(id) ON DELETE CASCADE,
+        event_type TEXT NOT NULL,
+        topic_id INTEGER,
+        topic_name TEXT,
+        recording_id INTEGER,
+        recording_name TEXT,
+        duration_id INTEGER,
+        duration_caption TEXT,
+        resource_id INTEGER,
+        resource_type TEXT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        seconds INTEGER DEFAULT 0,
+        source TEXT DEFAULT 'direct'
+      );
+      CREATE INDEX idx_study_events_session ON study_events(session_id);
+      CREATE INDEX idx_study_events_recording ON study_events(recording_id);
+      CREATE INDEX idx_study_events_topic ON study_events(topic_id);
+    `);
+    console.log('Created study_events table');
+  }
+
+  // Migration: Create study_idle_logs table
+  const studyIdleLogsExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='study_idle_logs'"
+  ).get();
+  if (!studyIdleLogsExists) {
+    db.exec(`
+      CREATE TABLE study_idle_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL REFERENCES study_sessions(id) ON DELETE CASCADE,
+        detected_at TEXT NOT NULL,
+        idle_seconds INTEGER NOT NULL,
+        credited_seconds INTEGER NOT NULL
+      );
+    `);
+    console.log('Created study_idle_logs table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

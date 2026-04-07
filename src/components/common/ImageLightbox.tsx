@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTabInstance } from '../../context/TabsContext';
+import { useStudyTracker } from '../../context/StudyTrackerContext';
 import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation } from '../../types';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
@@ -188,6 +190,21 @@ export default function ImageLightbox({
   onAudioTagsChanged,
   onGoToRecording,
 }: ImageLightboxProps) {
+  // ── Study tracking ───────────────────────────────────────────────────────
+  const { tabId } = useTabInstance();
+  const { trackImageOpen } = useStudyTracker();
+  const trackedImage = images[selectedIndex] ?? null;
+  useEffect(() => {
+    if (!trackedImage?.id) return;
+    const cleanup = trackImageOpen(
+      trackedImage.id,
+      imageType ?? 'image',
+      tabId,
+    );
+    return cleanup;
+  }, [trackedImage?.id, imageType, tabId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ─────────────────────────────────────────────────────────────────────────
+
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [showZoomIndicator, setShowZoomIndicator] = useState(false);

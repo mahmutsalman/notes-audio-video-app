@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import { useDurationAudioPlayer } from '../context/DurationAudioPlayerContext';
 import { useRecordingAudioPlayer } from '../context/RecordingAudioPlayerContext';
+import { useStudyTracker } from '../context/StudyTrackerContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGlobalSearch } from '../hooks/useGlobalSearch';
 import { useFilteredSearch } from '../hooks/useFilteredSearch';
@@ -1330,6 +1331,7 @@ function ResultSection({
 // ─── SearchPage ───────────────────────────────────────────────────────────────
 export default function SearchPage() {
   const navigate = useNavigate();
+  const { setNextSource } = useStudyTracker();
   const [searchParams] = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
   const [showTagBrowser, setShowTagBrowser] = useState(false);
@@ -1401,6 +1403,7 @@ export default function SearchPage() {
       currentIndex: navIndex >= 0 ? navIndex : 0,
       query: activeQuery,
     };
+    setNextSource('search');
     navigate(`/recording/${result.recording_id}`, { state: { searchNav: navState } });
   }, [navigate, navigableResults, activeQuery]);
 
