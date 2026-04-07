@@ -812,6 +812,12 @@ export interface ElectronAPI {
     update: (id: number, updates: UpdateDurationPlan) => Promise<DurationPlan>;
     delete: (id: number) => Promise<void>;
   };
+  calendarTodos: {
+    getAll: () => Promise<CalendarTodo[]>;
+    create: (todo: { plan_date: string; text: string }) => Promise<CalendarTodo>;
+    update: (id: number, updates: { text?: string; completed?: number }) => Promise<CalendarTodo>;
+    delete: (id: number) => Promise<void>;
+  };
   studyTracker: {
     createSession: (startedAt: string) => Promise<{ id: number; started_at: string }>;
     endSession: (id: number, endedAt: string, totalSeconds: number) => Promise<void>;
@@ -863,6 +869,16 @@ export interface DurationPlanWithContext extends DurationPlan {
   topic_id: number;
   topic_name: string;
   duration_caption: string | null;
+}
+
+// Calendar Todos
+export interface CalendarTodo {
+  id: number;
+  plan_date: string; // 'YYYY-MM-DD'
+  text: string;
+  completed: number; // 0 | 1
+  sort_order: number;
+  created_at: string;
 }
 
 // ─── Study Tracking ───────────────────────────────────────────────────────────

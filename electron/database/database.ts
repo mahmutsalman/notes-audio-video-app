@@ -1015,6 +1015,25 @@ function runMigrations(db: Database.Database): void {
     console.log('Created study_idle_logs table');
   }
 
+  // Migration: Create calendar_todos table
+  const calendarTodosExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='calendar_todos'"
+  ).get();
+  if (!calendarTodosExists) {
+    db.exec(`
+      CREATE TABLE calendar_todos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_date TEXT NOT NULL,
+        text TEXT NOT NULL,
+        completed INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_calendar_todos_date ON calendar_todos(plan_date);
+    `);
+    console.log('Created calendar_todos table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

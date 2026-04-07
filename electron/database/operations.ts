@@ -2362,6 +2362,46 @@ export const DurationPlansOperations = {
   },
 };
 
+// ─── Calendar Todos ───────────────────────────────────────────────────────────
+
+export const CalendarTodosOperations = {
+  getAll() {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM calendar_todos ORDER BY plan_date, sort_order, created_at').all();
+  },
+
+  getById(id: number) {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM calendar_todos WHERE id = ?').get(id);
+  },
+
+  create(todo: { plan_date: string; text: string }) {
+    const db = getDatabase();
+    const result = db.prepare(
+      'INSERT INTO calendar_todos (plan_date, text, completed, sort_order) VALUES (?, ?, 0, 0)'
+    ).run(todo.plan_date, todo.text);
+    return this.getById(result.lastInsertRowid as number);
+  },
+
+  update(id: number, updates: { text?: string; completed?: number }) {
+    const db = getDatabase();
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    if (updates.text !== undefined) { fields.push('text = ?'); values.push(updates.text); }
+    if (updates.completed !== undefined) { fields.push('completed = ?'); values.push(updates.completed); }
+    if (fields.length > 0) {
+      values.push(id);
+      db.prepare(`UPDATE calendar_todos SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+    return this.getById(id);
+  },
+
+  delete(id: number) {
+    const db = getDatabase();
+    db.prepare('DELETE FROM calendar_todos WHERE id = ?').run(id);
+  },
+};
+
 // ─── Study Tracking ──────────────────────────────────────────────────────────
 
 export const StudyTrackingOperations = {
