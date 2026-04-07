@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { useIsActiveTab } from '../context/TabsContext';
+import { useIsActiveTab, useTabInstance } from '../context/TabsContext';
+import { useStudyTracker } from '../context/StudyTrackerContext';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTabTitle } from '../hooks/useTabTitle';
 import { useRecording, useRecordings } from '../hooks/useRecordings';
@@ -218,6 +219,45 @@ export default function RecordingPage() {
   const pdfViewerRef = useRef<PdfViewerHandle>(null);
   const bookReaderRef = useRef<BookReaderViewHandle>(null);
   const videoLoopListenerRef = useRef<(() => void) | null>(null);
+
+  // ── Study Tracker integration ─────────────────────────────────────────────
+  const { tabId } = useTabInstance();
+  const { reportTabContext, consumeNextSource } = useStudyTracker();
+
+  function extractFirstLine(html: string | null): string | null {
+    if (!html) return null;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    const text = tmp.textContent ?? '';
+    const first = text.split('\n').find(l => l.trim()) ?? '';
+    return first.trim().slice(0, 100) || null;
+  }
+
+  // Report context whenever recording, topic, or active mark changes
+  useEffect(() => {
+    if (!recording || !topic) {
+      reportTabContext(tabId, null);
+      return;
+    }
+    const activeDuration = activeDurationId !== null
+      ? durations.find(d => d.id === activeDurationId) ?? null
+      : null;
+    reportTabContext(tabId, {
+      topicId: topic.id,
+      topicName: topic.name,
+      recordingId: recording.id,
+      recordingName: recording.name,
+      durationId: activeDuration?.id ?? null,
+      durationCaption: extractFirstLine(activeDuration?.note ?? null),
+      source: consumeNextSource(),
+    });
+  }, [recording?.id, topic?.id, activeDurationId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear context on unmount
+  useEffect(() => {
+    return () => { reportTabContext(tabId, null); };
+  }, [tabId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ─────────────────────────────────────────────────────────────────────────
 
   // Helper to preserve scroll position across refetch
   const preserveScrollPosition = async (operation: () => Promise<void>) => {

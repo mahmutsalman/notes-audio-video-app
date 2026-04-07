@@ -8,7 +8,9 @@ import { DurationAudioPlayerProvider } from './context/DurationAudioPlayerContex
 import { RecordingAudioPlayerProvider } from './context/RecordingAudioPlayerContext';
 import { CaptureAudioPlayerProvider } from './context/CaptureAudioPlayerContext';
 import { TabsProvider } from './context/TabsContext';
+import { StudyTrackerProvider } from './context/StudyTrackerContext';
 import TabsShell from './components/tabs/TabsShell';
+import IdleDialog from './components/study-tracker/IdleDialog';
 import AudioRecordingBar from './components/audio/AudioRecordingBar';
 import ImageAudioPlayerBar from './components/audio/ImageAudioPlayerBar';
 import DurationAudioPlayerBar from './components/audio/DurationAudioPlayerBar';
@@ -26,7 +28,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <RecordingAudioPlayerProvider>
                 <CaptureAudioPlayerProvider>
                   <TabsProvider>
+                    <StudyTrackerProvider>
                     <TabsShell />
+                    <IdleDialog />
                     {/* Audio/recording bars live here — outside TabsShell so only ONE
                         instance exists regardless of how many tabs are open. Previously
                         each tab's MainLayout rendered its own copy; with 3+ tabs the
@@ -37,6 +41,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                     <RecordingAudioPlayerBar />
                     <CaptureAudioPlayerBar />
                     <AudioRecordingBar />
+                    </StudyTrackerProvider>
                   </TabsProvider>
                 </CaptureAudioPlayerProvider>
               </RecordingAudioPlayerProvider>

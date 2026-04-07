@@ -118,6 +118,14 @@ async function createWindow(): Promise<void> {
   // Register ScreenCaptureKit IPC handlers
   registerScreenCaptureHandlers(mainWindow);
 
+  // Study tracker: emit blur/focus events to renderer for idle detection
+  mainWindow.on('blur', () => {
+    mainWindow?.webContents.send('study:appBlur');
+  });
+  mainWindow.on('focus', () => {
+    mainWindow?.webContents.send('study:appFocus');
+  });
+
   // Handle window close button - quit app instead of just hiding window
   mainWindow.on('close', (event) => {
     if (process.platform === 'darwin') {

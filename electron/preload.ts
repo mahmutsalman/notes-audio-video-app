@@ -836,6 +836,32 @@ const electronAPI = {
     delete: (id: number) =>
       ipcRenderer.invoke('durationPlans:delete', id),
   },
+  studyTracker: {
+    createSession: (startedAt: string) =>
+      ipcRenderer.invoke('studyTracker:createSession', startedAt),
+    endSession: (id: number, endedAt: string, totalSeconds: number) =>
+      ipcRenderer.invoke('studyTracker:endSession', id, endedAt, totalSeconds),
+    createEvent: (event: import('../src/types').CreateStudyEvent) =>
+      ipcRenderer.invoke('studyTracker:createEvent', event),
+    updateEvent: (id: number, endedAt: string, seconds: number) =>
+      ipcRenderer.invoke('studyTracker:updateEvent', id, endedAt, seconds),
+    logIdle: (log: import('../src/types').StudyIdleLog) =>
+      ipcRenderer.invoke('studyTracker:logIdle', log),
+    getHeatmap: (fromDate: string, toDate: string) =>
+      ipcRenderer.invoke('studyTracker:getHeatmap', fromDate, toDate),
+    getSessionsForDay: (date: string) =>
+      ipcRenderer.invoke('studyTracker:getSessionsForDay', date),
+    getStats: (fromDate: string, toDate: string) =>
+      ipcRenderer.invoke('studyTracker:getStats', fromDate, toDate),
+    onAppBlur: (cb: () => void) => {
+      ipcRenderer.on('study:appBlur', cb);
+      return () => ipcRenderer.removeListener('study:appBlur', cb);
+    },
+    onAppFocus: (cb: () => void) => {
+      ipcRenderer.on('study:appFocus', cb);
+      return () => ipcRenderer.removeListener('study:appFocus', cb);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

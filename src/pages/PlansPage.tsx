@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useIsActiveTab } from '../context/TabsContext';
 import { CalendarGrid } from '../components/plans/CalendarGrid';
+import StatsView from '../components/study-tracker/StatsView';
 import type { RecordingPlanWithContext, DurationPlanWithContext, UpdateRecordingPlan, UpdateDurationPlan } from '../types';
 
 type AnyPlanCtx = (RecordingPlanWithContext & { _type: 'recording' }) | (DurationPlanWithContext & { _type: 'duration' });
@@ -18,6 +19,7 @@ function formatDate(dateStr: string): string {
 export default function PlansPage() {
   const navigate = useNavigate();
   const isActiveTab = useIsActiveTab();
+  const [pageTab, setPageTab] = useState<'plans' | 'stats'>('plans');
   const today = toYMD(new Date());
 
   const [year, setYear] = useState(() => new Date().getFullYear());
@@ -113,19 +115,44 @@ export default function PlansPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Plans</h1>
-        <button
-          onClick={() => fetchAll()}
-          disabled={loading}
-          className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-40 transition-colors"
-          title="Refresh plans"
-        >
-          <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-        </button>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-1">
+          {(['plans', 'stats'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setPageTab(tab)}
+              className={[
+                'px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition-colors',
+                pageTab === tab
+                  ? 'bg-gray-100 dark:bg-dark-hover text-gray-900 dark:text-gray-100'
+                  : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/30',
+              ].join(' ')}
+            >
+              {tab === 'stats' ? 'Study Stats' : 'Plans'}
+            </button>
+          ))}
+        </div>
+        {pageTab === 'plans' && (
+          <button
+            onClick={() => fetchAll()}
+            disabled={loading}
+            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-40 transition-colors"
+            title="Refresh plans"
+          >
+            <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        )}
       </div>
+
+      {pageTab === 'stats' && (
+        <div className="p-4 rounded-xl bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border shadow-sm">
+          <StatsView />
+        </div>
+      )}
+
+      {pageTab === 'plans' && (
 
       <div className="flex gap-8 items-start">
         {/* Calendar */}
@@ -218,6 +245,7 @@ export default function PlansPage() {
           ))}
         </div>
       </div>
+      )}
     </div>
   );
 }
