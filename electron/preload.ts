@@ -836,6 +836,16 @@ const electronAPI = {
     delete: (id: number) =>
       ipcRenderer.invoke('durationPlans:delete', id),
   },
+  calendarTodos: {
+    getAll: () =>
+      ipcRenderer.invoke('calendarTodos:getAll'),
+    create: (todo: { plan_date: string; text: string }) =>
+      ipcRenderer.invoke('calendarTodos:create', todo),
+    update: (id: number, updates: { text?: string; completed?: number }) =>
+      ipcRenderer.invoke('calendarTodos:update', id, updates),
+    delete: (id: number) =>
+      ipcRenderer.invoke('calendarTodos:delete', id),
+  },
   studyTracker: {
     createSession: (startedAt: string) =>
       ipcRenderer.invoke('studyTracker:createSession', startedAt),

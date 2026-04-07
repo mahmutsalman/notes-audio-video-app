@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { RecordingPlan, DurationPlan } from '../../types';
+import type { RecordingPlan, DurationPlan, CalendarTodo } from '../../types';
 
 type AnyPlan = RecordingPlan | DurationPlan;
 
@@ -8,6 +8,7 @@ interface Props {
   month: number; // 0-indexed
   selectedDate: string | null; // 'YYYY-MM-DD'
   plans: AnyPlan[];
+  todos?: CalendarTodo[];
   onSelectDate: (date: string) => void;
   onPrevMonth: () => void;
   onNextMonth: () => void;
@@ -20,7 +21,7 @@ function toYMD(year: number, month: number, day: number): string {
   return `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
 }
 
-export function CalendarGrid({ year, month, selectedDate, plans, onSelectDate, onPrevMonth, onNextMonth }: Props) {
+export function CalendarGrid({ year, month, selectedDate, plans, todos = [], onSelectDate, onPrevMonth, onNextMonth }: Props) {
   const today = useMemo(() => {
     const d = new Date();
     return toYMD(d.getFullYear(), d.getMonth(), d.getDate());
@@ -36,6 +37,17 @@ export function CalendarGrid({ year, month, selectedDate, plans, onSelectDate, o
     }
     return map;
   }, [plans]);
+
+  // Build date → todo summary map
+  const todoMap = useMemo(() => {
+    const map: Record<string, { total: number; completed: number }> = {};
+    for (const t of todos) {
+      if (!map[t.plan_date]) map[t.plan_date] = { total: 0, completed: 0 };
+      map[t.plan_date].total++;
+      if (t.completed) map[t.plan_date].completed++;
+    }
+    return map;
+  }, [todos]);
 
   // Build calendar grid cells
   const cells = useMemo(() => {
@@ -95,9 +107,12 @@ export function CalendarGrid({ year, month, selectedDate, plans, onSelectDate, o
           }
           const dateStr = toYMD(year, month, day);
           const summary = planMap[dateStr];
+          const todoSummary = todoMap[dateStr];
           const isToday = dateStr === today;
           const isSelected = dateStr === selectedDate;
           const allDone = summary && summary.total > 0 && summary.completed === summary.total;
+          const allTodosDone = todoSummary && todoSummary.total > 0 && todoSummary.completed === todoSummary.total;
+          const hasDots = (summary && summary.total > 0) || (todoSummary && todoSummary.total > 0);
 
           return (
             <button
@@ -111,18 +126,23 @@ export function CalendarGrid({ year, month, selectedDate, plans, onSelectDate, o
                   ? 'ring-2 ring-indigo-400 ring-offset-1 dark:ring-offset-gray-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'
                   : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700',
               ].join(' ')}
-              title={summary ? `${summary.total} plan${summary.total !== 1 ? 's' : ''}` : undefined}
             >
               <span>{day}</span>
-              {summary && summary.total > 0 && (
-                <span className={[
-                  'mt-0.5 w-1.5 h-1.5 rounded-full',
-                  isSelected
-                    ? 'bg-indigo-200'
-                    : allDone
-                    ? 'bg-emerald-400'
-                    : 'bg-indigo-400',
-                ].join(' ')} />
+              {hasDots && (
+                <div className="mt-0.5 flex items-center gap-0.5">
+                  {summary && summary.total > 0 && (
+                    <span className={[
+                      'w-1.5 h-1.5 rounded-full',
+                      isSelected ? 'bg-indigo-200' : allDone ? 'bg-emerald-400' : 'bg-indigo-400',
+                    ].join(' ')} />
+                  )}
+                  {todoSummary && todoSummary.total > 0 && (
+                    <span className={[
+                      'w-1.5 h-1.5 rounded-full',
+                      isSelected ? 'bg-amber-200' : allTodosDone ? 'bg-emerald-400' : 'bg-amber-400',
+                    ].join(' ')} />
+                  )}
+                </div>
               )}
             </button>
           );

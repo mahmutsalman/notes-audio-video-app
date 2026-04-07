@@ -26,6 +26,7 @@ import {
   MediaColorOperations,
   RecordingPlansOperations,
   DurationPlansOperations,
+  CalendarTodosOperations,
   StudyTrackingOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
@@ -2166,6 +2167,23 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('durationPlans:delete', async (_, id: number) => {
     DurationPlansOperations.delete(id);
+  });
+
+  // Calendar Todos
+  ipcMain.handle('calendarTodos:getAll', async () => {
+    return CalendarTodosOperations.getAll();
+  });
+
+  ipcMain.handle('calendarTodos:create', async (_, todo: { plan_date: string; text: string }) => {
+    return CalendarTodosOperations.create(todo);
+  });
+
+  ipcMain.handle('calendarTodos:update', async (_, id: number, updates: { text?: string; completed?: number }) => {
+    return CalendarTodosOperations.update(id, updates);
+  });
+
+  ipcMain.handle('calendarTodos:delete', async (_, id: number) => {
+    CalendarTodosOperations.delete(id);
   });
 
   // Study Tracking
