@@ -2448,6 +2448,7 @@ export const StudyTrackingOperations = {
       JOIN study_sessions ss ON ss.id = se.session_id
       WHERE substr(se.started_at, 1, 10) BETWEEN ? AND ?
         AND se.seconds > 0
+        AND se.event_type IN ('view_mark', 'view_recording')
       GROUP BY substr(se.started_at, 1, 10)
       ORDER BY date
     `).all(fromDate, toDate) as { date: string; total_seconds: number }[];
@@ -2491,6 +2492,7 @@ export const StudyTrackingOperations = {
       FROM study_events
       WHERE substr(started_at, 1, 10) BETWEEN ? AND ?
         AND topic_id IS NOT NULL AND seconds > 0
+        AND event_type IN ('view_mark', 'view_recording')
       GROUP BY topic_id
       ORDER BY total_seconds DESC
     `).all(fromDate, toDate) as { topic_id: number; topic_name: string; total_seconds: number; session_count: number }[];
@@ -2500,7 +2502,7 @@ export const StudyTrackingOperations = {
         recording_id,
         recording_name,
         topic_name,
-        SUM(seconds) as total_seconds,
+        SUM(CASE WHEN event_type IN ('view_mark', 'view_recording') THEN seconds ELSE 0 END) as total_seconds,
         COUNT(DISTINCT session_id) as session_count,
         COUNT(CASE WHEN event_type = 'view_recording' THEN 1 END) as open_count
       FROM study_events
@@ -2513,9 +2515,9 @@ export const StudyTrackingOperations = {
     const byMark = db.prepare(`
       SELECT
         duration_id,
-        duration_caption,
-        recording_name,
-        topic_name,
+        MAX(duration_caption) as duration_caption,
+        MAX(recording_name) as recording_name,
+        MAX(topic_name) as topic_name,
         SUM(CASE WHEN event_type IN ('view_mark') THEN seconds ELSE 0 END) as total_seconds,
         COUNT(CASE WHEN event_type = 'view_image' THEN 1 END) as image_opens
       FROM study_events
