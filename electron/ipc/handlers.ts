@@ -23,6 +23,9 @@ import {
   TagOperations,
   QuickCaptureOperations,
   ImageAnnotationsOperations,
+  MediaColorOperations,
+  RecordingPlansOperations,
+  DurationPlansOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
@@ -2107,6 +2110,61 @@ export function setupIpcHandlers(): void {
     }
     scheduleSearchReindex();
     return ocrText;
+  });
+
+  // Media Color Assignments (many-to-many — images, audios, and any future media type)
+  ipcMain.handle('mediaColors:toggle', async (_, mediaType: string, mediaId: number, colorKey: string) => {
+    return MediaColorOperations.toggle(mediaType, mediaId, colorKey);
+  });
+
+  ipcMain.handle('mediaColors:getByMedia', async (_, mediaType: string, mediaId: number) => {
+    return MediaColorOperations.getByMedia(mediaType, mediaId);
+  });
+
+  ipcMain.handle('mediaColors:getBatch', async (_, mediaType: string, mediaIds: number[]) => {
+    return MediaColorOperations.getBatch(mediaType, mediaIds);
+  });
+
+  // Recording Plans
+  ipcMain.handle('recordingPlans:getByRecording', async (_, recordingId: number) => {
+    return RecordingPlansOperations.getByRecording(recordingId);
+  });
+
+  ipcMain.handle('recordingPlans:getAll', async () => {
+    return RecordingPlansOperations.getAll();
+  });
+
+  ipcMain.handle('recordingPlans:create', async (_, plan) => {
+    return RecordingPlansOperations.create(plan);
+  });
+
+  ipcMain.handle('recordingPlans:update', async (_, id: number, updates) => {
+    return RecordingPlansOperations.update(id, updates);
+  });
+
+  ipcMain.handle('recordingPlans:delete', async (_, id: number) => {
+    RecordingPlansOperations.delete(id);
+  });
+
+  // Duration Plans
+  ipcMain.handle('durationPlans:getByDuration', async (_, durationId: number) => {
+    return DurationPlansOperations.getByDuration(durationId);
+  });
+
+  ipcMain.handle('durationPlans:getAll', async () => {
+    return DurationPlansOperations.getAll();
+  });
+
+  ipcMain.handle('durationPlans:create', async (_, plan) => {
+    return DurationPlansOperations.create(plan);
+  });
+
+  ipcMain.handle('durationPlans:update', async (_, id: number, updates) => {
+    return DurationPlansOperations.update(id, updates);
+  });
+
+  ipcMain.handle('durationPlans:delete', async (_, id: number) => {
+    DurationPlansOperations.delete(id);
   });
 
   console.log('IPC handlers registered');
