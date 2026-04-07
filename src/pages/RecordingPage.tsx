@@ -233,25 +233,27 @@ export default function RecordingPage() {
     return first.trim().slice(0, 100) || null;
   }
 
+  // Derive the active mark's note so the effect below only re-runs when it actually changes
+  const activeDurationNote = activeDurationId !== null
+    ? (durations.find(d => d.id === activeDurationId)?.note ?? null)
+    : null;
+
   // Report context whenever recording, topic, or active mark changes
   useEffect(() => {
     if (!recording || !topic) {
       reportTabContext(tabId, null);
       return;
     }
-    const activeDuration = activeDurationId !== null
-      ? durations.find(d => d.id === activeDurationId) ?? null
-      : null;
     reportTabContext(tabId, {
       topicId: topic.id,
       topicName: topic.name,
       recordingId: recording.id,
       recordingName: recording.name,
-      durationId: activeDuration?.id ?? null,
-      durationCaption: extractFirstLine(activeDuration?.note ?? null),
+      durationId: activeDurationId,
+      durationCaption: extractFirstLine(activeDurationNote),
       source: consumeNextSource(),
     });
-  }, [recording?.id, topic?.id, activeDurationId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [recording?.id, topic?.id, activeDurationId, activeDurationNote]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear context on unmount
   useEffect(() => {
