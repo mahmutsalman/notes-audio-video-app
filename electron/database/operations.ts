@@ -2209,3 +2209,155 @@ export const ImageAnnotationsOperations = {
     db.prepare('DELETE FROM image_annotations WHERE image_type = ? AND image_id = ?').run(imageType, imageId);
   },
 };
+
+export const MediaColorOperations = {
+  /** Toggle a color on any media item. Returns the updated color list. */
+  toggle(mediaType: string, mediaId: number, colorKey: string): string[] {
+    const db = getDatabase();
+    const result = db.prepare(
+      'INSERT OR IGNORE INTO media_color_assignments (media_type, media_id, color_key) VALUES (?, ?, ?)'
+    ).run(mediaType, mediaId, colorKey);
+    if (result.changes === 0) {
+      // Already existed — remove it (toggle off)
+      db.prepare(
+        'DELETE FROM media_color_assignments WHERE media_type = ? AND media_id = ? AND color_key = ?'
+      ).run(mediaType, mediaId, colorKey);
+    }
+    return this.getByMedia(mediaType, mediaId);
+  },
+
+  /** Get all color keys assigned to a media item. */
+  getByMedia(mediaType: string, mediaId: number): string[] {
+    const db = getDatabase();
+    const rows = db.prepare(
+      'SELECT color_key FROM media_color_assignments WHERE media_type = ? AND media_id = ? ORDER BY created_at ASC'
+    ).all(mediaType, mediaId) as { color_key: string }[];
+    return rows.map(r => r.color_key);
+  },
+
+  /** Batch-fetch colors for multiple media items of the same type. Returns a map of mediaId → colorKeys[]. */
+  getBatch(mediaType: string, mediaIds: number[]): Record<number, string[]> {
+    if (mediaIds.length === 0) return {};
+    const db = getDatabase();
+    const placeholders = mediaIds.map(() => '?').join(',');
+    const rows = db.prepare(
+      `SELECT media_id, color_key FROM media_color_assignments WHERE media_type = ? AND media_id IN (${placeholders}) ORDER BY created_at ASC`
+    ).all(mediaType, ...mediaIds) as { media_id: number; color_key: string }[];
+    const result: Record<number, string[]> = {};
+    for (const id of mediaIds) result[id] = [];
+    for (const row of rows) {
+      result[row.media_id].push(row.color_key);
+    }
+    return result;
+  },
+};
+
+// ─── Recording Plans ──────────────────────────────────────────────────────────
+
+export const RecordingPlansOperations = {
+  getByRecording(recordingId: number) {
+    const db = getDatabase();
+    return db.prepare(
+      'SELECT * FROM recording_plans WHERE recording_id = ? ORDER BY plan_date, sort_order, created_at'
+    ).all(recordingId);
+  },
+
+  getAll() {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT rp.*, r.name AS recording_name, r.topic_id, t.name AS topic_name
+      FROM recording_plans rp
+      JOIN recordings r ON r.id = rp.recording_id
+      JOIN topics t ON t.id = r.topic_id
+      ORDER BY rp.plan_date, rp.sort_order
+    `).all();
+  },
+
+  getById(id: number) {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM recording_plans WHERE id = ?').get(id);
+  },
+
+  create(plan: { recording_id: number; plan_date: string; text: string; completed?: number; sort_order?: number }) {
+    const db = getDatabase();
+    const result = db.prepare(
+      'INSERT INTO recording_plans (recording_id, plan_date, text, completed, sort_order) VALUES (?, ?, ?, ?, ?)'
+    ).run(plan.recording_id, plan.plan_date, plan.text, plan.completed ?? 0, plan.sort_order ?? 0);
+    return this.getById(result.lastInsertRowid as number);
+  },
+
+  update(id: number, updates: { text?: string; completed?: number; sort_order?: number }) {
+    const db = getDatabase();
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    if (updates.text !== undefined) { fields.push('text = ?'); values.push(updates.text); }
+    if (updates.completed !== undefined) { fields.push('completed = ?'); values.push(updates.completed); }
+    if (updates.sort_order !== undefined) { fields.push('sort_order = ?'); values.push(updates.sort_order); }
+    if (fields.length > 0) {
+      values.push(id);
+      db.prepare(`UPDATE recording_plans SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+    return this.getById(id);
+  },
+
+  delete(id: number) {
+    const db = getDatabase();
+    db.prepare('DELETE FROM recording_plans WHERE id = ?').run(id);
+  },
+};
+
+// ─── Duration Plans ───────────────────────────────────────────────────────────
+
+export const DurationPlansOperations = {
+  getByDuration(durationId: number) {
+    const db = getDatabase();
+    return db.prepare(
+      'SELECT * FROM duration_plans WHERE duration_id = ? ORDER BY plan_date, sort_order, created_at'
+    ).all(durationId);
+  },
+
+  getAll() {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT dp.*, d.recording_id, r.name AS recording_name, r.topic_id, t.name AS topic_name,
+             NULL AS duration_caption
+      FROM duration_plans dp
+      JOIN durations d ON d.id = dp.duration_id
+      JOIN recordings r ON r.id = d.recording_id
+      JOIN topics t ON t.id = r.topic_id
+      ORDER BY dp.plan_date, dp.sort_order
+    `).all();
+  },
+
+  getById(id: number) {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM duration_plans WHERE id = ?').get(id);
+  },
+
+  create(plan: { duration_id: number; plan_date: string; text: string; completed?: number; sort_order?: number }) {
+    const db = getDatabase();
+    const result = db.prepare(
+      'INSERT INTO duration_plans (duration_id, plan_date, text, completed, sort_order) VALUES (?, ?, ?, ?, ?)'
+    ).run(plan.duration_id, plan.plan_date, plan.text, plan.completed ?? 0, plan.sort_order ?? 0);
+    return this.getById(result.lastInsertRowid as number);
+  },
+
+  update(id: number, updates: { text?: string; completed?: number; sort_order?: number }) {
+    const db = getDatabase();
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    if (updates.text !== undefined) { fields.push('text = ?'); values.push(updates.text); }
+    if (updates.completed !== undefined) { fields.push('completed = ?'); values.push(updates.completed); }
+    if (updates.sort_order !== undefined) { fields.push('sort_order = ?'); values.push(updates.sort_order); }
+    if (fields.length > 0) {
+      values.push(id);
+      db.prepare(`UPDATE duration_plans SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+    return this.getById(id);
+  },
+
+  delete(id: number) {
+    const db = getDatabase();
+    db.prepare('DELETE FROM duration_plans WHERE id = ?').run(id);
+  },
+};

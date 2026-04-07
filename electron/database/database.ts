@@ -910,6 +910,48 @@ function runMigrations(db: Database.Database): void {
     console.log('Added canvas_file_path to durations');
   }
 
+  // Migration: Create recording_plans table
+  const recordingPlansExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='recording_plans'"
+  ).get();
+  if (!recordingPlansExists) {
+    db.exec(`
+      CREATE TABLE recording_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recording_id INTEGER NOT NULL,
+        plan_date TEXT NOT NULL,
+        text TEXT NOT NULL,
+        completed INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (recording_id) REFERENCES recordings(id) ON DELETE CASCADE
+      );
+      CREATE INDEX idx_recording_plans_recording ON recording_plans(recording_id);
+    `);
+    console.log('Created recording_plans table');
+  }
+
+  // Migration: Create duration_plans table
+  const durationPlansExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='duration_plans'"
+  ).get();
+  if (!durationPlansExists) {
+    db.exec(`
+      CREATE TABLE duration_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        duration_id INTEGER NOT NULL,
+        plan_date TEXT NOT NULL,
+        text TEXT NOT NULL,
+        completed INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (duration_id) REFERENCES durations(id) ON DELETE CASCADE
+      );
+      CREATE INDEX idx_duration_plans_duration ON duration_plans(duration_id);
+    `);
+    console.log('Created duration_plans table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

@@ -793,6 +793,64 @@ export interface ElectronAPI {
       filePath: string
     ) => Promise<string>;
   };
+  mediaColors: {
+    toggle: (mediaType: string, mediaId: number, colorKey: string) => Promise<string[]>;
+    getByMedia: (mediaType: string, mediaId: number) => Promise<string[]>;
+    getBatch: (mediaType: string, mediaIds: number[]) => Promise<Record<number, string[]>>;
+  };
+  recordingPlans: {
+    getByRecording: (recordingId: number) => Promise<RecordingPlan[]>;
+    getAll: () => Promise<RecordingPlanWithContext[]>;
+    create: (plan: CreateRecordingPlan) => Promise<RecordingPlan>;
+    update: (id: number, updates: UpdateRecordingPlan) => Promise<RecordingPlan>;
+    delete: (id: number) => Promise<void>;
+  };
+  durationPlans: {
+    getByDuration: (durationId: number) => Promise<DurationPlan[]>;
+    getAll: () => Promise<DurationPlanWithContext[]>;
+    create: (plan: CreateDurationPlan) => Promise<DurationPlan>;
+    update: (id: number, updates: UpdateDurationPlan) => Promise<DurationPlan>;
+    delete: (id: number) => Promise<void>;
+  };
+}
+
+// Plans
+export interface RecordingPlan {
+  id: number;
+  recording_id: number;
+  plan_date: string; // 'YYYY-MM-DD'
+  text: string;
+  completed: number; // 0 | 1
+  sort_order: number;
+  created_at: string;
+}
+export type CreateRecordingPlan = Omit<RecordingPlan, 'id' | 'created_at'>;
+export type UpdateRecordingPlan = { text?: string; completed?: number; sort_order?: number };
+
+export interface RecordingPlanWithContext extends RecordingPlan {
+  recording_name: string | null;
+  topic_id: number;
+  topic_name: string;
+}
+
+export interface DurationPlan {
+  id: number;
+  duration_id: number;
+  plan_date: string;
+  text: string;
+  completed: number;
+  sort_order: number;
+  created_at: string;
+}
+export type CreateDurationPlan = Omit<DurationPlan, 'id' | 'created_at'>;
+export type UpdateDurationPlan = { text?: string; completed?: number; sort_order?: number };
+
+export interface DurationPlanWithContext extends DurationPlan {
+  recording_id: number;
+  recording_name: string | null;
+  topic_id: number;
+  topic_name: string;
+  duration_caption: string | null;
 }
 
 export interface GlobalSearchResult {

@@ -39,6 +39,8 @@ import { TagModal } from '../components/common/TagModal';
 import type { MediaTagType } from '../types';
 import RecordingCanvas from '../components/canvas/RecordingCanvas';
 import DurationCanvas from '../components/canvas/DurationCanvas';
+import { PlannerSection } from '../components/plans/PlannerSection';
+import { useRecordingPlans, useDurationPlans } from '../hooks/usePlans';
 
 export default function RecordingPage() {
   const { recordingId } = useParams<{ recordingId: string }>();
@@ -101,6 +103,8 @@ export default function RecordingPage() {
     deleteCodeSnippet,
   } = useCodeSnippets(id);
 
+  const recordingPlans = useRecordingPlans(id);
+
   // Calculate adjacent recording IDs for navigation
   const currentIndex = topicRecordings.findIndex(r => r.id === id);
   const prevRecordingId = currentIndex > 0 ? topicRecordings[currentIndex - 1].id : null;
@@ -109,7 +113,9 @@ export default function RecordingPage() {
     : null;
 
   const [canvasMode, setCanvasMode] = useState(false);
+  const [planMode, setPlanMode] = useState(false);
   const [durationCanvasMode, setDurationCanvasMode] = useState(false);
+  const [durationPlanMode, setDurationPlanMode] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -143,6 +149,7 @@ export default function RecordingPage() {
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [isContentPressed, setIsContentPressed] = useState(false);
   const [activeDurationId, setActiveDurationId] = useState<number | null>(null);
+  const durationPlans = useDurationPlans(activeDurationId);
   const [selectedDurationImageIndex, setSelectedDurationImageIndex] = useState<number | null>(null);
   const [mediaLoaded, setMediaLoaded] = useState(false);
   const [isSeekingDuration, setIsSeekingDuration] = useState(false);
@@ -221,9 +228,10 @@ export default function RecordingPage() {
     });
   };
 
-  // Reset duration canvas mode when active duration changes
+  // Reset duration canvas/plan mode when active duration changes
   useEffect(() => {
     setDurationCanvasMode(false);
+    setDurationPlanMode(false);
   }, [activeDurationId]);
 
   // Reset loop state and media loaded state when changing recordings
@@ -1747,7 +1755,7 @@ export default function RecordingPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setCanvasMode(prev => !prev)}
+            onClick={() => { setCanvasMode(prev => !prev); setPlanMode(false); }}
             title={canvasMode ? 'Back to recording' : 'Open canvas'}
             className={`p-2 rounded-lg transition-colors ${
               canvasMode
@@ -1760,6 +1768,22 @@ export default function RecordingPage() {
               <rect x="14" y="3" width="7" height="7" rx="1" fill="none" stroke="currentColor" />
               <rect x="3" y="14" width="7" height="7" rx="1" fill="none" stroke="currentColor" />
               <rect x="14" y="14" width="7" height="7" rx="1" fill="none" stroke="currentColor" />
+            </svg>
+          </button>
+          <button
+            onClick={() => { setPlanMode(prev => !prev); setCanvasMode(false); }}
+            title={planMode ? 'Back to recording' : 'Open plans'}
+            className={`p-2 rounded-lg transition-colors ${
+              planMode
+                ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400'
+                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
             </svg>
           </button>
           <Button
@@ -1788,7 +1812,21 @@ export default function RecordingPage() {
         </div>
       )}
 
-      {!canvasMode && (<>
+      {/* Plans view */}
+      {planMode && id && (
+        <div className="mt-4 p-4 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/50">
+          <PlannerSection
+            plans={recordingPlans.plans}
+            loading={recordingPlans.loading}
+            addPlan={recordingPlans.addPlan}
+            updatePlan={recordingPlans.updatePlan}
+            deletePlan={recordingPlans.deletePlan}
+            toggleComplete={recordingPlans.toggleComplete}
+          />
+        </div>
+      )}
+
+      {!canvasMode && !planMode && (<>
       {/* Audio/Video player - hidden for written notes */}
       {!isMarkBasedRecording && (
         <div
@@ -2031,11 +2069,11 @@ export default function RecordingPage() {
         />
       )}
 
-      {/* Duration canvas toggle button */}
+      {/* Duration canvas/plans toggle buttons */}
       {activeDurationId && (
-        <div className="mb-2 flex justify-end">
+        <div className="mb-2 flex justify-end gap-1">
           <button
-            onClick={() => setDurationCanvasMode(prev => !prev)}
+            onClick={() => { setDurationCanvasMode(prev => !prev); setDurationPlanMode(false); }}
             title={durationCanvasMode ? 'Back to mark content' : 'Open mark canvas'}
             className={`p-1.5 rounded-lg transition-colors ${
               durationCanvasMode
@@ -2050,6 +2088,36 @@ export default function RecordingPage() {
               <rect x="14" y="14" width="7" height="7" rx="1" fill="none" stroke="currentColor" />
             </svg>
           </button>
+          <button
+            onClick={() => { setDurationPlanMode(prev => !prev); setDurationCanvasMode(false); }}
+            title={durationPlanMode ? 'Back to mark content' : 'Open mark plans'}
+            className={`p-1.5 rounded-lg transition-colors ${
+              durationPlanMode
+                ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400'
+                : 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Duration plans view */}
+      {durationPlanMode && activeDurationId && (
+        <div className="mb-4 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/50 rounded-lg">
+          <PlannerSection
+            plans={durationPlans.plans}
+            loading={durationPlans.loading}
+            addPlan={durationPlans.addPlan}
+            updatePlan={durationPlans.updatePlan}
+            deletePlan={durationPlans.deletePlan}
+            toggleComplete={durationPlans.toggleComplete}
+          />
         </div>
       )}
 
@@ -2074,7 +2142,7 @@ export default function RecordingPage() {
       )}
 
       {/* Duration Images - shown when a duration is active and has images */}
-      {!durationCanvasMode && activeDurationId && activeDurationImages.length > 0 && (
+      {!durationCanvasMode && !durationPlanMode && activeDurationId && activeDurationImages.length > 0 && (
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
@@ -2138,7 +2206,7 @@ export default function RecordingPage() {
       )}
 
       {/* Add Image prompt when duration is active but has no images */}
-      {!durationCanvasMode && activeDurationId && activeDurationImages.length === 0 && (
+      {!durationCanvasMode && !durationPlanMode && activeDurationId && activeDurationImages.length === 0 && (
         <div className="mb-4 p-3 bg-gray-50 dark:bg-dark-hover border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
           <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <span>No images for this section</span>
@@ -2153,7 +2221,7 @@ export default function RecordingPage() {
       )}
 
       {/* Duration Videos - shown when a duration is active and has videos */}
-      {!durationCanvasMode && activeDurationId && activeDurationVideos.length > 0 && (
+      {!durationCanvasMode && !durationPlanMode && activeDurationId && activeDurationVideos.length > 0 && (
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
@@ -2257,7 +2325,7 @@ export default function RecordingPage() {
       )}
 
       {/* Add Video prompt when duration is active but has no videos */}
-      {!durationCanvasMode && activeDurationId && activeDurationVideos.length === 0 && (
+      {!durationCanvasMode && !durationPlanMode && activeDurationId && activeDurationVideos.length === 0 && (
         <div className="mb-4 p-3 bg-gray-50 dark:bg-dark-hover border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
           <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <span>No videos for this section</span>
@@ -2272,7 +2340,7 @@ export default function RecordingPage() {
       )}
 
       {/* Duration Audios - shown when a duration is active and has audios */}
-      {!durationCanvasMode && activeDurationId && activeDurationAudios.length > 0 && (
+      {!durationCanvasMode && !durationPlanMode && activeDurationId && activeDurationAudios.length > 0 && (
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
@@ -2381,7 +2449,7 @@ export default function RecordingPage() {
       )}
 
       {/* Add Audio prompt when duration is active but has no audios */}
-      {!durationCanvasMode && activeDurationId && activeDurationAudios.length === 0 && (
+      {!durationCanvasMode && !durationPlanMode && activeDurationId && activeDurationAudios.length === 0 && (
         <div className="mb-4 p-3 bg-gray-50 dark:bg-dark-hover border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
           <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <span>No audio recordings for this section</span>
@@ -2396,7 +2464,7 @@ export default function RecordingPage() {
       )}
 
       {/* Duration Code Snippets - shown when a duration is active */}
-      {!durationCanvasMode && activeDurationId && (
+      {!durationCanvasMode && !durationPlanMode && activeDurationId && (
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
@@ -2746,6 +2814,19 @@ export default function RecordingPage() {
         ) : (
           <p className="text-violet-400 dark:text-violet-500 italic text-sm">No code snippets for this section</p>
         )}
+      </div>
+
+      {/* Plans */}
+      <div className="mb-6 p-4 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/50">
+        <h2 className="text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-3">Plans</h2>
+        <PlannerSection
+          plans={recordingPlans.plans}
+          loading={recordingPlans.loading}
+          addPlan={recordingPlans.addPlan}
+          updatePlan={recordingPlans.updatePlan}
+          deletePlan={recordingPlans.deletePlan}
+          toggleComplete={recordingPlans.toggleComplete}
+        />
       </div>
 
       {/* Image lightbox */}

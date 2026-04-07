@@ -802,6 +802,40 @@ const electronAPI = {
     ): Promise<string> =>
       ipcRenderer.invoke('ocr:extractCaption2', imageType, imageId, filePath),
   },
+
+  // Media Color Assignments (many-to-many — images, audios, and any future media type)
+  mediaColors: {
+    toggle: (mediaType: string, mediaId: number, colorKey: string): Promise<string[]> =>
+      ipcRenderer.invoke('mediaColors:toggle', mediaType, mediaId, colorKey),
+    getByMedia: (mediaType: string, mediaId: number): Promise<string[]> =>
+      ipcRenderer.invoke('mediaColors:getByMedia', mediaType, mediaId),
+    getBatch: (mediaType: string, mediaIds: number[]): Promise<Record<number, string[]>> =>
+      ipcRenderer.invoke('mediaColors:getBatch', mediaType, mediaIds),
+  },
+  recordingPlans: {
+    getByRecording: (recordingId: number) =>
+      ipcRenderer.invoke('recordingPlans:getByRecording', recordingId),
+    getAll: () =>
+      ipcRenderer.invoke('recordingPlans:getAll'),
+    create: (plan: import('../src/types').CreateRecordingPlan) =>
+      ipcRenderer.invoke('recordingPlans:create', plan),
+    update: (id: number, updates: import('../src/types').UpdateRecordingPlan) =>
+      ipcRenderer.invoke('recordingPlans:update', id, updates),
+    delete: (id: number) =>
+      ipcRenderer.invoke('recordingPlans:delete', id),
+  },
+  durationPlans: {
+    getByDuration: (durationId: number) =>
+      ipcRenderer.invoke('durationPlans:getByDuration', durationId),
+    getAll: () =>
+      ipcRenderer.invoke('durationPlans:getAll'),
+    create: (plan: import('../src/types').CreateDurationPlan) =>
+      ipcRenderer.invoke('durationPlans:create', plan),
+    update: (id: number, updates: import('../src/types').UpdateDurationPlan) =>
+      ipcRenderer.invoke('durationPlans:update', id, updates),
+    delete: (id: number) =>
+      ipcRenderer.invoke('durationPlans:delete', id),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
