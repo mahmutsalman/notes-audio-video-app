@@ -402,6 +402,67 @@ export async function compressVideo(
 }
 
 /**
+ * Remux MKV (or any container) to MP4 losslessly using -c copy.
+ * No re-encoding — just swaps the container. Takes ~5 seconds regardless of file size.
+ */
+export async function remuxToMp4(
+  inputPath: string
+): Promise<{ success: boolean; outputPath?: string; error?: string }> {
+  try {
+    const ffmpegPath = getFfmpegPath();
+
+    if (!fs.existsSync(ffmpegPath)) {
+      throw new Error(`ffmpeg binary not found at: ${ffmpegPath}`);
+    }
+    if (!fs.existsSync(inputPath)) {
+      throw new Error(`Input file not found: ${inputPath}`);
+    }
+
+    const parsedPath = path.parse(inputPath);
+    const outputPath = path.join(parsedPath.dir, `${parsedPath.name}_remuxed.mp4`);
+
+    const args = [
+      '-i', inputPath,
+      '-c', 'copy',           // Copy all streams — no re-encoding
+      '-movflags', '+faststart', // Enable fast start for playback
+      '-y',                   // Overwrite output
+      outputPath
+    ];
+
+    console.log('[videoCompression] Remuxing to MP4:', inputPath, '→', outputPath);
+
+    return new Promise((resolve) => {
+      const proc = spawn(ffmpegPath, args);
+      let stderrOutput = '';
+
+      proc.stderr.on('data', (data) => {
+        stderrOutput += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0 && fs.existsSync(outputPath)) {
+          console.log('[videoCompression] Remux complete:', outputPath);
+          resolve({ success: true, outputPath });
+        } else {
+          const errorMsg = `Remux failed (code ${code}):\n${stderrOutput.slice(-500)}`;
+          console.error('[videoCompression]', errorMsg);
+          resolve({ success: false, error: errorMsg });
+        }
+      });
+
+      proc.on('error', (err) => {
+        resolve({ success: false, error: err.message });
+      });
+    });
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error'
+    };
+  }
+}
+
+/**
  * Replace original file with compressed version
  * Creates a backup of the original file before replacing
  * Changes the file extension to .mp4

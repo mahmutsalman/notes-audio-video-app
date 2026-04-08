@@ -156,6 +156,13 @@ const electronAPI = {
       ipcRenderer.invoke('video:replaceWithCompressed', originalPath, compressedPath),
     checkFFmpeg: (): Promise<{ available: boolean; version?: string; error?: string }> =>
       ipcRenderer.invoke('video:checkFFmpeg'),
+    remuxToMp4: (
+      videoId: number,
+      videoType: 'video' | 'durationVideo',
+      filePath: string,
+      crf?: number
+    ): Promise<{ success: boolean; newPath?: string; error?: string }> =>
+      ipcRenderer.invoke('video:remuxToMp4', videoId, videoType, filePath, crf),
     mergeExtension: (
       recordingId: number,
       extensionSource: ArrayBuffer | string,

@@ -511,6 +511,12 @@ export const VideosOperations = {
     db.prepare('UPDATE videos SET group_color = ? WHERE id = ?').run(groupColor, id);
     return this.getById(id)!;
   },
+
+  updateFilePath(id: number, filePath: string): Video {
+    const db = getDatabase();
+    db.prepare('UPDATE videos SET file_path = ? WHERE id = ?').run(filePath, id);
+    return this.getById(id)!;
+  },
 };
 
 // Durations Operations (marked time segments within recordings)
@@ -806,6 +812,12 @@ export const DurationVideosOperations = {
   updateGroupColor(id: number, groupColor: DurationGroupColor): DurationVideo {
     const db = getDatabase();
     db.prepare('UPDATE duration_videos SET group_color = ? WHERE id = ?').run(groupColor, id);
+    return this.getById(id)!;
+  },
+
+  updateFilePath(id: number, filePath: string): DurationVideo {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_videos SET file_path = ? WHERE id = ?').run(filePath, id);
     return this.getById(id)!;
   },
 };

@@ -653,6 +653,12 @@ export interface ElectronAPI {
       compressedPath: string
     ) => Promise<{ success: boolean; newPath?: string; error?: string }>;
     checkFFmpeg: () => Promise<{ available: boolean; version?: string; error?: string }>;
+    remuxToMp4: (
+      videoId: number,
+      videoType: 'video' | 'durationVideo',
+      filePath: string,
+      crf?: number
+    ) => Promise<{ success: boolean; newPath?: string; error?: string }>;
     mergeExtension: (
       recordingId: number,
       extensionSource: ArrayBuffer | string,
