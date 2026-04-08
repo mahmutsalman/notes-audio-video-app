@@ -148,6 +148,7 @@ export default function RecordingPage() {
   const [durationImageAudioTagCountMap, setDurationImageAudioTagCountMap] = useState<Record<number, number>>({});
   const [contextMenuShowColors, setContextMenuShowColors] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [convertingVideoIds, setConvertingVideoIds] = useState<Set<number>>(new Set());
   const [isContentPressed, setIsContentPressed] = useState(false);
   const [activeDurationId, setActiveDurationId] = useState<number | null>(null);
   const durationPlans = useDurationPlans(activeDurationId);
@@ -647,6 +648,21 @@ export default function RecordingPage() {
 
   const handleDeleteVideo = (videoId: number) => {
     setVideoToDelete(videoId);
+  };
+
+  const handleConvertMkvToMp4 = async (videoId: number, videoType: 'video' | 'durationVideo', filePath: string, crf?: number) => {
+    setConvertingVideoIds(prev => new Set(prev).add(videoId));
+    try {
+      const result = await window.electronAPI.video.remuxToMp4(videoId, videoType, filePath, crf);
+      if (result.success) {
+        await refetch();
+      } else {
+        console.error('[RecordingPage] MKV convert failed:', result.error);
+        alert(`Convert failed: ${result.error}`);
+      }
+    } finally {
+      setConvertingVideoIds(prev => { const s = new Set(prev); s.delete(videoId); return s; });
+    }
   };
 
   const confirmDeleteVideo = async () => {
@@ -2337,6 +2353,42 @@ export default function RecordingPage() {
                   >
                     ×
                   </button>
+                  {/* MKV → MP4 convert buttons (CRF options) */}
+                  {video.file_path?.toLowerCase().endsWith('.mkv') && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 bg-black/40 rounded-lg">
+                      {convertingVideoIds.has(video.id) ? (
+                        <span className="text-[10px] text-white font-medium">converting…</span>
+                      ) : (
+                        <>
+                          <div className="flex gap-1">
+                            {([40, 35, 32] as const).map(crf => (
+                              <button
+                                key={crf}
+                                onClick={() => handleConvertMkvToMp4(video.id, 'durationVideo', video.file_path, crf)}
+                                title={`CRF ${crf}${crf === 40 ? ' (smallest)' : ''}`}
+                                className={`w-8 py-0.5 text-[10px] font-medium text-white rounded
+                                  ${crf === 35 ? 'bg-blue-600' : 'bg-blue-500/80'}`}
+                              >
+                                {crf}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex gap-1">
+                            {([28, 23] as const).map(crf => (
+                              <button
+                                key={crf}
+                                onClick={() => handleConvertMkvToMp4(video.id, 'durationVideo', video.file_path, crf)}
+                                title={`CRF ${crf}${crf === 23 ? ' (best quality)' : ''}`}
+                                className="w-8 py-0.5 text-[10px] font-medium text-white rounded bg-blue-500/80"
+                              >
+                                {crf}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {/* Bottom color bar */}
                   {(durationVideoColorsCache[video.id] ?? []).length > 0 && (
                     <div className="absolute bottom-0 left-0 right-0 flex h-[3px] pointer-events-none">
@@ -2716,6 +2768,42 @@ export default function RecordingPage() {
                   >
                     ×
                   </button>
+                  {/* MKV → MP4 convert buttons (CRF options) */}
+                  {video.file_path?.toLowerCase().endsWith('.mkv') && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 bg-black/40 rounded-lg">
+                      {convertingVideoIds.has(video.id) ? (
+                        <span className="text-[10px] text-white font-medium">converting…</span>
+                      ) : (
+                        <>
+                          <div className="flex gap-1">
+                            {([40, 35, 32] as const).map(crf => (
+                              <button
+                                key={crf}
+                                onClick={() => handleConvertMkvToMp4(video.id, 'video', video.file_path, crf)}
+                                title={`CRF ${crf}${crf === 40 ? ' (smallest)' : ''}`}
+                                className={`w-8 py-0.5 text-[10px] font-medium text-white rounded
+                                  ${crf === 35 ? 'bg-blue-600' : 'bg-blue-500/80'}`}
+                              >
+                                {crf}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex gap-1">
+                            {([28, 23] as const).map(crf => (
+                              <button
+                                key={crf}
+                                onClick={() => handleConvertMkvToMp4(video.id, 'video', video.file_path, crf)}
+                                title={`CRF ${crf}${crf === 23 ? ' (best quality)' : ''}`}
+                                className="w-8 py-0.5 text-[10px] font-medium text-white rounded bg-blue-500/80"
+                              >
+                                {crf}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {/* Bottom color bar */}
                   {(videoColorsCache[video.id] ?? []).length > 0 && (
                     <div className="absolute bottom-0 left-0 right-0 flex h-[3px] pointer-events-none">
@@ -3299,6 +3387,28 @@ export default function RecordingPage() {
               <span>🔍</span>
               Extract OCR text
             </button>
+          )}
+          {(contextMenu.type === 'video' || contextMenu.type === 'durationVideo') &&
+            contextMenu.item.file_path?.toLowerCase().endsWith('.mkv') && (
+            <div className="px-3 py-1.5">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Convert MKV → MP4 (CRF)</p>
+              <div className="flex gap-1">
+                {([40, 35, 32, 28, 23] as const).map(crf => (
+                  <button
+                    key={crf}
+                    className={`flex-1 py-1 text-xs font-medium text-white rounded
+                      ${crf === 35 ? 'bg-blue-600' : 'bg-blue-500/80'} hover:brightness-110`}
+                    onClick={() => {
+                      const videoType = contextMenu.type === 'video' ? 'video' : 'durationVideo';
+                      handleConvertMkvToMp4(contextMenu.item.id, videoType, contextMenu.item.file_path, crf);
+                      setContextMenu(null);
+                    }}
+                  >
+                    {crf}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
           <button
             className="w-full px-3 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"

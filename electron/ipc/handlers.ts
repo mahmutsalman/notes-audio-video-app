@@ -463,14 +463,46 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('clipboard:readFileUrl', async () => {
     if (process.platform === 'darwin') {
+      // Try text/uri-list first — contains real POSIX file:// URL when Cmd+C in Finder
+      const uriList = clipboard.read('text/uri-list');
+      if (uriList) {
+        const uri = uriList.split('\n').map(l => l.trim()).find(l => l.startsWith('file://') && !l.startsWith('file:///.file/'));
+        if (uri) {
+          const filePath = decodeURIComponent(uri.replace('file://', ''));
+          return { success: true, filePath };
+        }
+      }
+
+      // Try public.file-url — sometimes has real path, sometimes a file-reference ID
       const fileUrl = clipboard.read('public.file-url');
-      if (fileUrl) {
-        // Decode the file URL and remove the file:// prefix
+      if (fileUrl && !fileUrl.includes('/.file/id=')) {
         const filePath = decodeURIComponent(fileUrl.replace('file://', ''));
         return { success: true, filePath };
       }
+
+      // Last resort: resolve macOS file-reference URL via osascript
+      if (fileUrl && fileUrl.includes('/.file/id=')) {
+        try {
+          const { execSync } = await import('child_process');
+          const result = execSync(
+            `osascript -e 'tell application "Finder" to POSIX path of (the clipboard as alias)'`,
+            { encoding: 'utf8', timeout: 3000 }
+          ).trim();
+          if (result) return { success: true, filePath: result };
+        } catch {
+          // osascript failed — fall through
+        }
+      }
+
+      // Fallback: NSFilenamesPboardType plist
+      try {
+        const plist = clipboard.read('NSFilenamesPboardType');
+        if (plist) {
+          const match = plist.match(/<string>([^<]+)<\/string>/);
+          if (match?.[1]) return { success: true, filePath: match[1] };
+        }
+      } catch {}
     }
-    // Windows support could be added here with clipboard.read('FileNameW')
     return { success: false };
   });
 
@@ -1090,6 +1122,52 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('video:checkFFmpeg', async () => {
     const { checkFFmpegAvailable } = await import('../services/videoCompression');
     return checkFFmpegAvailable();
+  });
+
+  ipcMain.handle('video:remuxToMp4', async (event, videoId: number, videoType: 'video' | 'durationVideo', filePath: string, crf?: number) => {
+    try {
+      const { remuxToMp4, compressVideo, replaceWithCompressed } = await import('../services/videoCompression');
+      const { VideosOperations, DurationVideosOperations } = await import('../database/operations');
+
+      let outputPath: string;
+
+      if (crf != null) {
+        // CRF mode: re-encode with compression (smaller file, same quality for screen content)
+        const compressResult = await compressVideo(
+          filePath,
+          { crf, preset: 'medium', audioBitrate: '96k' },
+          (progress) => event.sender.send('video:compression-progress', progress)
+        );
+        if (!compressResult.success || !compressResult.outputPath) {
+          return { success: false, error: compressResult.error };
+        }
+        outputPath = compressResult.outputPath;
+      } else {
+        // Lossless remux: container swap only, no re-encode (~5 seconds)
+        const remuxResult = await remuxToMp4(filePath);
+        if (!remuxResult.success || !remuxResult.outputPath) {
+          return { success: false, error: remuxResult.error };
+        }
+        outputPath = remuxResult.outputPath;
+      }
+
+      // Swap files on disk: delete original, rename output to final .mp4 path
+      const swapResult = await replaceWithCompressed(filePath, outputPath);
+      if (!swapResult.success || !swapResult.newPath) {
+        return { success: false, error: swapResult.error };
+      }
+
+      // Update DB file_path
+      if (videoType === 'video') {
+        VideosOperations.updateFilePath(videoId, swapResult.newPath);
+      } else {
+        DurationVideosOperations.updateFilePath(videoId, swapResult.newPath);
+      }
+
+      return { success: true, newPath: swapResult.newPath };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
   });
 
   ipcMain.handle('video:mergeExtension', async (
