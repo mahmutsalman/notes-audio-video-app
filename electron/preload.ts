@@ -622,6 +622,7 @@ const electronAPI = {
     captionUpdate: (caption: string): void => ipcRenderer.send('obs:captionUpdate', caption),
     continueToggle: (isOn: boolean): void => ipcRenderer.send('obs:continueToggle', isOn),
     updateStagedMarkCaption: (id: number, caption: string): void => ipcRenderer.send('obs:updateStagedMarkCaption', id, caption),
+    mergeStagedMarks: (keepId: number, deleteId: number, caption: string | null): void => ipcRenderer.send('obs:mergeStagedMarks', keepId, deleteId, caption),
     hideOverlay: (): void => ipcRenderer.send('obs:hideOverlay'),
     onPaused: (cb: (data: { timecode: number; timecodeStr: string }) => void) => {
       const listener = (_: any, data: any) => cb(data);

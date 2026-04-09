@@ -708,6 +708,7 @@ export interface ElectronAPI {
     captionUpdate: (caption: string) => void;
     continueToggle: (isOn: boolean) => void;
     updateStagedMarkCaption: (id: number, caption: string) => void;
+    mergeStagedMarks: (keepId: number, deleteId: number, caption: string | null) => void;
     hideOverlay: () => void;
     onPaused: (cb: (data: { timecode: number; timecodeStr: string }) => void) => () => void;
     onResumed: (cb: () => void) => () => void;
