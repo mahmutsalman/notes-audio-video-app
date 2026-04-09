@@ -2367,8 +2367,10 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('obs:stopRecording', async () => {
+    const { hideObsMarkOverlay } = await import('../windows/obsMarkOverlay');
+    hideObsMarkOverlay(); // hide immediately — don't wait for OBS event (OBS may be disconnected)
     const { obsService } = await import('../services/obsService');
-    await obsService.stopRecording();
+    await obsService.stopRecording().catch(() => {}); // best-effort; overlay already hidden
   });
 
   ipcMain.handle('obs:getStagedMarks', async () => {

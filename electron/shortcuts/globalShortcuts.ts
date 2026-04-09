@@ -130,6 +130,15 @@ async function handleF10(): Promise<void> {
   }
 
   if (!status.isRecording) {
+    // If the overlay is still visible, OBS stopped/disconnected while paused (e.g. user was away).
+    // Dismiss the stale overlay instead of starting a fresh recording.
+    const { getOverlayWindow, hideObsMarkOverlay } = await import('../windows/obsMarkOverlay');
+    const overlay = getOverlayWindow();
+    if (overlay && !overlay.isDestroyed() && overlay.isVisible()) {
+      console.log('[F10] Overlay visible but OBS not recording — dismissing stale overlay');
+      hideObsMarkOverlay();
+      return;
+    }
     console.log('[F10] → StartRecord');
     await obsService.startRecording();
   } else if (!status.isPaused) {
