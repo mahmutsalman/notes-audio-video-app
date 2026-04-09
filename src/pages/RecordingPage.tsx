@@ -34,7 +34,7 @@ import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '
 import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
 import { IMAGE_COLOR_KEYS, IMAGE_COLORS } from '../utils/imageColors';
-import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState } from '../types';
+import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState, ObsStagedMark } from '../types';
 import SearchNavBanner from '../components/search/SearchNavBanner';
 import { TagModal } from '../components/common/TagModal';
 import type { MediaTagType } from '../types';
@@ -151,6 +151,7 @@ export default function RecordingPage() {
   const [selectedVideoForMarks, setSelectedVideoForMarks] = useState<Video | null>(null);
   const [videoMarks, setVideoMarks] = useState<Duration[]>([]);
   const [stagedMarksCount, setStagedMarksCount] = useState(0);
+  const [stagedMarks, setStagedMarks] = useState<ObsStagedMark[]>([]);
   const [isAssigningMarks, setIsAssigningMarks] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const inlineVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -782,11 +783,18 @@ export default function RecordingPage() {
     }
   };
 
-  // OBS staged marks count
+  // OBS staged marks
+  const refreshStagedMarks = () => {
+    window.electronAPI.obs.getStagedMarks().then(marks => {
+      setStagedMarks(marks);
+      setStagedMarksCount(marks.length);
+    }).catch(() => {});
+  };
+
   useEffect(() => {
-    window.electronAPI.obs.getStagedMarksCount().then(setStagedMarksCount).catch(() => {});
+    refreshStagedMarks();
     const cleanup = window.electronAPI.obs.onStopped(() => {
-      window.electronAPI.obs.getStagedMarksCount().then(setStagedMarksCount).catch(() => {});
+      refreshStagedMarks();
     });
     return cleanup;
   }, []);
@@ -800,6 +808,17 @@ export default function RecordingPage() {
     } catch {
       setVideoMarks([]);
     }
+  };
+
+  const handleDeleteStagedMark = async (markId: number) => {
+    await window.electronAPI.obs.deleteStagedMark(markId).catch(() => {});
+    refreshStagedMarks();
+  };
+
+  const formatMarkTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${String(s).padStart(2, '0')}`;
   };
 
   const handleExitVideoMode = () => {
@@ -837,6 +856,7 @@ export default function RecordingPage() {
     setAssignDurationError(null);
     try {
       const result = await window.electronAPI.obs.assignStagedMarksToDurationVideo(video.id, Number(id));
+      setStagedMarks([]);
       setStagedMarksCount(0);
       const marks = await window.electronAPI.durations.getByRecordingAndDurationVideo(Number(id), video.id);
       setDurationVideoMarks(marks);
@@ -919,6 +939,7 @@ export default function RecordingPage() {
     setAssignError(null);
     try {
       const result = await window.electronAPI.obs.assignStagedMarks(video.id, Number(id));
+      setStagedMarks([]);
       setStagedMarksCount(0);
       const marks = await window.electronAPI.durations.getByRecordingAndVideo(Number(id), video.id);
       setVideoMarks(marks);
@@ -2501,14 +2522,35 @@ export default function RecordingPage() {
           </div>
           {/* OBS staged marks assign banner for duration videos */}
           {stagedMarksCount > 0 && (
-            <div className="mb-2 p-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/40 rounded-lg flex items-center gap-2">
-              <span className="text-orange-500 text-xs">⏺</span>
-              <span className="text-xs text-orange-700 dark:text-orange-300 font-medium flex-1">
-                {stagedMarksCount} OBS mark{stagedMarksCount !== 1 ? 's' : ''} staged — click a video to assign
-              </span>
-              {assignDurationError && (
-                <span className="text-xs text-rose-600 dark:text-rose-400">{assignDurationError}</span>
-              )}
+            <div className="mb-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/40 rounded-lg overflow-hidden">
+              <div className="px-2.5 py-2 flex items-center gap-2">
+                <span className="text-orange-500 text-xs">⏺</span>
+                <span className="text-xs text-orange-700 dark:text-orange-300 font-medium flex-1">
+                  {stagedMarksCount} OBS mark{stagedMarksCount !== 1 ? 's' : ''} staged — click a video to assign
+                </span>
+                {assignDurationError && (
+                  <span className="text-xs text-rose-600 dark:text-rose-400">{assignDurationError}</span>
+                )}
+              </div>
+              <div className="border-t border-orange-200 dark:border-orange-700/40 divide-y divide-orange-100 dark:divide-orange-800/30">
+                {stagedMarks.map(mark => (
+                  <div key={mark.id} className="flex items-center gap-2 px-2.5 py-1.5">
+                    <span className="text-xs font-mono text-orange-600 dark:text-orange-400 shrink-0">
+                      {formatMarkTime(mark.start_time)} → {formatMarkTime(mark.end_time)}
+                    </span>
+                    <span className="text-xs text-orange-700 dark:text-orange-300 flex-1 truncate">
+                      {mark.caption || <span className="opacity-40 italic">no caption</span>}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteStagedMark(mark.id)}
+                      className="text-orange-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors shrink-0 text-xs px-1"
+                      title="Remove this mark"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -3020,14 +3062,35 @@ export default function RecordingPage() {
 
         {/* OBS staged marks assign banner */}
         {stagedMarksCount > 0 && (
-          <div className="mb-3 p-2.5 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/40 rounded-lg flex items-center gap-2">
-            <span className="text-orange-500 text-sm">⏺</span>
-            <span className="text-xs text-orange-700 dark:text-orange-300 font-medium flex-1">
-              {stagedMarksCount} OBS mark{stagedMarksCount !== 1 ? 's' : ''} staged — click a video thumbnail to assign
-            </span>
-            {assignError && (
-              <span className="text-xs text-rose-600 dark:text-rose-400">{assignError}</span>
-            )}
+          <div className="mb-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/40 rounded-lg overflow-hidden">
+            <div className="px-3 py-2 flex items-center gap-2">
+              <span className="text-orange-500 text-sm">⏺</span>
+              <span className="text-xs text-orange-700 dark:text-orange-300 font-medium flex-1">
+                {stagedMarksCount} OBS mark{stagedMarksCount !== 1 ? 's' : ''} staged — click a video thumbnail to assign
+              </span>
+              {assignError && (
+                <span className="text-xs text-rose-600 dark:text-rose-400">{assignError}</span>
+              )}
+            </div>
+            <div className="border-t border-orange-200 dark:border-orange-700/40 divide-y divide-orange-100 dark:divide-orange-800/30">
+              {stagedMarks.map(mark => (
+                <div key={mark.id} className="flex items-center gap-2 px-3 py-1.5">
+                  <span className="text-xs font-mono text-orange-600 dark:text-orange-400 shrink-0">
+                    {formatMarkTime(mark.start_time)} → {formatMarkTime(mark.end_time)}
+                  </span>
+                  <span className="text-xs text-orange-700 dark:text-orange-300 flex-1 truncate">
+                    {mark.caption || <span className="opacity-40 italic">no caption</span>}
+                  </span>
+                  <button
+                    onClick={() => handleDeleteStagedMark(mark.id)}
+                    className="text-orange-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors shrink-0 text-xs px-1"
+                    title="Remove this mark"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

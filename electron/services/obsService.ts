@@ -25,6 +25,8 @@ class OBSService extends EventEmitter {
   lastResumeTimecode: number;  // seconds — start_time for next mark
   pauseTimecode: number;       // seconds — end_time for current mark
   currentMarkCaption: string;  // updated by overlay IPC as user types
+  lastStagedMarkId: number | null;  // id of last saved staged mark (for continue mode)
+  continueMode: boolean;            // when true, next F10 extends previous mark instead of creating new
 
   constructor() {
     super();
@@ -37,6 +39,8 @@ class OBSService extends EventEmitter {
     this.lastResumeTimecode = 0;
     this.pauseTimecode = 0;
     this.currentMarkCaption = '';
+    this.lastStagedMarkId = null;
+    this.continueMode = false;
   }
 
   // Parse "HH:MM:SS.mmm" → seconds
@@ -105,6 +109,8 @@ class OBSService extends EventEmitter {
         this.lastResumeTimecode = 0;
         this.pauseTimecode = 0;
         this.currentMarkCaption = '';
+        this.lastStagedMarkId = null;
+        this.continueMode = false;
         console.log('[OBS] Recording started, session:', this.currentSessionId);
         this.emit('started', { sessionId: this.currentSessionId });
 
@@ -134,13 +140,28 @@ class OBSService extends EventEmitter {
         return;
 
       } else {
-        // Stopped or unknown
+        // Stopped or unknown — save pending mark if we were paused
+        const hasDuration = this.pauseTimecode > this.lastResumeTimecode;
+        const hasCaption = this.currentMarkCaption.trim().length > 0;
+        const pendingMark =
+          this.recordingState.isPaused &&
+          this.currentSessionId &&
+          (hasDuration || hasCaption)
+            ? {
+                session_id: this.currentSessionId,
+                start_time: this.lastResumeTimecode,
+                end_time: this.pauseTimecode,
+                caption: this.currentMarkCaption.trim() || null,
+              }
+            : null;
+
         this.recordingState.isRecording = false;
         this.recordingState.isPaused = false;
         this.recordingState.recordTimecode = '00:00:00';
         const sessionId = this.currentSessionId;
         this.currentSessionId = null;
-        this.emit('stopped', { sessionId });
+        this.currentMarkCaption = '';
+        this.emit('stopped', { sessionId, pendingMark });
       }
 
       this.emit('statusChange', this.getStatus());
