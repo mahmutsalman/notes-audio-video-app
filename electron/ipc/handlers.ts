@@ -60,6 +60,7 @@ import {
   saveQuickCaptureAudio,
   deleteQuickCaptureFiles,
 } from '../services/fileStorage';
+import fs from 'fs';
 import { createBackup, getBackupDir } from '../services/backupService';
 import { mergeAudioFiles } from '../services/audioMerger';
 import { convertWebmToM4a, convertWebmBufferToM4a } from '../services/audioConverter';
@@ -447,6 +448,18 @@ export function setupIpcHandlers(): void {
   });
 
   // ============ Clipboard ============
+  ipcMain.handle('fs:getFileSizes', async (_, filePaths: string[]) => {
+    const sizes: Record<string, number> = {};
+    for (const fp of filePaths) {
+      try {
+        sizes[fp] = fs.statSync(fp).size;
+      } catch {
+        sizes[fp] = 0;
+      }
+    }
+    return sizes;
+  });
+
   ipcMain.handle('clipboard:readImage', async () => {
     const image = clipboard.readImage();
     if (image.isEmpty()) {

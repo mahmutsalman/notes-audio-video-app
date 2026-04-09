@@ -149,6 +149,7 @@ export default function RecordingPage() {
   const [contextMenuShowColors, setContextMenuShowColors] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [convertingVideoIds, setConvertingVideoIds] = useState<Set<number>>(new Set());
+  const [fileSizes, setFileSizes] = useState<Record<string, number>>({});
   const [isContentPressed, setIsContentPressed] = useState(false);
   const [activeDurationId, setActiveDurationId] = useState<number | null>(null);
   const durationPlans = useDurationPlans(activeDurationId);
@@ -1296,6 +1297,22 @@ export default function RecordingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images]);
 
+  // Fetch file sizes for all media (videos, images, audios — recording + duration level)
+  useEffect(() => {
+    const recVideos = recording?.videos ?? [];
+    const paths = [
+      ...recVideos.map((v: { file_path: string }) => v.file_path),
+      ...images.map(i => i.file_path),
+      ...recordingAudios.map(a => a.file_path),
+      ...activeDurationVideos.map(v => v.file_path),
+      ...activeDurationImages.map(i => i.file_path),
+      ...activeDurationAudios.map(a => a.file_path),
+    ].filter(Boolean);
+    if (paths.length === 0) return;
+    window.electronAPI.fs.getFileSizes(paths).then(setFileSizes);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording?.videos, images, recordingAudios, activeDurationVideos, activeDurationImages, activeDurationAudios]);
+
   // Fetch color labels for recording-level images
   useEffect(() => {
     if (images.length === 0) {
@@ -2205,6 +2222,10 @@ export default function RecordingPage() {
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
               Images ({activeDurationImages.length})
+              {activeDurationImages.length > 0 && (() => {
+                const total = activeDurationImages.reduce((s, i) => s + (fileSizes[i.file_path] ?? 0), 0);
+                return total > 0 ? <span className="ml-1.5 text-[10px] font-normal text-blue-400 dark:text-blue-500">· {formatFileSize(total)}</span> : null;
+              })()}
             </h3>
             <button
               onClick={handleAddDurationImage}
@@ -2284,6 +2305,10 @@ export default function RecordingPage() {
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
               Videos ({activeDurationVideos.length})
+              {activeDurationVideos.length > 0 && (() => {
+                const total = activeDurationVideos.reduce((s, v) => s + (fileSizes[v.file_path] ?? 0), 0);
+                return total > 0 ? <span className="ml-1.5 text-[10px] font-normal text-blue-400 dark:text-blue-500">· {formatFileSize(total)}</span> : null;
+              })()}
             </h3>
             <button
               onClick={handleAddDurationVideo}
@@ -2404,6 +2429,12 @@ export default function RecordingPage() {
                       🏷️{durationVideoTagCountMap[video.id]}
                     </span>
                   )}
+                  {/* File size badge */}
+                  {(fileSizes[video.file_path] ?? 0) > 0 && (
+                    <span className="absolute bottom-1 right-1 text-[9px] bg-black/60 text-white rounded px-1 py-0.5 leading-none pointer-events-none z-20">
+                      {formatFileSize(fileSizes[video.file_path])}
+                    </span>
+                  )}
                 </div>
                 {/* Caption */}
                 {video.caption && (
@@ -2439,6 +2470,10 @@ export default function RecordingPage() {
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
               Audio Recordings ({activeDurationAudios.length})
+              {activeDurationAudios.length > 0 && (() => {
+                const total = activeDurationAudios.reduce((s, a) => s + (fileSizes[a.file_path] ?? 0), 0);
+                return total > 0 ? <span className="ml-1.5 text-[10px] font-normal text-blue-400 dark:text-blue-500">· {formatFileSize(total)}</span> : null;
+              })()}
             </h3>
             <button
               onClick={() => setIsRecordingDurationAudio(true)}
@@ -2638,6 +2673,10 @@ export default function RecordingPage() {
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-medium text-violet-700 dark:text-violet-300">
             Images ({images.length})
+            {images.length > 0 && (() => {
+              const total = images.reduce((s, i) => s + (fileSizes[i.file_path] ?? 0), 0);
+              return total > 0 ? <span className="ml-1.5 text-[10px] font-normal text-violet-400 dark:text-violet-500">· {formatFileSize(total)}</span> : null;
+            })()}
           </h2>
           <button
             onClick={handleAddImages}
@@ -2696,6 +2735,10 @@ export default function RecordingPage() {
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-medium text-violet-700 dark:text-violet-300">
             Videos ({videos.length})
+            {videos.length > 0 && (() => {
+              const total = videos.reduce((s, v) => s + (fileSizes[v.file_path] ?? 0), 0);
+              return total > 0 ? <span className="ml-1.5 text-[10px] font-normal text-violet-400 dark:text-violet-500">· {formatFileSize(total)}</span> : null;
+            })()}
           </h2>
           <button
             onClick={handleAddVideos}
@@ -2819,6 +2862,12 @@ export default function RecordingPage() {
                       🏷️{videoTagCountMap[video.id]}
                     </span>
                   )}
+                  {/* File size badge */}
+                  {(fileSizes[video.file_path] ?? 0) > 0 && (
+                    <span className="absolute bottom-1 right-1 text-[9px] bg-black/60 text-white rounded px-1 py-0.5 leading-none pointer-events-none z-20">
+                      {formatFileSize(fileSizes[video.file_path])}
+                    </span>
+                  )}
                 </div>
                 {/* Caption */}
                 {video.caption && (
@@ -2840,6 +2889,10 @@ export default function RecordingPage() {
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-medium text-violet-700 dark:text-violet-300">
             Audio Recordings ({recordingAudios.length})
+            {recordingAudios.length > 0 && (() => {
+              const total = recordingAudios.reduce((s, a) => s + (fileSizes[a.file_path] ?? 0), 0);
+              return total > 0 ? <span className="ml-1.5 text-[10px] font-normal text-violet-400 dark:text-violet-500">· {formatFileSize(total)}</span> : null;
+            })()}
           </h2>
           <button
             onClick={() => setIsRecordingAudio(true)}

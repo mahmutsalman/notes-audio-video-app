@@ -116,6 +116,12 @@ const electronAPI = {
     },
   },
 
+  // File system
+  fs: {
+    getFileSizes: (filePaths: string[]): Promise<Record<string, number>> =>
+      ipcRenderer.invoke('fs:getFileSizes', filePaths),
+  },
+
   // Theme
   theme: {
     get: (): Promise<'light' | 'dark' | 'system'> => ipcRenderer.invoke('theme:get'),
