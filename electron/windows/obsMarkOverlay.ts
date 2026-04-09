@@ -14,7 +14,7 @@ export function createObsMarkOverlayWindow(): void {
 
   overlayWindow = new BrowserWindow({
     width: 420,
-    height: 190,
+    height: 220,
     frame: false,
     alwaysOnTop: true,
     resizable: false,
@@ -58,11 +58,53 @@ export function showObsMarkOverlay(timecode: number, markCount: number): void {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: sw, height: sh } = primaryDisplay.workAreaSize;
   const x = primaryDisplay.bounds.x + sw - 440;
-  const y = primaryDisplay.bounds.y + sh - 210;
+  const y = primaryDisplay.bounds.y + sh - 240;
   overlayWindow!.setPosition(x, y);
 
   // Send data to overlay
   overlayWindow!.webContents.send('obs:overlayData', { timecode, markCount });
+  overlayWindow!.showInactive();
+  overlayWindow!.focus();
+}
+
+export function toggleObsMarkOverlay(
+  timecode: number,
+  markCount: number,
+  marks: any[],
+  currentCaption: string
+): void {
+  if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+    overlayWindow.hide();
+    return;
+  }
+
+  if (!overlayWindow || overlayWindow.isDestroyed()) {
+    createObsMarkOverlayWindow();
+  }
+
+  // Resize based on how many previous marks to show
+  const MARK_ROW_H = 46;
+  const SECTION_HEADER_H = 30;
+  const BASE_H = 220;
+  const extraH = marks.length > 0
+    ? SECTION_HEADER_H + Math.min(marks.length, 4) * MARK_ROW_H
+    : 0;
+  const height = BASE_H + extraH;
+
+  overlayWindow!.setSize(420, height);
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: sw, height: sh } = primaryDisplay.workAreaSize;
+  const x = primaryDisplay.bounds.x + sw - 440;
+  const y = primaryDisplay.bounds.y + sh - height - 20;
+  overlayWindow!.setPosition(x, y);
+
+  overlayWindow!.webContents.send('obs:overlayDataWithMarks', {
+    timecode,
+    markCount,
+    marks,
+    currentCaption,
+  });
   overlayWindow!.showInactive();
   overlayWindow!.focus();
 }

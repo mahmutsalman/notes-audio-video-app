@@ -2647,4 +2647,14 @@ export const ObsStagedMarksOperations = {
     const db = getDatabase();
     db.prepare('DELETE FROM obs_staged_marks WHERE id = ?').run(id);
   },
+
+  updateEndTime(id: number, endTime: number): void {
+    const db = getDatabase();
+    db.prepare('UPDATE obs_staged_marks SET end_time = ? WHERE id = ?').run(endTime, id);
+  },
+
+  updateCaption(id: number, caption: string | null): void {
+    const db = getDatabase();
+    db.prepare('UPDATE obs_staged_marks SET caption = ? WHERE id = ?').run(caption || null, id);
+  },
 };

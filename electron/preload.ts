@@ -614,11 +614,15 @@ const electronAPI = {
     hasStagedMarks: (): Promise<boolean> => ipcRenderer.invoke('obs:hasStagedMarks'),
     getStagedMarksCount: (): Promise<number> => ipcRenderer.invoke('obs:getStagedMarksCount'),
     clearStagedMarks: (): Promise<void> => ipcRenderer.invoke('obs:clearStagedMarks'),
+    deleteStagedMark: (id: number): Promise<void> => ipcRenderer.invoke('obs:deleteStagedMark', id),
     assignStagedMarks: (videoId: number, recordingId: number): Promise<{ assigned: number }> =>
       ipcRenderer.invoke('obs:assignStagedMarks', videoId, recordingId),
     assignStagedMarksToDurationVideo: (durationVideoId: number, recordingId: number): Promise<{ assigned: number }> =>
       ipcRenderer.invoke('obs:assignStagedMarksToDurationVideo', durationVideoId, recordingId),
     captionUpdate: (caption: string): void => ipcRenderer.send('obs:captionUpdate', caption),
+    continueToggle: (isOn: boolean): void => ipcRenderer.send('obs:continueToggle', isOn),
+    updateStagedMarkCaption: (id: number, caption: string): void => ipcRenderer.send('obs:updateStagedMarkCaption', id, caption),
+    hideOverlay: (): void => ipcRenderer.send('obs:hideOverlay'),
     onPaused: (cb: (data: { timecode: number; timecodeStr: string }) => void) => {
       const listener = (_: any, data: any) => cb(data);
       ipcRenderer.on('obs:paused', listener);
@@ -648,6 +652,11 @@ const electronAPI = {
       const listener = (_: any, data: any) => cb(data);
       ipcRenderer.on('obs:overlayData', listener);
       return () => ipcRenderer.removeListener('obs:overlayData', listener);
+    },
+    onOverlayDataWithMarks: (cb: (data: { timecode: number; markCount: number; marks: any[]; currentCaption: string }) => void) => {
+      const listener = (_: any, data: any) => cb(data);
+      ipcRenderer.on('obs:overlayDataWithMarks', listener);
+      return () => ipcRenderer.removeListener('obs:overlayDataWithMarks', listener);
     },
   },
 

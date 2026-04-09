@@ -12,7 +12,6 @@
       background: rgba(15, 15, 20, 0.96);
       color: #f0f0f0;
       width: 420px;
-      height: 190px;
       overflow: hidden;
       border-radius: 12px;
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -23,9 +22,8 @@
     .panel {
       display: flex;
       flex-direction: column;
-      height: 100%;
       padding: 14px 16px 14px;
-      gap: 12px;
+      gap: 10px;
     }
 
     .header {
@@ -81,6 +79,12 @@
       align-items: center;
       gap: 8px;
       -webkit-app-region: no-drag;
+      transition: opacity 0.15s;
+    }
+
+    .input-row.dimmed {
+      opacity: 0.35;
+      pointer-events: none;
     }
 
     #caption-input {
@@ -104,11 +108,161 @@
       color: #555;
     }
 
+    /* Continue toggle row */
+    .continue-row {
+      display: none;
+      align-items: center;
+      -webkit-app-region: no-drag;
+    }
+
+    .continue-row.visible {
+      display: flex;
+    }
+
+    .continue-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      padding: 5px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.05);
+      transition: background 0.15s, border-color 0.15s;
+      flex: 1;
+    }
+
+    .continue-toggle:hover {
+      background: rgba(255,255,255,0.09);
+    }
+
+    .continue-toggle.active {
+      background: rgba(251, 191, 36, 0.12);
+      border-color: rgba(251, 191, 36, 0.35);
+    }
+
+    .toggle-icon {
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .toggle-label {
+      font-size: 12px;
+      color: #aaa;
+      transition: color 0.15s;
+    }
+
+    .continue-toggle.active .toggle-label {
+      color: #fbbf24;
+    }
+
+    .toggle-check {
+      margin-left: auto;
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .continue-toggle.active .toggle-check {
+      background: #fbbf24;
+      border-color: #fbbf24;
+      color: #111;
+    }
+
+    /* Previous marks section */
+    .marks-section {
+      display: none;
+      flex-direction: column;
+      gap: 0;
+      -webkit-app-region: no-drag;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      padding-top: 8px;
+    }
+
+    .marks-section.visible {
+      display: flex;
+    }
+
+    .marks-header {
+      font-size: 10px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+
+    .marks-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      max-height: 176px;
+      overflow-y: auto;
+    }
+
+    .marks-list::-webkit-scrollbar {
+      width: 4px;
+    }
+    .marks-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .marks-list::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.12);
+      border-radius: 2px;
+    }
+
+    .mark-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mark-time {
+      font-size: 11px;
+      font-family: monospace;
+      color: #60a5fa;
+      white-space: nowrap;
+      min-width: 80px;
+    }
+
+    .mark-caption-input {
+      flex: 1;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      color: #d0d0d0;
+      font-size: 12px;
+      padding: 5px 9px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .mark-caption-input:focus {
+      border-color: rgba(96, 165, 250, 0.5);
+      background: rgba(255,255,255,0.09);
+    }
+
+    .mark-caption-input::placeholder {
+      color: #444;
+    }
+
     .footer {
       display: flex;
       align-items: center;
       justify-content: space-between;
       -webkit-app-region: no-drag;
+    }
+
+    .hint-col {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
     }
 
     .hint {
@@ -124,6 +278,18 @@
       font-size: 10px;
       color: #999;
       font-family: monospace;
+    }
+
+    .caption-saved {
+      font-size: 11px;
+      color: #4ade80;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+    }
+
+    .caption-saved.visible {
+      opacity: 1;
     }
 
     .stop-btn {
@@ -155,7 +321,7 @@
       </div>
     </div>
 
-    <div class="input-row">
+    <div class="input-row" id="input-row">
       <input
         id="caption-input"
         type="text"
@@ -165,50 +331,179 @@
       />
     </div>
 
+    <div class="continue-row" id="continue-row">
+      <div class="continue-toggle" id="continue-toggle">
+        <span class="toggle-icon">↩</span>
+        <span class="toggle-label">Continue previous mark</span>
+        <span class="toggle-check" id="toggle-check"></span>
+      </div>
+    </div>
+
+    <div class="marks-section" id="marks-section">
+      <div class="marks-header">Previous marks</div>
+      <div class="marks-list" id="marks-list"></div>
+    </div>
+
     <div class="footer">
-      <span class="hint"><kbd>F10</kbd> to resume &amp; save mark</span>
+      <div class="hint-col">
+        <span class="hint" id="hint"><kbd>Enter</kbd> save caption &nbsp;·&nbsp; <kbd>F10</kbd> resume &nbsp;·&nbsp; <kbd>F9</kbd> close</span>
+        <span class="caption-saved" id="caption-saved">✓ Caption saved</span>
+      </div>
       <button class="stop-btn" id="stop-btn">Stop ✕</button>
     </div>
   </div>
 
   <script>
     const input = document.getElementById('caption-input');
+    const inputRow = document.getElementById('input-row');
     const timecodeEl = document.getElementById('timecode');
     const markCountEl = document.getElementById('mark-count');
     const stopBtn = document.getElementById('stop-btn');
+    const continueRow = document.getElementById('continue-row');
+    const continueToggle = document.getElementById('continue-toggle');
+    const toggleCheck = document.getElementById('toggle-check');
+    const hintEl = document.getElementById('hint');
+    const captionSavedEl = document.getElementById('caption-saved');
+    const marksSection = document.getElementById('marks-section');
+    const marksList = document.getElementById('marks-list');
 
-    // Format seconds to M:SS
+    let isContinueOn = false;
+    let savedFadeTimer = null;
+
     function formatTimecode(seconds) {
       const m = Math.floor(seconds / 60);
       const s = Math.floor(seconds % 60);
       return m + ':' + String(s).padStart(2, '0');
     }
 
-    // Send caption updates to main process as user types
+    function setContinueMode(on) {
+      isContinueOn = on;
+      if (on) {
+        continueToggle.classList.add('active');
+        toggleCheck.textContent = '✓';
+        inputRow.classList.add('dimmed');
+        hintEl.innerHTML = '<kbd>Enter</kbd> save caption &nbsp;·&nbsp; <kbd>F10</kbd> resume &amp; extend mark &nbsp;·&nbsp; <kbd>F9</kbd> close';
+      } else {
+        continueToggle.classList.remove('active');
+        toggleCheck.textContent = '';
+        inputRow.classList.remove('dimmed');
+        hintEl.innerHTML = '<kbd>Enter</kbd> save caption &nbsp;·&nbsp; <kbd>F10</kbd> resume &nbsp;·&nbsp; <kbd>F9</kbd> close';
+      }
+      if (window.electronAPI && window.electronAPI.obs) {
+        window.electronAPI.obs.continueToggle(on);
+      }
+    }
+
+    continueToggle.addEventListener('click', () => {
+      setContinueMode(!isContinueOn);
+    });
+
+    // Current mark caption: sync on every keystroke
     input.addEventListener('input', () => {
+      captionSavedEl.classList.remove('visible');
+      if (savedFadeTimer) { clearTimeout(savedFadeTimer); savedFadeTimer = null; }
       if (window.electronAPI && window.electronAPI.obs) {
         window.electronAPI.obs.captionUpdate(input.value);
       }
     });
 
-    // Clear input on each new mark (when overlay data arrives)
+    // Enter = show "✓ Caption saved" then close overlay after 1s
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        captionSavedEl.classList.add('visible');
+        if (savedFadeTimer) clearTimeout(savedFadeTimer);
+        savedFadeTimer = setTimeout(() => {
+          captionSavedEl.classList.remove('visible');
+          savedFadeTimer = null;
+          if (window.electronAPI && window.electronAPI.obs) {
+            window.electronAPI.obs.hideOverlay();
+          }
+        }, 1000);
+      }
+    });
+
+    // Build the previous marks list
+    function renderMarks(marks) {
+      marksList.innerHTML = '';
+      if (!marks || marks.length === 0) {
+        marksSection.classList.remove('visible');
+        return;
+      }
+      marksSection.classList.add('visible');
+
+      marks.forEach((mark, i) => {
+        const row = document.createElement('div');
+        row.className = 'mark-row';
+
+        const timeLabel = document.createElement('span');
+        timeLabel.className = 'mark-time';
+        timeLabel.textContent = formatTimecode(mark.start_time) + ' – ' + formatTimecode(mark.end_time);
+
+        const captionInput = document.createElement('input');
+        captionInput.className = 'mark-caption-input';
+        captionInput.type = 'text';
+        captionInput.value = mark.caption || '';
+        captionInput.placeholder = 'no caption';
+        captionInput.autocomplete = 'off';
+        captionInput.spellcheck = false;
+
+        captionInput.addEventListener('input', () => {
+          if (window.electronAPI && window.electronAPI.obs) {
+            window.electronAPI.obs.updateStagedMarkCaption(mark.id, captionInput.value);
+          }
+        });
+
+        // Enter in a mark row moves to next row or back to current mark input
+        captionInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            const rows = marksList.querySelectorAll('.mark-caption-input');
+            const nextIdx = i + 1;
+            if (nextIdx < rows.length) {
+              rows[nextIdx].focus();
+            } else {
+              input.focus();
+            }
+          }
+        });
+
+        row.appendChild(timeLabel);
+        row.appendChild(captionInput);
+        marksList.appendChild(row);
+      });
+    }
+
+    // New F9-triggered event with full marks data
     if (window.electronAPI && window.electronAPI.obs) {
-      window.electronAPI.obs.onOverlayData((data) => {
+      window.electronAPI.obs.onOverlayDataWithMarks((data) => {
         timecodeEl.textContent = formatTimecode(data.timecode || 0);
         markCountEl.textContent = 'Mark #' + ((data.markCount || 0) + 1);
-        input.value = '';
+
+        // Pre-fill current mark caption if user had typed something before
+        input.value = data.currentCaption || '';
+        captionSavedEl.classList.remove('visible');
+        if (savedFadeTimer) { clearTimeout(savedFadeTimer); savedFadeTimer = null; }
+
+        // Show continue toggle only when there's a previous mark
+        if ((data.markCount || 0) > 0) {
+          continueRow.classList.add('visible');
+        } else {
+          continueRow.classList.remove('visible');
+        }
+
+        setContinueMode(false);
+        renderMarks(data.marks || []);
         input.focus();
       });
     }
 
-    // Stop button
     stopBtn.addEventListener('click', () => {
       if (window.electronAPI && window.electronAPI.obs) {
         window.electronAPI.obs.stopRecording();
       }
     });
 
-    // Auto-focus on load
     window.addEventListener('load', () => {
       setTimeout(() => input.focus(), 100);
     });

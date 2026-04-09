@@ -151,23 +151,62 @@ async function handleF10(): Promise<void> {
     const sessionId = obsService.currentSessionId;
 
     if (sessionId) {
-      ObsStagedMarksOperations.create({
-        session_id: sessionId,
-        start_time: obsService.lastResumeTimecode,
-        end_time: obsService.pauseTimecode,
-        caption: caption || null,
-        sort_order: ObsStagedMarksOperations.count(),
-      });
-      console.log('[F10] Staged mark saved:', { start: obsService.lastResumeTimecode, end: obsService.pauseTimecode, caption });
+      if (obsService.continueMode && obsService.lastStagedMarkId !== null) {
+        // Extend previous mark's end_time to current pause point
+        ObsStagedMarksOperations.updateEndTime(obsService.lastStagedMarkId, obsService.pauseTimecode);
+        console.log('[F10] Extended mark', obsService.lastStagedMarkId, 'end to', obsService.pauseTimecode);
+      } else if (obsService.pauseTimecode > obsService.lastResumeTimecode || caption.length > 0) {
+        // Create a new staged mark.
+        // Skip only if duration is zero AND caption is empty (purely accidental double-press).
+        // If the user typed a caption, always save it regardless of duration.
+        const mark = ObsStagedMarksOperations.create({
+          session_id: sessionId,
+          start_time: obsService.lastResumeTimecode,
+          end_time: obsService.pauseTimecode,
+          caption: caption || null,
+          sort_order: ObsStagedMarksOperations.count(),
+        });
+        obsService.lastStagedMarkId = mark.id;
+        console.log('[F10] Staged mark saved:', { start: obsService.lastResumeTimecode, end: obsService.pauseTimecode, caption });
+      } else {
+        console.log('[F10] Skipping zero-duration mark with no caption');
+      }
     } else {
       console.warn('[F10] No sessionId — mark NOT saved');
     }
 
     obsService.lastResumeTimecode = obsService.pauseTimecode;
     obsService.currentMarkCaption = '';
+    obsService.continueMode = false;
     await obsService.resumeRecording();
     // overlay hides via 'resumed' event
   }
+}
+
+async function handleF9(): Promise<void> {
+  console.log('[F9] Key pressed');
+
+  const obsEnabled = SettingsOperations.get('obs_enabled') === 'true';
+  if (!obsEnabled) return;
+
+  const { obsService } = await import('../services/obsService');
+  const status = obsService.getStatus();
+
+  if (!status.isConnected || !status.isPaused) {
+    console.log('[F9] OBS not paused — ignoring');
+    return;
+  }
+
+  const { toggleObsMarkOverlay } = await import('../windows/obsMarkOverlay');
+  const { ObsStagedMarksOperations } = await import('../database/operations');
+
+  const marks = ObsStagedMarksOperations.getAll();
+  toggleObsMarkOverlay(
+    obsService.pauseTimecode,
+    marks.length,
+    marks,
+    obsService.currentMarkCaption
+  );
 }
 
 export function registerObsShortcut(): boolean {
@@ -175,18 +214,30 @@ export function registerObsShortcut(): boolean {
     console.log('[GlobalShortcuts] F10 already registered');
     return true;
   }
-  const registered = globalShortcut.register('F10', () => {
+
+  const f10 = globalShortcut.register('F10', () => {
     handleF10().catch(err => console.error('[F10] Error in handler:', err));
   });
-  if (registered) {
-    console.log('[GlobalShortcuts] ✅ F10 registered — press F10 to start/pause OBS');
+  if (f10) {
+    console.log('[GlobalShortcuts] ✅ F10 registered');
   } else {
-    console.error('[GlobalShortcuts] ❌ Failed to register F10 — key may be in use by another app or macOS system shortcut');
+    console.error('[GlobalShortcuts] ❌ Failed to register F10');
   }
-  return registered;
+
+  const f9 = globalShortcut.register('F9', () => {
+    handleF9().catch(err => console.error('[F9] Error in handler:', err));
+  });
+  if (f9) {
+    console.log('[GlobalShortcuts] ✅ F9 registered — press F9 to toggle caption overlay');
+  } else {
+    console.error('[GlobalShortcuts] ❌ Failed to register F9');
+  }
+
+  return f10;
 }
 
 export function unregisterObsShortcut(): void {
   globalShortcut.unregister('F10');
-  console.log('[GlobalShortcuts] F10 unregistered');
+  globalShortcut.unregister('F9');
+  console.log('[GlobalShortcuts] F10 + F9 unregistered');
 }

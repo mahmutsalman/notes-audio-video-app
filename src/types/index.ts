@@ -702,15 +702,20 @@ export interface ElectronAPI {
     hasStagedMarks: () => Promise<boolean>;
     getStagedMarksCount: () => Promise<number>;
     clearStagedMarks: () => Promise<void>;
+    deleteStagedMark: (id: number) => Promise<void>;
     assignStagedMarks: (videoId: number, recordingId: number) => Promise<{ assigned: number }>;
     assignStagedMarksToDurationVideo: (durationVideoId: number, recordingId: number) => Promise<{ assigned: number }>;
     captionUpdate: (caption: string) => void;
+    continueToggle: (isOn: boolean) => void;
+    updateStagedMarkCaption: (id: number, caption: string) => void;
+    hideOverlay: () => void;
     onPaused: (cb: (data: { timecode: number; timecodeStr: string }) => void) => () => void;
     onResumed: (cb: () => void) => () => void;
     onStarted: (cb: (data: { sessionId: string }) => void) => () => void;
     onStopped: (cb: (data: { sessionId: string | null }) => void) => () => void;
     onStatusChange: (cb: (status: any) => void) => () => void;
     onOverlayData: (cb: (data: { timecode: number; markCount: number }) => void) => () => void;
+    onOverlayDataWithMarks: (cb: (data: { timecode: number; markCount: number; marks: any[]; currentCaption: string }) => void) => () => void;
   };
   screen: {
     getAllDisplays: () => Promise<any[]>;

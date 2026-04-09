@@ -78,9 +78,8 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
   const { ObsStagedMarksOperations } = await import('../database/operations');
 
   obsService.on('paused', (data: { timecode: number; timecodeStr: string }) => {
-    const count = ObsStagedMarksOperations.count();
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:paused', data);
-    showObsMarkOverlay(data.timecode, count);
+    // Overlay is NOT auto-shown on pause — user presses F9 to open it explicitly
   });
 
   obsService.on('resumed', () => {
@@ -88,7 +87,13 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     hideObsMarkOverlay();
   });
 
-  obsService.on('stopped', (data: { sessionId: string | null }) => {
+  obsService.on('stopped', (data: { sessionId: string | null; pendingMark?: any }) => {
+    // If stopped while paused, save the last mark before clearing state
+    if (data.pendingMark) {
+      data.pendingMark.sort_order = ObsStagedMarksOperations.count();
+      ObsStagedMarksOperations.create(data.pendingMark);
+      console.log('[OBS] Saved pending mark on stop:', data.pendingMark);
+    }
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:stopped', data);
     hideObsMarkOverlay();
   });
@@ -2389,6 +2394,10 @@ export function setupIpcHandlers(): void {
     ObsStagedMarksOperations.deleteAll();
   });
 
+  ipcMain.handle('obs:deleteStagedMark', async (_, id: number) => {
+    ObsStagedMarksOperations.delete(id);
+  });
+
   ipcMain.handle('obs:assignStagedMarks', async (_, videoId: number, recordingId: number) => {
     const marks = ObsStagedMarksOperations.getAll();
     if (marks.length === 0) throw new Error('No staged marks to assign');
@@ -2463,6 +2472,21 @@ export function setupIpcHandlers(): void {
     import('../services/obsService').then(({ obsService }) => {
       obsService.currentMarkCaption = caption;
     });
+  });
+
+  ipcMain.on('obs:continueToggle', (_, isOn: boolean) => {
+    import('../services/obsService').then(({ obsService }) => {
+      obsService.continueMode = isOn;
+    });
+  });
+
+  ipcMain.on('obs:updateStagedMarkCaption', (_, id: number, caption: string) => {
+    ObsStagedMarksOperations.updateCaption(id, caption);
+  });
+
+  ipcMain.on('obs:hideOverlay', async () => {
+    const { hideObsMarkOverlay } = await import('../windows/obsMarkOverlay');
+    hideObsMarkOverlay();
   });
 
   // Toggle OBS enable/disable and re-register F10 shortcut accordingly
