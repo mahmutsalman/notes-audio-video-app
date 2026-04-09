@@ -200,11 +200,22 @@ async function handleF9(): Promise<void> {
   const { toggleObsMarkOverlay } = await import('../windows/obsMarkOverlay');
   const { ObsStagedMarksOperations } = await import('../database/operations');
 
-  const marks = ObsStagedMarksOperations.getAll();
+  const savedMarks = ObsStagedMarksOperations.getAll();
+
+  // Always include the current pending mark (not yet in DB) so the user can see it in the list
+  const pendingMark = {
+    id: 0,           // 0 = sentinel for "unsaved"
+    start_time: obsService.lastResumeTimecode,
+    end_time: obsService.pauseTimecode,
+    caption: obsService.currentMarkCaption,
+    sort_order: savedMarks.length,
+    isPending: true,
+  };
+
   toggleObsMarkOverlay(
     obsService.pauseTimecode,
-    marks.length,
-    marks,
+    savedMarks.length,       // markCount = saved marks only (drives "Mark #N" label)
+    [...savedMarks, pendingMark],
     obsService.currentMarkCaption
   );
 }

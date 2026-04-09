@@ -99,6 +99,7 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
   });
 
   obsService.on('started', (data: { sessionId: string }) => {
+    ObsStagedMarksOperations.deleteAll();
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:started', data);
   });
 
@@ -2482,6 +2483,10 @@ export function setupIpcHandlers(): void {
 
   ipcMain.on('obs:updateStagedMarkCaption', (_, id: number, caption: string) => {
     ObsStagedMarksOperations.updateCaption(id, caption);
+  });
+
+  ipcMain.on('obs:mergeStagedMarks', (_, keepId: number, deleteId: number, caption: string | null) => {
+    ObsStagedMarksOperations.merge(keepId, deleteId, caption || null);
   });
 
   ipcMain.on('obs:hideOverlay', async () => {
