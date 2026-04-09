@@ -470,6 +470,9 @@ export interface ElectronAPI {
     openFile: (path: string) => Promise<void>;
     getFileUrl: (path: string) => string;
   };
+  fs: {
+    getFileSizes: (filePaths: string[]) => Promise<Record<string, number>>;
+  };
   theme: {
     get: () => Promise<'light' | 'dark' | 'system'>;
     set: (theme: 'light' | 'dark' | 'system') => Promise<void>;
