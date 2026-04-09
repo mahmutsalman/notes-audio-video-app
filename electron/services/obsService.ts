@@ -27,6 +27,7 @@ class OBSService extends EventEmitter {
   currentMarkCaption: string;  // updated by overlay IPC as user types
   lastStagedMarkId: number | null;  // id of last saved staged mark (for continue mode)
   continueMode: boolean;            // when true, next F10 extends previous mark instead of creating new
+  private stoppingTimecode: number; // timecode captured on STOPPING (used for final mark when stopped while recording)
 
   constructor() {
     super();
@@ -41,6 +42,7 @@ class OBSService extends EventEmitter {
     this.currentMarkCaption = '';
     this.lastStagedMarkId = null;
     this.continueMode = false;
+    this.stoppingTimecode = 0;
   }
 
   // Parse "HH:MM:SS.mmm" → seconds
@@ -111,6 +113,7 @@ class OBSService extends EventEmitter {
         this.currentMarkCaption = '';
         this.lastStagedMarkId = null;
         this.continueMode = false;
+        this.stoppingTimecode = 0;
         console.log('[OBS] Recording started, session:', this.currentSessionId);
         this.emit('started', { sessionId: this.currentSessionId });
 
@@ -135,29 +138,57 @@ class OBSService extends EventEmitter {
           this.emit('paused', { timecode: this.pauseTimecode, timecodeStr: '00:00:00' });
         }
 
-      } else if (state === 'OBS_WEBSOCKET_OUTPUT_STOPPING' || state === 'OBS_WEBSOCKET_OUTPUT_PAUSING' || state === 'OBS_WEBSOCKET_OUTPUT_STARTING') {
+      } else if (state === 'OBS_WEBSOCKET_OUTPUT_PAUSING' || state === 'OBS_WEBSOCKET_OUTPUT_STARTING') {
         // Transitional — ignore
         return;
 
+      } else if (state === 'OBS_WEBSOCKET_OUTPUT_STOPPING') {
+        // Capture final timecode before OBS resets it — only matters when actively recording
+        if (this.recordingState.isRecording && !this.recordingState.isPaused) {
+          try {
+            const recordStatus = await this.obs.call('GetRecordStatus');
+            this.stoppingTimecode = this.parseTimecode((recordStatus as any).outputTimecode || '00:00:00');
+            console.log('[OBS] Stopping — captured final timecode:', this.stoppingTimecode, 's');
+          } catch (err) {
+            console.error('[OBS] Failed to capture timecode on STOPPING:', err);
+            this.stoppingTimecode = 0;
+          }
+        }
+        return;
+
       } else {
-        // Stopped or unknown — save pending mark if we were paused
-        const hasDuration = this.pauseTimecode > this.lastResumeTimecode;
-        const hasCaption = this.currentMarkCaption.trim().length > 0;
-        const pendingMark =
-          this.recordingState.isPaused &&
-          this.currentSessionId &&
-          (hasDuration || hasCaption)
-            ? {
+        // STOPPED or unknown state
+        let pendingMark: any = null;
+
+        if (this.currentSessionId) {
+          if (this.recordingState.isPaused) {
+            // Stopped while paused — save the mark for the paused interval
+            const hasDuration = this.pauseTimecode > this.lastResumeTimecode;
+            const hasCaption  = this.currentMarkCaption.trim().length > 0;
+            if (hasDuration || hasCaption) {
+              pendingMark = {
                 session_id: this.currentSessionId,
                 start_time: this.lastResumeTimecode,
-                end_time: this.pauseTimecode,
-                caption: this.currentMarkCaption.trim() || null,
-              }
-            : null;
+                end_time:   this.pauseTimecode,
+                caption:    this.currentMarkCaption.trim() || null,
+              };
+            }
+          } else if (this.recordingState.isRecording && this.stoppingTimecode > this.lastResumeTimecode) {
+            // Stopped while actively recording (e.g. via OBS UI) — save the final interval
+            pendingMark = {
+              session_id: this.currentSessionId,
+              start_time: this.lastResumeTimecode,
+              end_time:   this.stoppingTimecode,
+              caption:    this.currentMarkCaption.trim() || null,
+            };
+            console.log('[OBS] Stopped while recording — saving final mark:', pendingMark);
+          }
+        }
 
         this.recordingState.isRecording = false;
         this.recordingState.isPaused = false;
         this.recordingState.recordTimecode = '00:00:00';
+        this.stoppingTimecode = 0;
         const sessionId = this.currentSessionId;
         this.currentSessionId = null;
         this.currentMarkCaption = '';

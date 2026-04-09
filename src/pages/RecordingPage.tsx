@@ -815,6 +815,11 @@ export default function RecordingPage() {
     refreshStagedMarks();
   };
 
+  const handleClearAllStagedMarks = async () => {
+    await window.electronAPI.obs.clearStagedMarks().catch(() => {});
+    refreshStagedMarks();
+  };
+
   const formatMarkTime = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
@@ -2531,6 +2536,13 @@ export default function RecordingPage() {
                 {assignDurationError && (
                   <span className="text-xs text-rose-600 dark:text-rose-400">{assignDurationError}</span>
                 )}
+                <button
+                  onClick={handleClearAllStagedMarks}
+                  className="text-xs text-orange-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors px-1.5 py-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                  title="Clear all staged marks"
+                >
+                  Clear all
+                </button>
               </div>
               <div className="border-t border-orange-200 dark:border-orange-700/40 divide-y divide-orange-100 dark:divide-orange-800/30">
                 {stagedMarks.map(mark => (
@@ -3071,6 +3083,13 @@ export default function RecordingPage() {
               {assignError && (
                 <span className="text-xs text-rose-600 dark:text-rose-400">{assignError}</span>
               )}
+              <button
+                onClick={handleClearAllStagedMarks}
+                className="text-xs text-orange-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors px-1.5 py-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                title="Clear all staged marks"
+              >
+                Clear all
+              </button>
             </div>
             <div className="border-t border-orange-200 dark:border-orange-700/40 divide-y divide-orange-100 dark:divide-orange-800/30">
               {stagedMarks.map(mark => (
