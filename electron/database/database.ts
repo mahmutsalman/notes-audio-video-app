@@ -1063,6 +1063,45 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE durations ADD COLUMN source_duration_video_id INTEGER REFERENCES duration_videos(id) ON DELETE SET NULL");
     console.log('Added source_duration_video_id to durations');
   }
+  if (!durColsForVideo.some(c => c.name === 'is_video_mark')) {
+    db.exec("ALTER TABLE durations ADD COLUMN is_video_mark INTEGER DEFAULT 0");
+    console.log('Added is_video_mark to durations');
+  }
+
+  // Migration: Change source_video_id / source_duration_video_id FKs from SET NULL → CASCADE
+  // SQLite requires a full table rebuild to change FK constraints.
+  const durFkList = db.prepare("PRAGMA foreign_key_list(durations)").all() as { from: string; on_delete: string }[];
+  const srcVideoFk = durFkList.find(fk => fk.from === 'source_video_id');
+  if (!srcVideoFk || srcVideoFk.on_delete !== 'CASCADE') {
+    db.pragma('foreign_keys = OFF');
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE durations_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          recording_id INTEGER NOT NULL,
+          start_time REAL NOT NULL,
+          end_time REAL NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          note TEXT,
+          color TEXT,
+          group_color TEXT,
+          sort_order INTEGER DEFAULT 0,
+          page_number INTEGER,
+          canvas_file_path TEXT,
+          source_video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
+          source_duration_video_id INTEGER REFERENCES duration_videos(id) ON DELETE CASCADE,
+          is_video_mark INTEGER DEFAULT 0,
+          FOREIGN KEY (recording_id) REFERENCES recordings(id) ON DELETE CASCADE
+        );
+        INSERT INTO durations_new SELECT * FROM durations;
+        DROP TABLE durations;
+        ALTER TABLE durations_new RENAME TO durations;
+        CREATE INDEX IF NOT EXISTS idx_durations_recording ON durations(recording_id);
+      `);
+    })();
+    db.pragma('foreign_keys = ON');
+    console.log('Rebuilt durations table: source_video_id/source_duration_video_id now ON DELETE CASCADE');
+  }
 
   console.log('Database migrations completed');
 

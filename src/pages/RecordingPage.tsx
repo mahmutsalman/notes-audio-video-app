@@ -179,6 +179,15 @@ export default function RecordingPage() {
     durationId: number;
   } | null>(null);
   const [selectedDurationVideoPath, setSelectedDurationVideoPath] = useState<string | null>(null);
+  const [videoMarkFullscreen, setVideoMarkFullscreen] = useState(false);
+  const [videoMarkFullscreenType, setVideoMarkFullscreenType] = useState<'recording' | 'duration'>('recording');
+  const [fsActiveMarkId, setFsActiveMarkId] = useState<number | null>(null);
+  const [fsMarkNoteEdit, setFsMarkNoteEdit] = useState<string>('');
+  const [fsIsEditingNote, setFsIsEditingNote] = useState(false);
+  const [fsSavingNote, setFsSavingNote] = useState(false);
+  const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const fsStartTimeRef = useRef<number>(0);
+  const fsIsEditingNoteRef = useRef(false);
   const audioRecording = useAudioRecording();
   const imageAudioPlayer = useImageAudioPlayer();
   const durationAudioPlayer = useDurationAudioPlayer();
@@ -847,6 +856,63 @@ export default function RecordingPage() {
     }
   };
 
+  const openVideoMarkFullscreen = (type: 'recording' | 'duration') => {
+    const inlineRef = type === 'recording' ? inlineVideoRef : inlineDurationVideoRef;
+    fsStartTimeRef.current = inlineRef.current?.currentTime ?? 0;
+    setVideoMarkFullscreenType(type);
+    setFsActiveMarkId(null);
+    setFsIsEditingNote(false);
+    fsIsEditingNoteRef.current = false;
+    setFsMarkNoteEdit('');
+    setVideoMarkFullscreen(true);
+  };
+
+  const seekFullscreenVideo = (seconds: number) => {
+    if (fullscreenVideoRef.current) {
+      fullscreenVideoRef.current.currentTime = seconds;
+      fullscreenVideoRef.current.play().catch(() => {});
+    }
+  };
+
+  const handleFsMarkClick = (mark: Duration) => {
+    setFsActiveMarkId(mark.id);
+    setFsMarkNoteEdit(mark.note || '');
+    setFsIsEditingNote(false);
+    fsIsEditingNoteRef.current = false;
+    seekFullscreenVideo(mark.start_time);
+  };
+
+  const handleFsTimeUpdate = () => {
+    if (!fullscreenVideoRef.current) return;
+    const time = fullscreenVideoRef.current.currentTime;
+    const marks = videoMarkFullscreenType === 'recording' ? videoMarks : durationVideoMarks;
+    if (marks.length === 0) return;
+    const eligible = marks.filter(m => m.start_time <= time);
+    if (eligible.length === 0) return;
+    const active = eligible.reduce((prev, curr) => curr.start_time > prev.start_time ? curr : prev);
+    if (active.id !== fsActiveMarkId) {
+      setFsActiveMarkId(active.id);
+      if (!fsIsEditingNoteRef.current) {
+        setFsMarkNoteEdit(active.note || '');
+      }
+    }
+  };
+
+  const handleFsSaveNote = async () => {
+    if (fsActiveMarkId === null) return;
+    setFsSavingNote(true);
+    try {
+      const trimmed = fsMarkNoteEdit.trim() || null;
+      await updateDuration(fsActiveMarkId, { note: trimmed });
+      const setter = videoMarkFullscreenType === 'recording' ? setVideoMarks : setDurationVideoMarks;
+      setter(prev => prev.map(m => m.id === fsActiveMarkId ? { ...m, note: trimmed } : m));
+      setFsIsEditingNote(false);
+      fsIsEditingNoteRef.current = false;
+    } finally {
+      setFsSavingNote(false);
+    }
+  };
+
   const handleAssignStagedMarks = async (video: Video) => {
     if (isAssigningMarks || !id) return;
     setIsAssigningMarks(true);
@@ -865,8 +931,11 @@ export default function RecordingPage() {
     }
   };
 
+  // durations from getByRecording already excludes is_video_mark=1 rows at the DB level
+  const durationsForList = durations;
+
   // Sidebar state and handlers
-  const durationsWithNotes = durations.filter(d => d.note && d.note.trim() !== '');
+  const durationsWithNotes = durationsForList.filter(d => d.note && d.note.trim() !== '');
   const hasSidebar = selectedDurationVideoForMarks ? durationVideoMarks.length > 0
     : selectedVideoForMarks ? videoMarks.length > 0
     : durationsWithNotes.length > 0;
@@ -1892,7 +1961,7 @@ export default function RecordingPage() {
       {searchNav && <SearchNavBanner searchNav={searchNav} />}
       <div className="flex">
         <DurationNotesSidebar
-          durations={selectedDurationVideoForMarks ? durationVideoMarks : selectedVideoForMarks ? videoMarks : durations}
+          durations={selectedDurationVideoForMarks ? durationVideoMarks : selectedVideoForMarks ? videoMarks : durationsForList}
           activeDurationId={(selectedDurationVideoForMarks || selectedVideoForMarks) ? null : activeDurationId}
           isWrittenNote={(selectedDurationVideoForMarks || selectedVideoForMarks) ? false : isMarkBasedRecording}
           onDurationSelect={selectedDurationVideoForMarks ? (durationId) => {
@@ -2221,7 +2290,7 @@ export default function RecordingPage() {
       {/* Duration markers / Marks */}
       {isMarkBasedRecording ? (
         <MarkList
-          durations={durations}
+          durations={durationsForList}
           activeDurationId={activeDurationId}
           onMarkClick={(duration) => {
             setActiveDurationId(activeDurationId === duration.id ? null : duration.id);
@@ -2244,7 +2313,7 @@ export default function RecordingPage() {
         />
       ) : (
         <DurationList
-          durations={durations}
+          durations={durationsForList}
           activeDurationId={activeDurationId}
           onDurationClick={handleDurationClick}
           onDeleteDuration={handleDeleteDuration}
@@ -2461,11 +2530,15 @@ export default function RecordingPage() {
                     </button>
                   )}
                   <button
-                    onClick={() => setSelectedDurationVideoPath(selectedDurationVideoForMarks.file_path)}
+                    onClick={() => openVideoMarkFullscreen('duration')}
                     className="text-xs px-2 py-1 rounded text-violet-500 dark:text-violet-400 hover:bg-violet-200 dark:hover:bg-violet-800/40 transition-colors"
-                    title="Open full screen"
+                    title="Fullscreen with marks"
                   >
-                    ⛶
+                    <svg className="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={1.5}>
+                      <rect x="1" y="1" width="14" height="14" rx="1.5" />
+                      <line x1="5" y1="1.5" x2="5" y2="14.5" />
+                      <path d="M8.5 6l2.5 2-2.5 2" />
+                    </svg>
                   </button>
                   <button
                     onClick={handleExitDurationVideoMode}
@@ -2976,6 +3049,17 @@ export default function RecordingPage() {
                   </button>
                 )}
                 <button
+                  onClick={() => openVideoMarkFullscreen('recording')}
+                  className="text-xs px-2 py-1 rounded text-violet-500 dark:text-violet-400 hover:bg-violet-200 dark:hover:bg-violet-800/40 transition-colors"
+                  title="Fullscreen with marks"
+                >
+                  <svg className="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={1.5}>
+                    <rect x="1" y="1" width="14" height="14" rx="1.5" />
+                    <line x1="5" y1="1.5" x2="5" y2="14.5" />
+                    <path d="M8.5 6l2.5 2-2.5 2" />
+                  </svg>
+                </button>
+                <button
                   onClick={handleExitVideoMode}
                   className="text-xs px-2 py-1 rounded text-violet-500 dark:text-violet-400 hover:bg-violet-200 dark:hover:bg-violet-800/40 transition-colors"
                 >
@@ -3389,6 +3473,153 @@ export default function RecordingPage() {
           }}
         />
       )}
+
+      {/* Video Mark Fullscreen overlay */}
+      {videoMarkFullscreen && (() => {
+        const fsMarks = videoMarkFullscreenType === 'recording' ? videoMarks : durationVideoMarks;
+        const fsVideo = videoMarkFullscreenType === 'recording' ? selectedVideoForMarks : selectedDurationVideoForMarks;
+        const activeFsMark = fsActiveMarkId ? fsMarks.find(m => m.id === fsActiveMarkId) : null;
+        const fsVideoSrc = fsVideo ? window.electronAPI.paths.getFileUrl(fsVideo.file_path) : '';
+        return (
+          <div className="fixed inset-0 z-[70] bg-gray-950 flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800 flex-shrink-0">
+              <span className="text-sm font-medium text-gray-200 truncate">
+                ▶ {fsVideo?.caption || `Video`}
+              </span>
+              <button
+                onClick={() => setVideoMarkFullscreen(false)}
+                className="text-gray-400 hover:text-white transition-colors text-lg leading-none ml-4 flex-shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Middle: left marks panel + video */}
+            <div className="flex flex-1 min-h-0">
+              {/* Left marks panel */}
+              <div className="w-52 flex-shrink-0 bg-gray-900 border-r border-gray-800 overflow-y-auto flex flex-col">
+                <div className="px-3 py-2 border-b border-gray-800 flex-shrink-0">
+                  <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    Marks ({fsMarks.length})
+                  </span>
+                </div>
+                {fsMarks.length === 0 ? (
+                  <p className="text-xs text-gray-600 italic px-3 py-3">No marks assigned</p>
+                ) : (
+                  fsMarks.map(mark => {
+                    const isActive = mark.id === fsActiveMarkId;
+                    const colorConfig = mark.color ? DURATION_COLORS[mark.color] : null;
+                    const groupColorConfig = mark.group_color ? DURATION_GROUP_COLORS[mark.group_color] : null;
+                    const label = mark.note ? mark.note.replace(/<[^>]+>/g, '').trim().split('\n')[0].slice(0, 80) : '';
+                    return (
+                      <button
+                        key={mark.id}
+                        onClick={() => handleFsMarkClick(mark)}
+                        className={`relative flex items-start gap-2 w-full text-left px-3 py-2.5 transition-colors border-b border-gray-800/50 flex-shrink-0 ${isActive ? 'bg-violet-900/30' : 'hover:bg-gray-800/50'}`}
+                      >
+                        {groupColorConfig && (
+                          <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: groupColorConfig.color }} />
+                        )}
+                        {colorConfig && (
+                          <div className="absolute left-0 top-0 bottom-0 w-1" style={{ backgroundColor: colorConfig.borderColor }} />
+                        )}
+                        <div className="flex-1 min-w-0 pl-1">
+                          <span className="block text-[10px] font-mono text-violet-400 mb-0.5">
+                            {formatDuration(Math.floor(mark.start_time))}
+                          </span>
+                          {label ? (
+                            <span className={`block text-xs line-clamp-2 ${isActive ? 'text-gray-100' : 'text-gray-400'}`}>
+                              {label}
+                            </span>
+                          ) : (
+                            <span className="block text-xs italic text-gray-600">No note</span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Video area */}
+              <div className="flex-1 bg-black flex items-center justify-center min-w-0">
+                <video
+                  ref={fullscreenVideoRef}
+                  src={fsVideoSrc}
+                  controls
+                  autoPlay
+                  onLoadedMetadata={() => {
+                    if (fullscreenVideoRef.current) {
+                      fullscreenVideoRef.current.currentTime = fsStartTimeRef.current;
+                    }
+                  }}
+                  onTimeUpdate={handleFsTimeUpdate}
+                  className="max-w-full max-h-full"
+                  onClick={e => e.stopPropagation()}
+                />
+              </div>
+            </div>
+
+            {/* Bottom note panel */}
+            <div className="h-52 flex-shrink-0 border-t border-gray-800 bg-gray-900 flex flex-col">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 flex-shrink-0">
+                <span className="text-xs font-medium text-gray-400">
+                  {activeFsMark
+                    ? `Mark at ${formatDuration(Math.floor(activeFsMark.start_time))}`
+                    : 'No mark active'}
+                </span>
+                {activeFsMark && !fsIsEditingNote && (
+                  <button
+                    onClick={() => {
+                      setFsMarkNoteEdit(activeFsMark.note || '');
+                      setFsIsEditingNote(true);
+                      fsIsEditingNoteRef.current = true;
+                    }}
+                    className="text-xs px-2.5 py-1 rounded bg-violet-700 text-white hover:bg-violet-600 transition-colors"
+                  >
+                    Edit
+                  </button>
+                )}
+                {activeFsMark && fsIsEditingNote && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setFsIsEditingNote(false); fsIsEditingNoteRef.current = false; }}
+                      className="text-xs px-2 py-1 rounded text-gray-400 hover:text-gray-200 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleFsSaveNote}
+                      disabled={fsSavingNote}
+                      className="text-xs px-2.5 py-1 rounded bg-violet-700 text-white hover:bg-violet-600 transition-colors disabled:opacity-50"
+                    >
+                      {fsSavingNote ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 min-h-0">
+                {!activeFsMark ? (
+                  <p className="text-xs text-gray-600 italic">
+                    {fsMarks.length > 0 ? 'Play the video or click a mark to see its note' : 'No marks assigned to this video'}
+                  </p>
+                ) : fsIsEditingNote ? (
+                  <NotesEditor
+                    value={fsMarkNoteEdit}
+                    onChange={setFsMarkNoteEdit}
+                    placeholder="Add note for this mark…"
+                  />
+                ) : activeFsMark.note ? (
+                  <div className="notes-content text-sm text-gray-300" dangerouslySetInnerHTML={{ __html: activeFsMark.note }} />
+                ) : (
+                  <p className="text-xs text-gray-500 italic">No note — click Edit to add one</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Duration Video lightbox */}
       {selectedDurationVideoPath && (

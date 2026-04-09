@@ -526,8 +526,7 @@ export const DurationsOperations = {
     return db.prepare(`
       SELECT * FROM durations
       WHERE recording_id = ?
-        AND source_video_id IS NULL
-        AND source_duration_video_id IS NULL
+        AND (is_video_mark IS NULL OR is_video_mark != 1)
       ORDER BY sort_order, start_time
     `).all(recordingId) as Duration[];
   },
@@ -543,10 +542,10 @@ export const DurationsOperations = {
     `;
     const params: number[] = [];
     if (topicIds && topicIds.length > 0) {
-      query += ` WHERE t.id IN (${topicIds.map(() => '?').join(',')}) AND d.source_video_id IS NULL AND d.source_duration_video_id IS NULL`;
+      query += ` WHERE t.id IN (${topicIds.map(() => '?').join(',')}) AND (d.is_video_mark IS NULL OR d.is_video_mark != 1)`;
       params.push(...topicIds);
     } else {
-      query += ` WHERE d.source_video_id IS NULL AND d.source_duration_video_id IS NULL`;
+      query += ` WHERE (d.is_video_mark IS NULL OR d.is_video_mark != 1)`;
     }
     query += ` GROUP BY d.id ORDER BY d.created_at DESC`;
     return db.prepare(query).all(...params) as Duration[];
@@ -585,8 +584,8 @@ export const DurationsOperations = {
     `).get(duration.recording_id) as { max_order: number };
 
     const stmt = db.prepare(`
-      INSERT INTO durations (recording_id, start_time, end_time, note, group_color, sort_order, page_number, source_video_id, source_duration_video_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO durations (recording_id, start_time, end_time, note, group_color, sort_order, page_number, source_video_id, source_duration_video_id, is_video_mark)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -598,7 +597,8 @@ export const DurationsOperations = {
       maxOrder.max_order + 1,
       duration.page_number ?? null,
       duration.source_video_id ?? null,
-      (duration as any).source_duration_video_id ?? null
+      (duration as any).source_duration_video_id ?? null,
+      (duration as any).is_video_mark ?? 0
     );
 
     return this.getById(result.lastInsertRowid as number)!;
