@@ -102,6 +102,7 @@ export interface Duration {
   sort_order: number; // order for drag-and-drop reordering
   source_video_id: number | null; // links to videos.id when created via OBS mark assignment
   source_duration_video_id: number | null; // links to duration_videos.id when created via OBS mark assignment
+  is_video_mark: number | null; // 1 if created via OBS video mark assignment; survives video deletion
   created_at: string;
   // Media loaded separately
   images?: DurationImage[];
@@ -385,7 +386,7 @@ export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
 export type CreateVideo = Omit<Video, 'id' | 'created_at'>;
-export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color' | 'sort_order' | 'page_number' | 'source_video_id' | 'source_duration_video_id'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor; page_number?: number | null; source_video_id?: number | null; source_duration_video_id?: number | null };
+export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color' | 'sort_order' | 'page_number' | 'source_video_id' | 'source_duration_video_id' | 'is_video_mark'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor; page_number?: number | null; source_video_id?: number | null; source_duration_video_id?: number | null; is_video_mark?: number | null };
 
 // Video Compression Types
 export interface VideoCompressionOptions {

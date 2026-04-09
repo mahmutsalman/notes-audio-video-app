@@ -2411,6 +2411,7 @@ export function setupIpcHandlers(): void {
         end_time: (mark as any).end_time,
         note: (mark as any).caption || null,
         source_video_id: videoId,
+        is_video_mark: 1,
       } as any);
     }
 
@@ -2443,6 +2444,7 @@ export function setupIpcHandlers(): void {
         end_time: (mark as any).end_time,
         note: (mark as any).caption || null,
         source_duration_video_id: durationVideoId,
+        is_video_mark: 1,
       } as any);
     }
 
