@@ -100,12 +100,24 @@ export interface Duration {
   group_color: DurationGroupColor; // group color for visually grouping related marks (top bar)
   page_number: number | null;
   sort_order: number; // order for drag-and-drop reordering
+  source_video_id: number | null; // links to videos.id when created via OBS mark assignment
+  source_duration_video_id: number | null; // links to duration_videos.id when created via OBS mark assignment
   created_at: string;
   // Media loaded separately
   images?: DurationImage[];
   videos?: DurationVideo[];
   audios?: DurationAudio[];
   codeSnippets?: DurationCodeSnippet[];
+}
+
+export interface ObsStagedMark {
+  id: number;
+  session_id: string;
+  start_time: number;
+  end_time: number;
+  caption: string | null;
+  sort_order: number;
+  created_at: string;
 }
 
 export interface DurationImage {
@@ -373,7 +385,7 @@ export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
 export type CreateVideo = Omit<Video, 'id' | 'created_at'>;
-export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color' | 'sort_order' | 'page_number'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor; page_number?: number | null };
+export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color' | 'sort_order' | 'page_number' | 'source_video_id' | 'source_duration_video_id'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor; page_number?: number | null; source_video_id?: number | null; source_duration_video_id?: number | null };
 
 // Video Compression Types
 export interface VideoCompressionOptions {
@@ -484,7 +496,9 @@ export interface ElectronAPI {
   };
   durations: {
     getByRecording: (recordingId: number) => Promise<Duration[]>;
-    getWithAudio: () => Promise<StudyDuration[]>;
+    getByRecordingAndVideo: (recordingId: number, videoId: number) => Promise<Duration[]>;
+    getByRecordingAndDurationVideo: (recordingId: number, durationVideoId: number) => Promise<Duration[]>;
+    getWithAudio: (topicIds?: number[]) => Promise<StudyDuration[]>;
     create: (duration: CreateDuration) => Promise<Duration>;
     update: (id: number, updates: UpdateDuration) => Promise<Duration>;
     updateGroupColor: (id: number, groupColor: DurationGroupColor) => Promise<Duration>;
@@ -675,6 +689,27 @@ export interface ElectronAPI {
     get: (key: string) => Promise<string | null>;
     set: (key: string, value: string) => Promise<void>;
     getAll: () => Promise<Record<string, string>>;
+    toggleObs: (enabled: boolean) => Promise<void>;
+    saveObsConfig: (config: { host: string; port: string; password: string }) => Promise<void>;
+  };
+  obs: {
+    getStatus: () => Promise<{ isConnected: boolean; isConnecting: boolean; isRecording: boolean; isPaused: boolean; recordTimecode: string; connectionStatus: string }>;
+    connect: () => Promise<any>;
+    disconnect: () => Promise<void>;
+    stopRecording: () => Promise<void>;
+    getStagedMarks: () => Promise<ObsStagedMark[]>;
+    hasStagedMarks: () => Promise<boolean>;
+    getStagedMarksCount: () => Promise<number>;
+    clearStagedMarks: () => Promise<void>;
+    assignStagedMarks: (videoId: number, recordingId: number) => Promise<{ assigned: number }>;
+    assignStagedMarksToDurationVideo: (durationVideoId: number, recordingId: number) => Promise<{ assigned: number }>;
+    captionUpdate: (caption: string) => void;
+    onPaused: (cb: (data: { timecode: number; timecodeStr: string }) => void) => () => void;
+    onResumed: (cb: () => void) => () => void;
+    onStarted: (cb: (data: { sessionId: string }) => void) => () => void;
+    onStopped: (cb: (data: { sessionId: string | null }) => void) => () => void;
+    onStatusChange: (cb: (status: any) => void) => () => void;
+    onOverlayData: (cb: (data: { timecode: number; markCount: number }) => void) => () => void;
   };
   screen: {
     getAllDisplays: () => Promise<any[]>;

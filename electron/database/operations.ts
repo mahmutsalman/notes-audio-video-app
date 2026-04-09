@@ -526,6 +526,8 @@ export const DurationsOperations = {
     return db.prepare(`
       SELECT * FROM durations
       WHERE recording_id = ?
+        AND source_video_id IS NULL
+        AND source_duration_video_id IS NULL
       ORDER BY sort_order, start_time
     `).all(recordingId) as Duration[];
   },
@@ -538,14 +540,39 @@ export const DurationsOperations = {
       INNER JOIN duration_audios da ON da.duration_id = d.id
       INNER JOIN recordings r ON r.id = d.recording_id
       INNER JOIN topics t ON t.id = r.topic_id
-      GROUP BY d.id
-      ORDER BY d.created_at DESC
-    `).all() as Duration[];
+    `;
+    const params: number[] = [];
+    if (topicIds && topicIds.length > 0) {
+      query += ` WHERE t.id IN (${topicIds.map(() => '?').join(',')}) AND d.source_video_id IS NULL AND d.source_duration_video_id IS NULL`;
+      params.push(...topicIds);
+    } else {
+      query += ` WHERE d.source_video_id IS NULL AND d.source_duration_video_id IS NULL`;
+    }
+    query += ` GROUP BY d.id ORDER BY d.created_at DESC`;
+    return db.prepare(query).all(...params) as Duration[];
   },
 
   getById(id: number): Duration | null {
     const db = getDatabase();
     return db.prepare('SELECT * FROM durations WHERE id = ?').get(id) as Duration | undefined ?? null;
+  },
+
+  getByRecordingAndVideo(recordingId: number, videoId: number): Duration[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM durations
+      WHERE recording_id = ? AND source_video_id = ?
+      ORDER BY start_time
+    `).all(recordingId, videoId) as Duration[];
+  },
+
+  getByRecordingAndDurationVideo(recordingId: number, durationVideoId: number): Duration[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT * FROM durations
+      WHERE recording_id = ? AND source_duration_video_id = ?
+      ORDER BY start_time
+    `).all(recordingId, durationVideoId) as Duration[];
   },
 
   create(duration: CreateDuration): Duration {
@@ -558,8 +585,8 @@ export const DurationsOperations = {
     `).get(duration.recording_id) as { max_order: number };
 
     const stmt = db.prepare(`
-      INSERT INTO durations (recording_id, start_time, end_time, note, group_color, sort_order, page_number)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO durations (recording_id, start_time, end_time, note, group_color, sort_order, page_number, source_video_id, source_duration_video_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -569,7 +596,9 @@ export const DurationsOperations = {
       duration.note ?? null,
       duration.group_color ?? null,
       maxOrder.max_order + 1,
-      duration.page_number ?? null
+      duration.page_number ?? null,
+      duration.source_video_id ?? null,
+      (duration as any).source_duration_video_id ?? null
     );
 
     return this.getById(result.lastInsertRowid as number)!;
@@ -2580,5 +2609,42 @@ export const StudyTrackingOperations = {
     `).all(fromDate, toDate) as { duration_id: number; duration_caption: string; recording_name: string; topic_name: string; total_seconds: number; image_opens: number }[];
 
     return { byTopic, byRecording, byMark };
+  },
+};
+
+export const ObsStagedMarksOperations = {
+  create(mark: { session_id: string; start_time: number; end_time: number; caption: string | null; sort_order: number }): { id: number; session_id: string; start_time: number; end_time: number; caption: string | null; sort_order: number; created_at: string } {
+    const db = getDatabase();
+    const result = db.prepare(`
+      INSERT INTO obs_staged_marks (session_id, start_time, end_time, caption, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(mark.session_id, mark.start_time, mark.end_time, mark.caption, mark.sort_order);
+    return db.prepare('SELECT * FROM obs_staged_marks WHERE id = ?').get(result.lastInsertRowid) as any;
+  },
+
+  getAll(): any[] {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM obs_staged_marks ORDER BY sort_order, start_time').all();
+  },
+
+  getBySession(sessionId: string): any[] {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM obs_staged_marks WHERE session_id = ? ORDER BY sort_order, start_time').all(sessionId);
+  },
+
+  count(): number {
+    const db = getDatabase();
+    const result = db.prepare('SELECT COUNT(*) as count FROM obs_staged_marks').get() as { count: number };
+    return result.count;
+  },
+
+  deleteAll(): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM obs_staged_marks').run();
+  },
+
+  delete(id: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM obs_staged_marks WHERE id = ?').run(id);
   },
 };

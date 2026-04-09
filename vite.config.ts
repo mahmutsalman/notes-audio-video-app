@@ -14,7 +14,7 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['better-sqlite3'],
+              external: ['better-sqlite3', 'bufferutil', 'utf-8-validate'],
             },
           },
         },

@@ -10,6 +10,8 @@ interface DurationNotesSidebarProps {
   activeDurationId: number | null;
   onDurationSelect: (durationId: number) => void;
   isWrittenNote?: boolean;
+  videoMode?: boolean;
+  onExitVideoMode?: () => void;
 }
 
 export default function DurationNotesSidebar({
@@ -17,11 +19,13 @@ export default function DurationNotesSidebar({
   activeDurationId,
   onDurationSelect,
   isWrittenNote = false,
+  videoMode = false,
+  onExitVideoMode,
 }: DurationNotesSidebarProps) {
   const isActiveTab = useIsActiveTab();
 
-  // Filter durations that have notes
-  const durationsWithNotes = durations.filter(d => d.note && d.note.trim() !== '');
+  // In video mode show all marks; otherwise only those with notes
+  const durationsWithNotes = videoMode ? durations : durations.filter(d => d.note && d.note.trim() !== '');
 
   // Auto-scroll to active note when activeDurationId changes
   useEffect(() => {
@@ -36,19 +40,46 @@ export default function DurationNotesSidebar({
   // Don't render when tab is hidden (prevents position:fixed leak)
   if (!isActiveTab) return null;
 
-  // Don't render if no notes exist
+  // Don't render if nothing to show
   if (durationsWithNotes.length === 0) {
-    return null;
+    if (!videoMode) return null;
+    // In video mode with no marks, show an empty state
+    return (
+      <aside className="fixed left-0 top-20 bottom-0 w-80 bg-white dark:bg-dark-surface border-r border-gray-200 dark:border-dark-border overflow-y-auto hidden lg:block z-10">
+        <div className="sticky top-0 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border px-4 py-3 z-20">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+            <button onClick={onExitVideoMode} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 mr-1">←</button>
+            <span>🎬</span>
+            Video Marks (0)
+          </h2>
+        </div>
+        <p className="text-xs text-gray-400 italic p-4">No marks assigned to this video</p>
+      </aside>
+    );
   }
 
   return (
     <aside className="fixed left-0 top-20 bottom-0 w-80 bg-white dark:bg-dark-surface border-r border-gray-200 dark:border-dark-border overflow-y-auto hidden lg:block z-10">
       {/* Sticky Header */}
       <div className="sticky top-0 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border px-4 py-3 z-20">
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-          <span>📋</span>
-          Section Notes ({durationsWithNotes.length})
-        </h2>
+        {videoMode ? (
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+            <button
+              onClick={onExitVideoMode}
+              className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 mr-1"
+              title="Back to notes"
+            >
+              ←
+            </button>
+            <span>🎬</span>
+            Video Marks ({durationsWithNotes.length})
+          </h2>
+        ) : (
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+            <span>📋</span>
+            Section Notes ({durationsWithNotes.length})
+          </h2>
+        )}
       </div>
 
       {/* Notes List */}
@@ -100,10 +131,19 @@ export default function DurationNotesSidebar({
               </div>
 
               {/* Note Content */}
-              <div
-                className="text-sm text-gray-700 dark:text-gray-300 notes-content line-clamp-3"
-                dangerouslySetInnerHTML={{ __html: duration.note || '' }}
-              />
+              {videoMode ? (
+                <div className="text-sm text-gray-700 dark:text-gray-300">
+                  {duration.note && duration.note.trim()
+                    ? <span dangerouslySetInnerHTML={{ __html: duration.note }} className="notes-content line-clamp-2" />
+                    : <span className="italic text-gray-400">No caption</span>
+                  }
+                </div>
+              ) : (
+                <div
+                  className="text-sm text-gray-700 dark:text-gray-300 notes-content line-clamp-3"
+                  dangerouslySetInnerHTML={{ __html: duration.note || '' }}
+                />
+              )}
             </div>
           );
         })}

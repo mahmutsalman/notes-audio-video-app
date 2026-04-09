@@ -4,10 +4,10 @@ import fs from 'fs';
 import { initDatabase, closeDatabase } from './database/database';
 import { ensureMediaDirs } from './services/fileStorage';
 import { migrateLegacyBackups } from './services/backupService';
-import { setupIpcHandlers } from './ipc/handlers';
-import { QuickCaptureOperations } from './database/operations';
+import { setupIpcHandlers, setupObsEventBridge } from './ipc/handlers';
+import { QuickCaptureOperations, SettingsOperations } from './database/operations';
 import { deleteQuickCaptureFiles } from './services/fileStorage';
-import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './shortcuts/globalShortcuts';
+import { registerGlobalShortcuts, unregisterGlobalShortcuts, registerObsShortcut } from './shortcuts/globalShortcuts';
 import { registerScreenCaptureHandlers, unregisterScreenCaptureHandlers } from './screencapture/ipc-handlers';
 
 // Force consistent app name and userData path (ensures dev and prod use same database)
@@ -118,6 +118,9 @@ async function createWindow(): Promise<void> {
   // Register ScreenCaptureKit IPC handlers
   registerScreenCaptureHandlers(mainWindow);
 
+  // Wire up OBS push events to renderer
+  setupObsEventBridge(mainWindow).catch(err => console.error('[Main] OBS bridge setup failed:', err));
+
   // Study tracker: emit blur/focus events to renderer for idle detection
   mainWindow.on('blur', () => {
     mainWindow?.webContents.send('study:appBlur');
@@ -156,7 +159,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 // This method will be called when Electron has finished initialization
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Register the media:// protocol handler with Range request support for video seeking
   protocol.handle('media', async (request) => {
     const url = request.url.replace('media://', '');
@@ -231,10 +234,36 @@ app.whenReady().then(() => {
     }
   });
 
-  createWindow();
+  await createWindow();
+
+  // Register activate handler AFTER first window is created so it doesn't
+  // race with whenReady and open a second window on macOS launch
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    } else {
+      const mainWin = BrowserWindow.getAllWindows().find((w: any) => !('displayId' in w));
+      if (mainWin) { mainWin.show(); mainWin.focus(); }
+    }
+  });
 
   // Register global keyboard shortcuts (Cmd+D for region selection)
   registerGlobalShortcuts();
+
+  // OBS: auto-connect and register F10 if enabled (database is ready now)
+  const obsEnabled = SettingsOperations.get('obs_enabled') === 'true';
+  if (obsEnabled) {
+    registerObsShortcut();
+    const { obsService } = await import('./services/obsService');
+    const { createObsMarkOverlayWindow } = await import('./windows/obsMarkOverlay');
+    createObsMarkOverlayWindow();
+    const host = SettingsOperations.get('obs_host') || '127.0.0.1';
+    const port = SettingsOperations.get('obs_port') || '4455';
+    const pw = SettingsOperations.get('obs_password') || '';
+    obsService.connect(`ws://${host}:${port}`, pw).catch(() => {
+      console.log('[Main] OBS auto-connect failed — OBS may not be running');
+    });
+  }
 });
 
 // Quit when all windows are closed, except on macOS
@@ -247,20 +276,6 @@ app.on('window-all-closed', () => {
 // Add Cmd+Q (macOS standard quit) handler
 app.on('will-quit', (event) => {
   console.log('[App] will-quit event triggered - cleaning up resources');
-});
-
-app.on('activate', () => {
-  // On macOS, re-create window when dock icon is clicked
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  } else {
-    // Show and focus the main window if it exists
-    const mainWin = BrowserWindow.getAllWindows().find((w: any) => !('displayId' in w));
-    if (mainWin) {
-      mainWin.show();
-      mainWin.focus();
-    }
-  }
 });
 
 // Clean up before quit

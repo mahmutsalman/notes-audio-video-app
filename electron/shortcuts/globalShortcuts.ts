@@ -1,5 +1,6 @@
 import { globalShortcut, BrowserWindow } from 'electron';
 import { createRegionSelectorWindows, regionSelectorWindows } from '../windows/regionSelector';
+import { SettingsOperations, ObsStagedMarksOperations } from '../database/operations';
 
 /**
  * Registers global keyboard shortcuts for the application
@@ -105,4 +106,78 @@ export function unregisterGlobalShortcuts(): void {
   console.log('[GlobalShortcuts] Unregistering all global shortcuts...');
   globalShortcut.unregisterAll();
   console.log('[GlobalShortcuts] All global shortcuts unregistered');
+}
+
+// ---- OBS F10 shortcut (registered dynamically when OBS is enabled) ----
+
+async function handleF10(): Promise<void> {
+  console.log('[F10] Key pressed');
+
+  const obsEnabled = SettingsOperations.get('obs_enabled') === 'true';
+  console.log('[F10] obs_enabled setting:', obsEnabled);
+  if (!obsEnabled) {
+    console.log('[F10] OBS integration disabled — ignoring');
+    return;
+  }
+
+  const { obsService } = await import('../services/obsService');
+  const status = obsService.getStatus();
+  console.log('[F10] OBS status:', JSON.stringify(status));
+
+  if (!status.isConnected) {
+    console.log('[F10] OBS not connected — ignoring');
+    return;
+  }
+
+  if (!status.isRecording) {
+    console.log('[F10] → StartRecord');
+    await obsService.startRecording();
+  } else if (!status.isPaused) {
+    console.log('[F10] → PauseRecord');
+    await obsService.pauseRecording();
+    // overlay shown via obsService 'paused' event → setupObsEventBridge
+  } else {
+    console.log('[F10] → Save mark + ResumeRecord');
+    const caption = obsService.currentMarkCaption.trim();
+    const sessionId = obsService.currentSessionId;
+
+    if (sessionId) {
+      ObsStagedMarksOperations.create({
+        session_id: sessionId,
+        start_time: obsService.lastResumeTimecode,
+        end_time: obsService.pauseTimecode,
+        caption: caption || null,
+        sort_order: ObsStagedMarksOperations.count(),
+      });
+      console.log('[F10] Staged mark saved:', { start: obsService.lastResumeTimecode, end: obsService.pauseTimecode, caption });
+    } else {
+      console.warn('[F10] No sessionId — mark NOT saved');
+    }
+
+    obsService.lastResumeTimecode = obsService.pauseTimecode;
+    obsService.currentMarkCaption = '';
+    await obsService.resumeRecording();
+    // overlay hides via 'resumed' event
+  }
+}
+
+export function registerObsShortcut(): boolean {
+  if (globalShortcut.isRegistered('F10')) {
+    console.log('[GlobalShortcuts] F10 already registered');
+    return true;
+  }
+  const registered = globalShortcut.register('F10', () => {
+    handleF10().catch(err => console.error('[F10] Error in handler:', err));
+  });
+  if (registered) {
+    console.log('[GlobalShortcuts] ✅ F10 registered — press F10 to start/pause OBS');
+  } else {
+    console.error('[GlobalShortcuts] ❌ Failed to register F10 — key may be in use by another app or macOS system shortcut');
+  }
+  return registered;
+}
+
+export function unregisterObsShortcut(): void {
+  globalShortcut.unregister('F10');
+  console.log('[GlobalShortcuts] F10 unregistered');
 }
