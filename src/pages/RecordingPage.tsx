@@ -2355,7 +2355,7 @@ export default function RecordingPage() {
                   </button>
                   {/* MKV → MP4 convert buttons (CRF options) */}
                   {video.file_path?.toLowerCase().endsWith('.mkv') && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 bg-black/40 rounded-lg">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 bg-black/40 rounded-lg">
                       {convertingVideoIds.has(video.id) ? (
                         <span className="text-[10px] text-white font-medium">converting…</span>
                       ) : (
@@ -2770,7 +2770,7 @@ export default function RecordingPage() {
                   </button>
                   {/* MKV → MP4 convert buttons (CRF options) */}
                   {video.file_path?.toLowerCase().endsWith('.mkv') && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 bg-black/40 rounded-lg">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 bg-black/40 rounded-lg">
                       {convertingVideoIds.has(video.id) ? (
                         <span className="text-[10px] text-white font-medium">converting…</span>
                       ) : (
