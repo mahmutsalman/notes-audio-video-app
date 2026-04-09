@@ -28,6 +28,7 @@ import {
   DurationPlansOperations,
   CalendarTodosOperations,
   StudyTrackingOperations,
+  ObsStagedMarksOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
@@ -69,6 +70,37 @@ import type {
   CreateCodeSnippet, UpdateCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet,
   CreateScreenRecording, DurationGroupColor, DurationColor
 } from '../../src/types';
+
+// Call this after mainWindow is created to wire up OBS push events
+export async function setupObsEventBridge(mainWindow: import('electron').BrowserWindow): Promise<void> {
+  const { obsService } = await import('../services/obsService');
+  const { showObsMarkOverlay, hideObsMarkOverlay } = await import('../windows/obsMarkOverlay');
+  const { ObsStagedMarksOperations } = await import('../database/operations');
+
+  obsService.on('paused', (data: { timecode: number; timecodeStr: string }) => {
+    const count = ObsStagedMarksOperations.count();
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:paused', data);
+    showObsMarkOverlay(data.timecode, count);
+  });
+
+  obsService.on('resumed', () => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:resumed');
+    hideObsMarkOverlay();
+  });
+
+  obsService.on('stopped', (data: { sessionId: string | null }) => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:stopped', data);
+    hideObsMarkOverlay();
+  });
+
+  obsService.on('started', (data: { sessionId: string }) => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:started', data);
+  });
+
+  obsService.on('statusChange', (status: any) => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:statusChange', status);
+  });
+}
 
 export function setupIpcHandlers(): void {
   // ============ Topics ============
@@ -538,6 +570,10 @@ export function setupIpcHandlers(): void {
   });
 
   // ============ Durations (marked time segments) ============
+  ipcMain.handle('durations:getByRecordingAndVideo', async (_, recordingId: number, videoId: number) => {
+    return DurationsOperations.getByRecordingAndVideo(recordingId, videoId);
+  });
+
   ipcMain.handle('durations:getByRecording', async (_, recordingId: number) => {
     const durations = DurationsOperations.getByRecording(recordingId);
     const recording = RecordingsOperations.getById(recordingId);
@@ -2308,6 +2344,147 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('studyTracker:getStats', async (_, fromDate: string, toDate: string) => {
     return StudyTrackingOperations.getStats(fromDate, toDate);
+  });
+
+  // ============ OBS Integration ============
+  ipcMain.handle('obs:getStatus', async () => {
+    const { obsService } = await import('../services/obsService');
+    return obsService.getStatus();
+  });
+
+  ipcMain.handle('obs:connect', async () => {
+    const { obsService } = await import('../services/obsService');
+    const host = SettingsOperations.get('obs_host') || '127.0.0.1';
+    const port = SettingsOperations.get('obs_port') || '4455';
+    const pw = SettingsOperations.get('obs_password') || '';
+    await obsService.connect(`ws://${host}:${port}`, pw);
+    return obsService.getStatus();
+  });
+
+  ipcMain.handle('obs:disconnect', async () => {
+    const { obsService } = await import('../services/obsService');
+    await obsService.disconnect();
+  });
+
+  ipcMain.handle('obs:stopRecording', async () => {
+    const { obsService } = await import('../services/obsService');
+    await obsService.stopRecording();
+  });
+
+  ipcMain.handle('obs:getStagedMarks', async () => {
+    return ObsStagedMarksOperations.getAll();
+  });
+
+  ipcMain.handle('obs:hasStagedMarks', async () => {
+    return ObsStagedMarksOperations.count() > 0;
+  });
+
+  ipcMain.handle('obs:getStagedMarksCount', async () => {
+    return ObsStagedMarksOperations.count();
+  });
+
+  ipcMain.handle('obs:clearStagedMarks', async () => {
+    ObsStagedMarksOperations.deleteAll();
+  });
+
+  ipcMain.handle('obs:assignStagedMarks', async (_, videoId: number, recordingId: number) => {
+    const marks = ObsStagedMarksOperations.getAll();
+    if (marks.length === 0) throw new Error('No staged marks to assign');
+
+    const video = VideosOperations.getById(videoId);
+    if (!video) throw new Error('Video not found');
+
+    const videoDurationSeconds = video.duration != null ? video.duration : null;
+    const maxEndTime = Math.max(...marks.map((m: any) => m.end_time));
+
+    if (videoDurationSeconds !== null) {
+      const diff = Math.abs(videoDurationSeconds - maxEndTime);
+      if (diff > 10) {
+        throw new Error(`Duration mismatch: video is ${videoDurationSeconds.toFixed(1)}s, marks cover ${maxEndTime.toFixed(1)}s (${diff.toFixed(1)}s apart)`);
+      }
+    }
+
+    for (const mark of marks) {
+      DurationsOperations.create({
+        recording_id: recordingId,
+        start_time: (mark as any).start_time,
+        end_time: (mark as any).end_time,
+        note: (mark as any).caption || null,
+        source_video_id: videoId,
+      } as any);
+    }
+
+    ObsStagedMarksOperations.deleteAll();
+    scheduleSearchReindex();
+    return { assigned: marks.length };
+  });
+
+  ipcMain.handle('obs:assignStagedMarksToDurationVideo', async (_, durationVideoId: number, recordingId: number) => {
+    const marks = ObsStagedMarksOperations.getAll();
+    if (marks.length === 0) throw new Error('No staged marks to assign');
+
+    const video = DurationVideosOperations.getById(durationVideoId);
+    if (!video) throw new Error('Duration video not found');
+
+    const videoDurationSeconds = video.duration != null ? video.duration : null;
+    const maxEndTime = Math.max(...marks.map((m: any) => m.end_time));
+
+    if (videoDurationSeconds !== null) {
+      const diff = Math.abs(videoDurationSeconds - maxEndTime);
+      if (diff > 10) {
+        throw new Error(`Duration mismatch: video is ${videoDurationSeconds.toFixed(1)}s, marks cover ${maxEndTime.toFixed(1)}s (${diff.toFixed(1)}s apart)`);
+      }
+    }
+
+    for (const mark of marks) {
+      DurationsOperations.create({
+        recording_id: recordingId,
+        start_time: (mark as any).start_time,
+        end_time: (mark as any).end_time,
+        note: (mark as any).caption || null,
+        source_duration_video_id: durationVideoId,
+      } as any);
+    }
+
+    ObsStagedMarksOperations.deleteAll();
+    scheduleSearchReindex();
+    return { assigned: marks.length };
+  });
+
+  ipcMain.handle('durations:getByRecordingAndDurationVideo', (_, recordingId: number, durationVideoId: number) =>
+    DurationsOperations.getByRecordingAndDurationVideo(recordingId, durationVideoId)
+  );
+
+  ipcMain.on('obs:captionUpdate', (_, caption: string) => {
+    import('../services/obsService').then(({ obsService }) => {
+      obsService.currentMarkCaption = caption;
+    });
+  });
+
+  // Toggle OBS enable/disable and re-register F10 shortcut accordingly
+  ipcMain.handle('settings:toggleObs', async (_, enabled: boolean) => {
+    SettingsOperations.set('obs_enabled', enabled ? 'true' : 'false');
+    const { registerObsShortcut, unregisterObsShortcut } = await import('../shortcuts/globalShortcuts');
+    if (enabled) {
+      registerObsShortcut();
+      const { obsService } = await import('../services/obsService');
+      const host = SettingsOperations.get('obs_host') || '127.0.0.1';
+      const port = SettingsOperations.get('obs_port') || '4455';
+      const pw = SettingsOperations.get('obs_password') || '';
+      obsService.connect(`ws://${host}:${port}`, pw).catch(() => {});
+      const { createObsMarkOverlayWindow } = await import('../windows/obsMarkOverlay');
+      createObsMarkOverlayWindow();
+    } else {
+      unregisterObsShortcut();
+      const { obsService } = await import('../services/obsService');
+      await obsService.disconnect();
+    }
+  });
+
+  ipcMain.handle('settings:saveObsConfig', async (_, config: { host: string; port: string; password: string }) => {
+    SettingsOperations.set('obs_host', config.host);
+    SettingsOperations.set('obs_port', config.port);
+    SettingsOperations.set('obs_password', config.password);
   });
 
   console.log('IPC handlers registered');

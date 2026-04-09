@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OBS Mark Overlay</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: rgba(15, 15, 20, 0.96);
+      color: #f0f0f0;
+      width: 420px;
+      height: 190px;
+      overflow: hidden;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      user-select: none;
+      -webkit-app-region: drag;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      padding: 14px 16px 14px;
+      gap: 12px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      -webkit-app-region: drag;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ef4444;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e0e0e0;
+    }
+
+    .meta {
+      display: flex;
+      gap: 10px;
+      font-size: 11px;
+      color: #888;
+    }
+
+    .meta span {
+      background: rgba(255,255,255,0.07);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .meta .timecode { color: #60a5fa; font-family: monospace; }
+    .meta .mark-count { color: #a3e635; }
+
+    .input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      -webkit-app-region: no-drag;
+    }
+
+    #caption-input {
+      flex: 1;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      color: #f0f0f0;
+      font-size: 14px;
+      padding: 8px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #caption-input:focus {
+      border-color: rgba(96, 165, 250, 0.6);
+      background: rgba(255,255,255,0.11);
+    }
+
+    #caption-input::placeholder {
+      color: #555;
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      -webkit-app-region: no-drag;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: #666;
+    }
+
+    .hint kbd {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 10px;
+      color: #999;
+      font-family: monospace;
+    }
+
+    .stop-btn {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #f87171;
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .stop-btn:hover {
+      background: rgba(239, 68, 68, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <div class="header">
+      <div class="header-left">
+        <div class="dot"></div>
+        <span class="title">OBS Recording Paused</span>
+      </div>
+      <div class="meta">
+        <span class="timecode" id="timecode">0:00</span>
+        <span class="mark-count" id="mark-count">Mark #1</span>
+      </div>
+    </div>
+
+    <div class="input-row">
+      <input
+        id="caption-input"
+        type="text"
+        placeholder="Caption for this mark (optional)"
+        autocomplete="off"
+        spellcheck="false"
+      />
+    </div>
+
+    <div class="footer">
+      <span class="hint"><kbd>F10</kbd> to resume &amp; save mark</span>
+      <button class="stop-btn" id="stop-btn">Stop ✕</button>
+    </div>
+  </div>
+
+  <script>
+    const input = document.getElementById('caption-input');
+    const timecodeEl = document.getElementById('timecode');
+    const markCountEl = document.getElementById('mark-count');
+    const stopBtn = document.getElementById('stop-btn');
+
+    // Format seconds to M:SS
+    function formatTimecode(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      return m + ':' + String(s).padStart(2, '0');
+    }
+
+    // Send caption updates to main process as user types
+    input.addEventListener('input', () => {
+      if (window.electronAPI && window.electronAPI.obs) {
+        window.electronAPI.obs.captionUpdate(input.value);
+      }
+    });
+
+    // Clear input on each new mark (when overlay data arrives)
+    if (window.electronAPI && window.electronAPI.obs) {
+      window.electronAPI.obs.onOverlayData((data) => {
+        timecodeEl.textContent = formatTimecode(data.timecode || 0);
+        markCountEl.textContent = 'Mark #' + ((data.markCount || 0) + 1);
+        input.value = '';
+        input.focus();
+      });
+    }
+
+    // Stop button
+    stopBtn.addEventListener('click', () => {
+      if (window.electronAPI && window.electronAPI.obs) {
+        window.electronAPI.obs.stopRecording();
+      }
+    });
+
+    // Auto-focus on load
+    window.addEventListener('load', () => {
+      setTimeout(() => input.focus(), 100);
+    });
+  </script>
+</body>
+</html>

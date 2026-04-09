@@ -192,8 +192,12 @@ const electronAPI = {
   durations: {
     getByRecording: (recordingId: number): Promise<Duration[]> =>
       ipcRenderer.invoke('durations:getByRecording', recordingId),
-    getWithAudio: (): Promise<Duration[]> =>
-      ipcRenderer.invoke('durations:getWithAudio'),
+    getByRecordingAndVideo: (recordingId: number, videoId: number): Promise<Duration[]> =>
+      ipcRenderer.invoke('durations:getByRecordingAndVideo', recordingId, videoId),
+    getByRecordingAndDurationVideo: (recordingId: number, durationVideoId: number): Promise<Duration[]> =>
+      ipcRenderer.invoke('durations:getByRecordingAndDurationVideo', recordingId, durationVideoId),
+    getWithAudio: (topicIds?: number[]): Promise<Duration[]> =>
+      ipcRenderer.invoke('durations:getWithAudio', topicIds),
     create: (duration: CreateDuration): Promise<Duration> =>
       ipcRenderer.invoke('durations:create', duration),
     update: (id: number, updates: UpdateDuration): Promise<Duration> =>
@@ -594,6 +598,57 @@ const electronAPI = {
       ipcRenderer.invoke('settings:set', key, value),
     getAll: (): Promise<Record<string, string>> =>
       ipcRenderer.invoke('settings:getAll'),
+    toggleObs: (enabled: boolean): Promise<void> =>
+      ipcRenderer.invoke('settings:toggleObs', enabled),
+    saveObsConfig: (config: { host: string; port: string; password: string }): Promise<void> =>
+      ipcRenderer.invoke('settings:saveObsConfig', config),
+  },
+
+  // OBS Integration
+  obs: {
+    getStatus: (): Promise<any> => ipcRenderer.invoke('obs:getStatus'),
+    connect: (): Promise<any> => ipcRenderer.invoke('obs:connect'),
+    disconnect: (): Promise<void> => ipcRenderer.invoke('obs:disconnect'),
+    stopRecording: (): Promise<void> => ipcRenderer.invoke('obs:stopRecording'),
+    getStagedMarks: (): Promise<any[]> => ipcRenderer.invoke('obs:getStagedMarks'),
+    hasStagedMarks: (): Promise<boolean> => ipcRenderer.invoke('obs:hasStagedMarks'),
+    getStagedMarksCount: (): Promise<number> => ipcRenderer.invoke('obs:getStagedMarksCount'),
+    clearStagedMarks: (): Promise<void> => ipcRenderer.invoke('obs:clearStagedMarks'),
+    assignStagedMarks: (videoId: number, recordingId: number): Promise<{ assigned: number }> =>
+      ipcRenderer.invoke('obs:assignStagedMarks', videoId, recordingId),
+    assignStagedMarksToDurationVideo: (durationVideoId: number, recordingId: number): Promise<{ assigned: number }> =>
+      ipcRenderer.invoke('obs:assignStagedMarksToDurationVideo', durationVideoId, recordingId),
+    captionUpdate: (caption: string): void => ipcRenderer.send('obs:captionUpdate', caption),
+    onPaused: (cb: (data: { timecode: number; timecodeStr: string }) => void) => {
+      const listener = (_: any, data: any) => cb(data);
+      ipcRenderer.on('obs:paused', listener);
+      return () => ipcRenderer.removeListener('obs:paused', listener);
+    },
+    onResumed: (cb: () => void) => {
+      ipcRenderer.on('obs:resumed', cb);
+      return () => ipcRenderer.removeListener('obs:resumed', cb);
+    },
+    onStarted: (cb: (data: { sessionId: string }) => void) => {
+      const listener = (_: any, data: any) => cb(data);
+      ipcRenderer.on('obs:started', listener);
+      return () => ipcRenderer.removeListener('obs:started', listener);
+    },
+    onStopped: (cb: (data: { sessionId: string | null }) => void) => {
+      const listener = (_: any, data: any) => cb(data);
+      ipcRenderer.on('obs:stopped', listener);
+      return () => ipcRenderer.removeListener('obs:stopped', listener);
+    },
+    onStatusChange: (cb: (status: any) => void) => {
+      const listener = (_: any, status: any) => cb(status);
+      ipcRenderer.on('obs:statusChange', listener);
+      return () => ipcRenderer.removeListener('obs:statusChange', listener);
+    },
+    // Used by obs-mark-overlay.html
+    onOverlayData: (cb: (data: { timecode: number; markCount: number }) => void) => {
+      const listener = (_: any, data: any) => cb(data);
+      ipcRenderer.on('obs:overlayData', listener);
+      return () => ipcRenderer.removeListener('obs:overlayData', listener);
+    },
   },
 
   // Screen (Display information)

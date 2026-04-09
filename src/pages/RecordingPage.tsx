@@ -148,6 +148,17 @@ export default function RecordingPage() {
   const [durationImageAudioTagCountMap, setDurationImageAudioTagCountMap] = useState<Record<number, number>>({});
   const [contextMenuShowColors, setContextMenuShowColors] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [selectedVideoForMarks, setSelectedVideoForMarks] = useState<Video | null>(null);
+  const [videoMarks, setVideoMarks] = useState<Duration[]>([]);
+  const [stagedMarksCount, setStagedMarksCount] = useState(0);
+  const [isAssigningMarks, setIsAssigningMarks] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const inlineVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [selectedDurationVideoForMarks, setSelectedDurationVideoForMarks] = useState<DurationVideo | null>(null);
+  const [durationVideoMarks, setDurationVideoMarks] = useState<Duration[]>([]);
+  const [isAssigningDurationMarks, setIsAssigningDurationMarks] = useState(false);
+  const [assignDurationError, setAssignDurationError] = useState<string | null>(null);
+  const inlineDurationVideoRef = useRef<HTMLVideoElement | null>(null);
   const [convertingVideoIds, setConvertingVideoIds] = useState<Set<number>>(new Set());
   const [fileSizes, setFileSizes] = useState<Record<string, number>>({});
   const [isContentPressed, setIsContentPressed] = useState(false);
@@ -762,9 +773,103 @@ export default function RecordingPage() {
     }
   };
 
+  // OBS staged marks count
+  useEffect(() => {
+    window.electronAPI.obs.getStagedMarksCount().then(setStagedMarksCount).catch(() => {});
+    const cleanup = window.electronAPI.obs.onStopped(() => {
+      window.electronAPI.obs.getStagedMarksCount().then(setStagedMarksCount).catch(() => {});
+    });
+    return cleanup;
+  }, []);
+
+  // Video marks mode handlers
+  const handleVideoSelect = async (video: Video) => {
+    setSelectedVideoForMarks(video);
+    try {
+      const marks = await window.electronAPI.durations.getByRecordingAndVideo(Number(id), video.id);
+      setVideoMarks(marks);
+    } catch {
+      setVideoMarks([]);
+    }
+  };
+
+  const handleExitVideoMode = () => {
+    setSelectedVideoForMarks(null);
+    setVideoMarks([]);
+    setAssignError(null);
+  };
+
+  const handleDurationVideoSelect = async (video: DurationVideo) => {
+    setSelectedDurationVideoForMarks(video);
+    try {
+      const marks = await window.electronAPI.durations.getByRecordingAndDurationVideo(Number(id), video.id);
+      setDurationVideoMarks(marks);
+    } catch {
+      setDurationVideoMarks([]);
+    }
+  };
+
+  const handleExitDurationVideoMode = () => {
+    setSelectedDurationVideoForMarks(null);
+    setDurationVideoMarks([]);
+    setAssignDurationError(null);
+  };
+
+  const seekToDurationVideoMark = (seconds: number) => {
+    if (inlineDurationVideoRef.current) {
+      inlineDurationVideoRef.current.currentTime = seconds;
+      inlineDurationVideoRef.current.play().catch(() => {});
+    }
+  };
+
+  const handleAssignStagedMarksToDurationVideo = async (video: DurationVideo) => {
+    if (isAssigningDurationMarks || !id) return;
+    setIsAssigningDurationMarks(true);
+    setAssignDurationError(null);
+    try {
+      const result = await window.electronAPI.obs.assignStagedMarksToDurationVideo(video.id, Number(id));
+      setStagedMarksCount(0);
+      const marks = await window.electronAPI.durations.getByRecordingAndDurationVideo(Number(id), video.id);
+      setDurationVideoMarks(marks);
+      setSelectedDurationVideoForMarks(video);
+      console.log(`[RecordingPage] Assigned ${result.assigned} OBS marks to duration video ${video.id}`);
+    } catch (err) {
+      setAssignDurationError(err instanceof Error ? err.message : 'Failed to assign marks');
+    } finally {
+      setIsAssigningDurationMarks(false);
+    }
+  };
+
+  const seekToMark = (seconds: number) => {
+    if (inlineVideoRef.current) {
+      inlineVideoRef.current.currentTime = seconds;
+      inlineVideoRef.current.play().catch(() => {});
+    }
+  };
+
+  const handleAssignStagedMarks = async (video: Video) => {
+    if (isAssigningMarks || !id) return;
+    setIsAssigningMarks(true);
+    setAssignError(null);
+    try {
+      const result = await window.electronAPI.obs.assignStagedMarks(video.id, Number(id));
+      setStagedMarksCount(0);
+      const marks = await window.electronAPI.durations.getByRecordingAndVideo(Number(id), video.id);
+      setVideoMarks(marks);
+      setSelectedVideoForMarks(video);
+      console.log(`[RecordingPage] Assigned ${result.assigned} OBS marks to video ${video.id}`);
+    } catch (err) {
+      setAssignError(err instanceof Error ? err.message : 'Failed to assign marks');
+    } finally {
+      setIsAssigningMarks(false);
+    }
+  };
+
   // Sidebar state and handlers
   const durationsWithNotes = durations.filter(d => d.note && d.note.trim() !== '');
-  const hasSidebar = durationsWithNotes.length > 0;
+  const hasSidebar = selectedDurationVideoForMarks ? durationVideoMarks.length > 0
+    : selectedVideoForMarks ? videoMarks.length > 0
+    : durationsWithNotes.length > 0;
 
   const handleSidebarDurationClick = (durationId: number) => {
     const duration = durations.find(d => d.id === durationId);
@@ -1787,10 +1892,18 @@ export default function RecordingPage() {
       {searchNav && <SearchNavBanner searchNav={searchNav} />}
       <div className="flex">
         <DurationNotesSidebar
-          durations={durations}
-          activeDurationId={activeDurationId}
-          isWrittenNote={isMarkBasedRecording}
-          onDurationSelect={handleSidebarDurationClick}
+          durations={selectedDurationVideoForMarks ? durationVideoMarks : selectedVideoForMarks ? videoMarks : durations}
+          activeDurationId={(selectedDurationVideoForMarks || selectedVideoForMarks) ? null : activeDurationId}
+          isWrittenNote={(selectedDurationVideoForMarks || selectedVideoForMarks) ? false : isMarkBasedRecording}
+          onDurationSelect={selectedDurationVideoForMarks ? (durationId) => {
+            const mark = durationVideoMarks.find(m => m.id === durationId);
+            if (mark) seekToDurationVideoMark(mark.start_time);
+          } : selectedVideoForMarks ? (durationId) => {
+            const mark = videoMarks.find(m => m.id === durationId);
+            if (mark) seekToMark(mark.start_time);
+          } : handleSidebarDurationClick}
+          videoMode={!!(selectedDurationVideoForMarks || selectedVideoForMarks)}
+          onExitVideoMode={selectedDurationVideoForMarks ? handleExitDurationVideoMode : selectedVideoForMarks ? handleExitVideoMode : undefined}
         />
         <div className={`flex-1 p-6 transition-all duration-300 ${hasSidebar ? 'lg:ml-80' : 'max-w-4xl mx-auto'}`}>
       {/* Header */}
@@ -2317,6 +2430,80 @@ export default function RecordingPage() {
               📋 Paste
             </button>
           </div>
+          {/* OBS staged marks assign banner for duration videos */}
+          {stagedMarksCount > 0 && (
+            <div className="mb-2 p-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/40 rounded-lg flex items-center gap-2">
+              <span className="text-orange-500 text-xs">⏺</span>
+              <span className="text-xs text-orange-700 dark:text-orange-300 font-medium flex-1">
+                {stagedMarksCount} OBS mark{stagedMarksCount !== 1 ? 's' : ''} staged — click a video to assign
+              </span>
+              {assignDurationError && (
+                <span className="text-xs text-rose-600 dark:text-rose-400">{assignDurationError}</span>
+              )}
+            </div>
+          )}
+
+          {/* Inline video player for duration video marks mode */}
+          {selectedDurationVideoForMarks && activeDurationId === selectedDurationVideoForMarks.duration_id && (
+            <div className="mb-3 bg-black/5 dark:bg-black/20 rounded-xl overflow-hidden border border-violet-200 dark:border-violet-700/40">
+              <div className="flex items-center justify-between px-3 py-2 bg-violet-100 dark:bg-violet-900/30">
+                <span className="text-xs font-medium text-violet-700 dark:text-violet-300 truncate max-w-[60%]">
+                  ▶ {selectedDurationVideoForMarks.caption || `Video ${activeDurationVideos.indexOf(selectedDurationVideoForMarks) + 1}`}
+                </span>
+                <div className="flex items-center gap-2">
+                  {stagedMarksCount > 0 && (
+                    <button
+                      onClick={() => handleAssignStagedMarksToDurationVideo(selectedDurationVideoForMarks)}
+                      disabled={isAssigningDurationMarks}
+                      className="text-xs px-2.5 py-1 rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50"
+                    >
+                      {isAssigningDurationMarks ? 'Assigning…' : `Assign ${stagedMarksCount} mark${stagedMarksCount !== 1 ? 's' : ''}`}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setSelectedDurationVideoPath(selectedDurationVideoForMarks.file_path)}
+                    className="text-xs px-2 py-1 rounded text-violet-500 dark:text-violet-400 hover:bg-violet-200 dark:hover:bg-violet-800/40 transition-colors"
+                    title="Open full screen"
+                  >
+                    ⛶
+                  </button>
+                  <button
+                    onClick={handleExitDurationVideoMode}
+                    className="text-xs px-2 py-1 rounded text-violet-500 dark:text-violet-400 hover:bg-violet-200 dark:hover:bg-violet-800/40 transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <video
+                ref={inlineDurationVideoRef}
+                src={window.electronAPI.paths.getFileUrl(selectedDurationVideoForMarks.file_path)}
+                controls
+                className="w-full max-h-64 bg-black"
+              />
+              {durationVideoMarks.length > 0 ? (
+                <div className="divide-y divide-violet-100 dark:divide-violet-900/30 max-h-40 overflow-y-auto">
+                  {durationVideoMarks.map(mark => (
+                    <button
+                      key={mark.id}
+                      onClick={() => seekToDurationVideoMark(mark.start_time)}
+                      className="flex items-center gap-3 w-full text-left px-3 py-2 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                    >
+                      <span className="text-[11px] font-mono text-violet-500 dark:text-violet-400 shrink-0">
+                        {formatDuration(Math.floor(mark.start_time))}
+                      </span>
+                      <span className="text-xs text-gray-700 dark:text-gray-300 line-clamp-1">
+                        {mark.note && mark.note.trim() ? mark.note.replace(/<[^>]+>/g, '').trim() : <span className="text-gray-400 italic">No caption</span>}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 italic px-3 py-2">No duration marks assigned to this video yet</p>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
             {activeDurationVideos.map((video, index) => {
               const effectiveColor = mediaColorOverrides[`durationVideo-${video.id}`] ?? video.color;
@@ -2326,7 +2513,7 @@ export default function RecordingPage() {
               const groupColorConfig = effectiveGroupColor ? DURATION_GROUP_COLORS[effectiveGroupColor] : null;
               return (
               <div key={video.id} className="group">
-                <div className="relative">
+                <div className={`relative ${selectedDurationVideoForMarks?.id === video.id ? 'ring-2 ring-violet-500 rounded-lg' : ''}`}>
                   {/* Top group color indicator */}
                   {groupColorConfig && (
                     <div
@@ -2348,7 +2535,7 @@ export default function RecordingPage() {
                   )}
                   <div
                     className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
-                    onClick={() => setSelectedDurationVideoPath(video.file_path)}
+                    onClick={() => handleDurationVideoSelect(video)}
                     onContextMenu={(e) => handleContextMenu(e, 'durationVideo', video)}
                   >
                     {video.thumbnail_path ? (
@@ -2378,6 +2565,16 @@ export default function RecordingPage() {
                   >
                     ×
                   </button>
+                  {/* OBS assign marks button (shown when staged marks exist) */}
+                  {stagedMarksCount > 0 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleAssignStagedMarksToDurationVideo(video); }}
+                      disabled={isAssigningDurationMarks}
+                      className="absolute bottom-1 left-1 right-1 py-0.5 text-[9px] font-medium bg-orange-500/90 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity z-20 disabled:opacity-50"
+                    >
+                      {isAssigningDurationMarks ? '…' : `Assign ${stagedMarksCount} marks`}
+                    </button>
+                  )}
                   {/* MKV → MP4 convert buttons (CRF options) */}
                   {video.file_path?.toLowerCase().endsWith('.mkv') && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 bg-black/40 rounded-lg">
@@ -2747,6 +2944,76 @@ export default function RecordingPage() {
             📋 Paste
           </button>
         </div>
+
+        {/* OBS staged marks assign banner */}
+        {stagedMarksCount > 0 && (
+          <div className="mb-3 p-2.5 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/40 rounded-lg flex items-center gap-2">
+            <span className="text-orange-500 text-sm">⏺</span>
+            <span className="text-xs text-orange-700 dark:text-orange-300 font-medium flex-1">
+              {stagedMarksCount} OBS mark{stagedMarksCount !== 1 ? 's' : ''} staged — click a video thumbnail to assign
+            </span>
+            {assignError && (
+              <span className="text-xs text-rose-600 dark:text-rose-400">{assignError}</span>
+            )}
+          </div>
+        )}
+
+        {/* Inline video player (when video selected for marks) */}
+        {selectedVideoForMarks && (
+          <div className="mb-4 bg-black/5 dark:bg-black/20 rounded-xl overflow-hidden border border-violet-200 dark:border-violet-700/40">
+            <div className="flex items-center justify-between px-3 py-2 bg-violet-100 dark:bg-violet-900/30">
+              <span className="text-xs font-medium text-violet-700 dark:text-violet-300 truncate max-w-[60%]">
+                ▶ {selectedVideoForMarks.caption || `Video ${videos.indexOf(selectedVideoForMarks) + 1}`}
+              </span>
+              <div className="flex items-center gap-2">
+                {stagedMarksCount > 0 && (
+                  <button
+                    onClick={() => handleAssignStagedMarks(selectedVideoForMarks)}
+                    disabled={isAssigningMarks}
+                    className="text-xs px-2.5 py-1 rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50"
+                  >
+                    {isAssigningMarks ? 'Assigning…' : `Assign ${stagedMarksCount} mark${stagedMarksCount !== 1 ? 's' : ''}`}
+                  </button>
+                )}
+                <button
+                  onClick={handleExitVideoMode}
+                  className="text-xs px-2 py-1 rounded text-violet-500 dark:text-violet-400 hover:bg-violet-200 dark:hover:bg-violet-800/40 transition-colors"
+                >
+                  ✕ Close
+                </button>
+              </div>
+            </div>
+            <video
+              ref={inlineVideoRef}
+              src={window.electronAPI.paths.getFileUrl(selectedVideoForMarks.file_path)}
+              controls
+              className="w-full max-h-72 bg-black"
+            />
+            {/* Duration marks below player */}
+            {videoMarks.length > 0 && (
+              <div className="divide-y divide-violet-100 dark:divide-violet-900/30 max-h-48 overflow-y-auto">
+                {videoMarks.map(mark => (
+                  <button
+                    key={mark.id}
+                    onClick={() => seekToMark(mark.start_time)}
+                    className="flex items-center gap-3 w-full text-left px-3 py-2 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                  >
+                    <span className="text-[11px] font-mono text-violet-500 dark:text-violet-400 shrink-0">
+                      {formatDuration(Math.floor(mark.start_time))}
+                    </span>
+                    <span className="text-xs text-gray-700 dark:text-gray-300 line-clamp-1">
+                      {mark.note && mark.note.trim() ? mark.note.replace(/<[^>]+>/g, '').trim() : <span className="text-gray-400 italic">No caption</span>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {videoMarks.length === 0 && (
+              <p className="text-xs text-gray-400 italic px-3 py-2">No duration marks assigned to this video yet</p>
+            )}
+          </div>
+        )}
+
         {videos.length > 0 ? (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {videos.map((video, index) => {
@@ -2758,7 +3025,7 @@ export default function RecordingPage() {
               return (
               <div key={video.id} className="group">
                 <div
-                  className="relative"
+                  className={`relative ${selectedVideoForMarks?.id === video.id ? 'ring-2 ring-violet-500 rounded-lg' : ''}`}
                   onContextMenu={(e) => handleContextMenu(e, 'video', video)}
                 >
                   {/* Top group color indicator */}
@@ -2782,7 +3049,7 @@ export default function RecordingPage() {
                   )}
                   <div
                     className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
-                    onClick={() => setSelectedVideo(video.file_path)}
+                    onClick={() => handleVideoSelect(video)}
                   >
                     {video.thumbnail_path ? (
                       <img
@@ -2811,6 +3078,16 @@ export default function RecordingPage() {
                   >
                     ×
                   </button>
+                  {/* OBS assign marks button (shown when staged marks exist) */}
+                  {stagedMarksCount > 0 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleAssignStagedMarks(video); }}
+                      disabled={isAssigningMarks}
+                      className="absolute bottom-1 left-1 right-1 py-0.5 text-[9px] font-medium bg-orange-500/90 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity z-20 disabled:opacity-50"
+                    >
+                      {isAssigningMarks ? '…' : `Assign ${stagedMarksCount} marks`}
+                    </button>
+                  )}
                   {/* MKV → MP4 convert buttons (CRF options) */}
                   {video.file_path?.toLowerCase().endsWith('.mkv') && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 bg-black/40 rounded-lg">

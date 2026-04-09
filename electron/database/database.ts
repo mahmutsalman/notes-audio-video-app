@@ -1034,6 +1034,36 @@ function runMigrations(db: Database.Database): void {
     console.log('Created calendar_todos table');
   }
 
+  // Migration: Create obs_staged_marks table
+  const obsStagedMarksExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='obs_staged_marks'"
+  ).get();
+  if (!obsStagedMarksExists) {
+    db.exec(`
+      CREATE TABLE obs_staged_marks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        start_time REAL NOT NULL,
+        end_time REAL NOT NULL,
+        caption TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('Created obs_staged_marks table');
+  }
+
+  // Migration: Add source_video_id to durations
+  const durColsForVideo = db.prepare("PRAGMA table_info(durations)").all() as { name: string }[];
+  if (!durColsForVideo.some(c => c.name === 'source_video_id')) {
+    db.exec("ALTER TABLE durations ADD COLUMN source_video_id INTEGER REFERENCES videos(id) ON DELETE SET NULL");
+    console.log('Added source_video_id to durations');
+  }
+  if (!durColsForVideo.some(c => c.name === 'source_duration_video_id')) {
+    db.exec("ALTER TABLE durations ADD COLUMN source_duration_video_id INTEGER REFERENCES duration_videos(id) ON DELETE SET NULL");
+    console.log('Added source_duration_video_id to durations');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index
@@ -1082,6 +1112,7 @@ export function rebuildSearchIndex(): void {
         strip_html(note)
       FROM durations
       WHERE note IS NOT NULL AND note != ''
+        AND source_video_id IS NULL AND source_duration_video_id IS NULL
     `);
 
     // Images (recording-level): caption
