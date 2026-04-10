@@ -87,7 +87,7 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     hideObsMarkOverlay();
   });
 
-  obsService.on('stopped', (data: { sessionId: string | null; pendingMark?: any }) => {
+  obsService.on('stopped', (data: { sessionId: string | null; pendingMark?: any; filePath?: string | null }) => {
     // If stopped while paused, save the last mark before clearing state
     if (data.pendingMark) {
       data.pendingMark.sort_order = ObsStagedMarksOperations.count();
@@ -96,6 +96,25 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     }
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:stopped', data);
     hideObsMarkOverlay();
+
+    // Once OBS finishes writing the video, notify the renderer
+    if (data.filePath) {
+      const filePath = data.filePath;
+      console.log('[OBS] Recording saved to:', filePath);
+      const fsSync = require('fs');
+      let attempts = 0;
+      const poll = setInterval(() => {
+        attempts++;
+        const exists = fsSync.existsSync(filePath);
+        if (exists || attempts >= 20) {
+          clearInterval(poll);
+          if (exists && !mainWindow.isDestroyed()) {
+            console.log('[OBS] Video file ready:', filePath);
+            mainWindow.webContents.send('obs:videoReady', { filePath });
+          }
+        }
+      }, 500);
+    }
   });
 
   obsService.on('started', (data: { sessionId: string }) => {
@@ -2393,6 +2412,14 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('obs:clearStagedMarks', async () => {
     ObsStagedMarksOperations.deleteAll();
+  });
+
+  ipcMain.handle('obs:getLastVideoPath', async () => {
+    const { obsService } = await import('../services/obsService');
+    const p = obsService.lastVideoPath;
+    if (!p) return null;
+    const fsSync = require('fs');
+    return fsSync.existsSync(p) ? p : null;
   });
 
   ipcMain.handle('obs:deleteStagedMark', async (_, id: number) => {

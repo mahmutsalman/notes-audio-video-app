@@ -643,6 +643,12 @@ const electronAPI = {
       ipcRenderer.on('obs:stopped', listener);
       return () => ipcRenderer.removeListener('obs:stopped', listener);
     },
+    getLastVideoPath: (): Promise<string | null> => ipcRenderer.invoke('obs:getLastVideoPath'),
+    onVideoReady: (cb: (data: { filePath: string }) => void) => {
+      const listener = (_: any, data: any) => cb(data);
+      ipcRenderer.on('obs:videoReady', listener);
+      return () => ipcRenderer.removeListener('obs:videoReady', listener);
+    },
     onStatusChange: (cb: (status: any) => void) => {
       const listener = (_: any, status: any) => cb(status);
       ipcRenderer.on('obs:statusChange', listener);

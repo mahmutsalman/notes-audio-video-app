@@ -153,6 +153,8 @@ export default function RecordingPage() {
   const [stagedMarksCount, setStagedMarksCount] = useState(0);
   const [stagedMarks, setStagedMarks] = useState<ObsStagedMark[]>([]);
   const [isAssigningMarks, setIsAssigningMarks] = useState(false);
+  const [obsLastVideoPath, setObsLastVideoPath] = useState<string | null>(null);
+  const [obsVideoAdding, setObsVideoAdding] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const inlineVideoRef = useRef<HTMLVideoElement | null>(null);
   const [selectedDurationVideoForMarks, setSelectedDurationVideoForMarks] = useState<DurationVideo | null>(null);
@@ -793,10 +795,16 @@ export default function RecordingPage() {
 
   useEffect(() => {
     refreshStagedMarks();
-    const cleanup = window.electronAPI.obs.onStopped(() => {
+    const cleanupStopped = window.electronAPI.obs.onStopped(() => {
       refreshStagedMarks();
     });
-    return cleanup;
+    const cleanupVideoReady = window.electronAPI.obs.onVideoReady(({ filePath }) => {
+      setObsLastVideoPath(filePath);
+    });
+    return () => {
+      cleanupStopped();
+      cleanupVideoReady();
+    };
   }, []);
 
   // Video marks mode handlers
@@ -818,6 +826,34 @@ export default function RecordingPage() {
   const handleClearAllStagedMarks = async () => {
     await window.electronAPI.obs.clearStagedMarks().catch(() => {});
     refreshStagedMarks();
+  };
+
+  const handleAddObsVideoToRecording = async () => {
+    if (!obsLastVideoPath || !id) return;
+    setObsVideoAdding(true);
+    try {
+      await window.electronAPI.media.addVideo(id, obsLastVideoPath);
+      await preserveScrollPosition(refetch);
+      setObsLastVideoPath(null);
+    } catch (err) {
+      console.error('[RecordingPage] Failed to add OBS video to recording:', err);
+    } finally {
+      setObsVideoAdding(false);
+    }
+  };
+
+  const handleAddObsVideoToMark = async () => {
+    if (!obsLastVideoPath || activeDurationId === null) return;
+    setObsVideoAdding(true);
+    try {
+      await window.electronAPI.durationVideos.addFromFile(activeDurationId, obsLastVideoPath);
+      getDurationVideos(activeDurationId, true);
+      setObsLastVideoPath(null);
+    } catch (err) {
+      console.error('[RecordingPage] Failed to add OBS video to mark:', err);
+    } finally {
+      setObsVideoAdding(false);
+    }
   };
 
   const formatMarkTime = (secs: number) => {
@@ -3071,6 +3107,39 @@ export default function RecordingPage() {
             📋 Paste
           </button>
         </div>
+
+        {/* OBS last video ready banner */}
+        {obsLastVideoPath && (
+          <div className="mb-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700/40 rounded-lg px-3 py-2 flex items-center gap-2">
+            <span className="text-emerald-500 text-sm">🎬</span>
+            <span className="text-xs text-emerald-700 dark:text-emerald-300 font-medium flex-1 truncate" title={obsLastVideoPath}>
+              OBS video ready
+            </span>
+            <button
+              onClick={handleAddObsVideoToRecording}
+              disabled={obsVideoAdding}
+              className="text-xs px-2 py-0.5 rounded bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors shrink-0"
+            >
+              {obsVideoAdding ? '…' : 'Add to recording'}
+            </button>
+            {activeDurationId !== null && (
+              <button
+                onClick={handleAddObsVideoToMark}
+                disabled={obsVideoAdding}
+                className="text-xs px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors shrink-0"
+              >
+                {obsVideoAdding ? '…' : 'Add to mark'}
+              </button>
+            )}
+            <button
+              onClick={() => setObsLastVideoPath(null)}
+              className="text-xs text-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-300 transition-colors px-1"
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* OBS staged marks assign banner */}
         {stagedMarksCount > 0 && (

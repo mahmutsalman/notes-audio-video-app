@@ -28,6 +28,7 @@ class OBSService extends EventEmitter {
   lastStagedMarkId: number | null;  // id of last saved staged mark (for continue mode)
   continueMode: boolean;            // when true, next F10 extends previous mark instead of creating new
   private stoppingTimecode: number; // timecode captured on STOPPING (used for final mark when stopped while recording)
+  lastVideoPath: string | null;     // output path of the most recently completed OBS recording
 
   constructor() {
     super();
@@ -43,6 +44,7 @@ class OBSService extends EventEmitter {
     this.lastStagedMarkId = null;
     this.continueMode = false;
     this.stoppingTimecode = 0;
+    this.lastVideoPath = null;
   }
 
   // Parse "HH:MM:SS.mmm" → seconds
@@ -185,6 +187,9 @@ class OBSService extends EventEmitter {
           }
         }
 
+        const filePath = (data as any).outputPath as string | undefined || null;
+        if (filePath) this.lastVideoPath = filePath;
+
         this.recordingState.isRecording = false;
         this.recordingState.isPaused = false;
         this.recordingState.recordTimecode = '00:00:00';
@@ -192,7 +197,7 @@ class OBSService extends EventEmitter {
         const sessionId = this.currentSessionId;
         this.currentSessionId = null;
         this.currentMarkCaption = '';
-        this.emit('stopped', { sessionId, pendingMark });
+        this.emit('stopped', { sessionId, pendingMark, filePath });
       }
 
       this.emit('statusChange', this.getStatus());
