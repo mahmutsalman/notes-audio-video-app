@@ -43,8 +43,11 @@ export function useDurations(recordingId: number | null) {
 
   const createDuration = async (duration: CreateDuration): Promise<Duration> => {
     const newDuration = await window.electronAPI.durations.create(duration);
-    // New durations are added at the end (highest sort_order)
-    setDurations(prev => [...prev, newDuration]);
+    // Video marks (is_video_mark=1) are excluded by the DB query, so don't add them to
+    // the main durations state — only normal marks belong in the MarkList.
+    if (!duration.is_video_mark) {
+      setDurations(prev => [...prev, newDuration]);
+    }
     return newDuration;
   };
 

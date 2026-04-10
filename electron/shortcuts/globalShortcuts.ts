@@ -1,6 +1,6 @@
 import { globalShortcut, BrowserWindow } from 'electron';
 import { createRegionSelectorWindows, regionSelectorWindows } from '../windows/regionSelector';
-import { SettingsOperations, ObsStagedMarksOperations } from '../database/operations';
+import { SettingsOperations } from '../database/operations';
 
 /**
  * Registers global keyboard shortcuts for the application
@@ -146,38 +146,11 @@ async function handleF10(): Promise<void> {
     await obsService.pauseRecording();
     // overlay shown via obsService 'paused' event → setupObsEventBridge
   } else {
-    console.log('[F10] → Save mark + ResumeRecord');
-    const caption = obsService.currentMarkCaption.trim();
-    const sessionId = obsService.currentSessionId;
-
-    if (sessionId) {
-      if (obsService.continueMode && obsService.lastStagedMarkId !== null) {
-        // Extend previous mark's end_time to current pause point
-        ObsStagedMarksOperations.updateEndTime(obsService.lastStagedMarkId, obsService.pauseTimecode);
-        console.log('[F10] Extended mark', obsService.lastStagedMarkId, 'end to', obsService.pauseTimecode);
-      } else if (obsService.pauseTimecode > obsService.lastResumeTimecode || caption.length > 0) {
-        // Create a new staged mark.
-        // Skip only if duration is zero AND caption is empty (purely accidental double-press).
-        // If the user typed a caption, always save it regardless of duration.
-        const mark = ObsStagedMarksOperations.create({
-          session_id: sessionId,
-          start_time: obsService.lastResumeTimecode,
-          end_time: obsService.pauseTimecode,
-          caption: caption || null,
-          sort_order: ObsStagedMarksOperations.count(),
-        });
-        obsService.lastStagedMarkId = mark.id;
-        console.log('[F10] Staged mark saved:', { start: obsService.lastResumeTimecode, end: obsService.pauseTimecode, caption });
-      } else {
-        console.log('[F10] Skipping zero-duration mark with no caption');
-      }
-    } else {
-      console.warn('[F10] No sessionId — mark NOT saved');
-    }
-
-    obsService.lastResumeTimecode = obsService.pauseTimecode;
+    // Paused → resume without creating a mark.
+    // Marks are created explicitly from the F9 overlay ("Create Mark" button / Enter).
+    // lastResumeTimecode is NOT advanced here — only when the user explicitly creates a mark.
+    console.log('[F10] → ResumeRecord (no mark created)');
     obsService.currentMarkCaption = '';
-    obsService.continueMode = false;
     await obsService.resumeRecording();
     // overlay hides via 'resumed' event
   }

@@ -620,7 +620,7 @@ const electronAPI = {
     assignStagedMarksToDurationVideo: (durationVideoId: number, recordingId: number): Promise<{ assigned: number }> =>
       ipcRenderer.invoke('obs:assignStagedMarksToDurationVideo', durationVideoId, recordingId),
     captionUpdate: (caption: string): void => ipcRenderer.send('obs:captionUpdate', caption),
-    continueToggle: (isOn: boolean): void => ipcRenderer.send('obs:continueToggle', isOn),
+    createStagedMark: (caption: string): Promise<any[]> => ipcRenderer.invoke('obs:createStagedMark', caption),
     updateStagedMarkCaption: (id: number, caption: string): void => ipcRenderer.send('obs:updateStagedMarkCaption', id, caption),
     mergeStagedMarks: (keepId: number, deleteId: number, caption: string | null): void => ipcRenderer.send('obs:mergeStagedMarks', keepId, deleteId, caption),
     hideOverlay: (): void => ipcRenderer.send('obs:hideOverlay'),

@@ -22,13 +22,12 @@ class OBSService extends EventEmitter {
 
   // Mark tracking
   currentSessionId: string | null;
-  lastResumeTimecode: number;  // seconds — start_time for next mark
-  pauseTimecode: number;       // seconds — end_time for current mark
+  lastResumeTimecode: number;  // seconds — start_time for next explicit mark
+  pauseTimecode: number;       // seconds — end_time for current span
   currentMarkCaption: string;  // updated by overlay IPC as user types
-  lastStagedMarkId: number | null;  // id of last saved staged mark (for continue mode)
-  continueMode: boolean;            // when true, next F10 extends previous mark instead of creating new
   private stoppingTimecode: number; // timecode captured on STOPPING (used for final mark when stopped while recording)
   lastVideoPath: string | null;     // output path of the most recently completed OBS recording
+  lastRecordDirectory: string | null; // OBS output directory (fetched on recording start)
 
   constructor() {
     super();
@@ -41,10 +40,9 @@ class OBSService extends EventEmitter {
     this.lastResumeTimecode = 0;
     this.pauseTimecode = 0;
     this.currentMarkCaption = '';
-    this.lastStagedMarkId = null;
-    this.continueMode = false;
     this.stoppingTimecode = 0;
     this.lastVideoPath = null;
+    this.lastRecordDirectory = null;
   }
 
   // Parse "HH:MM:SS.mmm" → seconds
@@ -113,9 +111,13 @@ class OBSService extends EventEmitter {
         this.lastResumeTimecode = 0;
         this.pauseTimecode = 0;
         this.currentMarkCaption = '';
-        this.lastStagedMarkId = null;
-        this.continueMode = false;
         this.stoppingTimecode = 0;
+        this.lastVideoPath = null; // reset so a stale path from a previous session is never reused
+        // Fetch the OBS recording directory so we can find the newest file even if outputPath is null
+        this.obs.call('GetRecordDirectory' as any).then((res: any) => {
+          this.lastRecordDirectory = res?.recordDirectory ?? null;
+          console.log('[OBS] Recording directory:', this.lastRecordDirectory);
+        }).catch(() => {});
         console.log('[OBS] Recording started, session:', this.currentSessionId);
         this.emit('started', { sessionId: this.currentSessionId });
 
@@ -189,6 +191,7 @@ class OBSService extends EventEmitter {
 
         const filePath = (data as any).outputPath as string | undefined || null;
         if (filePath) this.lastVideoPath = filePath;
+        const recordDirectory = this.lastRecordDirectory;
 
         this.recordingState.isRecording = false;
         this.recordingState.isPaused = false;
@@ -197,7 +200,7 @@ class OBSService extends EventEmitter {
         const sessionId = this.currentSessionId;
         this.currentSessionId = null;
         this.currentMarkCaption = '';
-        this.emit('stopped', { sessionId, pendingMark, filePath });
+        this.emit('stopped', { sessionId, pendingMark, filePath, recordDirectory });
       }
 
       this.emit('statusChange', this.getStatus());
@@ -275,12 +278,6 @@ class OBSService extends EventEmitter {
     }
   }
 
-  // Save current mark and resume — called from F10 handler when paused
-  async confirmMarkAndResume(caption: string, stagedCount: number) {
-    this.lastResumeTimecode = this.pauseTimecode;
-    this.currentMarkCaption = '';
-    await this.resumeRecording();
-  }
 }
 
 export const obsService = new OBSService();
