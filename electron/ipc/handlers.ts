@@ -87,7 +87,7 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     hideObsMarkOverlay();
   });
 
-  obsService.on('stopped', (data: { sessionId: string | null; pendingMark?: any; filePath?: string | null }) => {
+  obsService.on('stopped', (data: { sessionId: string | null; pendingMark?: any; filePath?: string | null; recordDirectory?: string | null }) => {
     // If stopped while paused, save the last mark before clearing state
     if (data.pendingMark) {
       data.pendingMark.sort_order = ObsStagedMarksOperations.count();
@@ -97,20 +97,65 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:stopped', data);
     hideObsMarkOverlay();
 
-    // Once OBS finishes writing the video, notify the renderer
-    if (data.filePath) {
-      const filePath = data.filePath;
-      console.log('[OBS] Recording saved to:', filePath);
-      const fsSync = require('fs');
+    // Once OBS finishes writing the video, notify the renderer.
+    // We resolve the path in two steps:
+    //   1. Use outputPath from OBS if it exists on disk.
+    //   2. Fall back to the most recently modified video file in the same directory
+    //      (handles cases where OBS reports a wrong/stale path or omits outputPath).
+    {
+      const reportedPath: string | null = data.filePath || null;
+      const fsSync   = require('fs');
+      const pathMod  = require('path');
+
+      const VIDEO_EXTS = ['.mkv', '.mov', '.mp4', '.flv', '.avi', '.ts', '.m2ts'];
+
+      const findNewestInDir = (dir: string): string | null => {
+        try {
+          const entries = fsSync.readdirSync(dir)
+            .map((name: string) => {
+              if (!VIDEO_EXTS.some((ext: string) => name.toLowerCase().endsWith(ext))) return null;
+              const fp = pathMod.join(dir, name);
+              try { return { path: fp, mtime: fsSync.statSync(fp).mtimeMs }; } catch { return null; }
+            })
+            .filter(Boolean)
+            .sort((a: any, b: any) => b.mtime - a.mtime);
+          return (entries[0] as any)?.path ?? null;
+        } catch { return null; }
+      };
+
+      // Use dirname of outputPath, or fall back to the OBS recording directory fetched at start
+      const outputDir = reportedPath
+        ? pathMod.dirname(reportedPath)
+        : (data.recordDirectory || null);
+      console.log('[OBS] Recording stopped — reported path:', reportedPath, '| scan dir:', outputDir);
+
       let attempts = 0;
       const poll = setInterval(() => {
         attempts++;
-        const exists = fsSync.existsSync(filePath);
-        if (exists || attempts >= 20) {
+
+        // Prefer the reported path if it exists on disk
+        const reportedExists = reportedPath && fsSync.existsSync(reportedPath);
+        // Also look for the newest video in the output directory
+        const newestInDir = outputDir ? findNewestInDir(outputDir) : null;
+
+        // Pick the most recently modified of the two candidates
+        const resolvedPath = (() => {
+          if (reportedExists && newestInDir && newestInDir !== reportedPath) {
+            try {
+              const rMtime = fsSync.statSync(reportedPath).mtimeMs;
+              const nMtime = fsSync.statSync(newestInDir).mtimeMs;
+              return nMtime > rMtime ? newestInDir : reportedPath;
+            } catch { return reportedPath; }
+          }
+          if (reportedExists) return reportedPath;
+          return newestInDir; // fallback: newest file in directory
+        })();
+
+        if (resolvedPath || attempts >= 20) {
           clearInterval(poll);
-          if (exists && !mainWindow.isDestroyed()) {
-            console.log('[OBS] Video file ready:', filePath);
-            mainWindow.webContents.send('obs:videoReady', { filePath });
+          if (resolvedPath && !mainWindow.isDestroyed()) {
+            console.log('[OBS] Video file ready:', resolvedPath, '(reported:', reportedPath, ')');
+            mainWindow.webContents.send('obs:videoReady', { filePath: resolvedPath });
           }
         }
       }, 500);
@@ -2502,10 +2547,31 @@ export function setupIpcHandlers(): void {
     });
   });
 
-  ipcMain.on('obs:continueToggle', (_, isOn: boolean) => {
-    import('../services/obsService').then(({ obsService }) => {
-      obsService.continueMode = isOn;
-    });
+  // Explicitly create a staged mark for the current uncovered span [lastResumeTimecode → pauseTimecode].
+  // Called from the F9 overlay "Create Mark" button / Enter key.
+  ipcMain.handle('obs:createStagedMark', async (_, caption: string) => {
+    const { obsService } = await import('../services/obsService');
+    const sessionId = obsService.currentSessionId;
+    if (!sessionId) return ObsStagedMarksOperations.getAll();
+    if (!obsService.getStatus().isPaused) return ObsStagedMarksOperations.getAll();
+
+    const start = obsService.lastResumeTimecode;
+    const end   = obsService.pauseTimecode;
+    const trimmed = (caption || '').trim();
+
+    if (end > start || trimmed.length > 0) {
+      ObsStagedMarksOperations.create({
+        session_id: sessionId,
+        start_time: start,
+        end_time:   end,
+        caption:    trimmed || null,
+        sort_order: ObsStagedMarksOperations.count(),
+      });
+      obsService.lastResumeTimecode = end;
+      obsService.currentMarkCaption = '';
+      console.log('[OBS] Explicit mark created:', { start, end, caption: trimmed });
+    }
+    return ObsStagedMarksOperations.getAll();
   });
 
   ipcMain.on('obs:updateStagedMarkCaption', (_, id: number, caption: string) => {

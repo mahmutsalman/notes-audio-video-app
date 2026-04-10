@@ -74,17 +74,12 @@
     .meta .timecode { color: #60a5fa; font-family: monospace; }
     .meta .mark-count { color: #a3e635; }
 
+    /* Caption input row */
     .input-row {
       display: flex;
       align-items: center;
       gap: 8px;
       -webkit-app-region: no-drag;
-      transition: opacity 0.15s;
-    }
-
-    .input-row.dimmed {
-      opacity: 0.35;
-      pointer-events: none;
     }
 
     #caption-input {
@@ -106,63 +101,34 @@
 
     #caption-input::placeholder { color: #555; }
 
-    /* Continue toggle */
-    .continue-row {
-      display: none;
-      align-items: center;
+    /* Create Mark button */
+    .create-btn-row {
+      display: flex;
       -webkit-app-region: no-drag;
     }
 
-    .continue-row.visible { display: flex; }
-
-    .continue-toggle {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-      padding: 5px 10px;
-      border-radius: 6px;
-      border: 1px solid rgba(255,255,255,0.1);
-      background: rgba(255,255,255,0.05);
-      transition: background 0.15s, border-color 0.15s;
+    #create-mark-btn {
       flex: 1;
-    }
-
-    .continue-toggle:hover { background: rgba(255,255,255,0.09); }
-
-    .continue-toggle.active {
-      background: rgba(251, 191, 36, 0.12);
-      border-color: rgba(251, 191, 36, 0.35);
-    }
-
-    .toggle-icon { font-size: 14px; line-height: 1; }
-
-    .toggle-label {
+      background: rgba(96, 165, 250, 0.13);
+      border: 1px solid rgba(96, 165, 250, 0.3);
+      color: #60a5fa;
+      border-radius: 7px;
+      padding: 6px 14px;
       font-size: 12px;
-      color: #aaa;
-      transition: color 0.15s;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+      text-align: center;
     }
 
-    .continue-toggle.active .toggle-label { color: #fbbf24; }
-
-    .toggle-check {
-      margin-left: auto;
-      width: 14px;
-      height: 14px;
-      border-radius: 3px;
-      border: 1px solid rgba(255,255,255,0.2);
-      background: rgba(255,255,255,0.05);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 10px;
-      transition: background 0.15s, border-color 0.15s;
+    #create-mark-btn:hover:not(:disabled) {
+      background: rgba(96, 165, 250, 0.22);
+      border-color: rgba(96, 165, 250, 0.5);
     }
 
-    .continue-toggle.active .toggle-check {
-      background: #fbbf24;
-      border-color: #fbbf24;
-      color: #111;
+    #create-mark-btn:disabled {
+      opacity: 0.3;
+      cursor: default;
     }
 
     /* Marks section */
@@ -233,24 +199,6 @@
       background: rgba(251, 191, 36, 0.1);
     }
 
-    /* Pending mark: blue highlight */
-    .mark-row.pending .mark-caption-input {
-      border-color: rgba(96, 165, 250, 0.45);
-      background: rgba(96, 165, 250, 0.06);
-      color: #93c5fd;
-    }
-
-    .pending-badge {
-      font-size: 9px;
-      background: rgba(96, 165, 250, 0.15);
-      color: #60a5fa;
-      border: 1px solid rgba(96, 165, 250, 0.25);
-      border-radius: 3px;
-      padding: 1px 5px;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
     .mark-time {
       font-size: 11px;
       font-family: monospace;
@@ -259,8 +207,6 @@
       min-width: 76px;
       flex-shrink: 0;
     }
-
-    .mark-row.pending .mark-time { color: #93c5fd; }
 
     .mark-caption-input {
       flex: 1;
@@ -344,11 +290,11 @@
       </div>
       <div class="meta">
         <span class="timecode" id="timecode">0:00</span>
-        <span class="mark-count" id="mark-count">Mark #1</span>
+        <span class="mark-count" id="mark-count">0 marks</span>
       </div>
     </div>
 
-    <div class="input-row" id="input-row">
+    <div class="input-row">
       <input
         id="caption-input"
         type="text"
@@ -358,47 +304,37 @@
       />
     </div>
 
-    <div class="continue-row" id="continue-row">
-      <div class="continue-toggle" id="continue-toggle">
-        <span class="toggle-icon">↩</span>
-        <span class="toggle-label">Continue previous mark</span>
-        <span class="toggle-check" id="toggle-check"></span>
-      </div>
+    <div class="create-btn-row">
+      <button id="create-mark-btn">+ Create Mark &nbsp;<span style="opacity:0.5;font-size:10px;">(or Enter)</span></button>
     </div>
 
     <div class="marks-section" id="marks-section">
-      <div class="marks-header">Previous marks &nbsp;·&nbsp; click ⊕ to merge consecutive</div>
+      <div class="marks-header" id="marks-header">Saved marks &nbsp;·&nbsp; click ⊕ to merge consecutive</div>
       <div class="marks-list" id="marks-list"></div>
     </div>
 
     <div class="footer">
       <div class="hint-col">
-        <span class="hint" id="hint"><kbd>Enter</kbd> save &nbsp;·&nbsp; <kbd>F10</kbd> resume &nbsp;·&nbsp; <kbd>F9</kbd> close</span>
-        <span class="caption-saved" id="caption-saved">✓ Caption saved</span>
+        <span class="hint"><kbd>F10</kbd> resume &nbsp;·&nbsp; <kbd>F9</kbd> close</span>
+        <span class="caption-saved" id="caption-saved">✓ Mark created</span>
       </div>
       <button class="stop-btn" id="stop-btn">Stop ✕</button>
     </div>
   </div>
 
   <script>
-    const input        = document.getElementById('caption-input');
-    const inputRow     = document.getElementById('input-row');
-    const timecodeEl   = document.getElementById('timecode');
-    const markCountEl  = document.getElementById('mark-count');
-    const stopBtn      = document.getElementById('stop-btn');
-    const continueRow  = document.getElementById('continue-row');
-    const continueToggle = document.getElementById('continue-toggle');
-    const toggleCheck  = document.getElementById('toggle-check');
-    const hintEl       = document.getElementById('hint');
+    const input          = document.getElementById('caption-input');
+    const timecodeEl     = document.getElementById('timecode');
+    const markCountEl    = document.getElementById('mark-count');
+    const stopBtn        = document.getElementById('stop-btn');
     const captionSavedEl = document.getElementById('caption-saved');
-    const marksSection = document.getElementById('marks-section');
-    const marksList    = document.getElementById('marks-list');
+    const marksSection   = document.getElementById('marks-section');
+    const marksList      = document.getElementById('marks-list');
+    const createMarkBtn  = document.getElementById('create-mark-btn');
 
-    let isContinueOn      = false;
-    let savedFadeTimer    = null;
-    let currentPendingMark = null;  // the unsaved in-progress mark
-    let pendingMarkInputEl = null;  // DOM input for the pending mark row
-    let syncingCaption    = false;
+    let savedFadeTimer = null;
+    // The current uncovered span (lastResumeTimecode → pauseTimecode)
+    let pendingSpan = { start: 0, end: 0 };
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
@@ -408,34 +344,25 @@
       return m + ':' + String(s).padStart(2, '0');
     }
 
-    // Sync caption value between top input and pending mark row (one source of truth)
-    function syncCaption(value, skipTop, skipRow) {
-      if (syncingCaption) return;
-      syncingCaption = true;
-      if (!skipTop)  input.value = value;
-      if (!skipRow && pendingMarkInputEl) pendingMarkInputEl.value = value;
-      if (currentPendingMark) currentPendingMark.caption = value;
-      if (window.electronAPI && window.electronAPI.obs) {
-        window.electronAPI.obs.captionUpdate(value);
-      }
-      syncingCaption = false;
+    function updateCreateBtn() {
+      const hasSpan    = pendingSpan.end > pendingSpan.start;
+      const hasCaption = input.value.trim().length > 0;
+      createMarkBtn.disabled = !hasSpan && !hasCaption;
     }
 
-    // Re-fetch saved marks from DB and re-render (used after merge)
-    function refreshMarks() {
-      if (!window.electronAPI || !window.electronAPI.obs) return;
-      window.electronAPI.obs.getStagedMarks().then(saved => {
-        const all = currentPendingMark ? [...saved, currentPendingMark] : saved;
-        renderMarks(all);
-        markCountEl.textContent = 'Mark #' + (saved.length + 1);
-      }).catch(() => {});
+    function showSaved() {
+      captionSavedEl.classList.add('visible');
+      if (savedFadeTimer) clearTimeout(savedFadeTimer);
+      savedFadeTimer = setTimeout(() => {
+        captionSavedEl.classList.remove('visible');
+        savedFadeTimer = null;
+      }, 1200);
     }
 
     // ── marks rendering ───────────────────────────────────────────────────────
 
-    function renderMarks(marks) {
+    function renderSavedMarks(marks) {
       marksList.innerHTML = '';
-      pendingMarkInputEl = null;
 
       if (!marks || marks.length === 0) {
         marksSection.classList.remove('visible');
@@ -443,72 +370,47 @@
       }
       marksSection.classList.add('visible');
 
-      // Keep track of caption inputs for Enter-to-advance
       const captionInputs = [];
 
       marks.forEach((mark, i) => {
-        const isPending = mark.isPending === true;
-        const hasId     = mark.id && mark.id > 0;
-
         const row = document.createElement('div');
-        row.className = 'mark-row' + (isPending ? ' pending' : '');
+        row.className = 'mark-row';
 
-        // ── timecode ──
         const timeEl = document.createElement('span');
         timeEl.className = 'mark-time';
         timeEl.textContent = fmt(mark.start_time) + ' – ' + fmt(mark.end_time);
         row.appendChild(timeEl);
 
-        // ── caption input ──
         const ci = document.createElement('input');
         ci.className = 'mark-caption-input';
         ci.type = 'text';
         ci.value = mark.caption || '';
         ci.autocomplete = 'off';
         ci.spellcheck = false;
+        ci.placeholder = 'no caption';
 
-        if (isPending) {
-          ci.placeholder = 'type above ↑';
-          pendingMarkInputEl = ci;
-          ci.addEventListener('input', () => syncCaption(ci.value, false, true));
-          row.appendChild(ci);
+        ci.addEventListener('input', () => {
+          if (window.electronAPI && window.electronAPI.obs) {
+            window.electronAPI.obs.updateStagedMarkCaption(mark.id, ci.value);
+          }
+        });
 
-          const badge = document.createElement('span');
-          badge.className = 'pending-badge';
-          badge.textContent = 'current';
-          row.appendChild(badge);
+        ci.addEventListener('keydown', e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            const idx = captionInputs.indexOf(ci);
+            const next = captionInputs[idx + 1];
+            if (next) next.focus(); else input.focus();
+          }
+        });
 
-        } else {
-          ci.placeholder = 'no caption';
-
-          // live-save to DB
-          ci.addEventListener('input', () => {
-            if (window.electronAPI && window.electronAPI.obs) {
-              window.electronAPI.obs.updateStagedMarkCaption(mark.id, ci.value);
-            }
-          });
-
-          // Enter → advance focus
-          ci.addEventListener('keydown', e => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              const idx = captionInputs.indexOf(ci);
-              const next = captionInputs[idx + 1];
-              if (next) next.focus(); else input.focus();
-            }
-          });
-
-          row.appendChild(ci);
-          captionInputs.push(ci);
-        }
-
+        row.appendChild(ci);
+        captionInputs.push(ci);
         marksList.appendChild(row);
 
-        // ── merge button between consecutive saved marks ──
-        // Show between mark[i] and mark[i+1] only if both are saved (hasId)
-        // and mark[i+1] is also a saved mark (not pending)
+        // merge button between consecutive saved marks
         const next = marks[i + 1];
-        if (hasId && next && !next.isPending && next.id > 0) {
+        if (next) {
           const btnRow = document.createElement('div');
           btnRow.className = 'merge-btn-row';
 
@@ -520,7 +422,6 @@
           const currentCi = ci;
           btn.addEventListener('click', () => {
             const capA = currentCi.value.trim();
-            // captionInputs is fully populated by click time
             const nextCi = captionInputs[captionInputs.indexOf(currentCi) + 1];
             const capB = nextCi ? nextCi.value.trim() : '';
             const merged = capA && capB && capA !== capB
@@ -539,68 +440,85 @@
       });
     }
 
-    // ── continue toggle ───────────────────────────────────────────────────────
-
-    function setContinueMode(on) {
-      isContinueOn = on;
-      continueToggle.classList.toggle('active', on);
-      toggleCheck.textContent = on ? '✓' : '';
-      inputRow.classList.toggle('dimmed', on);
-      hintEl.innerHTML = on
-        ? '<kbd>Enter</kbd> save &nbsp;·&nbsp; <kbd>F10</kbd> resume &amp; extend &nbsp;·&nbsp; <kbd>F9</kbd> close'
-        : '<kbd>Enter</kbd> save &nbsp;·&nbsp; <kbd>F10</kbd> resume &nbsp;·&nbsp; <kbd>F9</kbd> close';
-      if (window.electronAPI && window.electronAPI.obs) {
-        window.electronAPI.obs.continueToggle(on);
-      }
+    // Re-fetch saved marks from DB and re-render
+    function refreshMarks() {
+      if (!window.electronAPI || !window.electronAPI.obs) return;
+      window.electronAPI.obs.getStagedMarks().then(saved => {
+        renderSavedMarks(saved);
+        markCountEl.textContent = saved.length + ' mark' + (saved.length === 1 ? '' : 's');
+      }).catch(() => {});
     }
 
-    continueToggle.addEventListener('click', () => setContinueMode(!isContinueOn));
+    // ── create mark ───────────────────────────────────────────────────────────
 
-    // ── top input events ──────────────────────────────────────────────────────
+    function doCreateMark(thenClose) {
+      if (!window.electronAPI || !window.electronAPI.obs) return;
+      const caption = input.value;
+      window.electronAPI.obs.createStagedMark(caption).then(saved => {
+        input.value = '';
+        updateCreateBtn();
+        // pendingSpan is now empty (lastResumeTimecode == pauseTimecode)
+        pendingSpan = { start: pendingSpan.end, end: pendingSpan.end };
+        renderSavedMarks(saved);
+        markCountEl.textContent = saved.length + ' mark' + (saved.length === 1 ? '' : 's');
+        showSaved();
+        if (thenClose) {
+          setTimeout(() => {
+            if (window.electronAPI && window.electronAPI.obs) {
+              window.electronAPI.obs.hideOverlay();
+            }
+          }, 600);
+        } else {
+          input.focus();
+        }
+      }).catch(() => {});
+    }
+
+    // ── event wiring ──────────────────────────────────────────────────────────
 
     input.addEventListener('input', () => {
       captionSavedEl.classList.remove('visible');
       if (savedFadeTimer) { clearTimeout(savedFadeTimer); savedFadeTimer = null; }
-      syncCaption(input.value, true, false);
+      // Sync caption to main process so Stop knows the current caption
+      if (window.electronAPI && window.electronAPI.obs) {
+        window.electronAPI.obs.captionUpdate(input.value);
+      }
+      updateCreateBtn();
     });
 
-    // Enter → show "✓ Caption saved" for 1s then close overlay
+    // Enter → create mark + close overlay
     input.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
-      captionSavedEl.classList.add('visible');
-      if (savedFadeTimer) clearTimeout(savedFadeTimer);
-      savedFadeTimer = setTimeout(() => {
-        captionSavedEl.classList.remove('visible');
-        savedFadeTimer = null;
-        if (window.electronAPI && window.electronAPI.obs) {
-          window.electronAPI.obs.hideOverlay();
-        }
-      }, 1000);
+      doCreateMark(true);
     });
+
+    createMarkBtn.addEventListener('click', () => doCreateMark(false));
 
     // ── overlay data (F9 trigger) ─────────────────────────────────────────────
 
     if (window.electronAPI && window.electronAPI.obs) {
       window.electronAPI.obs.onOverlayDataWithMarks(data => {
-        timecodeEl.textContent  = fmt(data.timecode || 0);
-        markCountEl.textContent = 'Mark #' + ((data.markCount || 0) + 1);
+        timecodeEl.textContent = fmt(data.timecode || 0);
 
-        // Reset caption state
+        // Reset state
         captionSavedEl.classList.remove('visible');
         if (savedFadeTimer) { clearTimeout(savedFadeTimer); savedFadeTimer = null; }
         input.value = data.currentCaption || '';
 
-        // Track the pending mark (last item if isPending)
+        // Pending span = the uncovered interval shown as the "current" mark
         const marks = data.marks || [];
-        currentPendingMark = marks.find(m => m.isPending) || null;
+        const pending = marks.find(m => m.isPending);
+        pendingSpan = pending
+          ? { start: pending.start_time, end: pending.end_time }
+          : { start: data.timecode || 0, end: data.timecode || 0 };
 
-        // Continue toggle visibility
-        const savedCount = marks.filter(m => !m.isPending).length;
-        continueRow.classList.toggle('visible', savedCount > 0);
+        // Render only saved marks (filter out the pending sentinel)
+        const saved = marks.filter(m => !m.isPending);
+        renderSavedMarks(saved);
+        markCountEl.textContent = saved.length + ' mark' + (saved.length === 1 ? '' : 's');
 
-        setContinueMode(false);
-        renderMarks(marks);
+        updateCreateBtn();
         input.focus();
       });
     }

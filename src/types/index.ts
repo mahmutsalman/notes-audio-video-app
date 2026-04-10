@@ -706,7 +706,7 @@ export interface ElectronAPI {
     assignStagedMarks: (videoId: number, recordingId: number) => Promise<{ assigned: number }>;
     assignStagedMarksToDurationVideo: (durationVideoId: number, recordingId: number) => Promise<{ assigned: number }>;
     captionUpdate: (caption: string) => void;
-    continueToggle: (isOn: boolean) => void;
+    createStagedMark: (caption: string) => Promise<any[]>;
     updateStagedMarkCaption: (id: number, caption: string) => void;
     mergeStagedMarks: (keepId: number, deleteId: number, caption: string | null) => void;
     hideOverlay: () => void;
