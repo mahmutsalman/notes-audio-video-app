@@ -188,9 +188,14 @@ export default function RecordingPage() {
   const [fsMarkNoteEdit, setFsMarkNoteEdit] = useState<string>('');
   const [fsIsEditingNote, setFsIsEditingNote] = useState(false);
   const [fsSavingNote, setFsSavingNote] = useState(false);
+  const [fsAddingMark, setFsAddingMark] = useState(false);
   const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
   const fsStartTimeRef = useRef<number>(0);
   const fsIsEditingNoteRef = useRef(false);
+  // Remembers last playback position per video, keyed by `type:videoId`
+  const fsLastPositionRef = useRef<Map<string, number>>(new Map());
+  // Stable ref to handleFsAddMark so the keyboard effect can call it without stale closure
+  const handleFsAddMarkRef = useRef<() => Promise<void>>(async () => {});
   const audioRecording = useAudioRecording();
   const imageAudioPlayer = useImageAudioPlayer();
   const durationAudioPlayer = useDurationAudioPlayer();
@@ -919,7 +924,11 @@ export default function RecordingPage() {
 
   const openVideoMarkFullscreen = (type: 'recording' | 'duration') => {
     const inlineRef = type === 'recording' ? inlineVideoRef : inlineDurationVideoRef;
-    fsStartTimeRef.current = inlineRef.current?.currentTime ?? 0;
+    const video = type === 'recording' ? selectedVideoForMarks : selectedDurationVideoForMarks;
+    const posKey = video ? `${type}:${video.id}` : null;
+    const storedPos = posKey ? fsLastPositionRef.current.get(posKey) : undefined;
+    // Prefer stored last position so user resumes where they left off
+    fsStartTimeRef.current = storedPos !== undefined ? storedPos : (inlineRef.current?.currentTime ?? 0);
     setVideoMarkFullscreenType(type);
     setFsActiveMarkId(null);
     setFsIsEditingNote(false);
@@ -946,6 +955,13 @@ export default function RecordingPage() {
   const handleFsTimeUpdate = () => {
     if (!fullscreenVideoRef.current) return;
     const time = fullscreenVideoRef.current.currentTime;
+
+    // Persist last position so it can be restored on next open
+    const fsVideoForPos = videoMarkFullscreenType === 'recording' ? selectedVideoForMarks : selectedDurationVideoForMarks;
+    if (fsVideoForPos) {
+      fsLastPositionRef.current.set(`${videoMarkFullscreenType}:${fsVideoForPos.id}`, time);
+    }
+
     const marks = videoMarkFullscreenType === 'recording' ? videoMarks : durationVideoMarks;
     if (marks.length === 0) return;
     const eligible = marks.filter(m => m.start_time <= time);
@@ -973,6 +989,43 @@ export default function RecordingPage() {
       setFsSavingNote(false);
     }
   };
+
+  const handleFsAddMark = async () => {
+    if (!fullscreenVideoRef.current || !id || fsAddingMark) return;
+    const currentTime = fullscreenVideoRef.current.currentTime;
+    const fsVideo = videoMarkFullscreenType === 'recording' ? selectedVideoForMarks : selectedDurationVideoForMarks;
+    if (!fsVideo) return;
+
+    setFsAddingMark(true);
+    try {
+      const newMark = await createDuration({
+        recording_id: Number(id),
+        start_time: currentTime,
+        end_time: currentTime,
+        note: null,
+        ...(videoMarkFullscreenType === 'recording'
+          ? { source_video_id: fsVideo.id, is_video_mark: 1 }
+          : { source_duration_video_id: (fsVideo as { id: number }).id, is_video_mark: 1 }),
+      });
+      // Insert into sorted list (ordered by start_time, same as DB query)
+      const setter = videoMarkFullscreenType === 'recording' ? setVideoMarks : setDurationVideoMarks;
+      setter(prev => {
+        const updated = [...prev, newMark];
+        updated.sort((a, b) => a.start_time - b.start_time);
+        return updated;
+      });
+      setFsActiveMarkId(newMark.id);
+      setFsMarkNoteEdit('');
+      setFsIsEditingNote(false);
+      fsIsEditingNoteRef.current = false;
+    } catch (err) {
+      console.error('Failed to add mark:', err);
+    } finally {
+      setFsAddingMark(false);
+    }
+  };
+  // Keep ref in sync so the keyboard handler can call it without a stale closure
+  handleFsAddMarkRef.current = handleFsAddMark;
 
   const handleAssignStagedMarks = async (video: Video) => {
     if (isAssigningMarks || !id) return;
@@ -2001,6 +2054,10 @@ export default function RecordingPage() {
         e.preventDefault();
         e.stopPropagation();
         setVideoMarkFullscreen(false);
+      } else if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleFsAddMarkRef.current();
       }
     };
 
@@ -3700,10 +3757,18 @@ export default function RecordingPage() {
             <div className="flex flex-1 min-h-0">
               {/* Left marks panel */}
               <div className="w-52 flex-shrink-0 bg-gray-900 border-r border-gray-800 overflow-y-auto flex flex-col">
-                <div className="px-3 py-2 border-b border-gray-800 flex-shrink-0">
+                <div className="px-3 py-2 border-b border-gray-800 flex-shrink-0 flex items-center justify-between">
                   <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
                     Marks ({fsMarks.length})
                   </span>
+                  <button
+                    onClick={handleFsAddMark}
+                    disabled={fsAddingMark}
+                    title="Add mark at current time (M)"
+                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-violet-700 hover:bg-violet-600 text-white transition-colors disabled:opacity-40"
+                  >
+                    {fsAddingMark ? '…' : '+ Mark'}
+                  </button>
                 </div>
                 {fsMarks.length === 0 ? (
                   <p className="text-xs text-gray-600 italic px-3 py-3">No marks assigned</p>
