@@ -714,6 +714,8 @@ export interface ElectronAPI {
     onResumed: (cb: () => void) => () => void;
     onStarted: (cb: (data: { sessionId: string }) => void) => () => void;
     onStopped: (cb: (data: { sessionId: string | null }) => void) => () => void;
+    getLastVideoPath: () => Promise<string | null>;
+    onVideoReady: (cb: (data: { filePath: string }) => void) => () => void;
     onStatusChange: (cb: (status: any) => void) => () => void;
     onOverlayData: (cb: (data: { timecode: number; markCount: number }) => void) => () => void;
     onOverlayDataWithMarks: (cb: (data: { timecode: number; markCount: number; marks: any[]; currentCaption: string }) => void) => () => void;
