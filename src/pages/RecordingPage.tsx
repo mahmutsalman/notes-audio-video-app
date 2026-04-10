@@ -1931,6 +1931,9 @@ export default function RecordingPage() {
       // Skip if video lightbox is open
       if (selectedVideo !== null) return;
 
+      // Skip if fullscreen video mark overlay is open
+      if (videoMarkFullscreen) return;
+
       // Skip if editing notes
       if (isEditing) return;
 
@@ -1956,7 +1959,54 @@ export default function RecordingPage() {
 
     window.addEventListener('keydown', handleRecordingNav);
     return () => window.removeEventListener('keydown', handleRecordingNav);
-  }, [isActiveTab, selectedImageIndex, selectedDurationImageIndex, selectedVideo, isEditing, prevRecordingId, nextRecordingId, navigate, activeDurationId]);
+  }, [isActiveTab, selectedImageIndex, selectedDurationImageIndex, selectedVideo, videoMarkFullscreen, isEditing, prevRecordingId, nextRecordingId, navigate, activeDurationId]);
+
+  // Keyboard controls for fullscreen video mark overlay
+  // Space = play/pause, ←/→ = seek ±3s, Escape = close
+  useEffect(() => {
+    if (!videoMarkFullscreen || !isActiveTab) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if the note editor is active
+      if (fsIsEditingNoteRef.current) return;
+
+      const activeEl = document.activeElement;
+      if (
+        activeEl?.tagName === 'INPUT' ||
+        activeEl?.tagName === 'TEXTAREA' ||
+        activeEl?.getAttribute('contenteditable') === 'true' ||
+        activeEl?.closest('[contenteditable="true"]')
+      ) return;
+
+      const vid = fullscreenVideoRef.current;
+      if (!vid) return;
+
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (vid.paused) {
+          vid.play().catch(() => {});
+        } else {
+          vid.pause();
+        }
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        e.stopPropagation();
+        vid.currentTime = Math.max(0, vid.currentTime - 3);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        e.stopPropagation();
+        vid.currentTime = Math.min(vid.duration || Infinity, vid.currentTime + 3);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setVideoMarkFullscreen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, [videoMarkFullscreen, isActiveTab]);
 
   if (loading) {
     return (
