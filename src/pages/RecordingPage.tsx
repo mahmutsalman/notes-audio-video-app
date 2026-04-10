@@ -3756,7 +3756,7 @@ export default function RecordingPage() {
             {/* Middle: left marks panel + video */}
             <div className="flex flex-1 min-h-0">
               {/* Left marks panel */}
-              <div className="w-52 flex-shrink-0 bg-gray-900 border-r border-gray-800 overflow-y-auto flex flex-col">
+              <div className="w-44 flex-shrink-0 bg-gray-900 border-r border-gray-800 overflow-y-auto flex flex-col">
                 <div className="px-3 py-2 border-b border-gray-800 flex-shrink-0 flex items-center justify-between">
                   <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
                     Marks ({fsMarks.length})
@@ -3809,7 +3809,7 @@ export default function RecordingPage() {
               </div>
 
               {/* Video area */}
-              <div className="flex-1 bg-black flex items-center justify-center min-w-0">
+              <div className="flex-1 bg-black min-w-0 overflow-hidden">
                 <video
                   ref={fullscreenVideoRef}
                   src={fsVideoSrc}
@@ -3821,14 +3821,14 @@ export default function RecordingPage() {
                     }
                   }}
                   onTimeUpdate={handleFsTimeUpdate}
-                  className="max-w-full max-h-full"
+                  className="w-full h-full object-contain"
                   onClick={e => e.stopPropagation()}
                 />
               </div>
             </div>
 
-            {/* Bottom note panel */}
-            <div className="h-52 flex-shrink-0 border-t border-gray-800 bg-gray-900 flex flex-col">
+            {/* Bottom note panel — compact when viewing, expanded when editing */}
+            <div className={`flex-shrink-0 border-t border-gray-800 bg-gray-900 flex flex-col transition-all duration-150 ${fsIsEditingNote ? 'h-52' : 'h-24'}`}>
               <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 flex-shrink-0">
                 <span className="text-xs font-medium text-gray-400">
                   {activeFsMark
@@ -3877,9 +3877,26 @@ export default function RecordingPage() {
                     placeholder="Add note for this mark…"
                   />
                 ) : activeFsMark.note ? (
-                  <div className="notes-content text-sm text-gray-300" dangerouslySetInnerHTML={{ __html: activeFsMark.note }} />
+                  <div
+                    className="notes-content text-sm text-gray-300 cursor-text"
+                    dangerouslySetInnerHTML={{ __html: activeFsMark.note }}
+                    onDoubleClick={() => {
+                      setFsMarkNoteEdit(activeFsMark.note || '');
+                      setFsIsEditingNote(true);
+                      fsIsEditingNoteRef.current = true;
+                    }}
+                  />
                 ) : (
-                  <p className="text-xs text-gray-500 italic">No note — click Edit to add one</p>
+                  <p
+                    className="text-xs text-gray-500 italic cursor-text"
+                    onDoubleClick={() => {
+                      setFsMarkNoteEdit('');
+                      setFsIsEditingNote(true);
+                      fsIsEditingNoteRef.current = true;
+                    }}
+                  >
+                    No note — double-click or press Edit to add one
+                  </p>
                 )}
               </div>
             </div>
