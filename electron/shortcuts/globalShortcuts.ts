@@ -144,7 +144,7 @@ async function handleF10(): Promise<void> {
   } else if (!status.isPaused) {
     console.log('[F10] → PauseRecord');
     await obsService.pauseRecording();
-    // overlay shown via obsService 'paused' event → setupObsEventBridge
+    // overlay stays hidden — user must press F9 explicitly to open it
   } else {
     // Paused → resume without creating a mark.
     // Marks are created explicitly from the F9 overlay ("Create Mark" button / Enter).

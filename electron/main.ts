@@ -266,6 +266,17 @@ app.whenReady().then(async () => {
   }
 });
 
+// Hide the OBS overlay whenever the user switches to another app.
+// will-resign-active fires when a *different application* becomes active, NOT when
+// the user clicks on the overlay window itself (same Electron process), so the
+// overlay stays fully interactive while the notes app is in use.
+// This also prevents macOS Cmd+H restore from bringing the overlay back: we
+// hide it before macOS can include it in its "windows to restore" list.
+app.on('will-resign-active', async () => {
+  const { hideObsMarkOverlay } = await import('./windows/obsMarkOverlay');
+  hideObsMarkOverlay();
+});
+
 // Quit when all windows are closed, except on macOS
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
