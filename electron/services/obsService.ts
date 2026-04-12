@@ -213,6 +213,8 @@ class OBSService extends EventEmitter {
     this.obs.on('ConnectionClosed' as any, () => {
       console.log('[OBS] Connection closed');
       this.isConnected = false;
+      this.recordingState.isRecording = false;
+      this.recordingState.isPaused = false;
       this.emit('statusChange', this.getStatus());
     });
 

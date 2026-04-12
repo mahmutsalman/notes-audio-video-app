@@ -175,6 +175,7 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
   });
 
   obsService.on('started', (data: { sessionId: string }) => {
+    hideObsMarkOverlay(); // dismiss any stale overlay from a previous session
     ObsStagedMarksOperations.deleteAll();
     // Clear any leftover ghost marks from a previous session, then create the first one at t=0
     ObsGhostMarksOperations.deleteAll();
@@ -184,6 +185,9 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
 
   obsService.on('statusChange', (status: any) => {
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:statusChange', status);
+    if (!status.isConnected) {
+      hideObsMarkOverlay(); // hide stale overlay when OBS drops connection
+    }
   });
 }
 
