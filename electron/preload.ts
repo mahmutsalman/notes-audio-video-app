@@ -643,6 +643,14 @@ const electronAPI = {
       ipcRenderer.on('obs:stopped', listener);
       return () => ipcRenderer.removeListener('obs:stopped', listener);
     },
+    getGhostMarks: (): Promise<any[]> => ipcRenderer.invoke('obs:getGhostMarks'),
+    hasGhostMarks: (): Promise<boolean> => ipcRenderer.invoke('obs:hasGhostMarks'),
+    getGhostMarksCount: (): Promise<number> => ipcRenderer.invoke('obs:getGhostMarksCount'),
+    clearGhostMarks: (): Promise<void> => ipcRenderer.invoke('obs:clearGhostMarks'),
+    assignGhostMarks: (videoId: number, recordingId: number): Promise<{ assigned: number }> =>
+      ipcRenderer.invoke('obs:assignGhostMarks', videoId, recordingId),
+    assignGhostMarksToDurationVideo: (durationVideoId: number, recordingId: number): Promise<{ assigned: number }> =>
+      ipcRenderer.invoke('obs:assignGhostMarksToDurationVideo', durationVideoId, recordingId),
     getLastVideoPath: (): Promise<string | null> => ipcRenderer.invoke('obs:getLastVideoPath'),
     onVideoReady: (cb: (data: { filePath: string }) => void) => {
       const listener = (_: any, data: any) => cb(data);

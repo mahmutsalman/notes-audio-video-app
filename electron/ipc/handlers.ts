@@ -29,6 +29,7 @@ import {
   CalendarTodosOperations,
   StudyTrackingOperations,
   ObsStagedMarksOperations,
+  ObsGhostMarksOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
@@ -75,20 +76,31 @@ import type {
 export async function setupObsEventBridge(mainWindow: import('electron').BrowserWindow): Promise<void> {
   const { obsService } = await import('../services/obsService');
   const { showObsMarkOverlay, hideObsMarkOverlay } = await import('../windows/obsMarkOverlay');
-  const { ObsStagedMarksOperations } = await import('../database/operations');
+  const { ObsStagedMarksOperations, ObsGhostMarksOperations } = await import('../database/operations');
 
   obsService.on('paused', (data: { timecode: number; timecodeStr: string }) => {
+    // Close the currently open ghost mark at the pause timecode
+    const sessionId = obsService.currentSessionId;
+    if (sessionId) ObsGhostMarksOperations.closeActive(sessionId, data.timecode);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:paused', data);
     // Overlay is NOT auto-shown on pause — user presses F9 to open it explicitly
   });
 
-  obsService.on('resumed', () => {
+  obsService.on('resumed', (data: { startTime: number }) => {
+    // Each resume starts a new ghost mark at the point the user unpaused
+    const sessionId = obsService.currentSessionId;
+    if (sessionId) ObsGhostMarksOperations.create(sessionId, data.startTime);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:resumed');
     hideObsMarkOverlay();
   });
 
-  obsService.on('stopped', (data: { sessionId: string | null; pendingMark?: any; filePath?: string | null; recordDirectory?: string | null }) => {
-    // If stopped while paused, save the last mark before clearing state
+  obsService.on('stopped', (data: { sessionId: string | null; pendingMark?: any; filePath?: string | null; recordDirectory?: string | null; finalTimecode?: number }) => {
+    // Close the active ghost mark (only matters if OBS was stopped while actively recording;
+    // if stopped while paused the ghost mark was already closed on the last pause event).
+    if (data.sessionId && data.finalTimecode != null && data.finalTimecode > 0) {
+      ObsGhostMarksOperations.closeActive(data.sessionId, data.finalTimecode);
+    }
+    // If stopped while paused, save the last staged mark before clearing state
     if (data.pendingMark) {
       data.pendingMark.sort_order = ObsStagedMarksOperations.count();
       ObsStagedMarksOperations.create(data.pendingMark);
@@ -164,6 +176,9 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
 
   obsService.on('started', (data: { sessionId: string }) => {
     ObsStagedMarksOperations.deleteAll();
+    // Clear any leftover ghost marks from a previous session, then create the first one at t=0
+    ObsGhostMarksOperations.deleteAll();
+    ObsGhostMarksOperations.create(data.sessionId, 0);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:started', data);
   });
 
@@ -2540,6 +2555,67 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('durations:getByRecordingAndDurationVideo', (_, recordingId: number, durationVideoId: number) =>
     DurationsOperations.getByRecordingAndDurationVideo(recordingId, durationVideoId)
   );
+
+  // ============ OBS Ghost Marks ============
+  ipcMain.handle('obs:getGhostMarks', async () => ObsGhostMarksOperations.getAll());
+  ipcMain.handle('obs:hasGhostMarks', async () => ObsGhostMarksOperations.count() > 0);
+  ipcMain.handle('obs:getGhostMarksCount', async () => ObsGhostMarksOperations.count());
+  ipcMain.handle('obs:clearGhostMarks', async () => ObsGhostMarksOperations.deleteAll());
+
+  ipcMain.handle('obs:assignGhostMarks', async (_, videoId: number, recordingId: number) => {
+    const marks = ObsGhostMarksOperations.getAll();
+    if (marks.length === 0) throw new Error('No ghost marks to assign');
+
+    const video = VideosOperations.getById(videoId);
+    if (!video) throw new Error('Video not found');
+    const videoDuration: number | null = video.duration != null ? video.duration : null;
+
+    for (let i = 0; i < marks.length; i++) {
+      const mark = marks[i] as any;
+      // If end_time is null (last segment stopped mid-record), use next mark's start or video duration
+      const endTime: number = mark.end_time ?? (marks[i + 1] as any)?.start_time ?? videoDuration ?? mark.start_time;
+      DurationsOperations.create({
+        recording_id: recordingId,
+        start_time: mark.start_time,
+        end_time: endTime,
+        note: null,
+        source_video_id: videoId,
+        is_video_mark: 1,
+        is_ghost_mark: 1,
+      } as any);
+    }
+
+    ObsGhostMarksOperations.deleteAll();
+    scheduleSearchReindex();
+    return { assigned: marks.length };
+  });
+
+  ipcMain.handle('obs:assignGhostMarksToDurationVideo', async (_, durationVideoId: number, recordingId: number) => {
+    const marks = ObsGhostMarksOperations.getAll();
+    if (marks.length === 0) throw new Error('No ghost marks to assign');
+
+    const video = DurationVideosOperations.getById(durationVideoId);
+    if (!video) throw new Error('Duration video not found');
+    const videoDuration: number | null = video.duration != null ? video.duration : null;
+
+    for (let i = 0; i < marks.length; i++) {
+      const mark = marks[i] as any;
+      const endTime: number = mark.end_time ?? (marks[i + 1] as any)?.start_time ?? videoDuration ?? mark.start_time;
+      DurationsOperations.create({
+        recording_id: recordingId,
+        start_time: mark.start_time,
+        end_time: endTime,
+        note: null,
+        source_duration_video_id: durationVideoId,
+        is_video_mark: 1,
+        is_ghost_mark: 1,
+      } as any);
+    }
+
+    ObsGhostMarksOperations.deleteAll();
+    scheduleSearchReindex();
+    return { assigned: marks.length };
+  });
 
   ipcMain.on('obs:captionUpdate', (_, caption: string) => {
     import('../services/obsService').then(({ obsService }) => {

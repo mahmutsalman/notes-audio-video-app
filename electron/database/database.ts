@@ -1053,6 +1053,23 @@ function runMigrations(db: Database.Database): void {
     console.log('Created obs_staged_marks table');
   }
 
+  // Migration: Create obs_ghost_marks table
+  const obsGhostMarksExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='obs_ghost_marks'"
+  ).get();
+  if (!obsGhostMarksExists) {
+    db.exec(`
+      CREATE TABLE obs_ghost_marks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        start_time REAL NOT NULL,
+        end_time REAL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('Created obs_ghost_marks table');
+  }
+
   // Migration: Add source_video_id to durations
   const durColsForVideo = db.prepare("PRAGMA table_info(durations)").all() as { name: string }[];
   if (!durColsForVideo.some(c => c.name === 'source_video_id')) {
@@ -1067,6 +1084,13 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE durations ADD COLUMN is_video_mark INTEGER DEFAULT 0");
     console.log('Added is_video_mark to durations');
   }
+  if (!durColsForVideo.some(c => c.name === 'is_ghost_mark')) {
+    db.exec("ALTER TABLE durations ADD COLUMN is_ghost_mark INTEGER DEFAULT 0");
+    console.log('Added is_ghost_mark to durations');
+  }
+  // Backfill: any mark created via OBS video assignment before is_ghost_mark existed gets the flag
+  db.exec("UPDATE durations SET is_ghost_mark = 1 WHERE is_video_mark = 1 AND is_ghost_mark = 0");
+
 
   // Migration: Change source_video_id / source_duration_video_id FKs from SET NULL → CASCADE
   // SQLite requires a full table rebuild to change FK constraints.
