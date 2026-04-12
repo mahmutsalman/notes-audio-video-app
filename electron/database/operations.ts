@@ -584,8 +584,8 @@ export const DurationsOperations = {
     `).get(duration.recording_id) as { max_order: number };
 
     const stmt = db.prepare(`
-      INSERT INTO durations (recording_id, start_time, end_time, note, group_color, sort_order, page_number, source_video_id, source_duration_video_id, is_video_mark)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO durations (recording_id, start_time, end_time, note, group_color, sort_order, page_number, source_video_id, source_duration_video_id, is_video_mark, is_ghost_mark)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -598,7 +598,8 @@ export const DurationsOperations = {
       duration.page_number ?? null,
       duration.source_video_id ?? null,
       (duration as any).source_duration_video_id ?? null,
-      (duration as any).is_video_mark ?? 0
+      (duration as any).is_video_mark ?? 0,
+      (duration as any).is_ghost_mark ?? 0
     );
 
     return this.getById(result.lastInsertRowid as number)!;
@@ -2667,5 +2668,49 @@ export const ObsStagedMarksOperations = {
       'UPDATE obs_staged_marks SET start_time = ?, end_time = ?, caption = ? WHERE id = ?'
     ).run(Math.min(keep.start_time, del.start_time), Math.max(keep.end_time, del.end_time), mergedCaption, keepId);
     db.prepare('DELETE FROM obs_staged_marks WHERE id = ?').run(deleteId);
+  },
+};
+
+export const ObsGhostMarksOperations = {
+  create(sessionId: string, startTime: number): any {
+    const db = getDatabase();
+    const result = db.prepare(
+      'INSERT INTO obs_ghost_marks (session_id, start_time) VALUES (?, ?)'
+    ).run(sessionId, startTime);
+    return db.prepare('SELECT * FROM obs_ghost_marks WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  // Close the most recent open ghost mark for a session (end_time IS NULL).
+  closeActive(sessionId: string, endTime: number): void {
+    const db = getDatabase();
+    db.prepare(`
+      UPDATE obs_ghost_marks SET end_time = ?
+      WHERE id = (
+        SELECT id FROM obs_ghost_marks
+        WHERE session_id = ? AND end_time IS NULL
+        ORDER BY id DESC LIMIT 1
+      )
+    `).run(endTime, sessionId);
+  },
+
+  getAll(): any[] {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM obs_ghost_marks ORDER BY start_time').all();
+  },
+
+  getBySession(sessionId: string): any[] {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM obs_ghost_marks WHERE session_id = ? ORDER BY start_time').all(sessionId);
+  },
+
+  count(): number {
+    const db = getDatabase();
+    const result = db.prepare('SELECT COUNT(*) as count FROM obs_ghost_marks').get() as { count: number };
+    return result.count;
+  },
+
+  deleteAll(): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM obs_ghost_marks').run();
   },
 };

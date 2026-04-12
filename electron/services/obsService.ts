@@ -125,7 +125,7 @@ class OBSService extends EventEmitter {
         this.recordingState.isRecording = true;
         this.recordingState.isPaused = false;
         // lastResumeTimecode already set when mark was saved
-        this.emit('resumed');
+        this.emit('resumed', { startTime: this.pauseTimecode });
 
       } else if (state === 'OBS_WEBSOCKET_OUTPUT_PAUSED') {
         this.recordingState.isRecording = true;
@@ -193,6 +193,10 @@ class OBSService extends EventEmitter {
         if (filePath) this.lastVideoPath = filePath;
         const recordDirectory = this.lastRecordDirectory;
 
+        // Capture final timecode before state reset — used to close the active ghost mark.
+        // Stopped while paused: pauseTimecode. Stopped while recording: stoppingTimecode.
+        const finalTimecode = this.recordingState.isPaused ? this.pauseTimecode : this.stoppingTimecode;
+
         this.recordingState.isRecording = false;
         this.recordingState.isPaused = false;
         this.recordingState.recordTimecode = '00:00:00';
@@ -200,7 +204,7 @@ class OBSService extends EventEmitter {
         const sessionId = this.currentSessionId;
         this.currentSessionId = null;
         this.currentMarkCaption = '';
-        this.emit('stopped', { sessionId, pendingMark, filePath, recordDirectory });
+        this.emit('stopped', { sessionId, pendingMark, filePath, recordDirectory, finalTimecode });
       }
 
       this.emit('statusChange', this.getStatus());

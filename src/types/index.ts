@@ -103,6 +103,7 @@ export interface Duration {
   source_video_id: number | null; // links to videos.id when created via OBS mark assignment
   source_duration_video_id: number | null; // links to duration_videos.id when created via OBS mark assignment
   is_video_mark: number | null; // 1 if created via OBS video mark assignment; survives video deletion
+  is_ghost_mark: number | null; // 1 if assigned from OBS ghost marks (recording intervals between pauses)
   created_at: string;
   // Media loaded separately
   images?: DurationImage[];
@@ -118,6 +119,14 @@ export interface ObsStagedMark {
   end_time: number;
   caption: string | null;
   sort_order: number;
+  created_at: string;
+}
+
+export interface ObsGhostMark {
+  id: number;
+  session_id: string;
+  start_time: number;
+  end_time: number | null;
   created_at: string;
 }
 
@@ -386,7 +395,7 @@ export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
 export type CreateVideo = Omit<Video, 'id' | 'created_at'>;
-export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color' | 'sort_order' | 'page_number' | 'source_video_id' | 'source_duration_video_id' | 'is_video_mark'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor; page_number?: number | null; source_video_id?: number | null; source_duration_video_id?: number | null; is_video_mark?: number | null };
+export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color' | 'sort_order' | 'page_number' | 'source_video_id' | 'source_duration_video_id' | 'is_video_mark' | 'is_ghost_mark'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor; page_number?: number | null; source_video_id?: number | null; source_duration_video_id?: number | null; is_video_mark?: number | null; is_ghost_mark?: number | null };
 
 // Video Compression Types
 export interface VideoCompressionOptions {
@@ -710,6 +719,12 @@ export interface ElectronAPI {
     updateStagedMarkCaption: (id: number, caption: string) => void;
     mergeStagedMarks: (keepId: number, deleteId: number, caption: string | null) => void;
     hideOverlay: () => void;
+    getGhostMarks: () => Promise<ObsGhostMark[]>;
+    hasGhostMarks: () => Promise<boolean>;
+    getGhostMarksCount: () => Promise<number>;
+    clearGhostMarks: () => Promise<void>;
+    assignGhostMarks: (videoId: number, recordingId: number) => Promise<{ assigned: number }>;
+    assignGhostMarksToDurationVideo: (durationVideoId: number, recordingId: number) => Promise<{ assigned: number }>;
     onPaused: (cb: (data: { timecode: number; timecodeStr: string }) => void) => () => void;
     onResumed: (cb: () => void) => () => void;
     onStarted: (cb: (data: { sessionId: string }) => void) => () => void;

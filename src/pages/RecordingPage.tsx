@@ -34,7 +34,7 @@ import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '
 import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
 import { IMAGE_COLOR_KEYS, IMAGE_COLORS } from '../utils/imageColors';
-import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState, ObsStagedMark } from '../types';
+import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState} from '../types';
 import SearchNavBanner from '../components/search/SearchNavBanner';
 import { TagModal } from '../components/common/TagModal';
 import type { MediaTagType } from '../types';
@@ -149,10 +149,17 @@ export default function RecordingPage() {
   const [contextMenuShowColors, setContextMenuShowColors] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [selectedVideoForMarks, setSelectedVideoForMarks] = useState<Video | null>(null);
+  const [videoLoadFailed, setVideoLoadFailed] = useState(false);
+  const [durationVideoLoadFailed, setDurationVideoLoadFailed] = useState(false);
+  const [isPastingVideo, setIsPastingVideo] = useState(false);
   const [videoMarks, setVideoMarks] = useState<Duration[]>([]);
   const [stagedMarksCount, setStagedMarksCount] = useState(0);
-  const [stagedMarks, setStagedMarks] = useState<ObsStagedMark[]>([]);
   const [isAssigningMarks, setIsAssigningMarks] = useState(false);
+  const [ghostMarksCount, setGhostMarksCount] = useState(0);
+  const [isAssigningGhostMarks, setIsAssigningGhostMarks] = useState(false);
+  const [isAssigningGhostDurationMarks, setIsAssigningGhostDurationMarks] = useState(false);
+  const [ghostAssignError, setGhostAssignError] = useState<string | null>(null);
+  const [ghostDurationAssignError, setGhostDurationAssignError] = useState<string | null>(null);
   const [obsLastVideoPath, setObsLastVideoPath] = useState<string | null>(null);
   const [obsVideoAdding, setObsVideoAdding] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
@@ -189,9 +196,14 @@ export default function RecordingPage() {
   const [fsIsEditingNote, setFsIsEditingNote] = useState(false);
   const [fsSavingNote, setFsSavingNote] = useState(false);
   const [fsAddingMark, setFsAddingMark] = useState(false);
+  const [fsGhostNavMode, setFsGhostNavMode] = useState(false);
   const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
   const fsStartTimeRef = useRef<number>(0);
   const fsIsEditingNoteRef = useRef(false);
+  const fsGhostNavModeRef = useRef(false);
+  // Kept in sync so the keyboard handler sees the latest marks without stale closure
+  const videoMarksRef = useRef<Duration[]>([]);
+  const durationVideoMarksRef = useRef<Duration[]>([]);
   // Remembers last playback position per video, keyed by `type:videoId`
   const fsLastPositionRef = useRef<Map<string, number>>(new Map());
   // Stable ref to handleFsAddMark so the keyboard effect can call it without stale closure
@@ -290,6 +302,10 @@ export default function RecordingPage() {
     return () => { reportTabContext(tabId, null); };
   }, [tabId]); // eslint-disable-line react-hooks/exhaustive-deps
   // ─────────────────────────────────────────────────────────────────────────
+
+  // Reset video load-failed state when selected video changes
+  useEffect(() => { setVideoLoadFailed(false); }, [selectedVideoForMarks?.id]);
+  useEffect(() => { setDurationVideoLoadFailed(false); }, [selectedDurationVideoForMarks?.id]);
 
   // Helper to preserve scroll position across refetch
   const preserveScrollPosition = async (operation: () => Promise<void>) => {
@@ -646,7 +662,8 @@ export default function RecordingPage() {
   };
 
   const handleAddVideos = async () => {
-    if (!id) return;
+    if (!id || isPastingVideo) return;
+    setIsPastingVideo(true);
     try {
       // Try to read file URL from clipboard (works with CleanShot, Finder, etc.)
       const result = await window.electronAPI.clipboard.readFileUrl();
@@ -668,6 +685,8 @@ export default function RecordingPage() {
     } catch (error) {
       console.error('Failed to read clipboard:', error);
       alert('Could not read clipboard. Make sure you have copied a video file.');
+    } finally {
+      setIsPastingVideo(false);
     }
   };
 
@@ -793,15 +812,22 @@ export default function RecordingPage() {
   // OBS staged marks
   const refreshStagedMarks = () => {
     window.electronAPI.obs.getStagedMarks().then(marks => {
-      setStagedMarks(marks);
       setStagedMarksCount(marks.length);
+    }).catch(() => {});
+  };
+
+  const refreshGhostMarks = () => {
+    window.electronAPI.obs.getGhostMarksCount().then(count => {
+      setGhostMarksCount(count);
     }).catch(() => {});
   };
 
   useEffect(() => {
     refreshStagedMarks();
+    refreshGhostMarks();
     const cleanupStopped = window.electronAPI.obs.onStopped(() => {
       refreshStagedMarks();
+      refreshGhostMarks();
     });
     const cleanupVideoReady = window.electronAPI.obs.onVideoReady(({ filePath }) => {
       setObsLastVideoPath(filePath);
@@ -821,11 +847,6 @@ export default function RecordingPage() {
     } catch {
       setVideoMarks([]);
     }
-  };
-
-  const handleDeleteStagedMark = async (markId: number) => {
-    await window.electronAPI.obs.deleteStagedMark(markId).catch(() => {});
-    refreshStagedMarks();
   };
 
   const handleClearAllStagedMarks = async () => {
@@ -861,12 +882,6 @@ export default function RecordingPage() {
     }
   };
 
-  const formatMarkTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${m}:${String(s).padStart(2, '0')}`;
-  };
-
   const handleExitVideoMode = () => {
     setSelectedVideoForMarks(null);
     setVideoMarks([]);
@@ -896,23 +911,72 @@ export default function RecordingPage() {
     }
   };
 
-  const handleAssignStagedMarksToDurationVideo = async (video: DurationVideo) => {
-    if (isAssigningDurationMarks || !id) return;
-    setIsAssigningDurationMarks(true);
-    setAssignDurationError(null);
-    try {
-      const result = await window.electronAPI.obs.assignStagedMarksToDurationVideo(video.id, Number(id));
-      setStagedMarks([]);
-      setStagedMarksCount(0);
-      const marks = await window.electronAPI.durations.getByRecordingAndDurationVideo(Number(id), video.id);
-      setDurationVideoMarks(marks);
-      setSelectedDurationVideoForMarks(video);
-      console.log(`[RecordingPage] Assigned ${result.assigned} OBS marks to duration video ${video.id}`);
-    } catch (err) {
-      setAssignDurationError(err instanceof Error ? err.message : 'Failed to assign marks');
-    } finally {
-      setIsAssigningDurationMarks(false);
+  // Merged assign: assigns staged marks first, then ghost marks, to a recording video
+  const handleAssignAllMarks = async (video: Video) => {
+    if (!id) return;
+    let error: string | null = null;
+    if (stagedMarksCount > 0) {
+      setIsAssigningMarks(true);
+      setAssignError(null);
+      try {
+        await window.electronAPI.obs.assignStagedMarks(video.id, Number(id));
+        setStagedMarksCount(0);
+      } catch (err) {
+        error = err instanceof Error ? err.message : 'Failed to assign staged marks';
+      } finally {
+        setIsAssigningMarks(false);
+      }
     }
+    if (ghostMarksCount > 0 && !error) {
+      setIsAssigningGhostMarks(true);
+      setGhostAssignError(null);
+      try {
+        await window.electronAPI.obs.assignGhostMarks(video.id, Number(id));
+        setGhostMarksCount(0);
+      } catch (err) {
+        error = err instanceof Error ? err.message : 'Failed to assign ghost marks';
+      } finally {
+        setIsAssigningGhostMarks(false);
+      }
+    }
+    const marks = await window.electronAPI.durations.getByRecordingAndVideo(Number(id), video.id);
+    setVideoMarks(marks);
+    setSelectedVideoForMarks(video);
+    if (error) setAssignError(error);
+  };
+
+  // Merged assign: assigns staged marks first, then ghost marks, to a duration video
+  const handleAssignAllMarksToDurationVideo = async (video: DurationVideo) => {
+    if (!id) return;
+    let error: string | null = null;
+    if (stagedMarksCount > 0) {
+      setIsAssigningDurationMarks(true);
+      setAssignDurationError(null);
+      try {
+        await window.electronAPI.obs.assignStagedMarksToDurationVideo(video.id, Number(id));
+        setStagedMarksCount(0);
+      } catch (err) {
+        error = err instanceof Error ? err.message : 'Failed to assign staged marks';
+      } finally {
+        setIsAssigningDurationMarks(false);
+      }
+    }
+    if (ghostMarksCount > 0 && !error) {
+      setIsAssigningGhostDurationMarks(true);
+      setGhostDurationAssignError(null);
+      try {
+        await window.electronAPI.obs.assignGhostMarksToDurationVideo(video.id, Number(id));
+        setGhostMarksCount(0);
+      } catch (err) {
+        error = err instanceof Error ? err.message : 'Failed to assign ghost marks';
+      } finally {
+        setIsAssigningGhostDurationMarks(false);
+      }
+    }
+    const marks = await window.electronAPI.durations.getByRecordingAndDurationVideo(Number(id), video.id);
+    setDurationVideoMarks(marks);
+    setSelectedDurationVideoForMarks(video);
+    if (error) setAssignDurationError(error);
   };
 
   const seekToMark = (seconds: number) => {
@@ -1026,25 +1090,10 @@ export default function RecordingPage() {
   };
   // Keep ref in sync so the keyboard handler can call it without a stale closure
   handleFsAddMarkRef.current = handleFsAddMark;
+  // Keep marks refs in sync so ghost nav keyboard handler always sees the latest arrays
+  useEffect(() => { videoMarksRef.current = videoMarks; }, [videoMarks]);
+  useEffect(() => { durationVideoMarksRef.current = durationVideoMarks; }, [durationVideoMarks]);
 
-  const handleAssignStagedMarks = async (video: Video) => {
-    if (isAssigningMarks || !id) return;
-    setIsAssigningMarks(true);
-    setAssignError(null);
-    try {
-      const result = await window.electronAPI.obs.assignStagedMarks(video.id, Number(id));
-      setStagedMarks([]);
-      setStagedMarksCount(0);
-      const marks = await window.electronAPI.durations.getByRecordingAndVideo(Number(id), video.id);
-      setVideoMarks(marks);
-      setSelectedVideoForMarks(video);
-      console.log(`[RecordingPage] Assigned ${result.assigned} OBS marks to video ${video.id}`);
-    } catch (err) {
-      setAssignError(err instanceof Error ? err.message : 'Failed to assign marks');
-    } finally {
-      setIsAssigningMarks(false);
-    }
-  };
 
   // durations from getByRecording already excludes is_video_mark=1 rows at the DB level
   const durationsForList = durations;
@@ -1124,10 +1173,15 @@ export default function RecordingPage() {
 
   // Handle adding video to active duration from clipboard
   const handleAddDurationVideo = async () => {
-    if (!activeDurationId) return;
-    const video = await addDurationVideoFromClipboard(activeDurationId);
-    if (!video) {
-      alert('No video file found in clipboard. Copy a video file first (e.g., from CleanShot or Finder), then click Paste.');
+    if (!activeDurationId || isPastingVideo) return;
+    setIsPastingVideo(true);
+    try {
+      const video = await addDurationVideoFromClipboard(activeDurationId);
+      if (!video) {
+        alert('No video file found in clipboard. Copy a video file first (e.g., from CleanShot or Finder), then click Paste.');
+      }
+    } finally {
+      setIsPastingVideo(false);
     }
   };
 
@@ -2045,11 +2099,39 @@ export default function RecordingPage() {
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         e.stopPropagation();
-        vid.currentTime = Math.max(0, vid.currentTime - 3);
+        if (fsGhostNavModeRef.current) {
+          const marks = videoMarkFullscreenType === 'recording' ? videoMarksRef.current : durationVideoMarksRef.current;
+          if (marks.length > 0) {
+            const t = vid.currentTime;
+            // Find nearest mark whose start_time is clearly before current position
+            const prev = [...marks].reverse().find(m => m.start_time < t - 0.5);
+            const target = prev ?? marks[marks.length - 1]; // wrap to last
+            vid.currentTime = target.start_time;
+            vid.play().catch(() => {});
+          } else {
+            vid.currentTime = Math.max(0, vid.currentTime - 3);
+          }
+        } else {
+          vid.currentTime = Math.max(0, vid.currentTime - 3);
+        }
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
         e.stopPropagation();
-        vid.currentTime = Math.min(vid.duration || Infinity, vid.currentTime + 3);
+        if (fsGhostNavModeRef.current) {
+          const marks = videoMarkFullscreenType === 'recording' ? videoMarksRef.current : durationVideoMarksRef.current;
+          if (marks.length > 0) {
+            const t = vid.currentTime;
+            // Find nearest mark whose start_time is clearly after current position
+            const next = marks.find(m => m.start_time > t + 0.5);
+            const target = next ?? marks[0]; // wrap to first
+            vid.currentTime = target.start_time;
+            vid.play().catch(() => {});
+          } else {
+            vid.currentTime = Math.min(vid.duration || Infinity, vid.currentTime + 3);
+          }
+        } else {
+          vid.currentTime = Math.min(vid.duration || Infinity, vid.currentTime + 3);
+        }
       } else if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -2663,49 +2745,33 @@ export default function RecordingPage() {
             </h3>
             <button
               onClick={handleAddDurationVideo}
-              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+              disabled={isPastingVideo}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-50"
             >
-              📋 Paste
+              {isPastingVideo ? '⏳ Pasting…' : '📋 Paste'}
             </button>
           </div>
-          {/* OBS staged marks assign banner for duration videos */}
-          {stagedMarksCount > 0 && (
-            <div className="mb-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/40 rounded-lg overflow-hidden">
-              <div className="px-2.5 py-2 flex items-center gap-2">
-                <span className="text-orange-500 text-xs">⏺</span>
-                <span className="text-xs text-orange-700 dark:text-orange-300 font-medium flex-1">
-                  {stagedMarksCount} OBS mark{stagedMarksCount !== 1 ? 's' : ''} staged — click a video to assign
-                </span>
-                {assignDurationError && (
-                  <span className="text-xs text-rose-600 dark:text-rose-400">{assignDurationError}</span>
-                )}
-                <button
-                  onClick={handleClearAllStagedMarks}
-                  className="text-xs text-orange-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors px-1.5 py-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-900/20"
-                  title="Clear all staged marks"
-                >
-                  Clear all
-                </button>
-              </div>
-              <div className="border-t border-orange-200 dark:border-orange-700/40 divide-y divide-orange-100 dark:divide-orange-800/30">
-                {stagedMarks.map(mark => (
-                  <div key={mark.id} className="flex items-center gap-2 px-2.5 py-1.5">
-                    <span className="text-xs font-mono text-orange-600 dark:text-orange-400 shrink-0">
-                      {formatMarkTime(mark.start_time)} → {formatMarkTime(mark.end_time)}
-                    </span>
-                    <span className="text-xs text-orange-700 dark:text-orange-300 flex-1 truncate">
-                      {mark.caption || <span className="opacity-40 italic">no caption</span>}
-                    </span>
-                    <button
-                      onClick={() => handleDeleteStagedMark(mark.id)}
-                      className="text-orange-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors shrink-0 text-xs px-1"
-                      title="Remove this mark"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
+          {/* OBS marks assign banner for duration videos (staged + ghost combined) */}
+          {(stagedMarksCount > 0 || ghostMarksCount > 0) && (
+            <div className="mb-2 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-700/40 rounded-lg px-2.5 py-2 flex items-center gap-2">
+              <span className="text-violet-500 text-xs">⏺</span>
+              <span className="text-xs text-violet-700 dark:text-violet-300 font-medium flex-1">
+                {[stagedMarksCount > 0 && `${stagedMarksCount} staged`, ghostMarksCount > 0 && `${ghostMarksCount} 👻`].filter(Boolean).join(' + ')} — click a video to assign
+              </span>
+              {(assignDurationError || ghostDurationAssignError) && (
+                <span className="text-xs text-rose-600 dark:text-rose-400">{assignDurationError || ghostDurationAssignError}</span>
+              )}
+              <button
+                onClick={() => {
+                  handleClearAllStagedMarks();
+                  setGhostMarksCount(0);
+                  window.electronAPI.obs.clearGhostMarks().catch(() => {});
+                }}
+                className="text-xs text-violet-400 hover:text-rose-500 transition-colors px-1.5 py-0.5 rounded"
+                title="Clear all"
+              >
+                Clear all
+              </button>
             </div>
           )}
 
@@ -2717,13 +2783,13 @@ export default function RecordingPage() {
                   ▶ {selectedDurationVideoForMarks.caption || `Video ${activeDurationVideos.indexOf(selectedDurationVideoForMarks) + 1}`}
                 </span>
                 <div className="flex items-center gap-2">
-                  {stagedMarksCount > 0 && (
+                  {(stagedMarksCount > 0 || ghostMarksCount > 0) && (
                     <button
-                      onClick={() => handleAssignStagedMarksToDurationVideo(selectedDurationVideoForMarks)}
-                      disabled={isAssigningDurationMarks}
-                      className="text-xs px-2.5 py-1 rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50"
+                      onClick={() => handleAssignAllMarksToDurationVideo(selectedDurationVideoForMarks)}
+                      disabled={isAssigningDurationMarks || isAssigningGhostDurationMarks}
+                      className="text-xs px-2.5 py-1 rounded-lg bg-violet-600 text-white hover:bg-violet-500 transition-colors disabled:opacity-50"
                     >
-                      {isAssigningDurationMarks ? 'Assigning…' : `Assign ${stagedMarksCount} mark${stagedMarksCount !== 1 ? 's' : ''}`}
+                      {(isAssigningDurationMarks || isAssigningGhostDurationMarks) ? 'Assigning…' : 'Assign marks'}
                     </button>
                   )}
                   <button
@@ -2745,12 +2811,19 @@ export default function RecordingPage() {
                   </button>
                 </div>
               </div>
-              <video
-                ref={inlineDurationVideoRef}
-                src={window.electronAPI.paths.getFileUrl(selectedDurationVideoForMarks.file_path)}
-                controls
-                className="w-full max-h-64 bg-black"
-              />
+              {durationVideoLoadFailed ? (
+                <div className="w-full h-20 bg-black flex items-center justify-center text-red-400 text-sm">
+                  ⚠ Video file not found on disk
+                </div>
+              ) : (
+                <video
+                  ref={inlineDurationVideoRef}
+                  src={window.electronAPI.paths.getFileUrl(selectedDurationVideoForMarks.file_path)}
+                  controls
+                  className="w-full max-h-64 bg-black"
+                  onError={() => setDurationVideoLoadFailed(true)}
+                />
+              )}
               {durationVideoMarks.length > 0 ? (
                 <div className="divide-y divide-violet-100 dark:divide-violet-900/30 max-h-40 overflow-y-auto">
                   {durationVideoMarks.map(mark => (
@@ -2835,14 +2908,14 @@ export default function RecordingPage() {
                   >
                     ×
                   </button>
-                  {/* OBS assign marks button (shown when staged marks exist) */}
-                  {stagedMarksCount > 0 && (
+                  {/* Assign marks button (staged + ghost combined) */}
+                  {(stagedMarksCount > 0 || ghostMarksCount > 0) && (
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleAssignStagedMarksToDurationVideo(video); }}
-                      disabled={isAssigningDurationMarks}
-                      className="absolute bottom-1 left-1 right-1 py-0.5 text-[9px] font-medium bg-orange-500/90 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity z-20 disabled:opacity-50"
+                      onClick={(e) => { e.stopPropagation(); handleAssignAllMarksToDurationVideo(video); }}
+                      disabled={isAssigningDurationMarks || isAssigningGhostDurationMarks}
+                      className="absolute bottom-1 left-1 right-1 py-0.5 text-[9px] font-medium bg-violet-600/90 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity z-20 disabled:opacity-50"
                     >
-                      {isAssigningDurationMarks ? '…' : `Assign ${stagedMarksCount} marks`}
+                      {(isAssigningDurationMarks || isAssigningGhostDurationMarks) ? '…' : 'Assign marks'}
                     </button>
                   )}
                   {/* MKV → MP4 convert buttons (CRF options) */}
@@ -3209,9 +3282,10 @@ export default function RecordingPage() {
           </h2>
           <button
             onClick={handleAddVideos}
-            className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300"
+            disabled={isPastingVideo}
+            className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 disabled:opacity-50"
           >
-            📋 Paste
+            {isPastingVideo ? '⏳ Pasting…' : '📋 Paste'}
           </button>
         </div>
 
@@ -3248,44 +3322,28 @@ export default function RecordingPage() {
           </div>
         )}
 
-        {/* OBS staged marks assign banner */}
-        {stagedMarksCount > 0 && (
-          <div className="mb-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/40 rounded-lg overflow-hidden">
-            <div className="px-3 py-2 flex items-center gap-2">
-              <span className="text-orange-500 text-sm">⏺</span>
-              <span className="text-xs text-orange-700 dark:text-orange-300 font-medium flex-1">
-                {stagedMarksCount} OBS mark{stagedMarksCount !== 1 ? 's' : ''} staged — click a video thumbnail to assign
-              </span>
-              {assignError && (
-                <span className="text-xs text-rose-600 dark:text-rose-400">{assignError}</span>
-              )}
-              <button
-                onClick={handleClearAllStagedMarks}
-                className="text-xs text-orange-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors px-1.5 py-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-900/20"
-                title="Clear all staged marks"
-              >
-                Clear all
-              </button>
-            </div>
-            <div className="border-t border-orange-200 dark:border-orange-700/40 divide-y divide-orange-100 dark:divide-orange-800/30">
-              {stagedMarks.map(mark => (
-                <div key={mark.id} className="flex items-center gap-2 px-3 py-1.5">
-                  <span className="text-xs font-mono text-orange-600 dark:text-orange-400 shrink-0">
-                    {formatMarkTime(mark.start_time)} → {formatMarkTime(mark.end_time)}
-                  </span>
-                  <span className="text-xs text-orange-700 dark:text-orange-300 flex-1 truncate">
-                    {mark.caption || <span className="opacity-40 italic">no caption</span>}
-                  </span>
-                  <button
-                    onClick={() => handleDeleteStagedMark(mark.id)}
-                    className="text-orange-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors shrink-0 text-xs px-1"
-                    title="Remove this mark"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
+        {/* OBS marks assign banner (staged + ghost combined) */}
+        {(stagedMarksCount > 0 || ghostMarksCount > 0) && (
+          <div className="mb-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-700/40 rounded-lg px-3 py-2 flex items-center gap-2">
+            <span className="text-violet-500 text-sm">⏺</span>
+            <span className="text-xs text-violet-700 dark:text-violet-300 font-medium flex-1">
+              {[stagedMarksCount > 0 && `${stagedMarksCount} staged`, ghostMarksCount > 0 && `${ghostMarksCount} 👻`].filter(Boolean).join(' + ')} — click a video to assign
+            </span>
+            {(assignError || ghostAssignError) && (
+              <span className="text-xs text-rose-600 dark:text-rose-400">{assignError || ghostAssignError}</span>
+            )}
+            <button
+              onClick={() => {
+                handleClearAllStagedMarks();
+                setGhostMarksCount(0);
+                setGhostAssignError(null);
+                window.electronAPI.obs.clearGhostMarks().catch(() => {});
+              }}
+              className="text-xs text-violet-400 hover:text-rose-500 transition-colors px-1.5 py-0.5 rounded"
+              title="Clear all"
+            >
+              Clear all
+            </button>
           </div>
         )}
 
@@ -3297,13 +3355,13 @@ export default function RecordingPage() {
                 ▶ {selectedVideoForMarks.caption || `Video ${videos.indexOf(selectedVideoForMarks) + 1}`}
               </span>
               <div className="flex items-center gap-2">
-                {stagedMarksCount > 0 && (
+                {(stagedMarksCount > 0 || ghostMarksCount > 0) && (
                   <button
-                    onClick={() => handleAssignStagedMarks(selectedVideoForMarks)}
-                    disabled={isAssigningMarks}
-                    className="text-xs px-2.5 py-1 rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50"
+                    onClick={() => handleAssignAllMarks(selectedVideoForMarks)}
+                    disabled={isAssigningMarks || isAssigningGhostMarks}
+                    className="text-xs px-2.5 py-1 rounded-lg bg-violet-600 text-white hover:bg-violet-500 transition-colors disabled:opacity-50"
                   >
-                    {isAssigningMarks ? 'Assigning…' : `Assign ${stagedMarksCount} mark${stagedMarksCount !== 1 ? 's' : ''}`}
+                    {(isAssigningMarks || isAssigningGhostMarks) ? 'Assigning…' : 'Assign marks'}
                   </button>
                 )}
                 <button
@@ -3325,12 +3383,19 @@ export default function RecordingPage() {
                 </button>
               </div>
             </div>
-            <video
-              ref={inlineVideoRef}
-              src={window.electronAPI.paths.getFileUrl(selectedVideoForMarks.file_path)}
-              controls
-              className="w-full max-h-72 bg-black"
-            />
+            {videoLoadFailed ? (
+              <div className="w-full h-20 bg-black flex items-center justify-center text-red-400 text-sm">
+                ⚠ Video file not found on disk
+              </div>
+            ) : (
+              <video
+                ref={inlineVideoRef}
+                src={window.electronAPI.paths.getFileUrl(selectedVideoForMarks.file_path)}
+                controls
+                className="w-full max-h-72 bg-black"
+                onError={() => setVideoLoadFailed(true)}
+              />
+            )}
             {/* Duration marks below player */}
             {videoMarks.length > 0 && (
               <div className="divide-y divide-violet-100 dark:divide-violet-900/30 max-h-48 overflow-y-auto">
@@ -3420,14 +3485,14 @@ export default function RecordingPage() {
                   >
                     ×
                   </button>
-                  {/* OBS assign marks button (shown when staged marks exist) */}
-                  {stagedMarksCount > 0 && (
+                  {/* Assign marks button (staged + ghost combined) */}
+                  {(stagedMarksCount > 0 || ghostMarksCount > 0) && (
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleAssignStagedMarks(video); }}
-                      disabled={isAssigningMarks}
-                      className="absolute bottom-1 left-1 right-1 py-0.5 text-[9px] font-medium bg-orange-500/90 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity z-20 disabled:opacity-50"
+                      onClick={(e) => { e.stopPropagation(); handleAssignAllMarks(video); }}
+                      disabled={isAssigningMarks || isAssigningGhostMarks}
+                      className="absolute bottom-1 left-1 right-1 py-0.5 text-[9px] font-medium bg-violet-600/90 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity z-20 disabled:opacity-50"
                     >
-                      {isAssigningMarks ? '…' : `Assign ${stagedMarksCount} marks`}
+                      {(isAssigningMarks || isAssigningGhostMarks) ? '…' : 'Assign marks'}
                     </button>
                   )}
                   {/* MKV → MP4 convert buttons (CRF options) */}
@@ -3745,36 +3810,65 @@ export default function RecordingPage() {
               <span className="text-sm font-medium text-gray-200 truncate">
                 ▶ {fsVideo?.caption || `Video`}
               </span>
-              <button
-                onClick={() => setVideoMarkFullscreen(false)}
-                className="text-gray-400 hover:text-white transition-colors text-lg leading-none ml-4 flex-shrink-0"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                <button
+                  onClick={() => setVideoMarkFullscreen(false)}
+                  className="text-gray-400 hover:text-white transition-colors text-lg leading-none"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* Middle: left marks panel + video */}
             <div className="flex flex-1 min-h-0">
               {/* Left marks panel */}
               <div className="w-44 flex-shrink-0 bg-gray-900 border-r border-gray-800 overflow-y-auto flex flex-col">
-                <div className="px-3 py-2 border-b border-gray-800 flex-shrink-0 flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-                    Marks ({fsMarks.length})
+                <div className="px-3 py-2 border-b border-gray-800 flex-shrink-0 flex items-center justify-between gap-1">
+                  <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide flex-shrink-0">
+                    {fsGhostNavMode
+                      ? `Ghost (${fsMarks.filter(m => m.is_ghost_mark === 1).length})`
+                      : `Marks (${fsMarks.length})`}
                   </span>
-                  <button
-                    onClick={handleFsAddMark}
-                    disabled={fsAddingMark}
-                    title="Add mark at current time (M)"
-                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-violet-700 hover:bg-violet-600 text-white transition-colors disabled:opacity-40"
-                  >
-                    {fsAddingMark ? '…' : '+ Mark'}
-                  </button>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => {
+                        const next = !fsGhostNavMode;
+                        setFsGhostNavMode(next);
+                        fsGhostNavModeRef.current = next;
+                      }}
+                      title={fsGhostNavMode
+                        ? 'Mark nav ON — ←/→ jumps between marks (click to disable)'
+                        : 'Mark nav OFF — ←/→ seeks ±3s (click to enable)'}
+                      className={`text-[10px] px-1.5 py-0.5 rounded transition-colors font-medium ${
+                        fsGhostNavMode
+                          ? 'bg-sky-600 text-white hover:bg-sky-500'
+                          : 'bg-gray-700 text-gray-500 hover:bg-gray-600 hover:text-gray-300'
+                      }`}
+                    >
+                      {fsGhostNavMode ? '👻 ✓' : '👻'}
+                    </button>
+                    <button
+                      onClick={handleFsAddMark}
+                      disabled={fsAddingMark}
+                      title="Add mark at current time (M)"
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-violet-700 hover:bg-violet-600 text-white transition-colors disabled:opacity-40"
+                    >
+                      {fsAddingMark ? '…' : '+ Mark'}
+                    </button>
+                  </div>
                 </div>
                 {fsMarks.length === 0 ? (
                   <p className="text-xs text-gray-600 italic px-3 py-3">No marks assigned</p>
+                ) : fsGhostNavMode && fsMarks.every(m => m.is_ghost_mark !== 1) ? (
+                  <div className="px-3 py-3 text-xs text-sky-700 italic space-y-1">
+                    <p>No ghost marks yet.</p>
+                    <p>Re-assign OBS intervals to tag them as ghost marks.</p>
+                  </div>
                 ) : (
-                  fsMarks.map(mark => {
+                  fsMarks.filter(m => !fsGhostNavMode || m.is_ghost_mark === 1).map(mark => {
                     const isActive = mark.id === fsActiveMarkId;
+                    const isGhost = mark.is_ghost_mark === 1;
                     const colorConfig = mark.color ? DURATION_COLORS[mark.color] : null;
                     const groupColorConfig = mark.group_color ? DURATION_GROUP_COLORS[mark.group_color] : null;
                     const label = mark.note ? mark.note.replace(/<[^>]+>/g, '').trim().split('\n')[0].slice(0, 80) : '';
@@ -3782,24 +3876,33 @@ export default function RecordingPage() {
                       <button
                         key={mark.id}
                         onClick={() => handleFsMarkClick(mark)}
-                        className={`relative flex items-start gap-2 w-full text-left px-3 py-2.5 transition-colors border-b border-gray-800/50 flex-shrink-0 ${isActive ? 'bg-violet-900/30' : 'hover:bg-gray-800/50'}`}
+                        className={`relative flex items-start gap-2 w-full text-left px-3 py-2.5 transition-colors border-b border-gray-800/50 flex-shrink-0 ${
+                          isActive
+                            ? isGhost ? 'bg-sky-900/30' : 'bg-violet-900/30'
+                            : 'hover:bg-gray-800/50'
+                        }`}
                       >
                         {groupColorConfig && (
                           <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: groupColorConfig.color }} />
                         )}
-                        {colorConfig && (
+                        {colorConfig ? (
                           <div className="absolute left-0 top-0 bottom-0 w-1" style={{ backgroundColor: colorConfig.borderColor }} />
-                        )}
+                        ) : isGhost ? (
+                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-sky-500/60" />
+                        ) : null}
                         <div className="flex-1 min-w-0 pl-1">
-                          <span className="block text-[10px] font-mono text-violet-400 mb-0.5">
-                            {formatDuration(Math.floor(mark.start_time))}
+                          <span className={`block text-[10px] font-mono mb-0.5 ${isGhost ? 'text-sky-400' : 'text-violet-400'}`}>
+                            {isGhost ? '👻 ' : ''}{formatDuration(Math.floor(mark.start_time))}
+                            {mark.end_time != null ? ` – ${formatDuration(Math.floor(mark.end_time))}` : ''}
                           </span>
                           {label ? (
                             <span className={`block text-xs line-clamp-2 ${isActive ? 'text-gray-100' : 'text-gray-400'}`}>
                               {label}
                             </span>
                           ) : (
-                            <span className="block text-xs italic text-gray-600">No note</span>
+                            <span className={`block text-xs italic ${isGhost ? 'text-sky-800' : 'text-gray-600'}`}>
+                              {isGhost ? 'Ghost interval' : 'No note'}
+                            </span>
                           )}
                         </div>
                       </button>
@@ -3821,6 +3924,10 @@ export default function RecordingPage() {
                     }
                   }}
                   onTimeUpdate={handleFsTimeUpdate}
+                  onError={() => {
+                    if (videoMarkFullscreenType === 'recording') setVideoLoadFailed(true);
+                    else setDurationVideoLoadFailed(true);
+                  }}
                   className="w-full h-full object-contain"
                   onClick={e => e.stopPropagation()}
                 />
