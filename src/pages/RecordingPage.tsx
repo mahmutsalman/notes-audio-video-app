@@ -201,6 +201,8 @@ export default function RecordingPage() {
   const fsStartTimeRef = useRef<number>(0);
   const fsIsEditingNoteRef = useRef(false);
   const fsGhostNavModeRef = useRef(false);
+  // Index of the currently-active ghost mark; -1 = not yet synced from currentTime
+  const fsGhostIndexRef = useRef<number>(-1);
   // Kept in sync so the keyboard handler sees the latest marks without stale closure
   const videoMarksRef = useRef<Duration[]>([]);
   const durationVideoMarksRef = useRef<Duration[]>([]);
@@ -911,11 +913,22 @@ export default function RecordingPage() {
     }
   };
 
-  // Merged assign: assigns staged marks first, then ghost marks, to a recording video
+  // Merged assign: ghost marks take priority (they cover the full session); only fall back to staged marks if no ghost marks exist
   const handleAssignAllMarks = async (video: Video) => {
     if (!id) return;
     let error: string | null = null;
-    if (stagedMarksCount > 0) {
+    if (ghostMarksCount > 0) {
+      setIsAssigningGhostMarks(true);
+      setGhostAssignError(null);
+      try {
+        await window.electronAPI.obs.assignGhostMarks(video.id, Number(id));
+        setGhostMarksCount(0);
+      } catch (err) {
+        error = err instanceof Error ? err.message : 'Failed to assign ghost marks';
+      } finally {
+        setIsAssigningGhostMarks(false);
+      }
+    } else if (stagedMarksCount > 0) {
       setIsAssigningMarks(true);
       setAssignError(null);
       try {
@@ -927,41 +940,17 @@ export default function RecordingPage() {
         setIsAssigningMarks(false);
       }
     }
-    if (ghostMarksCount > 0 && !error) {
-      setIsAssigningGhostMarks(true);
-      setGhostAssignError(null);
-      try {
-        await window.electronAPI.obs.assignGhostMarks(video.id, Number(id));
-        setGhostMarksCount(0);
-      } catch (err) {
-        error = err instanceof Error ? err.message : 'Failed to assign ghost marks';
-      } finally {
-        setIsAssigningGhostMarks(false);
-      }
-    }
     const marks = await window.electronAPI.durations.getByRecordingAndVideo(Number(id), video.id);
     setVideoMarks(marks);
     setSelectedVideoForMarks(video);
     if (error) setAssignError(error);
   };
 
-  // Merged assign: assigns staged marks first, then ghost marks, to a duration video
+  // Merged assign: ghost marks take priority (they cover the full session); only fall back to staged marks if no ghost marks exist
   const handleAssignAllMarksToDurationVideo = async (video: DurationVideo) => {
     if (!id) return;
     let error: string | null = null;
-    if (stagedMarksCount > 0) {
-      setIsAssigningDurationMarks(true);
-      setAssignDurationError(null);
-      try {
-        await window.electronAPI.obs.assignStagedMarksToDurationVideo(video.id, Number(id));
-        setStagedMarksCount(0);
-      } catch (err) {
-        error = err instanceof Error ? err.message : 'Failed to assign staged marks';
-      } finally {
-        setIsAssigningDurationMarks(false);
-      }
-    }
-    if (ghostMarksCount > 0 && !error) {
+    if (ghostMarksCount > 0) {
       setIsAssigningGhostDurationMarks(true);
       setGhostDurationAssignError(null);
       try {
@@ -971,6 +960,17 @@ export default function RecordingPage() {
         error = err instanceof Error ? err.message : 'Failed to assign ghost marks';
       } finally {
         setIsAssigningGhostDurationMarks(false);
+      }
+    } else if (stagedMarksCount > 0) {
+      setIsAssigningDurationMarks(true);
+      setAssignDurationError(null);
+      try {
+        await window.electronAPI.obs.assignStagedMarksToDurationVideo(video.id, Number(id));
+        setStagedMarksCount(0);
+      } catch (err) {
+        error = err instanceof Error ? err.message : 'Failed to assign staged marks';
+      } finally {
+        setIsAssigningDurationMarks(false);
       }
     }
     const marks = await window.electronAPI.durations.getByRecordingAndDurationVideo(Number(id), video.id);
@@ -2100,13 +2100,21 @@ export default function RecordingPage() {
         e.preventDefault();
         e.stopPropagation();
         if (fsGhostNavModeRef.current) {
-          const marks = videoMarkFullscreenType === 'recording' ? videoMarksRef.current : durationVideoMarksRef.current;
+          const allMarks = videoMarkFullscreenType === 'recording' ? videoMarksRef.current : durationVideoMarksRef.current;
+          const marks = allMarks.filter(m => m.is_ghost_mark === 1);
           if (marks.length > 0) {
-            const t = vid.currentTime;
-            // Find nearest mark whose start_time is clearly before current position
-            const prev = [...marks].reverse().find(m => m.start_time < t - 0.5);
-            const target = prev ?? marks[marks.length - 1]; // wrap to last
-            vid.currentTime = target.start_time;
+            // Sync index from currentTime if not yet initialized
+            if (fsGhostIndexRef.current < 0 || fsGhostIndexRef.current >= marks.length) {
+              const t = vid.currentTime;
+              let best = 0;
+              for (let i = marks.length - 1; i >= 0; i--) {
+                if (marks[i].start_time <= t + 0.05) { best = i; break; }
+              }
+              fsGhostIndexRef.current = best;
+            }
+            const prevIdx = (fsGhostIndexRef.current - 1 + marks.length) % marks.length;
+            fsGhostIndexRef.current = prevIdx;
+            vid.currentTime = marks[prevIdx].start_time;
             vid.play().catch(() => {});
           } else {
             vid.currentTime = Math.max(0, vid.currentTime - 3);
@@ -2118,13 +2126,21 @@ export default function RecordingPage() {
         e.preventDefault();
         e.stopPropagation();
         if (fsGhostNavModeRef.current) {
-          const marks = videoMarkFullscreenType === 'recording' ? videoMarksRef.current : durationVideoMarksRef.current;
+          const allMarks = videoMarkFullscreenType === 'recording' ? videoMarksRef.current : durationVideoMarksRef.current;
+          const marks = allMarks.filter(m => m.is_ghost_mark === 1);
           if (marks.length > 0) {
-            const t = vid.currentTime;
-            // Find nearest mark whose start_time is clearly after current position
-            const next = marks.find(m => m.start_time > t + 0.5);
-            const target = next ?? marks[0]; // wrap to first
-            vid.currentTime = target.start_time;
+            // Sync index from currentTime if not yet initialized
+            if (fsGhostIndexRef.current < 0 || fsGhostIndexRef.current >= marks.length) {
+              const t = vid.currentTime;
+              let best = 0;
+              for (let i = marks.length - 1; i >= 0; i--) {
+                if (marks[i].start_time <= t + 0.05) { best = i; break; }
+              }
+              fsGhostIndexRef.current = best;
+            }
+            const nextIdx = (fsGhostIndexRef.current + 1) % marks.length;
+            fsGhostIndexRef.current = nextIdx;
+            vid.currentTime = marks[nextIdx].start_time;
             vid.play().catch(() => {});
           } else {
             vid.currentTime = Math.min(vid.duration || Infinity, vid.currentTime + 3);
@@ -3836,6 +3852,7 @@ export default function RecordingPage() {
                         const next = !fsGhostNavMode;
                         setFsGhostNavMode(next);
                         fsGhostNavModeRef.current = next;
+                        fsGhostIndexRef.current = -1; // re-sync on next keypress
                       }}
                       title={fsGhostNavMode
                         ? 'Mark nav ON — ←/→ jumps between marks (click to disable)'
