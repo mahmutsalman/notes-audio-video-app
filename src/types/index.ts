@@ -735,6 +735,9 @@ export interface ElectronAPI {
     onStatusChange: (cb: (status: any) => void) => () => void;
     onOverlayData: (cb: (data: { timecode: number; markCount: number }) => void) => () => void;
     onOverlayDataWithMarks: (cb: (data: { timecode: number; markCount: number; marks: any[]; currentCaption: string }) => void) => () => void;
+    showStatusWindow: () => void;
+    hideStatusWindow: () => void;
+    onWindowVisibility: (cb: (visible: boolean) => void) => () => void;
   };
   screen: {
     getAllDisplays: () => Promise<any[]>;

@@ -78,6 +78,7 @@ import type {
 export async function setupObsEventBridge(mainWindow: import('electron').BrowserWindow): Promise<void> {
   const { obsService } = await import('../services/obsService');
   const { showObsMarkOverlay, hideObsMarkOverlay } = await import('../windows/obsMarkOverlay');
+  const { notifyObsStatusWindow } = await import('../windows/obsStatusWindow');
   const { ObsStagedMarksOperations, ObsGhostMarksOperations } = await import('../database/operations');
   const { notifyObsStatusWindow } = await import('../windows/obsStatusWindow');
 
@@ -95,7 +96,7 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     const sessionId = obsService.currentSessionId;
     if (sessionId) ObsGhostMarksOperations.create(sessionId, data.startTime);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:resumed');
-    notifyObsStatusWindow('obs:resumed', data);
+    notifyObsStatusWindow('obs:resumed');
     hideObsMarkOverlay();
   });
 
@@ -2690,6 +2691,11 @@ export function setupIpcHandlers(): void {
   ipcMain.on('obs:hideStatusWindow', async () => {
     const { hideObsStatusWindow } = await import('../windows/obsStatusWindow');
     hideObsStatusWindow();
+  });
+
+  ipcMain.on('obs:showStatusWindow', async () => {
+    const { showObsStatusWindow } = await import('../windows/obsStatusWindow');
+    showObsStatusWindow();
   });
 
   // Toggle OBS enable/disable and re-register F10 shortcut accordingly

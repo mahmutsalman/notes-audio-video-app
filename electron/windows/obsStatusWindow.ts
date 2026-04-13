@@ -128,7 +128,7 @@ export function toggleObsStatusWindow(): void {
 
 /** Forward any IPC channel+payload to the status window's renderer. */
 export function notifyObsStatusWindow(channel: string, data?: any): void {
-  if (statusWindow && !statusWindow.isDestroyed() && statusWindow.isVisible()) {
+  if (statusWindow && !statusWindow.isDestroyed()) {
     statusWindow.webContents.send(channel, data);
   }
 }

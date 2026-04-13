@@ -280,7 +280,7 @@
       });
     }
 
-    // ── Suspend timer when window is hidden ──────────────────────────────────
+    // ── Sync state when window becomes visible ───────────────────────────────
     if (window.electronAPI && window.electronAPI.obs && window.electronAPI.obs.onWindowVisibility) {
       window.electronAPI.obs.onWindowVisibility((visible) => {
         if (!visible) {
@@ -290,11 +290,10 @@
             timerInterval = null;
           }
         } else {
-          // Resume ticking if we were mid-recording
-          if (timerStartAt !== null && !timerInterval) {
-            timerInterval = setInterval(tick, 200);
-            tick();
-          }
+          // Re-fetch current status so missed events and timer are up to date
+          window.electronAPI.obs.getStatus().then(status => {
+            applyStatus(status);
+          }).catch(() => setState('disconnected'));
         }
       });
     }
