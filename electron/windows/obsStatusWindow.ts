@@ -99,10 +99,12 @@ export function showObsStatusWindow(): void {
   }
   statusWindow!.show();
   statusWindow!.focus();
+  statusWindow!.webContents.send('obs:windowVisibility', true);
 }
 
 export function hideObsStatusWindow(): void {
   if (statusWindow && !statusWindow.isDestroyed()) {
+    statusWindow.webContents.send('obs:windowVisibility', false);
     statusWindow.hide();
   }
 }
@@ -115,10 +117,12 @@ export function toggleObsStatusWindow(): void {
     return;
   }
   if (statusWindow.isVisible()) {
+    statusWindow.webContents.send('obs:windowVisibility', false);
     statusWindow.hide();
   } else {
     statusWindow.show();
     statusWindow.focus();
+    statusWindow.webContents.send('obs:windowVisibility', true);
   }
 }
 

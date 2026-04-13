@@ -280,6 +280,25 @@
       });
     }
 
+    // ── Suspend timer when window is hidden ──────────────────────────────────
+    if (window.electronAPI && window.electronAPI.obs && window.electronAPI.obs.onWindowVisibility) {
+      window.electronAPI.obs.onWindowVisibility((visible) => {
+        if (!visible) {
+          // Pause the ticking interval while hidden — state is preserved in timerBase
+          if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+          }
+        } else {
+          // Resume ticking if we were mid-recording
+          if (timerStartAt !== null && !timerInterval) {
+            timerInterval = setInterval(tick, 200);
+            tick();
+          }
+        }
+      });
+    }
+
     // ── Close button ─────────────────────────────────────────────────────────
     closeBtn.addEventListener('click', () => {
       if (window.electronAPI && window.electronAPI.obs) {

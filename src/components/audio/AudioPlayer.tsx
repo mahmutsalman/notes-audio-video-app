@@ -167,6 +167,36 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     }
 
     // Use Howler for non-WebM sources (unchanged behavior)
+
+    // Interval helpers — only run while audio is actively playing
+    const startPlayInterval = () => {
+      if (intervalRef.current) return; // already running
+      intervalRef.current = setInterval(() => {
+        const id = activeSoundIdRef.current ?? undefined;
+        const time = howl.seek(id) as number;
+        if (typeof time === 'number') {
+          setCurrentTime(time);
+
+          // Check loop boundary
+          const region = loopRegionRef.current;
+          if (region && time >= region.end) {
+            console.log('[DEBUG] Loop boundary reached! time:', time.toFixed(2), '>= end:', region.end);
+            console.log('[DEBUG] Looping back to start:', region.start);
+            howl.seek(region.start, id);
+            setCurrentTime(region.start);
+            setDebugInfo(prev => ({ ...prev, lastLoopBack: Date.now() }));
+          }
+        }
+      }, 50);
+    };
+
+    const stopPlayInterval = () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+
     const howl = new Howl({
       src: [src],
       html5: useHtml5Audio,
@@ -199,12 +229,15 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
           activeSoundIdRef.current = id;
         }
         setIsPlaying(true);
+        startPlayInterval();
         onPlay?.();
       },
       onpause: () => {
+        stopPlayInterval();
         setIsPlaying(false);
       },
       onstop: () => {
+        stopPlayInterval();
         setIsPlaying(false);
         activeSoundIdRef.current = null;
       },
@@ -215,6 +248,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
           activeSoundIdRef.current = typeof id === 'number' ? id : null;
           howl.seek(region.start, activeSoundIdRef.current ?? undefined);
         } else {
+          stopPlayInterval();
           setIsPlaying(false);
           activeSoundIdRef.current = null;
         }
@@ -224,31 +258,8 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     howlRef.current = howl;
     howl.rate(playbackRate);
 
-    // Update currentTime periodically for Howler (SoundTouchPlayer does this internally)
-    intervalRef.current = setInterval(() => {
-      if (howl.playing()) {
-        const id = activeSoundIdRef.current ?? undefined;
-        const time = howl.seek(id) as number;
-        if (typeof time === 'number') {
-          setCurrentTime(time);
-
-          // Check loop boundary
-          const region = loopRegionRef.current;
-          if (region && time >= region.end) {
-            console.log('[DEBUG] Loop boundary reached! time:', time.toFixed(2), '>= end:', region.end);
-            console.log('[DEBUG] Looping back to start:', region.start);
-            howl.seek(region.start, id);
-            setCurrentTime(region.start);
-            setDebugInfo(prev => ({ ...prev, lastLoopBack: Date.now() }));
-          }
-        }
-      }
-    }, 50);
-
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
+      stopPlayInterval();
       howl.unload();
       activeSoundIdRef.current = null;
     };

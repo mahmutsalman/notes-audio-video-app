@@ -353,6 +353,8 @@ const electronAPI = {
   screenRecording: {
     getSources: (): Promise<ScreenSource[]> =>
       ipcRenderer.invoke('screenRecording:getSources'),
+    getSourceIds: (): Promise<{ id: string; name: string }[]> =>
+      ipcRenderer.invoke('screenRecording:getSourceIds'),
     saveFile: (
       recordingId: number,
       videoBuffer: ArrayBuffer,
@@ -662,6 +664,12 @@ const electronAPI = {
       const listener = (_: any, status: any) => cb(status);
       ipcRenderer.on('obs:statusChange', listener);
       return () => ipcRenderer.removeListener('obs:statusChange', listener);
+    },
+    hideStatusWindow: (): void => ipcRenderer.send('obs:hideStatusWindow'),
+    onWindowVisibility: (cb: (visible: boolean) => void) => {
+      const listener = (_: any, visible: boolean) => cb(visible);
+      ipcRenderer.on('obs:windowVisibility', listener);
+      return () => ipcRenderer.removeListener('obs:windowVisibility', listener);
     },
     // Used by obs-mark-overlay.html
     onOverlayData: (cb: (data: { timecode: number; markCount: number }) => void) => {
@@ -988,6 +996,32 @@ const electronAPI = {
       ipcRenderer.on('study:appFocus', cb);
       return () => ipcRenderer.removeListener('study:appFocus', cb);
     },
+  },
+
+  // Review (Spaced Repetition)
+  review: {
+    getAll: () => ipcRenderer.invoke('review:getAll'),
+    enroll: (
+      mediaType: string, mediaId: number,
+      filePath: string | null, thumbnailPath: string | null, caption: string | null,
+      recordingId: number | null, captureId: number | null
+    ) => ipcRenderer.invoke('review:enroll', mediaType, mediaId, filePath, thumbnailPath, caption, recordingId, captureId),
+    delete: (id: number) => ipcRenderer.invoke('review:delete', id),
+    rate: (id: number, rating: string, intervalDays: number, easeFactor: number, repetitions: number, nextReviewAt: string) =>
+      ipcRenderer.invoke('review:rate', id, rating, intervalDays, easeFactor, repetitions, nextReviewAt),
+    schedule: (id: number, nextReviewAt: string, intervalDays: number) =>
+      ipcRenderer.invoke('review:schedule', id, nextReviewAt, intervalDays),
+  },
+
+  reviewMasks: {
+    getByItem: (reviewItemId: number) => ipcRenderer.invoke('reviewMasks:getByItem', reviewItemId),
+    create: (
+      reviewItemId: number, x: number, y: number, w: number, h: number,
+      pixelationLevel: number, hintText: string | null, sortOrder: number
+    ) => ipcRenderer.invoke('reviewMasks:create', reviewItemId, x, y, w, h, pixelationLevel, hintText, sortOrder),
+    update: (id: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null) =>
+      ipcRenderer.invoke('reviewMasks:update', id, x, y, w, h, pixelationLevel, hintText),
+    delete: (id: number) => ipcRenderer.invoke('reviewMasks:delete', id),
   },
 };
 

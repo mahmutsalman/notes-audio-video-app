@@ -588,6 +588,7 @@ export interface ElectronAPI {
   };
 	  screenRecording: {
 	    getSources: () => Promise<ScreenSource[]>;
+	    getSourceIds: () => Promise<{ id: string; name: string }[]>;
 	    saveFile: (
 	      recordingId: number,
 	      videoBuffer: ArrayBuffer,
@@ -913,6 +914,19 @@ export interface ElectronAPI {
     getStats: (fromDate: string, toDate: string) => Promise<StudyStats>;
     onAppBlur: (cb: () => void) => () => void;
     onAppFocus: (cb: () => void) => () => void;
+  };
+  review: {
+    getAll: () => Promise<ReviewItem[]>;
+    enroll: (mediaType: string, mediaId: number, filePath: string | null, thumbnailPath: string | null, caption: string | null, recordingId: number | null, captureId: number | null) => Promise<ReviewItem>;
+    delete: (id: number) => Promise<void>;
+    rate: (id: number, rating: ReviewRating, intervalDays: number, easeFactor: number, repetitions: number, nextReviewAt: string) => Promise<void>;
+    schedule: (id: number, nextReviewAt: string, intervalDays: number) => Promise<void>;
+  };
+  reviewMasks: {
+    getByItem: (reviewItemId: number) => Promise<ReviewMask[]>;
+    create: (reviewItemId: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null, sortOrder: number) => Promise<ReviewMask>;
+    update: (id: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null) => Promise<ReviewMask>;
+    delete: (id: number) => Promise<void>;
   };
 }
 
@@ -1249,6 +1263,42 @@ export interface FilteredSearchParams {
   conditions: SearchCondition[];
   op: 'AND' | 'OR';
   limit?: number;
+}
+
+// ── Review (Spaced Repetition) ────────────────────────────────────────────────
+
+export type ReviewRating = 'again' | 'hard' | 'good' | 'easy';
+
+export interface ReviewItem {
+  id: number;
+  media_type: string;
+  media_id: number;
+  file_path: string | null;
+  thumbnail_path: string | null;
+  caption: string | null;
+  recording_id: number | null;
+  capture_id: number | null;
+  interval_days: number;
+  ease_factor: number;
+  repetitions: number;
+  next_review_at: string;
+  created_at: string;
+  // Joined
+  topic_name: string | null;
+  recording_name: string | null;
+}
+
+export interface ReviewMask {
+  id: number;
+  review_item_id: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  pixelation_level: number;
+  hint_text: string | null;
+  sort_order: number;
+  created_at: string;
 }
 
 declare global {

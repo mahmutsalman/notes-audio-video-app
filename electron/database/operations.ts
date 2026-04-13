@@ -2715,24 +2715,36 @@ export const ObsGhostMarksOperations = {
   },
 };
 
-// ─────────────────────────────────────────────────────────
-// Review — spaced repetition for images
-// ─────────────────────────────────────────────────────────
+// ── Review (Spaced Repetition) ────────────────────────────────────────────────
 
 export const ReviewOperations = {
-  getByImage(imageType: string, imageId: number): any {
+  getAll(): any[] {
     const db = getDatabase();
-    return db.prepare('SELECT * FROM review_items WHERE image_type = ? AND image_id = ?').get(imageType, imageId);
+    return db.prepare(`
+      SELECT ri.*,
+             r.name  AS recording_name,
+             t.name  AS topic_name
+      FROM   review_items ri
+      LEFT   JOIN recordings r ON ri.recording_id = r.id
+      LEFT   JOIN topics     t ON r.topic_id = t.id
+      ORDER  BY ri.next_review_at ASC
+    `).all();
   },
 
-  create(imageType: string, imageId: number): any {
+  enroll(
+    mediaType: string, mediaId: number,
+    filePath: string | null, thumbnailPath: string | null, caption: string | null,
+    recordingId: number | null, captureId: number | null
+  ): any {
     const db = getDatabase();
     const now = new Date().toISOString();
-    db.prepare(`
-      INSERT OR IGNORE INTO review_items (image_type, image_id, next_review_at, interval_days, ease_factor, repetitions, created_at)
-      VALUES (?, ?, ?, 1, 2.5, 0, ?)
-    `).run(imageType, imageId, now, now);
-    return db.prepare('SELECT * FROM review_items WHERE image_type = ? AND image_id = ?').get(imageType, imageId);
+    const result = db.prepare(`
+      INSERT INTO review_items
+        (media_type, media_id, file_path, thumbnail_path, caption, recording_id, capture_id,
+         interval_days, ease_factor, repetitions, next_review_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 2.5, 0, ?, ?, ?)
+    `).run(mediaType, mediaId, filePath, thumbnailPath, caption, recordingId, captureId, now, now, now);
+    return db.prepare('SELECT * FROM review_items WHERE id = ?').get(result.lastInsertRowid);
   },
 
   delete(id: number): void {
@@ -2740,156 +2752,38 @@ export const ReviewOperations = {
     db.prepare('DELETE FROM review_items WHERE id = ?').run(id);
   },
 
-  getAll(): any[] {
+  rate(id: number, _rating: string, intervalDays: number, easeFactor: number, repetitions: number, nextReviewAt: string): void {
     const db = getDatabase();
-    // Build a unified query that resolves file_path and context for each image type
-    const rows = db.prepare('SELECT * FROM review_items ORDER BY next_review_at ASC').all() as any[];
-    return rows.map(row => ReviewOperations._attachContext(db, row));
-  },
-
-  getDue(): any[] {
-    const db = getDatabase();
-    const now = new Date().toISOString();
-    const rows = db.prepare(
-      'SELECT * FROM review_items WHERE next_review_at <= ? ORDER BY next_review_at ASC'
-    ).all(now) as any[];
-    return rows.map(row => ReviewOperations._attachContext(db, row));
-  },
-
-  _attachContext(db: any, row: any): any {
-    let file_path: string | null = null;
-    let thumbnail_path: string | null = null;
-    let caption: string | null = null;
-    let recording_id: number | null = null;
-    let recording_name: string | null = null;
-    let topic_id: number | null = null;
-    let topic_name: string | null = null;
-    let duration_id: number | null = null;
-    let capture_id: number | null = null;
-
-    try {
-      if (row.image_type === 'image') {
-        const img = db.prepare(`
-          SELECT i.file_path, i.thumbnail_path, i.caption, i.recording_id,
-                 r.name as recording_name, r.topic_id, t.name as topic_name
-          FROM images i
-          JOIN recordings r ON r.id = i.recording_id
-          JOIN topics t ON t.id = r.topic_id
-          WHERE i.id = ?
-        `).get(row.image_id) as any;
-        if (img) {
-          file_path = img.file_path; thumbnail_path = img.thumbnail_path;
-          caption = img.caption; recording_id = img.recording_id;
-          recording_name = img.recording_name; topic_id = img.topic_id;
-          topic_name = img.topic_name;
-        }
-      } else if (row.image_type === 'duration_image') {
-        const img = db.prepare(`
-          SELECT di.file_path, di.thumbnail_path, di.caption, d.recording_id, d.id as duration_id,
-                 r.name as recording_name, r.topic_id, t.name as topic_name
-          FROM duration_images di
-          JOIN durations d ON d.id = di.duration_id
-          JOIN recordings r ON r.id = d.recording_id
-          JOIN topics t ON t.id = r.topic_id
-          WHERE di.id = ?
-        `).get(row.image_id) as any;
-        if (img) {
-          file_path = img.file_path; thumbnail_path = img.thumbnail_path;
-          caption = img.caption; recording_id = img.recording_id;
-          duration_id = img.duration_id; recording_name = img.recording_name;
-          topic_id = img.topic_id; topic_name = img.topic_name;
-        }
-      } else if (row.image_type === 'quick_capture_image') {
-        const img = db.prepare(
-          'SELECT file_path, thumbnail_path, caption, capture_id FROM quick_capture_images WHERE id = ?'
-        ).get(row.image_id) as any;
-        if (img) {
-          file_path = img.file_path; thumbnail_path = img.thumbnail_path;
-          caption = img.caption; capture_id = img.capture_id;
-        }
-      } else if (row.image_type === 'image_child') {
-        const img = db.prepare(`
-          SELECT ic.file_path, ic.thumbnail_path, ic.caption, ic.parent_type, ic.parent_id
-          FROM image_children ic WHERE ic.id = ?
-        `).get(row.image_id) as any;
-        if (img) {
-          file_path = img.file_path; thumbnail_path = img.thumbnail_path; caption = img.caption;
-          // Resolve recording context from parent
-          if (img.parent_type === 'image') {
-            const parent = db.prepare(
-              'SELECT recording_id FROM images WHERE id = ?'
-            ).get(img.parent_id) as any;
-            if (parent) recording_id = parent.recording_id;
-          } else if (img.parent_type === 'duration_image') {
-            const parent = db.prepare(
-              'SELECT d.recording_id, di.duration_id FROM duration_images di JOIN durations d ON d.id = di.duration_id WHERE di.id = ?'
-            ).get(img.parent_id) as any;
-            if (parent) { recording_id = parent.recording_id; duration_id = parent.duration_id; }
-          }
-          if (recording_id) {
-            const rec = db.prepare(
-              'SELECT r.name, r.topic_id, t.name as topic_name FROM recordings r JOIN topics t ON t.id = r.topic_id WHERE r.id = ?'
-            ).get(recording_id) as any;
-            if (rec) { recording_name = rec.name; topic_id = rec.topic_id; topic_name = rec.topic_name; }
-          }
-        }
-      }
-    } catch { /* leave nulls */ }
-
-    return {
-      ...row,
-      file_path, thumbnail_path, caption,
-      recording_id, recording_name,
-      topic_id, topic_name,
-      duration_id, capture_id,
-    };
-  },
-
-  rate(id: number, rating: string, intervalDays: number, easeFactor: number, repetitions: number, nextReviewAt: string): void {
-    const db = getDatabase();
-    db.transaction(() => {
-      db.prepare(`
-        UPDATE review_items
-        SET last_rating = ?, interval_days = ?, ease_factor = ?, repetitions = ?,
-            next_review_at = ?, schedule_mode = 'algorithm'
-        WHERE id = ?
-      `).run(rating, intervalDays, easeFactor, repetitions, nextReviewAt, id);
-      db.prepare(`
-        INSERT INTO review_history (review_item_id, rating, interval_given_days, reviewed_at)
-        VALUES (?, ?, ?, ?)
-      `).run(id, rating, intervalDays, nextReviewAt);
-    })();
+    db.prepare(`
+      UPDATE review_items
+      SET interval_days = ?, ease_factor = ?, repetitions = ?,
+          next_review_at = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(intervalDays, easeFactor, repetitions, nextReviewAt, id);
   },
 
   schedule(id: number, nextReviewAt: string, intervalDays: number): void {
     const db = getDatabase();
-    db.transaction(() => {
-      db.prepare(`
-        UPDATE review_items SET next_review_at = ?, interval_days = ?, schedule_mode = 'manual'
-        WHERE id = ?
-      `).run(nextReviewAt, intervalDays, id);
-      db.prepare(`
-        INSERT INTO review_history (review_item_id, rating, interval_given_days, reviewed_at)
-        VALUES (?, 'manual', ?, ?)
-      `).run(id, intervalDays, new Date().toISOString());
-    })();
-  },
-
-  getHistory(reviewItemId: number): any[] {
-    const db = getDatabase();
-    return db.prepare(
-      'SELECT * FROM review_history WHERE review_item_id = ? ORDER BY reviewed_at DESC LIMIT 20'
-    ).all(reviewItemId);
+    db.prepare(`
+      UPDATE review_items
+      SET next_review_at = ?, interval_days = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(nextReviewAt, intervalDays, id);
   },
 };
 
-export const ReviewMasksOperations = {
+export const ReviewMaskOperations = {
   getByItem(reviewItemId: number): any[] {
     const db = getDatabase();
-    return db.prepare('SELECT * FROM review_masks WHERE review_item_id = ? ORDER BY sort_order, id').all(reviewItemId);
+    return db.prepare(
+      'SELECT * FROM review_masks WHERE review_item_id = ? ORDER BY sort_order, id'
+    ).all(reviewItemId);
   },
 
-  create(reviewItemId: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null, sortOrder: number): any {
+  create(
+    reviewItemId: number, x: number, y: number, w: number, h: number,
+    pixelationLevel: number, hintText: string | null, sortOrder: number
+  ): any {
     const db = getDatabase();
     const result = db.prepare(`
       INSERT INTO review_masks (review_item_id, x, y, w, h, pixelation_level, hint_text, sort_order)
@@ -2898,12 +2792,14 @@ export const ReviewMasksOperations = {
     return db.prepare('SELECT * FROM review_masks WHERE id = ?').get(result.lastInsertRowid);
   },
 
-  update(id: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null): void {
+  update(id: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null): any {
     const db = getDatabase();
     db.prepare(`
-      UPDATE review_masks SET x = ?, y = ?, w = ?, h = ?, pixelation_level = ?, hint_text = ?
+      UPDATE review_masks
+      SET x = ?, y = ?, w = ?, h = ?, pixelation_level = ?, hint_text = ?
       WHERE id = ?
     `).run(x, y, w, h, pixelationLevel, hintText, id);
+    return db.prepare('SELECT * FROM review_masks WHERE id = ?').get(id);
   },
 
   delete(id: number): void {
