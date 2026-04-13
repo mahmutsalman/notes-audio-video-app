@@ -57,13 +57,13 @@ export class SpaceDetector {
     console.log('[SpaceDetector] Initial display:', initialDisplayId);
     console.log('[SpaceDetector] Recorded display:', this.recordedDisplayId);
 
-    // DIAGNOSTIC: Test getSources() immediately to verify it works
+    // DIAGNOSTIC: Test getSourceIds() immediately to verify it works
     try {
-      const testSources = await window.electronAPI.screenRecording.getSources();
-      console.log('[SpaceDetector] ✅ getSources() test SUCCESSFUL, found', testSources.length, 'sources');
+      const testSources = await window.electronAPI.screenRecording.getSourceIds();
+      console.log('[SpaceDetector] ✅ getSourceIds() test SUCCESSFUL, found', testSources.length, 'sources');
       logger.debug('[SpaceDetector] Test sources:', testSources.map((s: any) => s.id)); // Phase 4: High-frequency log
     } catch (error) {
-      console.error('[SpaceDetector] ❌ getSources() test FAILED:', error);
+      console.error('[SpaceDetector] ❌ getSourceIds() test FAILED:', error);
       console.error('[SpaceDetector] Error details:', {
         message: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined
@@ -127,8 +127,8 @@ export class SpaceDetector {
    */
   private async detectSpaceTransition(): Promise<boolean> {
     try {
-      // Get all sources including windows
-      const allSources = await window.electronAPI.screenRecording.getSources();
+      // Get all sources including windows (lightweight — no thumbnails)
+      const allSources = await window.electronAPI.screenRecording.getSourceIds();
       const windowCount = allSources.filter((s: any) => s.id.startsWith('window:')).length;
 
       // Detect significant window list change (indicates Space switch)
@@ -184,10 +184,8 @@ export class SpaceDetector {
    * @returns The source ID and display ID of the active source
    */
   private async detectActiveDisplay(): Promise<{ sourceId: string; displayId: string }> {
-    // Get current screen sources from desktopCapturer
-    // This is the KEY change: polling sources instead of cursor position
-    // macOS returns different sources for different Spaces on the SAME display
-    const allSources = await window.electronAPI.screenRecording.getSources();
+    // Get current screen sources (lightweight — no thumbnails needed for Space detection)
+    const allSources = await window.electronAPI.screenRecording.getSourceIds();
     const screenSources = allSources.filter((s: any) => s.id.startsWith('screen:'));
 
     logger.debug('[SpaceDetector] Polled sources:', screenSources.map((s: any) => s.id)); // Phase 4: High-frequency log (every 100ms)

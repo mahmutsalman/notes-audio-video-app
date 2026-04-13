@@ -1127,7 +1127,7 @@ function runMigrations(db: Database.Database): void {
     console.log('Rebuilt durations table: source_video_id/source_duration_video_id now ON DELETE CASCADE');
   }
 
-  // Migration: review_items — images enrolled in spaced repetition review
+  // Migration: review_items and review_masks (spaced repetition)
   const reviewItemsExists = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='review_items'"
   ).get();
@@ -1135,23 +1135,25 @@ function runMigrations(db: Database.Database): void {
     db.exec(`
       CREATE TABLE review_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        image_type TEXT NOT NULL CHECK(image_type IN ('image', 'duration_image', 'quick_capture_image', 'image_child')),
-        image_id INTEGER NOT NULL,
-        next_review_at TEXT NOT NULL,
+        media_type TEXT NOT NULL,
+        media_id INTEGER NOT NULL,
+        file_path TEXT,
+        thumbnail_path TEXT,
+        caption TEXT,
+        recording_id INTEGER,
+        capture_id INTEGER,
         interval_days REAL NOT NULL DEFAULT 1,
         ease_factor REAL NOT NULL DEFAULT 2.5,
         repetitions INTEGER NOT NULL DEFAULT 0,
-        last_rating TEXT,
-        schedule_mode TEXT NOT NULL DEFAULT 'algorithm',
+        next_review_at TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(image_type, image_id)
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-      CREATE INDEX idx_review_items_next ON review_items(next_review_at);
+      CREATE INDEX idx_review_items_next_review ON review_items(next_review_at);
     `);
     console.log('Created review_items table');
   }
 
-  // Migration: review_masks — pixelation rectangles on review items
   const reviewMasksExists = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='review_masks'"
   ).get();
@@ -1169,25 +1171,9 @@ function runMigrations(db: Database.Database): void {
         sort_order INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+      CREATE INDEX idx_review_masks_item ON review_masks(review_item_id);
     `);
     console.log('Created review_masks table');
-  }
-
-  // Migration: review_history — log of all ratings
-  const reviewHistoryExists = db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='review_history'"
-  ).get();
-  if (!reviewHistoryExists) {
-    db.exec(`
-      CREATE TABLE review_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        review_item_id INTEGER NOT NULL REFERENCES review_items(id) ON DELETE CASCADE,
-        rating TEXT NOT NULL,
-        interval_given_days REAL NOT NULL,
-        reviewed_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-    `);
-    console.log('Created review_history table');
   }
 
   console.log('Database migrations completed');

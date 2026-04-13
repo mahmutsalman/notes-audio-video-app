@@ -31,7 +31,7 @@ import {
   ObsStagedMarksOperations,
   ObsGhostMarksOperations,
   ReviewOperations,
-  ReviewMasksOperations,
+  ReviewMaskOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
@@ -1111,6 +1111,18 @@ export function setupIpcHandlers(): void {
       id: source.id,
       name: source.name,
       thumbnail: source.thumbnail.toDataURL()
+    }));
+  });
+
+  // Lightweight version for SpaceDetector polling — no thumbnails, ~10x cheaper
+  ipcMain.handle('screenRecording:getSourceIds', async () => {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen', 'window'],
+      thumbnailSize: { width: 0, height: 0 }
+    });
+    return sources.map(source => ({
+      id: source.id,
+      name: source.name,
     }));
   });
 
@@ -2706,75 +2718,31 @@ export function setupIpcHandlers(): void {
     SettingsOperations.set('obs_password', config.password);
   });
 
-  // ── Review (spaced repetition) ────────────────────────────────────────
-  ipcMain.handle('review:getByImage', (_, imageType: string, imageId: number) => {
-    return ReviewOperations.getByImage(imageType, imageId);
-  });
+  // ============ Review (Spaced Repetition) ============
+  ipcMain.handle('review:getAll', () => ReviewOperations.getAll());
+  ipcMain.handle('review:enroll', (_,
+    mediaType: string, mediaId: number,
+    filePath: string | null, thumbnailPath: string | null, caption: string | null,
+    recordingId: number | null, captureId: number | null
+  ) => ReviewOperations.enroll(mediaType, mediaId, filePath, thumbnailPath, caption, recordingId, captureId));
+  ipcMain.handle('review:delete', (_, id: number) => ReviewOperations.delete(id));
+  ipcMain.handle('review:rate', (_,
+    id: number, rating: string, intervalDays: number, easeFactor: number, repetitions: number, nextReviewAt: string
+  ) => ReviewOperations.rate(id, rating, intervalDays, easeFactor, repetitions, nextReviewAt));
+  ipcMain.handle('review:schedule', (_, id: number, nextReviewAt: string, intervalDays: number) =>
+    ReviewOperations.schedule(id, nextReviewAt, intervalDays));
 
-  ipcMain.handle('review:getAll', () => {
-    return ReviewOperations.getAll();
-  });
-
-  ipcMain.handle('review:getDue', () => {
-    return ReviewOperations.getDue();
-  });
-
-  ipcMain.handle('review:create', (_, imageType: string, imageId: number) => {
-    return ReviewOperations.create(imageType, imageId);
-  });
-
-  ipcMain.handle('review:delete', (_, id: number) => {
-    ReviewOperations.delete(id);
-  });
-
-  ipcMain.handle('review:rate', (
-    _,
-    id: number,
-    rating: string,
-    intervalDays: number,
-    easeFactor: number,
-    repetitions: number,
-    nextReviewAt: string
-  ) => {
-    ReviewOperations.rate(id, rating, intervalDays, easeFactor, repetitions, nextReviewAt);
-  });
-
-  ipcMain.handle('review:schedule', (_, id: number, nextReviewAt: string, intervalDays: number) => {
-    ReviewOperations.schedule(id, nextReviewAt, intervalDays);
-  });
-
-  ipcMain.handle('review:getHistory', (_, reviewItemId: number) => {
-    return ReviewOperations.getHistory(reviewItemId);
-  });
-
-  ipcMain.handle('reviewMasks:getByItem', (_, reviewItemId: number) => {
-    return ReviewMasksOperations.getByItem(reviewItemId);
-  });
-
-  ipcMain.handle('reviewMasks:create', (
-    _,
-    reviewItemId: number,
-    x: number, y: number, w: number, h: number,
-    pixelationLevel: number,
-    hintText: string | null,
-    sortOrder: number
-  ) => {
-    return ReviewMasksOperations.create(reviewItemId, x, y, w, h, pixelationLevel, hintText, sortOrder);
-  });
-
-  ipcMain.handle('reviewMasks:update', (
-    _,
-    id: number,
-    x: number, y: number, w: number, h: number,
-    pixelationLevel: number,
-    hintText: string | null
-  ) => {
-    ReviewMasksOperations.update(id, x, y, w, h, pixelationLevel, hintText);
-  });
-
-  ipcMain.handle('reviewMasks:delete', (_, id: number) => {
-    ReviewMasksOperations.delete(id);
-  });
+  ipcMain.handle('reviewMasks:getByItem', (_, reviewItemId: number) =>
+    ReviewMaskOperations.getByItem(reviewItemId));
+  ipcMain.handle('reviewMasks:create', (_,
+    reviewItemId: number, x: number, y: number, w: number, h: number,
+    pixelationLevel: number, hintText: string | null, sortOrder: number
+  ) => ReviewMaskOperations.create(reviewItemId, x, y, w, h, pixelationLevel, hintText, sortOrder));
+  ipcMain.handle('reviewMasks:update', (_,
+    id: number, x: number, y: number, w: number, h: number,
+    pixelationLevel: number, hintText: string | null
+  ) => ReviewMaskOperations.update(id, x, y, w, h, pixelationLevel, hintText));
+  ipcMain.handle('reviewMasks:delete', (_, id: number) => ReviewMaskOperations.delete(id));
 
   console.log('IPC handlers registered');
 }
