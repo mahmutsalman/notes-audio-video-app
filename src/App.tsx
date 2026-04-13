@@ -8,6 +8,7 @@ import SearchPage from './pages/SearchPage';
 import CapturePage from './pages/CapturePage';
 import PlansPage from './pages/PlansPage';
 import SettingsPage from './pages/SettingsPage';
+import ReviewPage from './pages/ReviewPage';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
         <Route path="/capture" element={<CapturePage />} />
         <Route path="/plans" element={<PlansPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/review" element={<ReviewPage />} />
       </Routes>
     </MainLayout>
   );

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OBS Status</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 500px;
+      height: 500px;
+      overflow: hidden;
+      user-select: none;
+      font-family: system-ui, -apple-system, 'SF Pro Display', sans-serif;
+      -webkit-app-region: drag;
+    }
+
+    #root {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      transition: background-color 0.35s ease;
+    }
+
+    /* State backgrounds */
+    #root.state-disconnected { background: #374151; }
+    #root.state-stopped      { background: #1f2937; }
+    #root.state-recording    { background: #b91c1c; }
+    #root.state-paused       { background: #b45309; }
+
+    .dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.9);
+      flex-shrink: 0;
+    }
+
+    .dot.pulse {
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .state-label {
+      font-size: 72px;
+      font-weight: 800;
+      color: rgba(255, 255, 255, 0.95);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+
+    .timer {
+      font-size: 48px;
+      font-weight: 300;
+      color: rgba(255, 255, 255, 0.75);
+      font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+      letter-spacing: 0.06em;
+      min-height: 58px;
+    }
+
+    .timer.hidden { opacity: 0; }
+
+    .sub-label {
+      font-size: 20px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.45);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* Close button in corner */
+    .close-btn {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 50%;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, color 0.15s;
+      -webkit-app-region: no-drag;
+    }
+
+    .close-btn:hover {
+      background: rgba(0, 0, 0, 0.45);
+      color: rgba(255, 255, 255, 0.9);
+    }
+  </style>
+</head>
+<body>
+  <div id="root" class="state-disconnected">
+    <div class="dot" id="dot"></div>
+    <div class="state-label" id="state-label">IDLE</div>
+    <div class="timer" id="timer">00:00:00</div>
+    <div class="sub-label" id="sub-label">OBS Disconnected</div>
+    <button class="close-btn" id="close-btn" title="Hide (F8)">✕</button>
+  </div>
+
+  <script>
+    const root       = document.getElementById('root');
+    const dot        = document.getElementById('dot');
+    const stateLabel = document.getElementById('state-label');
+    const timerEl    = document.getElementById('timer');
+    const subLabel   = document.getElementById('sub-label');
+    const closeBtn   = document.getElementById('close-btn');
+
+    // ── Timer logic ─────────────────────────────────────────────────────────
+    let timerBase    = 0;   // seconds accumulated before latest resume
+    let timerStartAt = null; // Date.now() when last resume happened
+    let timerInterval = null;
+
+    function startTimer(baseSecs) {
+      timerBase    = baseSecs ?? 0;
+      timerStartAt = Date.now();
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(tick, 200);
+      tick();
+    }
+
+    function pauseTimer(atSecs) {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = null;
+      if (atSecs != null) timerBase = atSecs;
+      timerStartAt = null;
+      tick();
+    }
+
+    function stopTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = null;
+      timerBase    = 0;
+      timerStartAt = null;
+    }
+
+    function getCurrentSecs() {
+      if (timerStartAt != null) {
+        return timerBase + (Date.now() - timerStartAt) / 1000;
+      }
+      return timerBase;
+    }
+
+    function tick() {
+      timerEl.textContent = fmtTime(getCurrentSecs());
+    }
+
+    function fmtTime(secs) {
+      const s = Math.floor(secs);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      return String(h).padStart(2, '0') + ':' +
+             String(m).padStart(2, '0') + ':' +
+             String(sec).padStart(2, '0');
+    }
+
+    // Parse "HH:MM:SS.mmm" timecode string → seconds
+    function parseTimecode(tc) {
+      if (!tc || tc === '00:00:00') return 0;
+      const parts = tc.split(':');
+      if (parts.length !== 3) return 0;
+      return parseInt(parts[0], 10) * 3600 +
+             parseInt(parts[1], 10) * 60 +
+             parseFloat(parts[2]);
+    }
+
+    // ── State rendering ─────────────────────────────────────────────────────
+    function setState(state) {
+      // state: 'disconnected' | 'stopped' | 'recording' | 'paused'
+      root.className = 'state-' + state;
+
+      dot.classList.remove('pulse');
+      timerEl.classList.remove('hidden');
+
+      switch (state) {
+        case 'disconnected':
+          stateLabel.textContent = 'IDLE';
+          subLabel.textContent   = 'OBS Disconnected';
+          timerEl.classList.add('hidden');
+          stopTimer();
+          break;
+
+        case 'stopped':
+          stateLabel.textContent = 'IDLE';
+          subLabel.textContent   = 'OBS Connected';
+          timerEl.classList.add('hidden');
+          stopTimer();
+          break;
+
+        case 'recording':
+          stateLabel.textContent = 'REC';
+          subLabel.textContent   = 'Recording';
+          dot.classList.add('pulse');
+          break;
+
+        case 'paused':
+          stateLabel.textContent = 'PAUSE';
+          subLabel.textContent   = 'Paused';
+          break;
+      }
+    }
+
+    // ── Apply OBSStatus object ───────────────────────────────────────────────
+    function applyStatus(status) {
+      if (!status.isConnected) {
+        setState('disconnected');
+        return;
+      }
+      if (!status.isRecording) {
+        setState('stopped');
+        return;
+      }
+      if (status.isPaused) {
+        const pausedSecs = parseTimecode(status.recordTimecode);
+        setState('paused');
+        pauseTimer(pausedSecs);
+        return;
+      }
+      // Actively recording — start timer from the current reported timecode.
+      // We don't know the exact wall-clock start so use timecode as base.
+      const baseSecs = parseTimecode(status.recordTimecode);
+      setState('recording');
+      startTimer(baseSecs);
+    }
+
+    // ── IPC events ───────────────────────────────────────────────────────────
+    if (window.electronAPI && window.electronAPI.obs) {
+      // Initial status fetch
+      window.electronAPI.obs.getStatus().then(status => {
+        applyStatus(status);
+      }).catch(() => {
+        setState('disconnected');
+      });
+
+      // Status change (connection, recording state changes)
+      window.electronAPI.obs.onStatusChange(status => {
+        applyStatus(status);
+      });
+
+      // Recording started
+      window.electronAPI.obs.onStarted(() => {
+        setState('recording');
+        startTimer(0);
+      });
+
+      // Recording paused — data.timecode in seconds
+      window.electronAPI.obs.onPaused(data => {
+        setState('paused');
+        pauseTimer(data.timecode ?? data.timecodeStr ? parseTimecode(data.timecodeStr) : null);
+      });
+
+      // Recording resumed — data.startTime in seconds
+      window.electronAPI.obs.onResumed(data => {
+        setState('recording');
+        startTimer(timerBase); // resume from where we paused
+      });
+
+      // Recording stopped
+      window.electronAPI.obs.onStopped(() => {
+        setState('stopped');
+        stopTimer();
+        timerEl.textContent = '00:00:00';
+      });
+    }
+
+    // ── Close button ─────────────────────────────────────────────────────────
+    closeBtn.addEventListener('click', () => {
+      if (window.electronAPI && window.electronAPI.obs) {
+        window.electronAPI.obs.hideStatusWindow();
+      }
+    });
+  </script>
+</body>
+</html>

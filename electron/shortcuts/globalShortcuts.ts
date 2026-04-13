@@ -217,11 +217,23 @@ export function registerObsShortcut(): boolean {
     console.error('[GlobalShortcuts] ❌ Failed to register F9');
   }
 
+  const f8 = globalShortcut.register('F8', () => {
+    import('../windows/obsStatusWindow').then(({ toggleObsStatusWindow }) => {
+      toggleObsStatusWindow();
+    }).catch(err => console.error('[F8] Error toggling OBS status window:', err));
+  });
+  if (f8) {
+    console.log('[GlobalShortcuts] ✅ F8 registered — press F8 to toggle OBS status window');
+  } else {
+    console.error('[GlobalShortcuts] ❌ Failed to register F8');
+  }
+
   return f10;
 }
 
 export function unregisterObsShortcut(): void {
   globalShortcut.unregister('F10');
   globalShortcut.unregister('F9');
-  console.log('[GlobalShortcuts] F10 + F9 unregistered');
+  globalShortcut.unregister('F8');
+  console.log('[GlobalShortcuts] F10 + F9 + F8 unregistered');
 }

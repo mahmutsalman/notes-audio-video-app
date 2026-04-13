@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import MaskEditor from '../review/MaskEditor';
 import { useTabInstance } from '../../context/TabsContext';
 import { useStudyTracker } from '../../context/StudyTrackerContext';
 import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation } from '../../types';
@@ -244,6 +245,26 @@ export default function ImageLightbox({
 
   // Drag-and-drop sensors for the related images strip
   const childSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // Review state
+  const [reviewItem, setReviewItem] = useState<import('../../types').ReviewItem | null | undefined>(undefined); // undefined=not loaded, null=not enrolled
+  const [reviewMasks, setReviewMasks] = useState<import('../../types').ReviewMask[]>([]);
+  const [showMaskEditor, setShowMaskEditor] = useState(false);
+
+  // Load review enrollment status whenever image changes
+  useEffect(() => {
+    const img = images[selectedIndex];
+    if (!img?.id || !imageType) { setReviewItem(undefined); setReviewMasks([]); return; }
+    setReviewItem(undefined);
+    window.electronAPI.review.getByImage(imageType, img.id).then(item => {
+      setReviewItem(item ?? null);
+      if (item) {
+        window.electronAPI.reviewMasks.getByItem(item.id).then(setReviewMasks);
+      } else {
+        setReviewMasks([]);
+      }
+    });
+  }, [images[selectedIndex]?.id, imageType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Annotation state
   const [annotations, setAnnotations] = useState<ImageAnnotation[]>([]);
@@ -1376,6 +1397,47 @@ export default function ImageLightbox({
                 <span>🔍</span> Extract OCR text
               </button>
             )}
+            {imageType && image?.id && (
+              <div className="border-t border-gray-700 my-1" />
+            )}
+            {imageType && image?.id && reviewItem === null && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                onClick={async () => {
+                  setImageContextMenu(null);
+                  const item = await window.electronAPI.review.create(imageType, image.id!);
+                  setReviewItem(item);
+                  setReviewMasks([]);
+                  setShowMaskEditor(true);
+                }}
+              >
+                <span>🧠</span> Add to Review
+              </button>
+            )}
+            {imageType && image?.id && reviewItem && (
+              <>
+                <button
+                  className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                  onClick={() => { setImageContextMenu(null); setShowMaskEditor(true); }}
+                >
+                  <span>🎭</span> Edit Review Masks
+                  {reviewMasks.length > 0 && (
+                    <span className="ml-auto text-xs text-gray-500">{reviewMasks.length} mask{reviewMasks.length !== 1 ? 's' : ''}</span>
+                  )}
+                </button>
+                <button
+                  className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2"
+                  onClick={async () => {
+                    setImageContextMenu(null);
+                    await window.electronAPI.review.delete(reviewItem.id);
+                    setReviewItem(null);
+                    setReviewMasks([]);
+                  }}
+                >
+                  <span>🗑️</span> Remove from Review
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -1937,6 +1999,17 @@ export default function ImageLightbox({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Review Mask Editor overlay ── */}
+      {showMaskEditor && reviewItem && image?.file_path && (
+        <MaskEditor
+          src={window.electronAPI.paths.getFileUrl(image.file_path)}
+          reviewItemId={reviewItem.id}
+          existingMasks={reviewMasks}
+          onMasksChanged={setReviewMasks}
+          onClose={() => setShowMaskEditor(false)}
+        />
       )}
     </div>
   );
