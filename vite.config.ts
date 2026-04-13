@@ -50,6 +50,7 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         regionSelector: path.resolve(__dirname, 'public/region-selector-simple.html'),
+        obsStatusWindow: path.resolve(__dirname, 'public/obs-status-window.html'),
       },
     },
   },

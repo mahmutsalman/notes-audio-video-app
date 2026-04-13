@@ -30,6 +30,8 @@ import {
   StudyTrackingOperations,
   ObsStagedMarksOperations,
   ObsGhostMarksOperations,
+  ReviewOperations,
+  ReviewMasksOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
@@ -77,12 +79,14 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
   const { obsService } = await import('../services/obsService');
   const { showObsMarkOverlay, hideObsMarkOverlay } = await import('../windows/obsMarkOverlay');
   const { ObsStagedMarksOperations, ObsGhostMarksOperations } = await import('../database/operations');
+  const { notifyObsStatusWindow } = await import('../windows/obsStatusWindow');
 
   obsService.on('paused', (data: { timecode: number; timecodeStr: string }) => {
     // Close the currently open ghost mark at the pause timecode
     const sessionId = obsService.currentSessionId;
     if (sessionId) ObsGhostMarksOperations.closeActive(sessionId, data.timecode);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:paused', data);
+    notifyObsStatusWindow('obs:paused', data);
     // Overlay is NOT auto-shown on pause — user presses F9 to open it explicitly
   });
 
@@ -91,6 +95,7 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     const sessionId = obsService.currentSessionId;
     if (sessionId) ObsGhostMarksOperations.create(sessionId, data.startTime);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:resumed');
+    notifyObsStatusWindow('obs:resumed', data);
     hideObsMarkOverlay();
   });
 
@@ -107,6 +112,7 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
       console.log('[OBS] Saved pending mark on stop:', data.pendingMark);
     }
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:stopped', data);
+    notifyObsStatusWindow('obs:stopped', data);
     hideObsMarkOverlay();
 
     // Once OBS finishes writing the video, notify the renderer.
@@ -181,10 +187,12 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     ObsGhostMarksOperations.deleteAll();
     ObsGhostMarksOperations.create(data.sessionId, 0);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:started', data);
+    notifyObsStatusWindow('obs:started', data);
   });
 
   obsService.on('statusChange', (status: any) => {
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:statusChange', status);
+    notifyObsStatusWindow('obs:statusChange', status);
     if (!status.isConnected) {
       hideObsMarkOverlay(); // hide stale overlay when OBS drops connection
     }
@@ -2667,6 +2675,11 @@ export function setupIpcHandlers(): void {
     hideObsMarkOverlay();
   });
 
+  ipcMain.on('obs:hideStatusWindow', async () => {
+    const { hideObsStatusWindow } = await import('../windows/obsStatusWindow');
+    hideObsStatusWindow();
+  });
+
   // Toggle OBS enable/disable and re-register F10 shortcut accordingly
   ipcMain.handle('settings:toggleObs', async (_, enabled: boolean) => {
     SettingsOperations.set('obs_enabled', enabled ? 'true' : 'false');
@@ -2691,6 +2704,76 @@ export function setupIpcHandlers(): void {
     SettingsOperations.set('obs_host', config.host);
     SettingsOperations.set('obs_port', config.port);
     SettingsOperations.set('obs_password', config.password);
+  });
+
+  // ── Review (spaced repetition) ────────────────────────────────────────
+  ipcMain.handle('review:getByImage', (_, imageType: string, imageId: number) => {
+    return ReviewOperations.getByImage(imageType, imageId);
+  });
+
+  ipcMain.handle('review:getAll', () => {
+    return ReviewOperations.getAll();
+  });
+
+  ipcMain.handle('review:getDue', () => {
+    return ReviewOperations.getDue();
+  });
+
+  ipcMain.handle('review:create', (_, imageType: string, imageId: number) => {
+    return ReviewOperations.create(imageType, imageId);
+  });
+
+  ipcMain.handle('review:delete', (_, id: number) => {
+    ReviewOperations.delete(id);
+  });
+
+  ipcMain.handle('review:rate', (
+    _,
+    id: number,
+    rating: string,
+    intervalDays: number,
+    easeFactor: number,
+    repetitions: number,
+    nextReviewAt: string
+  ) => {
+    ReviewOperations.rate(id, rating, intervalDays, easeFactor, repetitions, nextReviewAt);
+  });
+
+  ipcMain.handle('review:schedule', (_, id: number, nextReviewAt: string, intervalDays: number) => {
+    ReviewOperations.schedule(id, nextReviewAt, intervalDays);
+  });
+
+  ipcMain.handle('review:getHistory', (_, reviewItemId: number) => {
+    return ReviewOperations.getHistory(reviewItemId);
+  });
+
+  ipcMain.handle('reviewMasks:getByItem', (_, reviewItemId: number) => {
+    return ReviewMasksOperations.getByItem(reviewItemId);
+  });
+
+  ipcMain.handle('reviewMasks:create', (
+    _,
+    reviewItemId: number,
+    x: number, y: number, w: number, h: number,
+    pixelationLevel: number,
+    hintText: string | null,
+    sortOrder: number
+  ) => {
+    return ReviewMasksOperations.create(reviewItemId, x, y, w, h, pixelationLevel, hintText, sortOrder);
+  });
+
+  ipcMain.handle('reviewMasks:update', (
+    _,
+    id: number,
+    x: number, y: number, w: number, h: number,
+    pixelationLevel: number,
+    hintText: string | null
+  ) => {
+    ReviewMasksOperations.update(id, x, y, w, h, pixelationLevel, hintText);
+  });
+
+  ipcMain.handle('reviewMasks:delete', (_, id: number) => {
+    ReviewMasksOperations.delete(id);
   });
 
   console.log('IPC handlers registered');

@@ -624,6 +624,7 @@ const electronAPI = {
     updateStagedMarkCaption: (id: number, caption: string): void => ipcRenderer.send('obs:updateStagedMarkCaption', id, caption),
     mergeStagedMarks: (keepId: number, deleteId: number, caption: string | null): void => ipcRenderer.send('obs:mergeStagedMarks', keepId, deleteId, caption),
     hideOverlay: (): void => ipcRenderer.send('obs:hideOverlay'),
+    hideStatusWindow: (): void => ipcRenderer.send('obs:hideStatusWindow'),
     onPaused: (cb: (data: { timecode: number; timecodeStr: string }) => void) => {
       const listener = (_: any, data: any) => cb(data);
       ipcRenderer.on('obs:paused', listener);
@@ -937,6 +938,30 @@ const electronAPI = {
       ipcRenderer.invoke('calendarTodos:update', id, updates),
     delete: (id: number) =>
       ipcRenderer.invoke('calendarTodos:delete', id),
+  },
+  review: {
+    getByImage: (imageType: string, imageId: number) =>
+      ipcRenderer.invoke('review:getByImage', imageType, imageId),
+    getAll: () => ipcRenderer.invoke('review:getAll'),
+    getDue: () => ipcRenderer.invoke('review:getDue'),
+    create: (imageType: string, imageId: number) =>
+      ipcRenderer.invoke('review:create', imageType, imageId),
+    delete: (id: number) => ipcRenderer.invoke('review:delete', id),
+    rate: (id: number, rating: string, intervalDays: number, easeFactor: number, repetitions: number, nextReviewAt: string) =>
+      ipcRenderer.invoke('review:rate', id, rating, intervalDays, easeFactor, repetitions, nextReviewAt),
+    schedule: (id: number, nextReviewAt: string, intervalDays: number) =>
+      ipcRenderer.invoke('review:schedule', id, nextReviewAt, intervalDays),
+    getHistory: (reviewItemId: number) =>
+      ipcRenderer.invoke('review:getHistory', reviewItemId),
+  },
+  reviewMasks: {
+    getByItem: (reviewItemId: number) =>
+      ipcRenderer.invoke('reviewMasks:getByItem', reviewItemId),
+    create: (reviewItemId: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null, sortOrder: number) =>
+      ipcRenderer.invoke('reviewMasks:create', reviewItemId, x, y, w, h, pixelationLevel, hintText, sortOrder),
+    update: (id: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null) =>
+      ipcRenderer.invoke('reviewMasks:update', id, x, y, w, h, pixelationLevel, hintText),
+    delete: (id: number) => ipcRenderer.invoke('reviewMasks:delete', id),
   },
   studyTracker: {
     createSession: (startedAt: string) =>

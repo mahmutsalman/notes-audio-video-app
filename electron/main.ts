@@ -250,13 +250,15 @@ app.whenReady().then(async () => {
   // Register global keyboard shortcuts (Cmd+D for region selection)
   registerGlobalShortcuts();
 
-  // OBS: auto-connect and register F10 if enabled (database is ready now)
+  // OBS: auto-connect and register F10/F9/F8 if enabled (database is ready now)
   const obsEnabled = SettingsOperations.get('obs_enabled') === 'true';
   if (obsEnabled) {
     registerObsShortcut();
     const { obsService } = await import('./services/obsService');
     const { createObsMarkOverlayWindow } = await import('./windows/obsMarkOverlay');
+    const { createObsStatusWindow } = await import('./windows/obsStatusWindow');
     createObsMarkOverlayWindow();
+    createObsStatusWindow();
     const host = SettingsOperations.get('obs_host') || '127.0.0.1';
     const port = SettingsOperations.get('obs_port') || '4455';
     const pw = SettingsOperations.get('obs_password') || '';
