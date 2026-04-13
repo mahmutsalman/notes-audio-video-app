@@ -666,6 +666,7 @@ const electronAPI = {
       return () => ipcRenderer.removeListener('obs:statusChange', listener);
     },
     hideStatusWindow: (): void => ipcRenderer.send('obs:hideStatusWindow'),
+    showStatusWindow: (): void => ipcRenderer.send('obs:showStatusWindow'),
     onWindowVisibility: (cb: (visible: boolean) => void) => {
       const listener = (_: any, visible: boolean) => cb(visible);
       ipcRenderer.on('obs:windowVisibility', listener);

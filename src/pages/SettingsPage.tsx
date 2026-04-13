@@ -248,8 +248,18 @@ export default function SettingsPage() {
               )}
             </div>
 
+            {/* Open status window button */}
+            <div className="mt-4">
+              <button
+                onClick={() => window.electronAPI.obs.showStatusWindow()}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
+              >
+                Open Status Window
+              </button>
+            </div>
+
             {/* Usage hint */}
-            <div className="mt-5 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800/30">
+            <div className="mt-4 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800/30">
               <p className="text-xs font-medium text-indigo-700 dark:text-indigo-400 mb-1">F10 Shortcut</p>
               <ul className="text-xs text-indigo-600 dark:text-indigo-300 space-y-0.5">
                 <li>• Not recording → Start OBS recording</li>
