@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import MaskEditor from '../review/MaskEditor';
 import { useTabInstance } from '../../context/TabsContext';
 import { useStudyTracker } from '../../context/StudyTrackerContext';
-import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation } from '../../types';
+import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation, ReviewItem, ReviewMask } from '../../types';
+import MaskEditor from '../review/MaskEditor';
+import { IMAGE_COLORS, IMAGE_COLOR_KEYS } from '../../utils/imageColors';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
 import WaveformVisualizer from '../audio/WaveformVisualizer';
@@ -37,10 +38,10 @@ interface ImageLightboxProps {
   onClose: () => void;
   onNavigate: (newIndex: number) => void;
   // Optional audio feature props
-  imageAudiosMap?: Record<number, DurationImageAudio[]>;
+  imageAudiosMap?: Record<number, AnyImageAudio[]>;
   onRecordForImage?: (imageId: number) => void;
   onDeleteImageAudio?: (audioId: number, imageId: number) => void;
-  onPlayImageAudio?: (audio: DurationImageAudio, imageLabel: string) => void;
+  onPlayImageAudio?: (audio: AnyImageAudio, imageLabel: string) => void;
   onUpdateImageAudioCaption?: (audioId: number, imageId: number, caption: string | null) => Promise<void>;
   // Replace feature
   onReplaceWithClipboard?: () => void;
@@ -50,6 +51,8 @@ interface ImageLightboxProps {
   onDelete?: () => void;
   // Extract full-image OCR text into caption2
   onExtractOcr?: () => Promise<void>;
+  // Enroll image in spaced-repetition review queue
+  onEnrollInReview?: () => Promise<ReviewItem | null>;
   // Tag editing
   mediaType?: MediaTagType;
   onTagsChanged?: (imageId: number, tagNames: string[]) => void;
@@ -179,6 +182,7 @@ export default function ImageLightbox({
   onEditCaption,
   onDelete,
   onExtractOcr,
+  onEnrollInReview,
   mediaType,
   onTagsChanged,
   disableChildImages = false,
@@ -226,6 +230,10 @@ export default function ImageLightbox({
   // OCR caption2 extraction status
   const [ocrCaption2Status, setOcrCaption2Status] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
 
+  // Review mask editor
+  const [maskEditorItem, setMaskEditorItem] = useState<ReviewItem | null>(null);
+  const [maskEditorMasks, setMaskEditorMasks] = useState<ReviewMask[]>([]);
+
   // OCR region selection state
   const [ocrSelectStart, setOcrSelectStart] = useState<{ x: number; y: number } | null>(null);
   const [ocrSelectEnd, setOcrSelectEnd] = useState<{ x: number; y: number } | null>(null);
@@ -245,26 +253,6 @@ export default function ImageLightbox({
 
   // Drag-and-drop sensors for the related images strip
   const childSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-
-  // Review state
-  const [reviewItem, setReviewItem] = useState<import('../../types').ReviewItem | null | undefined>(undefined); // undefined=not loaded, null=not enrolled
-  const [reviewMasks, setReviewMasks] = useState<import('../../types').ReviewMask[]>([]);
-  const [showMaskEditor, setShowMaskEditor] = useState(false);
-
-  // Load review enrollment status whenever image changes
-  useEffect(() => {
-    const img = images[selectedIndex];
-    if (!img?.id || !imageType) { setReviewItem(undefined); setReviewMasks([]); return; }
-    setReviewItem(undefined);
-    window.electronAPI.review.getByImage(imageType, img.id).then(item => {
-      setReviewItem(item ?? null);
-      if (item) {
-        window.electronAPI.reviewMasks.getByItem(item.id).then(setReviewMasks);
-      } else {
-        setReviewMasks([]);
-      }
-    });
-  }, [images[selectedIndex]?.id, imageType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Annotation state
   const [annotations, setAnnotations] = useState<ImageAnnotation[]>([]);
@@ -1301,6 +1289,20 @@ export default function ImageLightbox({
           </div>
         )}
 
+        {/* Color label dots — bottom-left corner */}
+        {imageColors.length > 0 && (
+          <div className="absolute bottom-2 left-2 flex flex-wrap gap-1 z-10 pointer-events-none max-w-[40%]">
+            {imageColors.map(key => (
+              <div
+                key={key}
+                style={{ backgroundColor: IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.hex ?? '#888' }}
+                className="w-3 h-3 rounded-full shadow opacity-80"
+                title={IMAGE_COLORS[key as keyof typeof IMAGE_COLORS]?.label ?? key}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Shift+drag hint */}
         {!isOcrLoading && !ocrSelectStart && mediaType && image?.id && (
           <div className="absolute bottom-2 right-2 text-[11px] text-white/25 pointer-events-none select-none">
@@ -1354,7 +1356,58 @@ export default function ImageLightbox({
                 <span>📋</span> Replace with clipboard
               </button>
             )}
-            {mediaType && image?.id && (onEditCaption || onReplaceWithClipboard) && (
+            {onToggleColor && imageType && image?.id && (onEditCaption || onReplaceWithClipboard) && (
+              <div className="border-t border-gray-700 my-1" />
+            )}
+            {onToggleColor && imageType && image?.id && (
+              <>
+                <button
+                  className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center justify-between gap-2"
+                  onClick={() => setShowColorPicker(p => !p)}
+                >
+                  <span className="flex items-center gap-2">
+                    <span>🎨</span> Colors
+                  </span>
+                  {imageColors.length > 0 && (
+                    <span className="flex gap-0.5">
+                      {imageColors.map(k => (
+                        <span
+                          key={k}
+                          style={{ backgroundColor: IMAGE_COLORS[k as keyof typeof IMAGE_COLORS]?.hex }}
+                          className="inline-block w-2.5 h-2.5 rounded-full"
+                        />
+                      ))}
+                    </span>
+                  )}
+                </button>
+                {showColorPicker && (
+                  <div className="px-3 pb-2 pt-1">
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {IMAGE_COLOR_KEYS.map(key => {
+                        const def = IMAGE_COLORS[key];
+                        const active = imageColors.includes(key);
+                        return (
+                          <button
+                            key={key}
+                            title={def.label}
+                            style={{ backgroundColor: def.hex }}
+                            className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${
+                              active ? 'ring-2 ring-white ring-offset-1 ring-offset-gray-900' : 'opacity-70 hover:opacity-100'
+                            }`}
+                            onClick={() => { onToggleColor(key); }}
+                          >
+                            {active && (
+                              <span className="text-white text-[11px] font-bold leading-none drop-shadow">✓</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            {mediaType && image?.id && (onEditCaption || onReplaceWithClipboard || (onToggleColor && imageType)) && (
               <div className="border-t border-gray-700 my-1" />
             )}
             {mediaType && image?.id && (
@@ -1400,43 +1453,24 @@ export default function ImageLightbox({
             {imageType && image?.id && (
               <div className="border-t border-gray-700 my-1" />
             )}
-            {imageType && image?.id && reviewItem === null && (
+            {onEnrollInReview && (
+              <div className="border-t border-gray-700 my-1" />
+            )}
+            {onEnrollInReview && (
               <button
                 className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
                 onClick={async () => {
                   setImageContextMenu(null);
-                  const item = await window.electronAPI.review.create(imageType, image.id!);
-                  setReviewItem(item);
-                  setReviewMasks([]);
-                  setShowMaskEditor(true);
+                  const enrolled = await onEnrollInReview();
+                  if (enrolled) {
+                    const masks = await window.electronAPI.reviewMasks.getByItem(enrolled.id);
+                    setMaskEditorItem(enrolled);
+                    setMaskEditorMasks(masks);
+                  }
                 }}
               >
-                <span>🧠</span> Add to Review
+                <span>🔁</span> Add to Review
               </button>
-            )}
-            {imageType && image?.id && reviewItem && (
-              <>
-                <button
-                  className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
-                  onClick={() => { setImageContextMenu(null); setShowMaskEditor(true); }}
-                >
-                  <span>🎭</span> Edit Review Masks
-                  {reviewMasks.length > 0 && (
-                    <span className="ml-auto text-xs text-gray-500">{reviewMasks.length} mask{reviewMasks.length !== 1 ? 's' : ''}</span>
-                  )}
-                </button>
-                <button
-                  className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2"
-                  onClick={async () => {
-                    setImageContextMenu(null);
-                    await window.electronAPI.review.delete(reviewItem.id);
-                    setReviewItem(null);
-                    setReviewMasks([]);
-                  }}
-                >
-                  <span>🗑️</span> Remove from Review
-                </button>
-              </>
             )}
           </div>
         )}
@@ -1765,7 +1799,7 @@ export default function ImageLightbox({
         const child = imageChildren[selectedChildIndex];
         const childAudiosMapForLightbox = Object.fromEntries(
           imageChildren.map(c => [c.id, (childAudiosMap[c.id] ?? []) as AnyImageAudio[]])
-        );
+        ) as Record<number, AnyImageAudio[]>;
         return (
           <ImageLightbox
             images={imageChildren.map(c => ({ id: c.id, file_path: c.file_path, caption: c.caption }))}
@@ -2001,16 +2035,17 @@ export default function ImageLightbox({
         </div>
       )}
 
-      {/* ── Review Mask Editor overlay ── */}
-      {showMaskEditor && reviewItem && image?.file_path && (
+      {/* ── Review Mask Editor (opened immediately after "Add to Review") ── */}
+      {maskEditorItem && maskEditorItem.file_path && (
         <MaskEditor
-          src={window.electronAPI.paths.getFileUrl(image.file_path)}
-          reviewItemId={reviewItem.id}
-          existingMasks={reviewMasks}
-          onMasksChanged={setReviewMasks}
-          onClose={() => setShowMaskEditor(false)}
+          src={window.electronAPI.paths.getFileUrl(maskEditorItem.file_path)}
+          reviewItemId={maskEditorItem.id}
+          existingMasks={maskEditorMasks}
+          onMasksChanged={setMaskEditorMasks}
+          onClose={() => { setMaskEditorItem(null); setMaskEditorMasks([]); }}
         />
       )}
+
     </div>
   );
 }

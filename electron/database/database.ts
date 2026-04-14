@@ -1152,6 +1152,100 @@ function runMigrations(db: Database.Database): void {
       CREATE INDEX idx_review_items_next_review ON review_items(next_review_at);
     `);
     console.log('Created review_items table');
+  } else {
+    const riCols = (db.prepare("PRAGMA table_info(review_items)").all() as { name: string }[]).map(c => c.name);
+
+    // Fix: if a previous migration renamed review_items → review_items_old, SQLite may have
+    // auto-updated review_masks's FK to point at review_items_old (now dropped).
+    // Detect this and rebuild review_masks with the correct FK.
+    const masksDdl = db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='review_masks'"
+    ).get() as { sql: string } | undefined;
+    if (masksDdl?.sql?.includes('review_items_old')) {
+      db.pragma('foreign_keys = OFF');
+      db.pragma('legacy_alter_table = ON');
+      db.exec('ALTER TABLE review_masks RENAME TO review_masks_broken');
+      db.pragma('legacy_alter_table = OFF');
+      db.exec(`
+        CREATE TABLE review_masks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          review_item_id INTEGER NOT NULL REFERENCES review_items(id) ON DELETE CASCADE,
+          x REAL NOT NULL,
+          y REAL NOT NULL,
+          w REAL NOT NULL,
+          h REAL NOT NULL,
+          pixelation_level INTEGER NOT NULL DEFAULT 3,
+          hint_text TEXT,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `);
+      db.exec('INSERT INTO review_masks SELECT * FROM review_masks_broken');
+      db.exec('DROP TABLE review_masks_broken');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_review_masks_item ON review_masks(review_item_id)');
+      db.pragma('foreign_keys = ON');
+      console.log('Rebuilt review_masks with corrected FK reference');
+    }
+
+    if (riCols.includes('image_type')) {
+      // Old schema — rebuild using legacy_alter_table so SQLite does NOT auto-update
+      // FK references in child tables (review_masks) during the rename.
+      const mediaTypeExpr = riCols.includes('media_type') ? 'media_type' : (riCols.includes('image_type') ? 'image_type' : "'image'");
+      const mediaIdExpr   = riCols.includes('media_id')   ? 'media_id'   : (riCols.includes('image_id')   ? 'image_id'   : '0');
+      const filePathExpr  = riCols.includes('file_path')  ? 'file_path'  : 'NULL';
+      const thumbExpr     = riCols.includes('thumbnail_path') ? 'thumbnail_path' : 'NULL';
+      const captionExpr   = riCols.includes('caption')    ? 'caption'    : 'NULL';
+      const recIdExpr     = riCols.includes('recording_id') ? 'recording_id' : 'NULL';
+      const capIdExpr     = riCols.includes('capture_id') ? 'capture_id' : 'NULL';
+      const createdExpr   = riCols.includes('created_at') ? "COALESCE(created_at, datetime('now'))" : "datetime('now')";
+      const updatedExpr   = riCols.includes('updated_at') ? "COALESCE(updated_at, datetime('now'))" : "datetime('now')";
+
+      db.pragma('foreign_keys = OFF');
+      db.pragma('legacy_alter_table = ON');
+      db.exec('ALTER TABLE review_items RENAME TO review_items_old');
+      db.pragma('legacy_alter_table = OFF');
+      db.exec(`
+        CREATE TABLE review_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          media_type TEXT NOT NULL,
+          media_id INTEGER NOT NULL,
+          file_path TEXT,
+          thumbnail_path TEXT,
+          caption TEXT,
+          recording_id INTEGER,
+          capture_id INTEGER,
+          interval_days REAL NOT NULL DEFAULT 1,
+          ease_factor REAL NOT NULL DEFAULT 2.5,
+          repetitions INTEGER NOT NULL DEFAULT 0,
+          next_review_at TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `);
+      db.exec(`
+        INSERT INTO review_items
+          (id, media_type, media_id, file_path, thumbnail_path, caption,
+           recording_id, capture_id, interval_days, ease_factor, repetitions,
+           next_review_at, created_at, updated_at)
+        SELECT id, ${mediaTypeExpr}, ${mediaIdExpr}, ${filePathExpr}, ${thumbExpr}, ${captionExpr},
+               ${recIdExpr}, ${capIdExpr}, interval_days, ease_factor, repetitions,
+               next_review_at, ${createdExpr}, ${updatedExpr}
+        FROM review_items_old
+      `);
+      db.exec('DROP TABLE review_items_old');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_review_items_next_review ON review_items(next_review_at)');
+      db.pragma('foreign_keys = ON');
+      console.log('Rebuilt review_items table with new schema');
+    } else {
+      // Already new schema — add any columns still missing
+      if (!riCols.includes('file_path'))      db.exec("ALTER TABLE review_items ADD COLUMN file_path TEXT");
+      if (!riCols.includes('thumbnail_path')) db.exec("ALTER TABLE review_items ADD COLUMN thumbnail_path TEXT");
+      if (!riCols.includes('caption'))        db.exec("ALTER TABLE review_items ADD COLUMN caption TEXT");
+      if (!riCols.includes('recording_id'))   db.exec("ALTER TABLE review_items ADD COLUMN recording_id INTEGER");
+      if (!riCols.includes('capture_id'))     db.exec("ALTER TABLE review_items ADD COLUMN capture_id INTEGER");
+      if (!riCols.includes('created_at'))     db.exec("ALTER TABLE review_items ADD COLUMN created_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'");
+      if (!riCols.includes('updated_at'))     db.exec("ALTER TABLE review_items ADD COLUMN updated_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'");
+    }
   }
 
   const reviewMasksExists = db.prepare(

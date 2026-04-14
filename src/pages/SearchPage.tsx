@@ -353,7 +353,8 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
   const [isDeleted, setIsDeleted] = useState(false);
 
   // Lightbox + image audio
-  const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
+  const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number; contentType: string } | null>(null);
+  const [lightboxImageColors, setLightboxImageColors] = useState<string[]>([]);
   const [imageAudiosMap, setImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
 
   const audioRecording = useAudioRecording();
@@ -486,9 +487,9 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
   }, [result.content_type, result.source_id]);
 
   const handleOpenLightbox = useCallback((images: LightboxImage[], index: number) => {
-    setLightbox({ images, index });
+    setLightbox({ images, index, contentType: result.content_type });
     fetchImageAudios(images);
-  }, [fetchImageAudios]);
+  }, [fetchImageAudios, result.content_type]);
 
   const handleRecordForImage = useCallback((imageId: number) => {
     const label = result.snippet.replace(/<[^>]*>/g, '').slice(0, 40) || 'Image';
@@ -626,7 +627,7 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
       setLightbox(null);
       setIsDeleted(true);
     } else {
-      setLightbox({ images: remaining, index: Math.min(lightbox.index, remaining.length - 1) });
+      setLightbox({ ...lightbox, images: remaining, index: Math.min(lightbox.index, remaining.length - 1) });
     }
   }, [lightbox, result.content_type]);
 
@@ -882,7 +883,8 @@ function ImageResultSection({
   onNavigate: (result: GlobalSearchResult) => void;
 }) {
   const [deletedIds, setDeletedIds] = useState<Set<number>>(new Set());
-  const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
+  const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number; contentType: string } | null>(null);
+  const [lightboxImageColors, setLightboxImageColors] = useState<string[]>([]);
   const [imageAudiosMap, setImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; result: GlobalSearchResult } | null>(null);
   const [captionModal, setCaptionModal] = useState<{ result: GlobalSearchResult; text: string } | null>(null);
@@ -964,9 +966,11 @@ function ImageResultSection({
 
   const openLightbox = useCallback((index: number) => {
     const lbImages = toLightboxImages(activeItems);
-    setLightbox({ images: lbImages, index });
+    const contentType = activeItems[index]?.content_type ?? '';
+    setLightbox({ images: lbImages, index, contentType });
+    setLightboxImageColors(imageColorsMap[activeItems[index]?.source_id ?? -1] ?? []);
     fetchImageAudios(activeItems);
-  }, [activeItems, fetchImageAudios]);
+  }, [activeItems, fetchImageAudios, imageColorsMap]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1002,7 +1006,7 @@ function ImageResultSection({
     setLightbox(lb => {
       if (!lb) return lb;
       const remaining = lb.images.filter(img => img.id !== result.source_id);
-      return remaining.length === 0 ? null : { images: remaining, index: Math.min(lb.index, remaining.length - 1) };
+      return remaining.length === 0 ? null : { ...lb, images: remaining, index: Math.min(lb.index, remaining.length - 1) };
     });
   }, []);
 
@@ -1159,7 +1163,6 @@ function ImageResultSection({
             audioCountMap={audioCountMap}
             tagCountMap={tagCountMap}
             tagNamesMap={tagNamesMap}
-            imageColorsMap={imageColorsMap}
             onImageClick={openLightbox}
             onContextMenu={handleContextMenu}
             onDelete={() => {}}
@@ -1176,8 +1179,12 @@ function ImageResultSection({
           <ImageLightbox
             images={lightbox.images}
             selectedIndex={lightbox.index}
-            onClose={() => { setLightbox(null); setImageAudiosMap({}); }}
-            onNavigate={i => setLightbox(lb => lb ? { ...lb, index: i } : null)}
+            onClose={() => { setLightbox(null); setImageAudiosMap({}); setLightboxImageColors([]); }}
+            onNavigate={i => {
+              setLightbox(lb => lb ? { ...lb, index: i } : null);
+              const item = activeItems[i];
+              if (item) setLightboxImageColors(imageColorsMap[item.source_id] ?? []);
+            }}
             imageAudiosMap={imageAudiosMap}
             onRecordForImage={handleRecordForImage}
             onDeleteImageAudio={handleDeleteImageAudio}
