@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
-import { emitSyncCompleted } from '../../utils/events';
 import StudyTimerButton from '../study-tracker/StudyTimerButton';
 export default function Header() {
   const navigate = useNavigate();

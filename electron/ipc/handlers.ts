@@ -80,7 +80,6 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
   const { showObsMarkOverlay, hideObsMarkOverlay } = await import('../windows/obsMarkOverlay');
   const { notifyObsStatusWindow } = await import('../windows/obsStatusWindow');
   const { ObsStagedMarksOperations, ObsGhostMarksOperations } = await import('../database/operations');
-  const { notifyObsStatusWindow } = await import('../windows/obsStatusWindow');
 
   obsService.on('paused', (data: { timecode: number; timecodeStr: string }) => {
     // Close the currently open ghost mark at the pause timecode
@@ -921,7 +920,6 @@ export function setupIpcHandlers(): void {
       await deleteFile(audio.file_path);
     }
     DurationImageAudiosOperations.delete(id);
-=======
     scheduleSearchReindex();
   });
 

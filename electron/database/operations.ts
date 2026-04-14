@@ -531,9 +531,9 @@ export const DurationsOperations = {
     `).all(recordingId) as Duration[];
   },
 
-  getWithAudio(): Duration[] {
+  getWithAudio(topicIds?: number[]): Duration[] {
     const db = getDatabase();
-    return db.prepare(`
+    let query = `
       SELECT d.*, r.name as recording_name, r.recording_type, t.name as topic_name, t.id as topic_id
       FROM durations d
       INNER JOIN duration_audios da ON da.duration_id = d.id

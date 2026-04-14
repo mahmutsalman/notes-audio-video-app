@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Duration, CreateDuration, UpdateDuration, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet } from '../types';
-import { SYNC_COMPLETED_EVENT } from '../utils/events';
 
 export function useDurations(recordingId: number | null) {
   const [durations, setDurations] = useState<Duration[]>([]);

@@ -76,7 +76,6 @@ export default function RecordingPage() {
     updateDurationVideoCaption,
     durationAudiosCache,
     getDurationAudios,
-    addDurationAudioFromBuffer,
     deleteDurationAudio,
     updateDurationAudioCaption,
     durationImageAudiosCache,
@@ -95,6 +94,7 @@ export default function RecordingPage() {
     addAudioFromBuffer,
     deleteAudio: deleteRecordingAudio,
     updateCaption: updateAudioCaption,
+    fetchAudios: refetchRecordingAudios,
   } = useAudios(id);
 
   const {
@@ -223,6 +223,8 @@ export default function RecordingPage() {
     durationId: number;
   } | null>(null);
   const [recordingAudioToDelete, setRecordingAudioToDelete] = useState<number | null>(null);
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [isRecordingDurationAudio, setIsRecordingDurationAudio] = useState(false);
   const [showCodeSnippetModal, setShowCodeSnippetModal] = useState(false);
   const [editingCodeSnippet, setEditingCodeSnippet] = useState<CodeSnippet | null>(null);
   const [codeSnippetToDelete, setCodeSnippetToDelete] = useState<number | null>(null);
@@ -1289,6 +1291,15 @@ export default function RecordingPage() {
   const handleSaveRecordingAudio = async (audioBlob: Blob) => {
     const buffer = await audioBlob.arrayBuffer();
     await addAudioFromBuffer(buffer, 'webm');
+    setIsRecordingAudio(false);
+  };
+
+  // Handle saving duration audio from modal
+  const handleSaveDurationAudio = async (audioBlob: Blob) => {
+    if (!activeDurationId) return;
+    const buffer = await audioBlob.arrayBuffer();
+    await window.electronAPI.durationAudios.addFromBuffer(activeDurationId, buffer, 'webm');
+    setIsRecordingDurationAudio(false);
   };
 
   // Handle deleting a recording audio
@@ -1821,7 +1832,7 @@ export default function RecordingPage() {
     });
   };
 
-  const handlePlayImageAudio = async (audio: DurationImageAudio, label: string) => {
+  const handlePlayImageAudio = async (audio: AnyImageAudio, label: string) => {
     const markers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'duration_image');
     imageAudioPlayer.play(
       audio,
@@ -2711,7 +2722,6 @@ export default function RecordingPage() {
             tagNamesMap={tagNamesMap}
             childCountMap={durationImageChildCountMap}
             ocrMap={durationImageOcrMap}
-            imageColorsMap={durationImageColorsCache}
             pastePlaceholder={
               <div className="flex flex-col items-center">
                 <div className="relative w-full max-w-[160px]">
@@ -3262,7 +3272,6 @@ export default function RecordingPage() {
             audioCountMap={recordingImageAudioCountMap}
             childCountMap={recordingImageChildCountMap}
             ocrMap={recordingImageOcrMap}
-            imageColorsMap={recordingImageColorsCache}
             pastePlaceholder={
               <div className="flex flex-col items-center">
                 <div className="relative w-full max-w-[160px]">
@@ -3719,6 +3728,11 @@ export default function RecordingPage() {
           selectedIndex={selectedImageIndex}
           onClose={() => setSelectedImageIndex(null)}
           onNavigate={(index) => setSelectedImageIndex(index)}
+          imageAudiosMap={recordingImageAudiosCache}
+          onRecordForImage={handleRecordForRecordingImage}
+          onDeleteImageAudio={handleDeleteRecordingImageAudio}
+          onPlayImageAudio={handlePlayRecordingImageAudio}
+          onUpdateImageAudioCaption={handleUpdateRecordingImageAudioCaption}
           onReplaceWithClipboard={handleReplaceImageWithClipboard}
           onEditCaption={() => {
             const img = images[selectedImageIndex!];
@@ -3727,6 +3741,13 @@ export default function RecordingPage() {
           onExtractOcr={selectedImageIndex !== null && images[selectedImageIndex]?.id ? async () => {
             const img = images[selectedImageIndex!];
             await window.electronAPI.ocr.extractCaption2('image', img.id!, img.file_path);
+          } : undefined}
+          onEnrollInReview={selectedImageIndex !== null && images[selectedImageIndex]?.id ? async () => {
+            const img = images[selectedImageIndex!];
+            return window.electronAPI.review.enroll(
+              'image', img.id!, img.file_path, img.thumbnail_path ?? null,
+              img.caption ?? null, recordingId ? parseInt(recordingId) : null, null
+            );
           } : undefined}
           mediaType="image"
           imageType="image"
@@ -3797,7 +3818,17 @@ export default function RecordingPage() {
             const img = activeDurationImages[selectedDurationImageIndex!];
             await window.electronAPI.ocr.extractCaption2('duration_image', img.id!, img.file_path);
           } : undefined}
+          onEnrollInReview={selectedDurationImageIndex !== null && activeDurationImages[selectedDurationImageIndex]?.id ? async () => {
+            const img = activeDurationImages[selectedDurationImageIndex!];
+            return window.electronAPI.review.enroll(
+              'duration_image', img.id!, img.file_path, img.thumbnail_path ?? null,
+              img.caption ?? null, recordingId ? parseInt(recordingId) : null, null
+            );
+          } : undefined}
           mediaType="duration_image"
+          imageType="duration_image"
+          imageColors={selectedDurationImageIndex !== null && activeDurationImages[selectedDurationImageIndex]?.id ? durationImageColorsCache[activeDurationImages[selectedDurationImageIndex].id!] ?? [] : []}
+          onToggleColor={selectedDurationImageIndex !== null && activeDurationImages[selectedDurationImageIndex]?.id ? (key) => handleToggleDurationImageColor(activeDurationImages[selectedDurationImageIndex!].id!, key) : undefined}
           onTagsChanged={(imageId, tagNames) => {
             setDurationImageTagsCache(prev => ({ ...prev, [imageId]: tagNames }));
           }}
