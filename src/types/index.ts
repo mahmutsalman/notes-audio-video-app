@@ -890,22 +890,6 @@ export interface ElectronAPI {
     update: (id: number, updates: { text?: string; completed?: number }) => Promise<CalendarTodo>;
     delete: (id: number) => Promise<void>;
   };
-  review: {
-    getByImage: (imageType: string, imageId: number) => Promise<ReviewItem | null>;
-    getAll: () => Promise<ReviewItem[]>;
-    getDue: () => Promise<ReviewItem[]>;
-    create: (imageType: string, imageId: number) => Promise<ReviewItem>;
-    delete: (id: number) => Promise<void>;
-    rate: (id: number, rating: string, intervalDays: number, easeFactor: number, repetitions: number, nextReviewAt: string) => Promise<void>;
-    schedule: (id: number, nextReviewAt: string, intervalDays: number) => Promise<void>;
-    getHistory: (reviewItemId: number) => Promise<ReviewHistoryEntry[]>;
-  };
-  reviewMasks: {
-    getByItem: (reviewItemId: number) => Promise<ReviewMask[]>;
-    create: (reviewItemId: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null, sortOrder: number) => Promise<ReviewMask>;
-    update: (id: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null) => Promise<void>;
-    delete: (id: number) => Promise<void>;
-  };
   studyTracker: {
     createSession: (startedAt: string) => Promise<{ id: number; started_at: string }>;
     endSession: (id: number, endedAt: string, totalSeconds: number) => Promise<void>;
@@ -1203,55 +1187,6 @@ export interface ImageAnnotation {
   color: string;
   stroke_width: number;
   created_at: string;
-}
-
-// ── Review (spaced repetition) ──────────────────────────────────────────────
-
-export type ReviewImageType = 'image' | 'duration_image' | 'quick_capture_image' | 'image_child';
-export type ReviewRating = 'again' | 'hard' | 'good' | 'easy';
-
-export interface ReviewItem {
-  id: number;
-  image_type: ReviewImageType;
-  image_id: number;
-  next_review_at: string;
-  interval_days: number;
-  ease_factor: number;
-  repetitions: number;
-  last_rating: ReviewRating | null;
-  schedule_mode: 'algorithm' | 'manual';
-  created_at: string;
-  // Context fields resolved by _attachContext
-  file_path: string | null;
-  thumbnail_path: string | null;
-  caption: string | null;
-  recording_id: number | null;
-  recording_name: string | null;
-  topic_id: number | null;
-  topic_name: string | null;
-  duration_id: number | null;
-  capture_id: number | null;
-}
-
-export interface ReviewMask {
-  id: number;
-  review_item_id: number;
-  x: number;  // 0.0–1.0 normalized fraction of image width
-  y: number;  // 0.0–1.0 normalized fraction of image height
-  w: number;
-  h: number;
-  pixelation_level: number;  // 1–5
-  hint_text: string | null;
-  sort_order: number;
-  created_at: string;
-}
-
-export interface ReviewHistoryEntry {
-  id: number;
-  review_item_id: number;
-  rating: ReviewRating | 'manual';
-  interval_given_days: number;
-  reviewed_at: string;
 }
 
 export type SearchConditionType = 'text' | 'tag' | 'color';
