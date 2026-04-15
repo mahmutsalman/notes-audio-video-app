@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ReviewItem } from '../types';
+import type { ReviewItem, ReviewMask } from '../types';
 import { formatDueLabel } from '../utils/srsAlgorithm';
 import ReviewSession from '../components/review/ReviewSession';
+import MaskEditor from '../components/review/MaskEditor';
 
 type FilterTab = 'due' | 'all' | 'upcoming';
 type ViewMode = 'grid' | 'list';
@@ -11,6 +12,8 @@ export default function ReviewPage() {
   const [filter, setFilter] = useState<FilterTab>('due');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [sessionItems, setSessionItems] = useState<ReviewItem[] | null>(null);
+  const [maskEditorItem, setMaskEditorItem] = useState<ReviewItem | null>(null);
+  const [maskEditorMasks, setMaskEditorMasks] = useState<ReviewMask[]>([]);
 
   const loadItems = useCallback(async () => {
     const items = await window.electronAPI.review.getAll();
@@ -43,6 +46,13 @@ export default function ReviewPage() {
     e.stopPropagation();
     await window.electronAPI.review.delete(id);
     setAllItems(prev => prev.filter(i => i.id !== id));
+  };
+
+  const handleOpenMaskEditor = async (item: ReviewItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const masks = await window.electronAPI.reviewMasks.getByItem(item.id);
+    setMaskEditorItem(item);
+    setMaskEditorMasks(masks);
   };
 
   if (sessionItems) {
@@ -148,17 +158,30 @@ export default function ReviewPage() {
         {viewMode === 'grid' ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {displayedItems.map(item => (
-              <ReviewItemGridCard key={item.id} item={item} onRemove={handleRemove} />
+              <ReviewItemGridCard key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} />
             ))}
           </div>
         ) : (
           <div className="flex flex-col gap-2">
             {displayedItems.map(item => (
-              <ReviewItemListRow key={item.id} item={item} onRemove={handleRemove} />
+              <ReviewItemListRow key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} />
             ))}
           </div>
         )}
       </div>
+
+      {/* Mask Editor overlay */}
+      {maskEditorItem && maskEditorItem.file_path && (
+        <div className="fixed inset-0 z-50">
+          <MaskEditor
+            src={window.electronAPI.paths.getFileUrl(maskEditorItem.file_path)}
+            reviewItemId={maskEditorItem.id}
+            existingMasks={maskEditorMasks}
+            onMasksChanged={setMaskEditorMasks}
+            onClose={() => { setMaskEditorItem(null); setMaskEditorMasks([]); }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -166,9 +189,11 @@ export default function ReviewPage() {
 function ReviewItemGridCard({
   item,
   onRemove,
+  onEditMasks,
 }: {
   item: ReviewItem;
   onRemove: (id: number, e: React.MouseEvent) => void;
+  onEditMasks: (item: ReviewItem, e: React.MouseEvent) => void;
 }) {
   const isDue = new Date(item.next_review_at) <= new Date();
   const dueLabel = formatDueLabel(item.next_review_at);
@@ -200,6 +225,13 @@ function ReviewItemGridCard({
         >
           ×
         </button>
+        <button
+          onClick={(e) => onEditMasks(item, e)}
+          className="absolute bottom-1.5 right-1.5 bg-black/60 text-white/70 hover:text-blue-300 text-[10px] px-1.5 py-0.5 rounded hidden group-hover:flex items-center gap-0.5 transition-colors"
+          title="Edit masks"
+        >
+          ▦ Masks
+        </button>
       </div>
       <div className="p-2">
         {item.caption && (
@@ -219,9 +251,11 @@ function ReviewItemGridCard({
 function ReviewItemListRow({
   item,
   onRemove,
+  onEditMasks,
 }: {
   item: ReviewItem;
   onRemove: (id: number, e: React.MouseEvent) => void;
+  onEditMasks: (item: ReviewItem, e: React.MouseEvent) => void;
 }) {
   const isDue = new Date(item.next_review_at) <= new Date();
   const dueLabel = formatDueLabel(item.next_review_at);
@@ -263,6 +297,13 @@ function ReviewItemListRow({
           </p>
           <p className="text-[11px] text-gray-400">{item.repetitions} rep{item.repetitions !== 1 ? 's' : ''}</p>
         </div>
+        <button
+          onClick={(e) => onEditMasks(item, e)}
+          className="text-gray-400 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-all text-xs px-2 py-1 rounded bg-gray-100 dark:bg-dark-hover"
+          title="Edit masks"
+        >
+          ▦
+        </button>
         <button
           onClick={(e) => onRemove(item.id, e)}
           className="text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all text-lg leading-none"

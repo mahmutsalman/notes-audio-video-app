@@ -455,7 +455,6 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
             tagNamesMap={imageTagNamesMap}
             childCountMap={imageChildCountMap}
             ocrMap={Object.fromEntries(localImages.map(img => [img.id, !!img.caption2]))}
-            imageColorsMap={imageColorsMap}
             pastePlaceholder={
               <div className="flex flex-col items-center">
                 <div className="relative w-full">

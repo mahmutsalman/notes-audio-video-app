@@ -809,6 +809,23 @@ export async function deleteDurationAudios(durationId: number): Promise<void> {
   }
 }
 
+export async function saveImageAudioFromBuffer(
+  imageId: number,
+  audioBuffer: ArrayBuffer,
+  extension: string = 'webm'
+): Promise<{ filePath: string; duration: number | null }> {
+  const dir = path.join(getMediaDir(), 'image_audios', String(imageId));
+  await fs.mkdir(dir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+
+  await fs.writeFile(filePath, Buffer.from(audioBuffer));
+  console.log('Image audio saved to:', filePath);
+
+  return { filePath, duration: null };
+}
+
 // Recording-level Audio Attachment functions
 export async function saveAudioAttachmentFromBuffer(
   recordingId: number,

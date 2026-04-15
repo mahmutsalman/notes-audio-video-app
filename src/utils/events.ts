@@ -7,3 +7,9 @@ export function emitRecordingUpdated(recordingId: number) {
     new CustomEvent(RECORDING_UPDATED_EVENT, { detail: { id: recordingId } })
   );
 }
+
+export const SYNC_COMPLETED_EVENT = 'sync-completed';
+
+export function emitSyncCompleted() {
+  window.dispatchEvent(new CustomEvent(SYNC_COMPLETED_EVENT));
+}
