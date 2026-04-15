@@ -2705,15 +2705,16 @@ export const ObsGhostMarksOperations = {
   },
 
   // Returns the two most recently created ghost marks for the session.
-  // "next" = latest (id DESC offset 0), "prev" = second-latest (id DESC offset 1)
-  getRelative(sessionId: string): { prev: any | null; next: any | null } {
+  // "current" = latest (id DESC offset 0) — the interval just closed on last pause
+  // "next"    = second-latest (id DESC offset 1) — the open interval being recorded
+  getRelative(sessionId: string): { current: any | null; next: any | null } {
     const db = getDatabase();
     const rows = db.prepare(
       'SELECT * FROM obs_ghost_marks WHERE session_id = ? ORDER BY id DESC LIMIT 2'
     ).all(sessionId) as any[];
     return {
-      next: rows[0] ?? null,
-      prev: rows[1] ?? null,
+      current: rows[0] ?? null,
+      next: rows[1] ?? null,
     };
   },
 

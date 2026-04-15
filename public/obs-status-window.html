@@ -231,7 +231,7 @@
       <div class="section-label">Ghost Marks</div>
 
       <div class="mark-row">
-        <span class="mark-label">PREV</span>
+        <span class="mark-label">CURRENT</span>
         <span id="prev-color-dot" class="color-dot"></span>
         <button id="btn-color-prev" class="ctrl-btn" disabled>Color ◁</button>
         <button id="btn-create-prev" class="ctrl-btn" disabled>+ Mark</button>
@@ -258,7 +258,7 @@
       <div id="ocr-text" style="display:none"></div>
 
       <div id="ocr-assign-row">
-        <button id="btn-assign-ocr-prev" class="ctrl-btn" disabled>→ Prev</button>
+        <button id="btn-assign-ocr-prev" class="ctrl-btn" disabled>→ Current</button>
         <button id="btn-assign-ocr-next" class="ctrl-btn" disabled>→ Next</button>
       </div>
     </div>
@@ -353,7 +353,7 @@
     }
 
     // ── Ghost Mark State ────────────────────────────────────────────────────
-    let prevGhostMark = null;
+    let currentGhostMark = null;
     let nextGhostMark = null;
     let ocrText = '';
 
@@ -370,13 +370,13 @@
     }
 
     function renderGhostMarks() {
-      // Prev row
-      const hasPrev = !!prevGhostMark;
-      applyColorDot(prevColorDot, hasPrev ? prevGhostMark.color : null);
-      btnColorPrev.disabled  = !hasPrev;
-      btnCreatePrev.disabled = !hasPrev;
-      btnAssignOcrPrev.disabled = !hasPrev || !ocrText;
-      prevCaptionEl.textContent = hasPrev && prevGhostMark.caption ? prevGhostMark.caption : '';
+      // Current row
+      const hasCurrent = !!currentGhostMark;
+      applyColorDot(prevColorDot, hasCurrent ? currentGhostMark.color : null);
+      btnColorPrev.disabled  = !hasCurrent;
+      btnCreatePrev.disabled = !hasCurrent;
+      btnAssignOcrPrev.disabled = !hasCurrent || !ocrText;
+      prevCaptionEl.textContent = hasCurrent && currentGhostMark.caption ? currentGhostMark.caption : '';
 
       // Next row
       const hasNext = !!nextGhostMark;
@@ -390,8 +390,8 @@
     async function refreshGhostMarks() {
       if (!window.electronAPI || !window.electronAPI.obs) return;
       try {
-        const { prev, next } = await window.electronAPI.obs.getRelativeGhostMarks();
-        prevGhostMark = prev;
+        const { current, next } = await window.electronAPI.obs.getRelativeGhostMarks();
+        currentGhostMark = current;
         nextGhostMark = next;
         renderGhostMarks();
       } catch (e) {
@@ -400,7 +400,7 @@
     }
 
     async function cycleColor(which) {
-      const mark = which === 'prev' ? prevGhostMark : nextGhostMark;
+      const mark = which === 'prev' ? currentGhostMark : nextGhostMark;
       if (!mark) return;
       const newColor = nextColor(mark.color);
       try {
@@ -413,7 +413,7 @@
     }
 
     async function createMarkFromGhost(which) {
-      const mark = which === 'prev' ? prevGhostMark : nextGhostMark;
+      const mark = which === 'prev' ? currentGhostMark : nextGhostMark;
       if (!mark) return;
       const btn = which === 'prev' ? btnCreatePrev : btnCreateNext;
       try {
@@ -461,7 +461,7 @@
     }
 
     async function assignOcrTo(which) {
-      const mark = which === 'prev' ? prevGhostMark : nextGhostMark;
+      const mark = which === 'prev' ? currentGhostMark : nextGhostMark;
       if (!mark || !ocrText) return;
       const btn = which === 'prev' ? btnAssignOcrPrev : btnAssignOcrNext;
       try {
@@ -562,7 +562,7 @@
 
       // Recording started — new session, clear ghost mark state
       window.electronAPI.obs.onStarted(() => {
-        prevGhostMark = null;
+        currentGhostMark = null;
         nextGhostMark = null;
         ocrText = '';
         ocrTextEl.style.display = 'none';

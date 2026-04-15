@@ -726,7 +726,7 @@ export interface ElectronAPI {
     hasGhostMarks: () => Promise<boolean>;
     getGhostMarksCount: () => Promise<number>;
     clearGhostMarks: () => Promise<void>;
-    getRelativeGhostMarks: () => Promise<{ prev: ObsGhostMark | null; next: ObsGhostMark | null }>;
+    getRelativeGhostMarks: () => Promise<{ current: ObsGhostMark | null; next: ObsGhostMark | null }>;
     updateGhostMarkColor: (id: number, color: string | null) => Promise<void>;
     updateGhostMarkCaption: (id: number, caption: string | null) => Promise<void>;
     createStagedMarkFromGhost: (ghostMarkId: number) => Promise<ObsStagedMark[]>;

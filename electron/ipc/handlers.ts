@@ -2645,11 +2645,11 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('obs:getGhostMarksCount', async () => ObsGhostMarksOperations.count());
   ipcMain.handle('obs:clearGhostMarks', async () => ObsGhostMarksOperations.deleteAll());
 
-  // Returns {prev, next} ghost marks for the current session (relative to now)
+  // Returns {current, next} ghost marks for the current session (relative to now)
   ipcMain.handle('obs:getRelativeGhostMarks', async () => {
     const { obsService } = await import('../services/obsService');
     const sessionId = obsService.currentSessionId;
-    if (!sessionId) return { prev: null, next: null };
+    if (!sessionId) return { current: null, next: null };
     return ObsGhostMarksOperations.getRelative(sessionId);
   });
 
