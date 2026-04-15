@@ -127,6 +127,8 @@ export interface ObsGhostMark {
   session_id: string;
   start_time: number;
   end_time: number | null;
+  color: string | null;
+  caption: string | null;
   created_at: string;
 }
 
@@ -724,6 +726,11 @@ export interface ElectronAPI {
     hasGhostMarks: () => Promise<boolean>;
     getGhostMarksCount: () => Promise<number>;
     clearGhostMarks: () => Promise<void>;
+    getRelativeGhostMarks: () => Promise<{ prev: ObsGhostMark | null; next: ObsGhostMark | null }>;
+    updateGhostMarkColor: (id: number, color: string | null) => Promise<void>;
+    updateGhostMarkCaption: (id: number, caption: string | null) => Promise<void>;
+    createStagedMarkFromGhost: (ghostMarkId: number) => Promise<ObsStagedMark[]>;
+    onGhostMarksUpdated: (cb: () => void) => () => void;
     assignGhostMarks: (videoId: number, recordingId: number) => Promise<{ assigned: number }>;
     assignGhostMarksToDurationVideo: (durationVideoId: number, recordingId: number) => Promise<{ assigned: number }>;
     onPaused: (cb: (data: { timecode: number; timecodeStr: string }) => void) => () => void;
@@ -864,6 +871,7 @@ export interface ElectronAPI {
       imageId: number,
       filePath: string
     ) => Promise<string>;
+    recognizeClipboard: () => Promise<{ success: boolean; text: string }>;
   };
   mediaColors: {
     toggle: (mediaType: string, mediaId: number, colorKey: string) => Promise<string[]>;

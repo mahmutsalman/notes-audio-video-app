@@ -1270,6 +1270,17 @@ function runMigrations(db: Database.Database): void {
     console.log('Created review_masks table');
   }
 
+  // Migration: Add color + caption columns to obs_ghost_marks
+  const ghostMarkCols = db.prepare("PRAGMA table_info(obs_ghost_marks)").all() as { name: string }[];
+  if (!ghostMarkCols.some(c => c.name === 'color')) {
+    db.exec("ALTER TABLE obs_ghost_marks ADD COLUMN color TEXT");
+    console.log('Added color to obs_ghost_marks');
+  }
+  if (!ghostMarkCols.some(c => c.name === 'caption')) {
+    db.exec("ALTER TABLE obs_ghost_marks ADD COLUMN caption TEXT");
+    console.log('Added caption to obs_ghost_marks');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

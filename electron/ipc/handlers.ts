@@ -85,6 +85,7 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     // Close the currently open ghost mark at the pause timecode
     const sessionId = obsService.currentSessionId;
     if (sessionId) ObsGhostMarksOperations.closeActive(sessionId, data.timecode);
+    notifyObsStatusWindow('obs:ghostMarksUpdated', null);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:paused', data);
     notifyObsStatusWindow('obs:paused', data);
     // Overlay is NOT auto-shown on pause — user presses F9 to open it explicitly
@@ -94,6 +95,7 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     // Each resume starts a new ghost mark at the point the user unpaused
     const sessionId = obsService.currentSessionId;
     if (sessionId) ObsGhostMarksOperations.create(sessionId, data.startTime);
+    notifyObsStatusWindow('obs:ghostMarksUpdated', null);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:resumed');
     notifyObsStatusWindow('obs:resumed');
     hideObsMarkOverlay();
@@ -104,6 +106,7 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     // if stopped while paused the ghost mark was already closed on the last pause event).
     if (data.sessionId && data.finalTimecode != null && data.finalTimecode > 0) {
       ObsGhostMarksOperations.closeActive(data.sessionId, data.finalTimecode);
+      notifyObsStatusWindow('obs:ghostMarksUpdated', null);
     }
     // If stopped while paused, save the last staged mark before clearing state
     if (data.pendingMark) {
@@ -186,6 +189,7 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     // Clear any leftover ghost marks from a previous session, then create the first one at t=0
     ObsGhostMarksOperations.deleteAll();
     ObsGhostMarksOperations.create(data.sessionId, 0);
+    notifyObsStatusWindow('obs:ghostMarksUpdated', null);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:started', data);
     notifyObsStatusWindow('obs:started', data);
   });
@@ -2349,6 +2353,62 @@ export function setupIpcHandlers(): void {
     return ocrText;
   });
 
+  // OCR: read clipboard image, run OCR on full image, return text (no DB write)
+  ipcMain.handle('ocr:recognizeClipboard', async (): Promise<{ success: boolean; text: string }> => {
+    const { clipboard, nativeImage } = await import('electron');
+    const img = clipboard.readImage();
+    if (img.isEmpty()) return { success: false, text: '' };
+
+    const { width, height } = img.getSize();
+    if (!width || !height) return { success: false, text: '' };
+
+    // Save to temp file so ocr_helper / tesseract can read it
+    const os = await import('os');
+    const path = await import('path');
+    const fs = await import('fs');
+    const tmpPath = path.join(os.tmpdir(), `obs_ocr_clipboard_${Date.now()}.png`);
+    fs.writeFileSync(tmpPath, img.toPNG());
+
+    try {
+      let text = '';
+      if (process.platform === 'darwin') {
+        const { execFile } = await import('child_process');
+        const { app } = await import('electron');
+        const binaryPath = app.isPackaged
+          ? path.join(process.resourcesPath, 'native', 'ocr_helper')
+          : path.join(__dirname, '../electron/native/ocr_helper');
+        text = await new Promise<string>((resolve, reject) => {
+          execFile(
+            binaryPath,
+            [tmpPath, '0', '0', String(width), String(height)],
+            { timeout: 60000 },
+            (err, stdout, stderr) => {
+              if (err) { console.error('OCR clipboard error:', stderr); return reject(err); }
+              resolve(stdout.trim());
+            }
+          );
+        });
+      } else {
+        const { createWorker } = await import('tesseract.js');
+        const worker = await createWorker('eng', 1, { logger: () => {} });
+        try {
+          const { data: { text: t } } = await worker.recognize(tmpPath, {
+            rectangle: { left: 0, top: 0, width, height },
+          });
+          text = t.trim();
+        } finally {
+          await worker.terminate();
+        }
+      }
+      return { success: true, text };
+    } catch (err) {
+      console.error('OCR clipboard failed:', err);
+      return { success: false, text: '' };
+    } finally {
+      try { fs.unlinkSync(tmpPath); } catch {}
+    }
+  });
+
   // Media Color Assignments (many-to-many — images, audios, and any future media type)
   ipcMain.handle('mediaColors:toggle', async (_, mediaType: string, mediaId: number, colorKey: string) => {
     return MediaColorOperations.toggle(mediaType, mediaId, colorKey);
@@ -2585,6 +2645,52 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('obs:getGhostMarksCount', async () => ObsGhostMarksOperations.count());
   ipcMain.handle('obs:clearGhostMarks', async () => ObsGhostMarksOperations.deleteAll());
 
+  // Returns {prev, next} ghost marks for the current session (relative to now)
+  ipcMain.handle('obs:getRelativeGhostMarks', async () => {
+    const { obsService } = await import('../services/obsService');
+    const sessionId = obsService.currentSessionId;
+    if (!sessionId) return { prev: null, next: null };
+    return ObsGhostMarksOperations.getRelative(sessionId);
+  });
+
+  // Update the color of a ghost mark (cycles null → red → amber → sky → null)
+  ipcMain.handle('obs:updateGhostMarkColor', async (_, id: number, color: string | null) => {
+    ObsGhostMarksOperations.updateColor(id, color);
+    const { notifyObsStatusWindow } = await import('../windows/obsStatusWindow');
+    notifyObsStatusWindow('obs:ghostMarksUpdated', null);
+  });
+
+  // Update the caption (OCR text) of a ghost mark
+  ipcMain.handle('obs:updateGhostMarkCaption', async (_, id: number, caption: string | null) => {
+    ObsGhostMarksOperations.updateCaption(id, caption);
+  });
+
+  // Create a staged mark from a ghost mark's time range + caption
+  ipcMain.handle('obs:createStagedMarkFromGhost', async (_, ghostMarkId: number) => {
+    const { obsService } = await import('../services/obsService');
+    const sessionId = obsService.currentSessionId;
+    if (!sessionId) return ObsStagedMarksOperations.getAll();
+
+    const db = (await import('../database/database')).getDatabase();
+    const ghost = db.prepare('SELECT * FROM obs_ghost_marks WHERE id = ?').get(ghostMarkId) as any;
+    if (!ghost) return ObsStagedMarksOperations.getAll();
+
+    const startTime = ghost.start_time as number;
+    // end_time may be null if this is the currently open ghost mark — fall back to pauseTimecode
+    const endTime: number = ghost.end_time ?? obsService.pauseTimecode ?? startTime;
+    const caption = (ghost.caption as string | null) || null;
+
+    ObsStagedMarksOperations.create({
+      session_id: sessionId,
+      start_time: startTime,
+      end_time: endTime,
+      caption,
+      sort_order: ObsStagedMarksOperations.count(),
+    });
+    console.log('[OBS] Staged mark created from ghost mark', ghostMarkId, { startTime, endTime, caption });
+    return ObsStagedMarksOperations.getAll();
+  });
+
   ipcMain.handle('obs:assignGhostMarks', async (_, videoId: number, recordingId: number) => {
     const marks = ObsGhostMarksOperations.getAll();
     if (marks.length === 0) throw new Error('No ghost marks to assign');
@@ -2597,11 +2703,14 @@ export function setupIpcHandlers(): void {
       const mark = marks[i] as any;
       // If end_time is null (last segment stopped mid-record), use next mark's start or video duration
       const endTime: number = mark.end_time ?? (marks[i + 1] as any)?.start_time ?? videoDuration ?? mark.start_time;
+      // caption becomes the note (wrap in <p> so Quill renders it as plain text)
+      const noteHtml = mark.caption ? `<p>${mark.caption}</p>` : null;
       DurationsOperations.create({
         recording_id: recordingId,
         start_time: mark.start_time,
         end_time: endTime,
-        note: null,
+        note: noteHtml,
+        color: mark.color ?? null,
         source_video_id: videoId,
         is_video_mark: 1,
         is_ghost_mark: 1,
@@ -2624,11 +2733,13 @@ export function setupIpcHandlers(): void {
     for (let i = 0; i < marks.length; i++) {
       const mark = marks[i] as any;
       const endTime: number = mark.end_time ?? (marks[i + 1] as any)?.start_time ?? videoDuration ?? mark.start_time;
+      const noteHtml = mark.caption ? `<p>${mark.caption}</p>` : null;
       DurationsOperations.create({
         recording_id: recordingId,
         start_time: mark.start_time,
         end_time: endTime,
-        note: null,
+        note: noteHtml,
+        color: mark.color ?? null,
         source_duration_video_id: durationVideoId,
         is_video_mark: 1,
         is_ghost_mark: 1,

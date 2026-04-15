@@ -650,6 +650,19 @@ const electronAPI = {
     hasGhostMarks: (): Promise<boolean> => ipcRenderer.invoke('obs:hasGhostMarks'),
     getGhostMarksCount: (): Promise<number> => ipcRenderer.invoke('obs:getGhostMarksCount'),
     clearGhostMarks: (): Promise<void> => ipcRenderer.invoke('obs:clearGhostMarks'),
+    getRelativeGhostMarks: (): Promise<{ prev: any | null; next: any | null }> =>
+      ipcRenderer.invoke('obs:getRelativeGhostMarks'),
+    updateGhostMarkColor: (id: number, color: string | null): Promise<void> =>
+      ipcRenderer.invoke('obs:updateGhostMarkColor', id, color),
+    updateGhostMarkCaption: (id: number, caption: string | null): Promise<void> =>
+      ipcRenderer.invoke('obs:updateGhostMarkCaption', id, caption),
+    createStagedMarkFromGhost: (ghostMarkId: number): Promise<any[]> =>
+      ipcRenderer.invoke('obs:createStagedMarkFromGhost', ghostMarkId),
+    onGhostMarksUpdated: (cb: () => void) => {
+      const listener = () => cb();
+      ipcRenderer.on('obs:ghostMarksUpdated', listener);
+      return () => ipcRenderer.removeListener('obs:ghostMarksUpdated', listener);
+    },
     assignGhostMarks: (videoId: number, recordingId: number): Promise<{ assigned: number }> =>
       ipcRenderer.invoke('obs:assignGhostMarks', videoId, recordingId),
     assignGhostMarksToDurationVideo: (durationVideoId: number, recordingId: number): Promise<{ assigned: number }> =>
@@ -903,6 +916,8 @@ const electronAPI = {
       filePath: string
     ): Promise<string> =>
       ipcRenderer.invoke('ocr:extractCaption2', imageType, imageId, filePath),
+    recognizeClipboard: (): Promise<{ success: boolean; text: string }> =>
+      ipcRenderer.invoke('ocr:recognizeClipboard'),
   },
 
   // Media Color Assignments (many-to-many — images, audios, and any future media type)
