@@ -357,7 +357,7 @@ export default function ImageAudioPlayerBar() {
 
         {/* Player */}
         <div className="flex-1 min-w-0">
-          <ThemedAudioPlayer ref={playerRef as React.RefObject<ThemedAudioPlayerHandle>} src={src} theme="blue" />
+          <ThemedAudioPlayer ref={playerRef as React.RefObject<ThemedAudioPlayerHandle>} src={src} theme="blue" markers={markers} />
         </div>
 
         {/* Dismiss */}

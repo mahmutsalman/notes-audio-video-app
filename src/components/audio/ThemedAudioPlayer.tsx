@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { formatDuration } from '../../utils/formatters';
+import type { AudioMarker } from '../../types';
 
 const SPEED_PRESETS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3] as const;
 
@@ -7,6 +8,7 @@ interface ThemedAudioPlayerProps {
   src: string;
   theme?: 'violet' | 'blue';
   className?: string;
+  markers?: AudioMarker[];
 }
 
 export interface ThemedAudioPlayerHandle {
@@ -17,6 +19,7 @@ const ThemedAudioPlayer = forwardRef<ThemedAudioPlayerHandle, ThemedAudioPlayerP
   src,
   theme = 'violet',
   className = '',
+  markers,
 }, ref) {
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -162,13 +165,32 @@ const ThemedAudioPlayer = forwardRef<ThemedAudioPlayerHandle, ThemedAudioPlayerP
 
         {/* Progress bar */}
         <div
-          className={`flex-1 h-1.5 ${colors.progressBg} rounded-full cursor-pointer overflow-hidden`}
+          className={`flex-1 h-1.5 ${colors.progressBg} rounded-full cursor-pointer relative`}
           onClick={handleSeek}
         >
+          {/* Playback fill */}
           <div
             className={`h-full ${colors.progressFill} rounded-full transition-all duration-100`}
             style={{ width: `${progress}%` }}
           />
+          {/* Marker interval overlays */}
+          {markers && duration > 0 && markers.map(marker => {
+            const startPct = Math.min((marker.start_time / duration) * 100, 100);
+            const endPct   = marker.end_time != null
+              ? Math.min((marker.end_time / duration) * 100, 100)
+              : startPct;
+            const widthPct = Math.max(endPct - startPct, 0.6);
+            const color = marker.marker_type === 'important' ? '#ef4444'
+                        : marker.marker_type === 'question'  ? '#f59e0b'
+                        :                                      '#a855f7';
+            return (
+              <div
+                key={marker.id}
+                className="absolute top-0 h-full rounded-sm pointer-events-none"
+                style={{ left: `${startPct}%`, width: `${widthPct}%`, backgroundColor: color, opacity: 0.75, zIndex: 1 }}
+              />
+            );
+          })}
         </div>
 
         {/* Time display */}
