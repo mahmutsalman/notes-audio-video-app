@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from 'react';
 import { useAudioRecording } from '../../context/AudioRecordingContext';
 import { formatDuration } from '../../utils/formatters';
 import WaveformVisualizer from './WaveformVisualizer';
@@ -27,6 +28,18 @@ const TOGGLE_BUTTONS: { type: AudioMarkerType; icon: string; label: string; acti
   },
 ];
 
+const VOICE_FLASH_COLORS: Record<AudioMarkerType, string> = {
+  important: 'text-red-400 border-red-600 bg-red-900/40',
+  question: 'text-blue-400 border-blue-600 bg-blue-900/40',
+  similar_question: 'text-purple-400 border-purple-600 bg-purple-900/40',
+};
+
+const MARKER_LABELS: Record<AudioMarkerType, string> = {
+  important: 'important',
+  question: 'question',
+  similar_question: 'similar',
+};
+
 export default function AudioRecordingBar() {
   const {
     isRecording,
@@ -36,17 +49,78 @@ export default function AudioRecordingBar() {
     target,
     isSaving,
     activeToggles,
+    voiceCommandsEnabled,
+    lastVoiceCommand,
     pauseRecording,
     resumeRecording,
     stopAndSave,
     cancelRecording,
     addMarkerToggle,
+    toggleVoiceCommands,
   } = useAudioRecording();
+
+  const [modelStatus, setModelStatus] = useState<'unknown' | 'missing' | 'ready'>('unknown');
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [flashCmd, setFlashCmd] = useState<{ type: AudioMarkerType; on: boolean } | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastVoiceCmdTs = useRef<number>(0);
+
+  useEffect(() => {
+    window.electronAPI.voiceModel.status().then(s => {
+      setModelStatus(s.downloaded ? 'ready' : 'missing');
+    });
+  }, []);
+
+  // Show flash indicator when a voice command fires
+  useEffect(() => {
+    if (!lastVoiceCommand) return;
+    if (lastVoiceCommand.ts === lastVoiceCmdTs.current) return;
+    lastVoiceCmdTs.current = lastVoiceCommand.ts;
+    setFlashCmd({ type: lastVoiceCommand.type, on: lastVoiceCommand.on });
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlashCmd(null), 1800);
+  }, [lastVoiceCommand]);
+
+  const handleDownloadModel = async () => {
+    setIsDownloading(true);
+    setDownloadProgress(0);
+    const unsub = window.electronAPI.voiceModel.onProgress(({ progress }) => {
+      setDownloadProgress(progress);
+    });
+    const result = await window.electronAPI.voiceModel.download();
+    unsub();
+    setIsDownloading(false);
+    if (result.success) {
+      setModelStatus('ready');
+    }
+  };
 
   if (!isRecording && !isSaving) return null;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900 dark:bg-gray-950 border-t border-gray-700 dark:border-gray-800 shadow-2xl">
+      {/* Voice command flash indicator */}
+      {flashCmd && (
+        <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded border text-xs font-medium whitespace-nowrap pointer-events-none ${VOICE_FLASH_COLORS[flashCmd.type]}`}>
+          🎙 {MARKER_LABELS[flashCmd.type]} → {flashCmd.on ? 'ON' : 'OFF'}
+        </div>
+      )}
+
+      {/* Model download progress */}
+      {isDownloading && (
+        <div className="absolute bottom-full left-0 right-0 bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center gap-3">
+          <span className="text-xs text-gray-300">Downloading speech model…</span>
+          <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-green-500 transition-all"
+              style={{ width: `${downloadProgress}%` }}
+            />
+          </div>
+          <span className="text-xs text-gray-400 tabular-nums">{downloadProgress}%</span>
+        </div>
+      )}
+
       <div className="flex items-center gap-3 px-4 h-14 max-w-screen-2xl mx-auto">
         {/* Status indicator */}
         <div className="flex items-center gap-2 min-w-[120px]">
@@ -105,6 +179,36 @@ export default function AudioRecordingBar() {
                 </button>
               );
             })}
+          </div>
+        )}
+
+        {/* Voice command toggle */}
+        {isRecording && !isSaving && (
+          <div className="flex items-center">
+            {modelStatus === 'missing' ? (
+              <button
+                onClick={handleDownloadModel}
+                disabled={isDownloading}
+                className="flex items-center gap-1 px-2 py-1 rounded border border-dashed border-gray-600 text-gray-500 hover:border-green-600 hover:text-green-400 text-xs transition-colors disabled:opacity-50"
+                title="Download offline speech model (~40MB) to enable voice commands"
+              >
+                <span>🎙</span>
+                <span className="hidden sm:inline">{isDownloading ? `${downloadProgress}%` : 'Get voice'}</span>
+              </button>
+            ) : (
+              <button
+                onClick={toggleVoiceCommands}
+                className={`flex items-center gap-1 px-2 py-1 rounded border text-xs font-medium transition-all ${
+                  voiceCommandsEnabled && isRecording
+                    ? 'bg-green-700/40 border-green-500 text-green-300'
+                    : 'bg-gray-700 border-gray-600 text-gray-400 hover:bg-gray-600'
+                }`}
+                title={voiceCommandsEnabled ? 'Voice commands ON — say "important on/off", "questions on/off", "similar on/off"' : 'Enable voice commands'}
+              >
+                <span className={voiceCommandsEnabled && isRecording ? 'animate-pulse' : ''}>🎙</span>
+                <span className="hidden sm:inline">{voiceCommandsEnabled ? 'Voice' : 'Voice'}</span>
+              </button>
+            )}
           </div>
         )}
 

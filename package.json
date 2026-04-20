@@ -56,7 +56,8 @@
     "react-router-dom": "^7.0.2",
     "soundtouchjs": "^0.2.1",
     "tesseract.js": "^7.0.0",
-    "uuid": "^11.0.3"
+    "uuid": "^11.0.3",
+    "vosk-browser": "^0.0.8"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
