@@ -923,6 +923,11 @@ export interface ElectronAPI {
     update: (id: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null) => Promise<ReviewMask>;
     delete: (id: number) => Promise<void>;
   };
+  voiceModel: {
+    status: () => Promise<{ downloaded: boolean; filename: string }>;
+    download: () => Promise<{ success: boolean; error?: string }>;
+    onProgress: (cb: (data: { progress: number; downloaded: number; total: number }) => void) => () => void;
+  };
 }
 
 // Plans

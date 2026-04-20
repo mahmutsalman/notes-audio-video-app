@@ -1043,6 +1043,17 @@ const electronAPI = {
       ipcRenderer.invoke('reviewMasks:update', id, x, y, w, h, pixelationLevel, hintText),
     delete: (id: number) => ipcRenderer.invoke('reviewMasks:delete', id),
   },
+
+  voiceModel: {
+    status: (): Promise<{ downloaded: boolean; filename: string }> =>
+      ipcRenderer.invoke('voiceModel:status'),
+    download: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('voiceModel:download'),
+    onProgress: (cb: (data: { progress: number; downloaded: number; total: number }) => void) => {
+      ipcRenderer.on('voiceModel:progress', (_e, data) => cb(data));
+      return () => ipcRenderer.removeAllListeners('voiceModel:progress');
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

@@ -8,6 +8,8 @@ export interface SimpleAudioRecorderState {
   error: string | null;
   stream: MediaStream | null;
   analyserNode: AnalyserNode | null;
+  audioContext: AudioContext | null;
+  mediaSourceNode: MediaStreamAudioSourceNode | null;
 }
 
 export interface SimpleAudioRecorderControls {
@@ -29,6 +31,8 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
     error: null,
     stream: null,
     analyserNode: null,
+    audioContext: null,
+    mediaSourceNode: null,
   });
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -39,6 +43,7 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
   const accumulatedTimeRef = useRef<number>(0);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -90,6 +95,7 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
       analyserRef.current = analyser;
 
       const source = audioContext.createMediaStreamSource(stream);
+      mediaSourceRef.current = source;
       source.connect(analyser);
 
       // Create media recorder
@@ -127,7 +133,7 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
         }));
       }, 100);
 
-      setState(prev => ({ ...prev, isRecording: true, isPaused: false, stream, analyserNode: analyser }));
+      setState(prev => ({ ...prev, isRecording: true, isPaused: false, stream, analyserNode: analyser, audioContext, mediaSourceNode: source }));
     } catch (err) {
       console.error('Error starting recording:', err);
       setState(prev => ({
@@ -169,6 +175,7 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
         }
 
         // Close audio context
+        mediaSourceRef.current = null;
         if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
           audioContextRef.current.close();
           audioContextRef.current = null;
@@ -182,6 +189,8 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
           audioBlob: blob,
           stream: null,
           analyserNode: null,
+          audioContext: null,
+          mediaSourceNode: null,
         }));
 
         // Stop all tracks
@@ -257,6 +266,7 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
     }
 
     // Close audio context
+    mediaSourceRef.current = null;
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close();
       audioContextRef.current = null;
@@ -272,6 +282,8 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
       error: null,
       stream: null,
       analyserNode: null,
+      audioContext: null,
+      mediaSourceNode: null,
     });
 
     audioChunksRef.current = [];

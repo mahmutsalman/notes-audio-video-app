@@ -1,4 +1,7 @@
-import { ipcMain, dialog, shell, nativeTheme, clipboard, desktopCapturer } from 'electron';
+import { ipcMain, dialog, shell, nativeTheme, clipboard, desktopCapturer, app } from 'electron';
+import https from 'https';
+import path from 'path';
+import fs from 'fs';
 import {
   TopicsOperations,
   RecordingsOperations,
@@ -64,7 +67,6 @@ import {
   saveQuickCaptureAudio,
   deleteQuickCaptureFiles,
 } from '../services/fileStorage';
-import fs from 'fs';
 import { createBackup, getBackupDir } from '../services/backupService';
 import { mergeAudioFiles } from '../services/audioMerger';
 import { convertWebmToM4a, convertWebmBufferToM4a } from '../services/audioConverter';
@@ -2858,6 +2860,57 @@ export function setupIpcHandlers(): void {
     pixelationLevel: number, hintText: string | null
   ) => ReviewMaskOperations.update(id, x, y, w, h, pixelationLevel, hintText));
   ipcMain.handle('reviewMasks:delete', (_, id: number) => ReviewMaskOperations.delete(id));
+
+  // ============ Voice Model (offline speech recognition) ============
+  const VOICE_MODEL_FILENAME = 'vosk-model-small-en-us-0.15.zip';
+  const VOICE_MODEL_URL = `https://alphacephei.com/vosk/models/${VOICE_MODEL_FILENAME}`;
+
+  ipcMain.handle('voiceModel:status', () => {
+    const modelsDir = path.join(app.getPath('userData'), 'vosk-models');
+    const modelPath = path.join(modelsDir, VOICE_MODEL_FILENAME);
+    return {
+      downloaded: fs.existsSync(modelPath),
+      filename: VOICE_MODEL_FILENAME,
+    };
+  });
+
+  ipcMain.handle('voiceModel:download', async (event) => {
+    const modelsDir = path.join(app.getPath('userData'), 'vosk-models');
+    fs.mkdirSync(modelsDir, { recursive: true });
+    const modelPath = path.join(modelsDir, VOICE_MODEL_FILENAME);
+    const tmpPath = modelPath + '.tmp';
+
+    return new Promise<{ success: boolean; error?: string }>((resolve) => {
+      const file = fs.createWriteStream(tmpPath);
+
+      https.get(VOICE_MODEL_URL, (response) => {
+        const totalSize = parseInt(response.headers['content-length'] ?? '0', 10);
+        let downloaded = 0;
+
+        response.on('data', (chunk: Buffer) => {
+          downloaded += chunk.length;
+          const progress = totalSize > 0 ? Math.round((downloaded / totalSize) * 100) : 0;
+          event.sender.send('voiceModel:progress', { progress, downloaded, total: totalSize });
+        });
+
+        response.pipe(file);
+
+        file.on('finish', () => {
+          file.close();
+          try {
+            if (fs.existsSync(modelPath)) fs.unlinkSync(modelPath);
+            fs.renameSync(tmpPath, modelPath);
+            resolve({ success: true });
+          } catch (err) {
+            resolve({ success: false, error: String(err) });
+          }
+        });
+      }).on('error', (err) => {
+        try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+        resolve({ success: false, error: err.message });
+      });
+    });
+  });
 
   console.log('IPC handlers registered');
 }

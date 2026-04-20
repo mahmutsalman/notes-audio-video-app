@@ -1,5 +1,6 @@
-import { createContext, useContext, useCallback, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useCallback, useState, useEffect, useRef, type ReactNode } from 'react';
 import { useSimpleAudioRecorder } from '../hooks/useSimpleAudioRecorder';
+import { voiceCommandService } from '../services/voiceCommandService';
 import type { AudioMarkerType } from '../types';
 
 export type RecordingTarget =
@@ -28,6 +29,8 @@ interface AudioRecordingContextValue {
   isSaving: boolean;
   activeToggles: Set<AudioMarkerType>;
   pendingCaptureAudio: { blob: Blob; durationSec: number; markers: PendingMarker[] } | null;
+  voiceCommandsEnabled: boolean;
+  lastVoiceCommand: { type: AudioMarkerType; on: boolean; ts: number } | null;
   // Actions
   startRecording: (target: RecordingTarget) => Promise<void>;
   pauseRecording: () => void;
@@ -36,6 +39,7 @@ interface AudioRecordingContextValue {
   cancelRecording: () => void;
   addMarkerToggle: (type: AudioMarkerType) => void;
   clearPendingCaptureAudio: () => void;
+  toggleVoiceCommands: () => void;
 }
 
 const AudioRecordingContext = createContext<AudioRecordingContextValue | null>(null);
@@ -58,6 +62,11 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
   const [activeToggles, setActiveToggles] = useState<Set<AudioMarkerType>>(new Set());
   const [pendingMarkers, setPendingMarkers] = useState<PendingMarker[]>([]);
   const [pendingCaptureAudio, setPendingCaptureAudio] = useState<{ blob: Blob; durationSec: number; markers: PendingMarker[] } | null>(null);
+  const [voiceCommandsEnabled, setVoiceCommandsEnabled] = useState<boolean>(() => {
+    try { return localStorage.getItem('voiceCommandsEnabled') === 'true'; } catch { return false; }
+  });
+  const [lastVoiceCommand, setLastVoiceCommand] = useState<{ type: AudioMarkerType; on: boolean; ts: number } | null>(null);
+  const addMarkerToggleRef = useRef<((type: AudioMarkerType) => void) | null>(null);
 
   // Warn before closing while recording
   useEffect(() => {
@@ -79,6 +88,23 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
     setPendingMarkers([]);
     await recorder.startRecording();
   }, [recorder]);
+
+  // Wire voice command service once recording is active and audio nodes are ready
+  useEffect(() => {
+    if (!recorder.isRecording || !voiceCommandsEnabled) return;
+    const ctx = recorder.audioContext;
+    const src = recorder.mediaSourceNode;
+    if (!ctx || !src) return;
+
+    voiceCommandService.onCommand((type, on) => {
+      addMarkerToggleRef.current?.(type);
+      setLastVoiceCommand({ type, on, ts: Date.now() });
+    });
+    voiceCommandService.start(ctx, src).catch(err =>
+      console.error('[VoiceCommand] Failed to start:', err)
+    );
+    return () => { voiceCommandService.stop(); };
+  }, [recorder.isRecording, voiceCommandsEnabled, recorder.audioContext, recorder.mediaSourceNode]);
 
   const pauseRecording = useCallback(() => {
     recorder.pauseRecording();
@@ -116,6 +142,18 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
       return next;
     });
   }, [recorder.duration]);
+
+  // Keep a stable ref to addMarkerToggle for the voice command callback
+  useEffect(() => { addMarkerToggleRef.current = addMarkerToggle; }, [addMarkerToggle]);
+
+  const toggleVoiceCommands = useCallback(() => {
+    setVoiceCommandsEnabled(prev => {
+      const next = !prev;
+      try { localStorage.setItem('voiceCommandsEnabled', String(next)); } catch { /* ignore */ }
+      if (!next) voiceCommandService.stop();
+      return next;
+    });
+  }, []);
 
   const stopAndSave = useCallback(async () => {
     if (!target) return;
@@ -230,6 +268,8 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
         isSaving,
         activeToggles,
         pendingCaptureAudio,
+        voiceCommandsEnabled,
+        lastVoiceCommand,
         clearPendingCaptureAudio,
         startRecording,
         pauseRecording,
@@ -237,6 +277,7 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
         stopAndSave,
         cancelRecording,
         addMarkerToggle,
+        toggleVoiceCommands,
       }}
     >
       {children}

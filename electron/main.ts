@@ -156,10 +156,35 @@ protocol.registerSchemesAsPrivileged([
       bypassCSP: true,
     },
   },
+  {
+    scheme: 'vosk',
+    privileges: {
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: true,
+    },
+  },
 ]);
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(async () => {
+  // Register the vosk:// protocol to serve the offline speech model from userData
+  protocol.handle('vosk', async (request) => {
+    const filename = decodeURIComponent(request.url.replace('vosk://', ''));
+    const filePath = path.join(app.getPath('userData'), 'vosk-models', filename);
+    try {
+      const data = fs.readFileSync(filePath);
+      return new Response(data, {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': data.length.toString(),
+        },
+      });
+    } catch {
+      return new Response('Vosk model not found', { status: 404 });
+    }
+  });
+
   // Register the media:// protocol handler with Range request support for video seeking
   protocol.handle('media', async (request) => {
     const url = request.url.replace('media://', '');
