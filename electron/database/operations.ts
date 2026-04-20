@@ -584,8 +584,8 @@ export const DurationsOperations = {
     `).get(duration.recording_id) as { max_order: number };
 
     const stmt = db.prepare(`
-      INSERT INTO durations (recording_id, start_time, end_time, note, group_color, sort_order, page_number, source_video_id, source_duration_video_id, is_video_mark, is_ghost_mark)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO durations (recording_id, start_time, end_time, note, color, group_color, sort_order, page_number, source_video_id, source_duration_video_id, is_video_mark, is_ghost_mark)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -593,6 +593,7 @@ export const DurationsOperations = {
       duration.start_time,
       duration.end_time,
       duration.note ?? null,
+      (duration as any).color ?? null,
       duration.group_color ?? null,
       maxOrder.max_order + 1,
       duration.page_number ?? null,
@@ -2691,6 +2692,30 @@ export const ObsGhostMarksOperations = {
         ORDER BY id DESC LIMIT 1
       )
     `).run(endTime, sessionId);
+  },
+
+  updateColor(id: number, color: string | null): void {
+    const db = getDatabase();
+    db.prepare('UPDATE obs_ghost_marks SET color = ? WHERE id = ?').run(color, id);
+  },
+
+  updateCaption(id: number, caption: string | null): void {
+    const db = getDatabase();
+    db.prepare('UPDATE obs_ghost_marks SET caption = ? WHERE id = ?').run(caption || null, id);
+  },
+
+  // Returns the two most recently created ghost marks for the session.
+  // "current" = latest (id DESC offset 0) — the interval just closed on last pause
+  // "next"    = second-latest (id DESC offset 1) — the open interval being recorded
+  getRelative(sessionId: string): { current: any | null; next: any | null } {
+    const db = getDatabase();
+    const rows = db.prepare(
+      'SELECT * FROM obs_ghost_marks WHERE session_id = ? ORDER BY id DESC LIMIT 2'
+    ).all(sessionId) as any[];
+    return {
+      current: rows[0] ?? null,
+      next: rows[1] ?? null,
+    };
   },
 
   getAll(): any[] {

@@ -23,7 +23,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 20px;
+      gap: 16px;
       transition: background-color 0.35s ease;
     }
 
@@ -103,6 +103,120 @@
       background: rgba(0, 0, 0, 0.45);
       color: rgba(255, 255, 255, 0.9);
     }
+
+    /* ── Control Panel ───────────────────────────────────────────────────────── */
+    #ctrl-panel {
+      width: 100%;
+      display: none;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+      padding: 10px 18px 12px;
+      background: rgba(0, 0, 0, 0.25);
+      -webkit-app-region: no-drag;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.4);
+      margin-bottom: 2px;
+    }
+
+    .mark-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .mark-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: rgba(255, 255, 255, 0.55);
+      width: 32px;
+      flex-shrink: 0;
+    }
+
+    .color-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      flex-shrink: 0;
+      border: 1.5px solid rgba(255, 255, 255, 0.2);
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .color-dot.color-red   { background: #ef4444; border-color: #ef4444; }
+    .color-dot.color-amber { background: #f59e0b; border-color: #f59e0b; }
+    .color-dot.color-sky   { background: #0ea5e9; border-color: #0ea5e9; }
+
+    .ctrl-btn {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: rgba(255, 255, 255, 0.85);
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 9px;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+
+    .ctrl-btn:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    .ctrl-btn:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+
+    .ctrl-btn.success {
+      background: rgba(34, 197, 94, 0.3);
+      border-color: rgba(34, 197, 94, 0.5);
+    }
+
+    .divider {
+      height: 1px;
+      background: rgba(255, 255, 255, 0.1);
+      margin: 2px 0;
+    }
+
+    #ocr-text {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.75);
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      padding: 5px 7px;
+      max-height: 48px;
+      overflow-y: auto;
+      word-break: break-word;
+      line-height: 1.4;
+    }
+
+    #ocr-assign-row {
+      display: none;
+      gap: 6px;
+    }
+
+    .ocr-fetch-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #ocr-status {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.45);
+      flex: 1;
+    }
   </style>
 </head>
 <body>
@@ -111,6 +225,44 @@
     <div class="state-label" id="state-label">IDLE</div>
     <div class="timer" id="timer">00:00:00</div>
     <div class="sub-label" id="sub-label">OBS Disconnected</div>
+
+    <!-- ── Ghost Mark Controls ─────────────────────────────────────────────── -->
+    <div id="ctrl-panel">
+      <div class="section-label">Ghost Marks</div>
+
+      <div class="mark-row">
+        <span class="mark-label">CURRENT</span>
+        <span id="prev-color-dot" class="color-dot"></span>
+        <button id="btn-color-prev" class="ctrl-btn" disabled>Color ◁</button>
+        <button id="btn-create-prev" class="ctrl-btn" disabled>+ Mark</button>
+        <span id="prev-caption" style="font-size:10px;color:rgba(255,255,255,0.4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0"></span>
+      </div>
+
+      <div class="mark-row">
+        <span class="mark-label">NEXT</span>
+        <span id="next-color-dot" class="color-dot"></span>
+        <button id="btn-color-next" class="ctrl-btn" disabled>Color ▷</button>
+        <button id="btn-create-next" class="ctrl-btn" disabled>+ Mark</button>
+        <span id="next-caption" style="font-size:10px;color:rgba(255,255,255,0.4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0"></span>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="section-label">Clipboard OCR</div>
+
+      <div class="ocr-fetch-row">
+        <button id="btn-fetch-ocr" class="ctrl-btn">📋 Fetch Clipboard</button>
+        <span id="ocr-status"></span>
+      </div>
+
+      <div id="ocr-text" style="display:none"></div>
+
+      <div id="ocr-assign-row">
+        <button id="btn-assign-ocr-prev" class="ctrl-btn" disabled>→ Current</button>
+        <button id="btn-assign-ocr-next" class="ctrl-btn" disabled>→ Next</button>
+      </div>
+    </div>
+
     <button class="close-btn" id="close-btn" title="Hide (F8)">✕</button>
   </div>
 
@@ -121,6 +273,25 @@
     const timerEl    = document.getElementById('timer');
     const subLabel   = document.getElementById('sub-label');
     const closeBtn   = document.getElementById('close-btn');
+    const ctrlPanel  = document.getElementById('ctrl-panel');
+
+    // Ghost mark control elements
+    const prevColorDot      = document.getElementById('prev-color-dot');
+    const nextColorDot      = document.getElementById('next-color-dot');
+    const btnColorPrev      = document.getElementById('btn-color-prev');
+    const btnColorNext      = document.getElementById('btn-color-next');
+    const btnCreatePrev     = document.getElementById('btn-create-prev');
+    const btnCreateNext     = document.getElementById('btn-create-next');
+    const prevCaptionEl     = document.getElementById('prev-caption');
+    const nextCaptionEl     = document.getElementById('next-caption');
+
+    // OCR elements
+    const btnFetchOcr       = document.getElementById('btn-fetch-ocr');
+    const ocrTextEl         = document.getElementById('ocr-text');
+    const ocrAssignRow      = document.getElementById('ocr-assign-row');
+    const btnAssignOcrPrev  = document.getElementById('btn-assign-ocr-prev');
+    const btnAssignOcrNext  = document.getElementById('btn-assign-ocr-next');
+    const ocrStatus         = document.getElementById('ocr-status');
 
     // ── Timer logic ─────────────────────────────────────────────────────────
     let timerBase    = 0;   // seconds accumulated before latest resume
@@ -181,7 +352,141 @@
              parseFloat(parts[2]);
     }
 
+    // ── Ghost Mark State ────────────────────────────────────────────────────
+    let currentGhostMark = null;
+    let nextGhostMark = null;
+    let ocrText = '';
+
+    // Color cycle: null → red → amber → sky → null
+    const COLOR_CYCLE = [null, 'red', 'amber', 'sky'];
+
+    function nextColor(current) {
+      const idx = COLOR_CYCLE.indexOf(current);
+      return COLOR_CYCLE[(idx + 1) % COLOR_CYCLE.length];
+    }
+
+    function applyColorDot(dotEl, color) {
+      dotEl.className = 'color-dot' + (color ? ' color-' + color : '');
+    }
+
+    function renderGhostMarks() {
+      // Current row
+      const hasCurrent = !!currentGhostMark;
+      applyColorDot(prevColorDot, hasCurrent ? currentGhostMark.color : null);
+      btnColorPrev.disabled  = !hasCurrent;
+      btnCreatePrev.disabled = !hasCurrent;
+      btnAssignOcrPrev.disabled = !hasCurrent || !ocrText;
+      prevCaptionEl.textContent = hasCurrent && currentGhostMark.caption ? currentGhostMark.caption : '';
+
+      // Next row
+      const hasNext = !!nextGhostMark;
+      applyColorDot(nextColorDot, hasNext ? nextGhostMark.color : null);
+      btnColorNext.disabled  = !hasNext;
+      btnCreateNext.disabled = !hasNext;
+      btnAssignOcrNext.disabled = !hasNext || !ocrText;
+      nextCaptionEl.textContent = hasNext && nextGhostMark.caption ? nextGhostMark.caption : '';
+    }
+
+    async function refreshGhostMarks() {
+      if (!window.electronAPI || !window.electronAPI.obs) return;
+      try {
+        const { current, next } = await window.electronAPI.obs.getRelativeGhostMarks();
+        currentGhostMark = current;
+        nextGhostMark = next;
+        renderGhostMarks();
+      } catch (e) {
+        console.error('refreshGhostMarks failed', e);
+      }
+    }
+
+    async function cycleColor(which) {
+      const mark = which === 'prev' ? currentGhostMark : nextGhostMark;
+      if (!mark) return;
+      const newColor = nextColor(mark.color);
+      try {
+        await window.electronAPI.obs.updateGhostMarkColor(mark.id, newColor);
+        mark.color = newColor;
+        renderGhostMarks();
+      } catch (e) {
+        console.error('cycleColor failed', e);
+      }
+    }
+
+    async function createMarkFromGhost(which) {
+      const mark = which === 'prev' ? currentGhostMark : nextGhostMark;
+      if (!mark) return;
+      const btn = which === 'prev' ? btnCreatePrev : btnCreateNext;
+      try {
+        await window.electronAPI.obs.createStagedMarkFromGhost(mark.id);
+        // Brief visual feedback
+        btn.classList.add('success');
+        btn.textContent = '✓ Created';
+        setTimeout(() => {
+          btn.classList.remove('success');
+          btn.textContent = '+ Mark';
+        }, 1500);
+      } catch (e) {
+        console.error('createMarkFromGhost failed', e);
+      }
+    }
+
+    async function fetchClipboardOCR() {
+      if (!window.electronAPI || !window.electronAPI.ocr) return;
+      ocrStatus.textContent = 'Reading…';
+      btnFetchOcr.disabled = true;
+      ocrTextEl.style.display = 'none';
+      ocrAssignRow.style.display = 'none';
+      ocrText = '';
+
+      try {
+        const result = await window.electronAPI.ocr.recognizeClipboard();
+        if (!result.success || !result.text) {
+          ocrStatus.textContent = 'No image or no text found';
+          setTimeout(() => { ocrStatus.textContent = ''; }, 2500);
+        } else {
+          ocrText = result.text;
+          ocrTextEl.textContent = ocrText;
+          ocrTextEl.style.display = 'block';
+          ocrAssignRow.style.display = 'flex';
+          ocrStatus.textContent = '';
+          renderGhostMarks(); // re-enable assign buttons
+        }
+      } catch (e) {
+        ocrStatus.textContent = 'OCR failed';
+        console.error('fetchClipboardOCR failed', e);
+        setTimeout(() => { ocrStatus.textContent = ''; }, 2500);
+      } finally {
+        btnFetchOcr.disabled = false;
+      }
+    }
+
+    async function assignOcrTo(which) {
+      const mark = which === 'prev' ? currentGhostMark : nextGhostMark;
+      if (!mark || !ocrText) return;
+      const btn = which === 'prev' ? btnAssignOcrPrev : btnAssignOcrNext;
+      try {
+        await window.electronAPI.obs.updateGhostMarkCaption(mark.id, ocrText);
+        mark.caption = ocrText;
+        renderGhostMarks();
+        btn.classList.add('success');
+        const origText = btn.textContent;
+        btn.textContent = '✓';
+        setTimeout(() => {
+          btn.classList.remove('success');
+          btn.textContent = origText;
+        }, 1200);
+      } catch (e) {
+        console.error('assignOcrTo failed', e);
+      }
+    }
+
     // ── State rendering ─────────────────────────────────────────────────────
+    function updateCtrlPanelVisibility(state) {
+      const active = state === 'recording' || state === 'paused';
+      ctrlPanel.style.display = active ? 'flex' : 'none';
+      if (active) refreshGhostMarks();
+    }
+
     function setState(state) {
       // state: 'disconnected' | 'stopped' | 'recording' | 'paused'
       root.className = 'state-' + state;
@@ -215,6 +520,8 @@
           subLabel.textContent   = 'Paused';
           break;
       }
+
+      updateCtrlPanelVisibility(state);
     }
 
     // ── Apply OBSStatus object ───────────────────────────────────────────────
@@ -234,7 +541,6 @@
         return;
       }
       // Actively recording — start timer from the current reported timecode.
-      // We don't know the exact wall-clock start so use timecode as base.
       const baseSecs = parseTimecode(status.recordTimecode);
       setState('recording');
       startTimer(baseSecs);
@@ -254,8 +560,14 @@
         applyStatus(status);
       });
 
-      // Recording started
+      // Recording started — new session, clear ghost mark state
       window.electronAPI.obs.onStarted(() => {
+        currentGhostMark = null;
+        nextGhostMark = null;
+        ocrText = '';
+        ocrTextEl.style.display = 'none';
+        ocrAssignRow.style.display = 'none';
+        ocrStatus.textContent = '';
         setState('recording');
         startTimer(0);
       });
@@ -278,6 +590,13 @@
         stopTimer();
         timerEl.textContent = '00:00:00';
       });
+
+      // Ghost marks updated (color change, pause/resume cycle)
+      if (window.electronAPI.obs.onGhostMarksUpdated) {
+        window.electronAPI.obs.onGhostMarksUpdated(() => {
+          refreshGhostMarks();
+        });
+      }
     }
 
     // ── Sync state when window becomes visible ───────────────────────────────
@@ -298,12 +617,20 @@
       });
     }
 
-    // ── Close button ─────────────────────────────────────────────────────────
+    // ── Button wiring ────────────────────────────────────────────────────────
     closeBtn.addEventListener('click', () => {
       if (window.electronAPI && window.electronAPI.obs) {
         window.electronAPI.obs.hideStatusWindow();
       }
     });
+
+    btnColorPrev.addEventListener('click', () => cycleColor('prev'));
+    btnColorNext.addEventListener('click', () => cycleColor('next'));
+    btnCreatePrev.addEventListener('click', () => createMarkFromGhost('prev'));
+    btnCreateNext.addEventListener('click', () => createMarkFromGhost('next'));
+    btnFetchOcr.addEventListener('click', () => fetchClipboardOCR());
+    btnAssignOcrPrev.addEventListener('click', () => assignOcrTo('prev'));
+    btnAssignOcrNext.addEventListener('click', () => assignOcrTo('next'));
   </script>
 </body>
 </html>

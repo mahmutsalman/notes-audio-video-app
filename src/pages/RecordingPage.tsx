@@ -224,7 +224,6 @@ export default function RecordingPage() {
   } | null>(null);
   const [recordingAudioToDelete, setRecordingAudioToDelete] = useState<number | null>(null);
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
-  const [isRecordingDurationAudio, setIsRecordingDurationAudio] = useState(false);
   const [showCodeSnippetModal, setShowCodeSnippetModal] = useState(false);
   const [editingCodeSnippet, setEditingCodeSnippet] = useState<CodeSnippet | null>(null);
   const [codeSnippetToDelete, setCodeSnippetToDelete] = useState<number | null>(null);
@@ -1294,12 +1293,16 @@ export default function RecordingPage() {
     setIsRecordingAudio(false);
   };
 
-  // Handle saving duration audio from modal
-  const handleSaveDurationAudio = async (audioBlob: Blob) => {
-    if (!activeDurationId) return;
-    const buffer = await audioBlob.arrayBuffer();
-    await window.electronAPI.durationAudios.addFromBuffer(activeDurationId, buffer, 'webm');
-    setIsRecordingDurationAudio(false);
+  const handleRecordDurationAudio = () => {
+    if (!activeDurationId || !id) return;
+    const dur = durations.find(d => d.id === activeDurationId);
+    const label = dur?.note?.replace(/<[^>]+>/g, '').slice(0, 40) || `Section ${activeDurationId}`;
+    audioRecording.startRecording({
+      type: 'duration',
+      durationId: activeDurationId,
+      recordingId: id,
+      label,
+    });
   };
 
   // Handle deleting a recording audio
@@ -3042,7 +3045,7 @@ export default function RecordingPage() {
               })()}
             </h3>
             <button
-              onClick={() => setIsRecordingDurationAudio(true)}
+              onClick={() => handleRecordDurationAudio()}
               className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
             >
               🎙️ Record
@@ -3149,7 +3152,7 @@ export default function RecordingPage() {
           <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <span>No audio recordings for this section</span>
             <button
-              onClick={() => setIsRecordingDurationAudio(true)}
+              onClick={() => handleRecordDurationAudio()}
               className="px-2 py-1 text-xs bg-gray-200 dark:bg-dark-border rounded hover:bg-gray-300 dark:hover:bg-dark-surface transition-colors"
             >
               🎙️ Record Audio
@@ -4521,13 +4524,6 @@ export default function RecordingPage() {
         </div>
       </Modal>
 
-      {/* Duration Audio Record Modal */}
-      <SimpleAudioRecordModal
-        isOpen={isRecordingDurationAudio}
-        onClose={() => setIsRecordingDurationAudio(false)}
-        onSave={handleSaveDurationAudio}
-        title="Record Audio for Section"
-      />
 
       {/* Recording Audio Record Modal */}
       <SimpleAudioRecordModal
