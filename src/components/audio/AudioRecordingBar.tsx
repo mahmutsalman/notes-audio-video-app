@@ -203,7 +203,7 @@ export default function AudioRecordingBar() {
                     ? 'bg-green-700/40 border-green-500 text-green-300'
                     : 'bg-gray-700 border-gray-600 text-gray-400 hover:bg-gray-600'
                 }`}
-                title={voiceCommandsEnabled ? 'Voice commands ON — say "important on/off", "questions on/off", "similar on/off"' : 'Enable voice commands'}
+                title={voiceCommandsEnabled ? 'Voice commands ON — "mark important on/off", "mark question on/off", "mark similar on/off", "pause recording", "resume recording", "stop recording"' : 'Enable voice commands'}
               >
                 <span className={voiceCommandsEnabled && isRecording ? 'animate-pulse' : ''}>🎙</span>
                 <span className="hidden sm:inline">{voiceCommandsEnabled ? 'Voice' : 'Voice'}</span>

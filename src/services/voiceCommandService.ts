@@ -4,22 +4,24 @@ import type { AudioMarkerType } from '../types';
 const VOICE_MODEL_FILENAME = 'vosk-model-small-en-us-0.15.zip';
 const MODEL_URL = `vosk://${VOICE_MODEL_FILENAME}`;
 const GRAMMAR = [
-  'important on', 'important off',
-  'questions on', 'questions off',
-  'similar on', 'similar off',
+  'mark important on', 'mark important off',
+  'mark question on',  'mark question off',
+  'mark similar on',   'mark similar off',
+  'pause recording',   'resume recording',  'stop recording',
   '[unk]',
 ];
 const COMMAND_COOLDOWN_MS = 2000;
 
 type CommandCallback = (type: AudioMarkerType, on: boolean) => void;
+type SystemCommandCallback = (command: 'pause' | 'resume' | 'stop') => void;
 
 const COMMANDS: Array<{ pattern: string; type: AudioMarkerType; on: boolean }> = [
-  { pattern: 'important on',  type: 'important',        on: true  },
-  { pattern: 'important off', type: 'important',        on: false },
-  { pattern: 'questions on',  type: 'question',         on: true  },
-  { pattern: 'questions off', type: 'question',         on: false },
-  { pattern: 'similar on',    type: 'similar_question', on: true  },
-  { pattern: 'similar off',   type: 'similar_question', on: false },
+  { pattern: 'mark important on',  type: 'important',        on: true  },
+  { pattern: 'mark important off', type: 'important',        on: false },
+  { pattern: 'mark question on',   type: 'question',         on: true  },
+  { pattern: 'mark question off',  type: 'question',         on: false },
+  { pattern: 'mark similar on',    type: 'similar_question', on: true  },
+  { pattern: 'mark similar off',   type: 'similar_question', on: false },
 ];
 
 class VoiceCommandService {
@@ -29,12 +31,17 @@ class VoiceCommandService {
   private recognizer: any = null;
   private scriptProcessor: ScriptProcessorNode | null = null;
   private silentGain: GainNode | null = null;
-  private lastCommandTime = new Map<AudioMarkerType, number>();
+  private lastCommandTime = new Map<AudioMarkerType | 'pause' | 'resume' | 'stop', number>();
   private commandCallback: CommandCallback | null = null;
+  private systemCommandCallback: SystemCommandCallback | null = null;
   private initPromise: Promise<void> | null = null;
 
   onCommand(cb: CommandCallback) {
     this.commandCallback = cb;
+  }
+
+  onSystemCommand(cb: SystemCommandCallback) {
+    this.systemCommandCallback = cb;
   }
 
   async ensureModelLoaded(): Promise<boolean> {
@@ -101,6 +108,18 @@ class VoiceCommandService {
   }
 
   private processCommand(text: string) {
+    // Check system commands first
+    for (const [pattern, command] of [['stop recording', 'stop'], ['pause recording', 'pause'], ['resume recording', 'resume']] as const) {
+      if (text.includes(pattern)) {
+        const now = Date.now();
+        const last = this.lastCommandTime.get(command) ?? 0;
+        if (now - last < COMMAND_COOLDOWN_MS) return;
+        this.lastCommandTime.set(command, now);
+        this.systemCommandCallback?.(command);
+        return;
+      }
+    }
+    // Marker commands
     for (const cmd of COMMANDS) {
       if (text.includes(cmd.pattern)) {
         const now = Date.now();

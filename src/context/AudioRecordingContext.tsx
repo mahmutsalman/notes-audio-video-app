@@ -1,6 +1,7 @@
 import { createContext, useContext, useCallback, useState, useEffect, useRef, type ReactNode } from 'react';
 import { useSimpleAudioRecorder } from '../hooks/useSimpleAudioRecorder';
 import { voiceCommandService } from '../services/voiceCommandService';
+import { audioFeedbackService } from '../services/audioFeedbackService';
 import type { AudioMarkerType } from '../types';
 
 export type RecordingTarget =
@@ -66,7 +67,9 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
     try { return localStorage.getItem('voiceCommandsEnabled') === 'true'; } catch { return false; }
   });
   const [lastVoiceCommand, setLastVoiceCommand] = useState<{ type: AudioMarkerType; on: boolean; ts: number } | null>(null);
-  const addMarkerToggleRef = useRef<((type: AudioMarkerType) => void) | null>(null);
+  const addMarkerToggleRef = useRef<((type: AudioMarkerType, trimSec?: number) => void) | null>(null);
+  const recorderRef = useRef(recorder);
+  const stopAndSaveRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   // Warn before closing while recording
   useEffect(() => {
@@ -89,6 +92,9 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
     await recorder.startRecording();
   }, [recorder]);
 
+  // Keep recorder ref current so voice callbacks always see latest methods/duration
+  useEffect(() => { recorderRef.current = recorder; }, [recorder]);
+
   // Wire voice command service once recording is active and audio nodes are ready
   useEffect(() => {
     if (!recorder.isRecording || !voiceCommandsEnabled) return;
@@ -96,10 +102,27 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
     const src = recorder.mediaSourceNode;
     if (!ctx || !src) return;
 
+    // Marker commands: trim ~1.5s from end_time on OFF to exclude the command phrase
+    const VOICE_OFF_TRIM_SEC = 1.5;
     voiceCommandService.onCommand((type, on) => {
-      addMarkerToggleRef.current?.(type);
+      addMarkerToggleRef.current?.(type, on ? undefined : VOICE_OFF_TRIM_SEC);
+      audioFeedbackService.playFeedback(type, on);
       setLastVoiceCommand({ type, on, ts: Date.now() });
     });
+
+    voiceCommandService.onSystemCommand((command) => {
+      if (command === 'pause') {
+        recorderRef.current.pauseRecording();
+        audioFeedbackService.playPauseFeedback();
+      } else if (command === 'resume') {
+        recorderRef.current.resumeRecording();
+        audioFeedbackService.playResumeFeedback();
+      } else if (command === 'stop') {
+        audioFeedbackService.playStopFeedback();
+        stopAndSaveRef.current();
+      }
+    });
+
     voiceCommandService.start(ctx, src).catch(err =>
       console.error('[VoiceCommand] Failed to start:', err)
     );
@@ -114,8 +137,8 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
     recorder.resumeRecording();
   }, [recorder]);
 
-  const addMarkerToggle = useCallback((type: AudioMarkerType) => {
-    const currentTime = recorder.duration;
+  const addMarkerToggle = useCallback((type: AudioMarkerType, trimSec?: number) => {
+    const currentTime = Math.max(0, recorder.duration - (trimSec ?? 0));
     setActiveToggles(prev => {
       const next = new Set(prev);
       if (next.has(type)) {
@@ -143,7 +166,6 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
     });
   }, [recorder.duration]);
 
-  // Keep a stable ref to addMarkerToggle for the voice command callback
   useEffect(() => { addMarkerToggleRef.current = addMarkerToggle; }, [addMarkerToggle]);
 
   const toggleVoiceCommands = useCallback(() => {
@@ -246,6 +268,7 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
       setPendingMarkers([]);
     }
   }, [target, recorder, pendingMarkers]);
+  useEffect(() => { stopAndSaveRef.current = stopAndSave; }, [stopAndSave]);
 
   const cancelRecording = useCallback(() => {
     recorder.reset();
