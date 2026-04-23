@@ -30,6 +30,14 @@ export default defineConfig({
           },
         },
       },
+      {
+        entry: 'electron/windows/htmlNodeViewerPreload.ts',
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+          },
+        },
+      },
     ]),
     renderer(),
   ],
