@@ -58,6 +58,8 @@ const SECTION_ORDER: Array<{
   { key: 'duration_image_ocr',      label: 'OCR Text — Mark Images',      icon: '🔍' },
   { key: 'quick_capture_image_ocr', label: 'OCR Text — Capture Images',   icon: '🔍' },
   { key: 'image_child_ocr',         label: 'OCR Text — Child Images',     icon: '🔍' },
+  { key: 'html_node',              label: 'HTML & PDF — Recordings',    icon: '📄' },
+  { key: 'duration_html_node',     label: 'HTML & PDF — Marks',         icon: '📄' },
 ];
 
 const MARKER_COLORS: Record<string, string> = {
@@ -721,6 +723,26 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
           </svg>
         )}
 
+        {/* Open HTML/PDF document in viewer window */}
+        {(result.content_type === 'html_node' || result.content_type === 'duration_html_node') && (
+          <button
+            onClick={e => {
+              e.stopPropagation();
+              if (result.content_type === 'html_node') {
+                window.electronAPI.htmlNodes.open(result.source_id);
+              } else {
+                window.electronAPI.durationHtmlNodes.open(result.source_id);
+              }
+            }}
+            className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity self-center p-1.5 rounded hover:bg-gray-200 dark:hover:bg-dark-border text-blue-500 dark:text-blue-400"
+            title="Open document"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </button>
+        )}
+
         {/* Navigate link */}
         {hasNav && (
           <button
@@ -1367,6 +1389,7 @@ export default function SearchPage() {
       quick_capture_image: [] as GlobalSearchResult[],
       image_ocr: [] as GlobalSearchResult[], duration_image_ocr: [] as GlobalSearchResult[],
       quick_capture_image_ocr: [] as GlobalSearchResult[], image_child_ocr: [] as GlobalSearchResult[],
+      html_node: [] as GlobalSearchResult[], duration_html_node: [] as GlobalSearchResult[],
     };
     for (const r of filteredResults) {
       const key = r.content_type as keyof typeof g;

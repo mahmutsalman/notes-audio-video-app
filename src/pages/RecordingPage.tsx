@@ -26,6 +26,7 @@ import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import NotesEditor from '../components/common/NotesEditor';
 import CodeSnippetCard from '../components/code/CodeSnippetCard';
+import HtmlNodeCard from '../components/common/HtmlNodeCard';
 import CodeSnippetModal from '../components/code/CodeSnippetModal';
 import ImageLightbox from '../components/common/ImageLightbox';
 import SortableImageGrid from '../components/common/SortableImageGrid';
@@ -34,7 +35,7 @@ import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '
 import { DURATION_COLORS } from '../utils/durationColors';
 import { getNextGroupColorWithNull, DURATION_GROUP_COLORS } from '../utils/durationGroupColors';
 import { IMAGE_COLOR_KEYS, IMAGE_COLORS } from '../utils/imageColors';
-import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState} from '../types';
+import type { Duration, DurationColor, DurationGroupColor, Image, Video, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, ImageAudio, AnyImageAudio, Audio, CodeSnippet, DurationCodeSnippet, CaptureArea, AudioMarker, AudioMarkerType, SearchNavState, HtmlNode, DurationHtmlNode } from '../types';
 import SearchNavBanner from '../components/search/SearchNavBanner';
 import { TagModal } from '../components/common/TagModal';
 import type { MediaTagType } from '../types';
@@ -231,6 +232,8 @@ export default function RecordingPage() {
   const [editingDurationCodeSnippet, setEditingDurationCodeSnippet] = useState<{snippet: DurationCodeSnippet | null, durationId: number} | null>(null);
   const [durationCodeSnippetToDelete, setDurationCodeSnippetToDelete] = useState<{snippetId: number, durationId: number} | null>(null);
   const [activeDurationCodeSnippets, setActiveDurationCodeSnippets] = useState<DurationCodeSnippet[]>([]);
+  const [htmlNodes, setHtmlNodes] = useState<HtmlNode[]>([]);
+  const [activeDurationHtmlNodes, setActiveDurationHtmlNodes] = useState<DurationHtmlNode[]>([]);
   const [contextMenu, setContextMenu] = useState<{
     type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio';
     item: Image | Video | DurationImage | DurationVideo | DurationAudio | Audio;
@@ -470,6 +473,21 @@ export default function RecordingPage() {
       setActiveDurationCodeSnippets([]);
     }
   }, [activeDurationId, getDurationCodeSnippets]);
+
+  // Load recording-level html nodes
+  useEffect(() => {
+    if (id === null) return;
+    window.electronAPI.htmlNodes.list(id).then(setHtmlNodes);
+  }, [id]);
+
+  // Load duration-level html nodes when active duration changes
+  useEffect(() => {
+    if (activeDurationId !== null) {
+      window.electronAPI.durationHtmlNodes.list(activeDurationId).then(setActiveDurationHtmlNodes);
+    } else {
+      setActiveDurationHtmlNodes([]);
+    }
+  }, [activeDurationId]);
 
   // Fetch duration media when active duration changes (for written notes)
   // This ensures images/videos/audios are loaded from DB after navigation clears cache
@@ -1438,6 +1456,39 @@ export default function RecordingPage() {
     await deleteDurationCodeSnippet(durationCodeSnippetToDelete.snippetId, durationCodeSnippetToDelete.durationId);
     setActiveDurationCodeSnippets(prev => prev.filter(s => s.id !== durationCodeSnippetToDelete.snippetId));
     setDurationCodeSnippetToDelete(null);
+  };
+
+  // HTML node handlers — recording-level
+  const handleAddHtmlNode = async () => {
+    if (id === null) return;
+    const node = await window.electronAPI.htmlNodes.pickAndAdd(id);
+    if (node) setHtmlNodes(prev => [...prev, node]);
+  };
+
+  const handleDeleteHtmlNode = async (nodeId: number) => {
+    await window.electronAPI.htmlNodes.delete(nodeId);
+    setHtmlNodes(prev => prev.filter(n => n.id !== nodeId));
+  };
+
+  const handleUpdateHtmlNodeTitle = async (nodeId: number, title: string | null) => {
+    await window.electronAPI.htmlNodes.updateTitle(nodeId, title);
+    setHtmlNodes(prev => prev.map(n => n.id === nodeId ? { ...n, title } : n));
+  };
+
+  // HTML node handlers — duration-level
+  const handleAddDurationHtmlNode = async (durationId: number) => {
+    const node = await window.electronAPI.durationHtmlNodes.pickAndAdd(durationId);
+    if (node) setActiveDurationHtmlNodes(prev => [...prev, node]);
+  };
+
+  const handleDeleteDurationHtmlNode = async (nodeId: number) => {
+    await window.electronAPI.durationHtmlNodes.delete(nodeId);
+    setActiveDurationHtmlNodes(prev => prev.filter(n => n.id !== nodeId));
+  };
+
+  const handleUpdateDurationHtmlNodeTitle = async (nodeId: number, title: string | null) => {
+    await window.electronAPI.durationHtmlNodes.updateTitle(nodeId, title);
+    setActiveDurationHtmlNodes(prev => prev.map(n => n.id === nodeId ? { ...n, title } : n));
   };
 
   // Handle context menu for images/videos/audios
@@ -3192,6 +3243,38 @@ export default function RecordingPage() {
         </div>
       )}
 
+      {/* Duration HTML Nodes - shown when a duration is active */}
+      {!durationCanvasMode && !durationPlanMode && activeDurationId && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              HTML & PDF ({activeDurationHtmlNodes.length})
+            </h3>
+            <button
+              onClick={() => handleAddDurationHtmlNode(activeDurationId)}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+            >
+              + Add
+            </button>
+          </div>
+          {activeDurationHtmlNodes.length > 0 ? (
+            <div className="space-y-2">
+              {activeDurationHtmlNodes.map(node => (
+                <HtmlNodeCard
+                  key={node.id}
+                  node={node}
+                  onOpen={() => window.electronAPI.durationHtmlNodes.open(node.id)}
+                  onDelete={() => handleDeleteDurationHtmlNode(node.id)}
+                  onUpdateTitle={title => handleUpdateDurationHtmlNodeTitle(node.id, title)}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-blue-400 dark:text-blue-500 italic text-sm">No HTML or PDF files for this section</p>
+          )}
+        </div>
+      )}
+
       {/* Notes */}
       <div className="mb-6 p-4 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
         <div className="flex items-center justify-between mb-3">
@@ -3708,6 +3791,36 @@ export default function RecordingPage() {
           </div>
         ) : (
           <p className="text-violet-400 dark:text-violet-500 italic text-sm">No code snippets for this section</p>
+        )}
+      </div>
+
+      {/* HTML & PDF Nodes */}
+      <div className="mb-6 p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-medium text-violet-700 dark:text-violet-300">
+            HTML & PDF ({htmlNodes.length})
+          </h2>
+          <button
+            onClick={handleAddHtmlNode}
+            className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300"
+          >
+            + Add
+          </button>
+        </div>
+        {htmlNodes.length > 0 ? (
+          <div className="space-y-2">
+            {htmlNodes.map(node => (
+              <HtmlNodeCard
+                key={node.id}
+                node={node}
+                onOpen={() => window.electronAPI.htmlNodes.open(node.id)}
+                onDelete={() => handleDeleteHtmlNode(node.id)}
+                onUpdateTitle={title => handleUpdateHtmlNodeTitle(node.id, title)}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="text-violet-400 dark:text-violet-500 italic text-sm">No HTML or PDF files for this recording</p>
         )}
       </div>
 

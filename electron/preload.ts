@@ -1054,6 +1054,32 @@ const electronAPI = {
       return () => ipcRenderer.removeAllListeners('voiceModel:progress');
     },
   },
+
+  htmlNodes: {
+    pickAndAdd: (recordingId: number) =>
+      ipcRenderer.invoke('htmlNodes:pickAndAdd', recordingId),
+    list: (recordingId: number) =>
+      ipcRenderer.invoke('htmlNodes:list', recordingId),
+    updateTitle: (id: number, title: string | null) =>
+      ipcRenderer.invoke('htmlNodes:updateTitle', id, title),
+    delete: (id: number) =>
+      ipcRenderer.invoke('htmlNodes:delete', id),
+    open: (id: number) =>
+      ipcRenderer.invoke('htmlNodes:open', id),
+  },
+
+  durationHtmlNodes: {
+    pickAndAdd: (durationId: number) =>
+      ipcRenderer.invoke('durationHtmlNodes:pickAndAdd', durationId),
+    list: (durationId: number) =>
+      ipcRenderer.invoke('durationHtmlNodes:list', durationId),
+    updateTitle: (id: number, title: string | null) =>
+      ipcRenderer.invoke('durationHtmlNodes:updateTitle', id, title),
+    delete: (id: number) =>
+      ipcRenderer.invoke('durationHtmlNodes:delete', id),
+    open: (id: number) =>
+      ipcRenderer.invoke('durationHtmlNodes:open', id),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

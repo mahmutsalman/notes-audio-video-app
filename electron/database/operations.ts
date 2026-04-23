@@ -1437,7 +1437,7 @@ export const SearchOperations = {
     // Step 4: Batch fetch type-specific extra fields (file paths, thumbnails, code, marker_type)
     const extraByType = new Map<string, Map<number, any>>();
     const typeToIds = new Map<string, number[]>();
-    const typesNeedingExtra = new Set(['image', 'video', 'audio', 'duration_image', 'duration_video', 'duration_audio', 'code_snippet', 'duration_code_snippet', 'audio_marker', 'duration_image_audio', 'image_audio', 'quick_capture_image', 'image_ocr', 'duration_image_ocr', 'quick_capture_image_ocr', 'image_child_ocr']);
+    const typesNeedingExtra = new Set(['image', 'video', 'audio', 'duration_image', 'duration_video', 'duration_audio', 'code_snippet', 'duration_code_snippet', 'audio_marker', 'duration_image_audio', 'image_audio', 'quick_capture_image', 'image_ocr', 'duration_image_ocr', 'quick_capture_image_ocr', 'image_child_ocr', 'html_node', 'duration_html_node']);
     for (const m of matches) {
       if (typesNeedingExtra.has(m.content_type)) {
         if (!typeToIds.has(m.content_type)) typeToIds.set(m.content_type, []);
@@ -1462,6 +1462,8 @@ export const SearchOperations = {
       duration_image_ocr:      'SELECT id, file_path, thumbnail_path, duration_id FROM duration_images WHERE id IN',
       quick_capture_image_ocr: 'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM quick_capture_images WHERE id IN',
       image_child_ocr:         'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM image_children WHERE id IN',
+      html_node:               'SELECT id, file_path, NULL as thumbnail_path, file_type, NULL as duration_id FROM html_nodes WHERE id IN',
+      duration_html_node:      'SELECT hn.id, hn.file_path, NULL as thumbnail_path, hn.file_type, hn.duration_id FROM duration_html_nodes hn WHERE hn.id IN',
     };
 
     for (const [type, ids] of typeToIds) {
@@ -1511,6 +1513,7 @@ export const SearchOperations = {
         marker_type: extra?.marker_type ?? null,
         language: extra?.language ?? null,
         code: extra?.code ?? null,
+        file_type: extra?.file_type ?? null,
       } as GlobalSearchResult;
     });
   },
@@ -2830,5 +2833,83 @@ export const ReviewMaskOperations = {
   delete(id: number): void {
     const db = getDatabase();
     db.prepare('DELETE FROM review_masks WHERE id = ?').run(id);
+  },
+};
+
+export const HtmlNodesOperations = {
+  create(data: { recording_id: number; file_path: string; title: string | null; file_type: string; sort_order: number }): any {
+    const db = getDatabase();
+    const result = db.prepare(`
+      INSERT INTO html_nodes (recording_id, file_path, title, file_type, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(data.recording_id, data.file_path, data.title, data.file_type, data.sort_order);
+    return db.prepare('SELECT * FROM html_nodes WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  list(recordingId: number): any[] {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM html_nodes WHERE recording_id = ? ORDER BY sort_order, id').all(recordingId);
+  },
+
+  getById(id: number): any {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM html_nodes WHERE id = ?').get(id);
+  },
+
+  updateTitle(id: number, title: string | null): void {
+    const db = getDatabase();
+    db.prepare('UPDATE html_nodes SET title = ? WHERE id = ?').run(title, id);
+  },
+
+  getMaxSortOrder(recordingId: number): number {
+    const db = getDatabase();
+    const row = db.prepare('SELECT MAX(sort_order) as max_order FROM html_nodes WHERE recording_id = ?').get(recordingId) as any;
+    return row?.max_order ?? 0;
+  },
+
+  delete(id: number): string | null {
+    const db = getDatabase();
+    const row = db.prepare('SELECT file_path FROM html_nodes WHERE id = ?').get(id) as any;
+    db.prepare('DELETE FROM html_nodes WHERE id = ?').run(id);
+    return row?.file_path ?? null;
+  },
+};
+
+export const DurationHtmlNodesOperations = {
+  create(data: { duration_id: number; file_path: string; title: string | null; file_type: string; sort_order: number }): any {
+    const db = getDatabase();
+    const result = db.prepare(`
+      INSERT INTO duration_html_nodes (duration_id, file_path, title, file_type, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(data.duration_id, data.file_path, data.title, data.file_type, data.sort_order);
+    return db.prepare('SELECT * FROM duration_html_nodes WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  list(durationId: number): any[] {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM duration_html_nodes WHERE duration_id = ? ORDER BY sort_order, id').all(durationId);
+  },
+
+  getById(id: number): any {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM duration_html_nodes WHERE id = ?').get(id);
+  },
+
+  updateTitle(id: number, title: string | null): void {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_html_nodes SET title = ? WHERE id = ?').run(title, id);
+  },
+
+  getMaxSortOrder(durationId: number): number {
+    const db = getDatabase();
+    const row = db.prepare('SELECT MAX(sort_order) as max_order FROM duration_html_nodes WHERE duration_id = ?').get(durationId) as any;
+    return row?.max_order ?? 0;
+  },
+
+  delete(id: number): string | null {
+    const db = getDatabase();
+    const row = db.prepare('SELECT file_path FROM duration_html_nodes WHERE id = ?').get(id) as any;
+    db.prepare('DELETE FROM duration_html_nodes WHERE id = ?').run(id);
+    return row?.file_path ?? null;
   },
 };

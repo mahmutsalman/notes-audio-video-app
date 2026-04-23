@@ -34,6 +34,8 @@ export async function ensureMediaDirs(): Promise<void> {
     path.join(mediaDir, 'quick_captures', 'images'),
     path.join(mediaDir, 'quick_captures', 'audios'),
     path.join(mediaDir, 'capture_image_audios'),
+    path.join(mediaDir, 'html_nodes'),
+    path.join(mediaDir, 'duration_html_nodes'),
   ];
 
   for (const dir of dirs) {
@@ -863,6 +865,40 @@ export async function deleteFile(filePath: string): Promise<void> {
   }
 }
 
+export async function saveHtmlNodeFile(
+  recordingId: number,
+  sourcePath: string
+): Promise<string> {
+  const dir = path.join(getMediaDir(), 'html_nodes', String(recordingId));
+  await fs.mkdir(dir, { recursive: true });
+
+  const ext = path.extname(sourcePath) || '.html';
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}${ext}`);
+
+  await fs.copyFile(sourcePath, filePath);
+  console.log('HTML node saved to:', filePath);
+
+  return filePath;
+}
+
+export async function saveDurationHtmlNodeFile(
+  durationId: number,
+  sourcePath: string
+): Promise<string> {
+  const dir = path.join(getMediaDir(), 'duration_html_nodes', String(durationId));
+  await fs.mkdir(dir, { recursive: true });
+
+  const ext = path.extname(sourcePath) || '.html';
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}${ext}`);
+
+  await fs.copyFile(sourcePath, filePath);
+  console.log('Duration HTML node saved to:', filePath);
+
+  return filePath;
+}
+
 export async function deleteRecordingMedia(recordingId: number): Promise<void> {
   const mediaDir = getMediaDir();
   const audiDir = path.join(mediaDir, 'audio', String(recordingId));
@@ -870,10 +906,10 @@ export async function deleteRecordingMedia(recordingId: number): Promise<void> {
   const videosDir = path.join(mediaDir, 'videos', String(recordingId));
   const audiosDir = path.join(mediaDir, 'audios', String(recordingId)); // audio attachments
   const screenRecordingsDir = path.join(mediaDir, 'screen_recordings', String(recordingId)); // screen recordings
-
   const pdfsDir = path.join(mediaDir, 'pdfs', String(recordingId)); // PDFs
   const booksDir = path.join(mediaDir, 'books', String(recordingId)); // Book data
-  for (const dir of [audiDir, imagesDir, videosDir, audiosDir, screenRecordingsDir, pdfsDir, booksDir]) {
+  const htmlNodesDir = path.join(mediaDir, 'html_nodes', String(recordingId));
+  for (const dir of [audiDir, imagesDir, videosDir, audiosDir, screenRecordingsDir, pdfsDir, booksDir, htmlNodesDir]) {
     try {
       await fs.rm(dir, { recursive: true, force: true });
       console.log('Deleted directory:', dir);

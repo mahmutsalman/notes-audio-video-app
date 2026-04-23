@@ -35,6 +35,8 @@ import {
   ObsGhostMarksOperations,
   ReviewOperations,
   ReviewMaskOperations,
+  HtmlNodesOperations,
+  DurationHtmlNodesOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
@@ -66,6 +68,8 @@ import {
   saveQuickCaptureImage,
   saveQuickCaptureAudio,
   deleteQuickCaptureFiles,
+  saveHtmlNodeFile,
+  saveDurationHtmlNodeFile,
 } from '../services/fileStorage';
 import { createBackup, getBackupDir } from '../services/backupService';
 import { mergeAudioFiles } from '../services/audioMerger';
@@ -2910,6 +2914,88 @@ export function setupIpcHandlers(): void {
         resolve({ success: false, error: err.message });
       });
     });
+  });
+
+  // ── HTML Nodes (recording-level) ──────────────────────────────────────────
+  ipcMain.handle('htmlNodes:pickAndAdd', async (_, recordingId: number) => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select HTML or PDF file',
+      filters: [{ name: 'Documents', extensions: ['html', 'htm', 'pdf'] }],
+      properties: ['openFile'],
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    const sourcePath = result.filePaths[0];
+    const ext = path.extname(sourcePath).toLowerCase();
+    const fileType = ext === '.pdf' ? 'pdf' : 'html';
+    const title = path.basename(sourcePath, path.extname(sourcePath));
+    const filePath = await saveHtmlNodeFile(recordingId, sourcePath);
+    const sortOrder = HtmlNodesOperations.getMaxSortOrder(recordingId) + 1;
+    const node = HtmlNodesOperations.create({ recording_id: recordingId, file_path: filePath, title, file_type: fileType, sort_order: sortOrder });
+    scheduleSearchReindex();
+    return node;
+  });
+
+  ipcMain.handle('htmlNodes:list', async (_, recordingId: number) => {
+    return HtmlNodesOperations.list(recordingId);
+  });
+
+  ipcMain.handle('htmlNodes:updateTitle', async (_, id: number, title: string | null) => {
+    HtmlNodesOperations.updateTitle(id, title);
+    scheduleSearchReindex();
+  });
+
+  ipcMain.handle('htmlNodes:delete', async (_, id: number) => {
+    const filePath = HtmlNodesOperations.delete(id);
+    if (filePath) await deleteFile(filePath);
+    scheduleSearchReindex();
+  });
+
+  ipcMain.handle('htmlNodes:open', async (_, id: number) => {
+    const node = HtmlNodesOperations.getById(id);
+    if (!node) return;
+    const { openHtmlNodeWindow } = await import('../windows/htmlNodeWindow');
+    openHtmlNodeWindow(id, node.file_path, node.title || 'Document', node.file_type);
+  });
+
+  // ── Duration HTML Nodes ───────────────────────────────────────────────────
+  ipcMain.handle('durationHtmlNodes:pickAndAdd', async (_, durationId: number) => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select HTML or PDF file',
+      filters: [{ name: 'Documents', extensions: ['html', 'htm', 'pdf'] }],
+      properties: ['openFile'],
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    const sourcePath = result.filePaths[0];
+    const ext = path.extname(sourcePath).toLowerCase();
+    const fileType = ext === '.pdf' ? 'pdf' : 'html';
+    const title = path.basename(sourcePath, path.extname(sourcePath));
+    const filePath = await saveDurationHtmlNodeFile(durationId, sourcePath);
+    const sortOrder = DurationHtmlNodesOperations.getMaxSortOrder(durationId) + 1;
+    const node = DurationHtmlNodesOperations.create({ duration_id: durationId, file_path: filePath, title, file_type: fileType, sort_order: sortOrder });
+    scheduleSearchReindex();
+    return node;
+  });
+
+  ipcMain.handle('durationHtmlNodes:list', async (_, durationId: number) => {
+    return DurationHtmlNodesOperations.list(durationId);
+  });
+
+  ipcMain.handle('durationHtmlNodes:updateTitle', async (_, id: number, title: string | null) => {
+    DurationHtmlNodesOperations.updateTitle(id, title);
+    scheduleSearchReindex();
+  });
+
+  ipcMain.handle('durationHtmlNodes:delete', async (_, id: number) => {
+    const filePath = DurationHtmlNodesOperations.delete(id);
+    if (filePath) await deleteFile(filePath);
+    scheduleSearchReindex();
+  });
+
+  ipcMain.handle('durationHtmlNodes:open', async (_, id: number) => {
+    const node = DurationHtmlNodesOperations.getById(id);
+    if (!node) return;
+    const { openHtmlNodeWindow } = await import('../windows/htmlNodeWindow');
+    openHtmlNodeWindow(1000000 + id, node.file_path, node.title || 'Document', node.file_type);
   });
 
   console.log('IPC handlers registered');

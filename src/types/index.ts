@@ -928,6 +928,20 @@ export interface ElectronAPI {
     download: () => Promise<{ success: boolean; error?: string }>;
     onProgress: (cb: (data: { progress: number; downloaded: number; total: number }) => void) => () => void;
   };
+  htmlNodes: {
+    pickAndAdd: (recordingId: number) => Promise<HtmlNode | null>;
+    list: (recordingId: number) => Promise<HtmlNode[]>;
+    updateTitle: (id: number, title: string | null) => Promise<void>;
+    delete: (id: number) => Promise<void>;
+    open: (id: number) => Promise<void>;
+  };
+  durationHtmlNodes: {
+    pickAndAdd: (durationId: number) => Promise<DurationHtmlNode | null>;
+    list: (durationId: number) => Promise<DurationHtmlNode[]>;
+    updateTitle: (id: number, title: string | null) => Promise<void>;
+    delete: (id: number) => Promise<void>;
+    open: (id: number) => Promise<void>;
+  };
 }
 
 // Plans
@@ -1058,13 +1072,34 @@ export interface StudyTrackingContext {
   source: StudySource;
 }
 
+export interface HtmlNode {
+  id: number;
+  recording_id: number;
+  file_path: string;
+  title: string | null;
+  file_type: 'html' | 'pdf';
+  sort_order: number;
+  created_at: string;
+}
+
+export interface DurationHtmlNode {
+  id: number;
+  duration_id: number;
+  file_path: string;
+  title: string | null;
+  file_type: 'html' | 'pdf';
+  sort_order: number;
+  created_at: string;
+}
+
 export interface GlobalSearchResult {
   content_type: 'topic' | 'recording' | 'duration' | 'image' | 'video' | 'audio'
     | 'duration_image' | 'duration_video' | 'duration_audio'
     | 'code_snippet' | 'duration_code_snippet'
     | 'audio_marker' | 'duration_image_audio' | 'image_audio'
     | 'quick_capture_image'
-    | 'image_ocr' | 'duration_image_ocr' | 'quick_capture_image_ocr' | 'image_child_ocr';
+    | 'image_ocr' | 'duration_image_ocr' | 'quick_capture_image_ocr' | 'image_child_ocr'
+    | 'html_node' | 'duration_html_node';
   source_id: number;
   parent_id: number;
   snippet: string;
@@ -1079,6 +1114,7 @@ export interface GlobalSearchResult {
   marker_type: string | null;
   language: string | null;
   code: string | null;
+  file_type: string | null;
 }
 
 export interface SearchNavState {

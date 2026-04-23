@@ -1281,6 +1281,46 @@ function runMigrations(db: Database.Database): void {
     console.log('Added caption to obs_ghost_marks');
   }
 
+  // Migration: Create html_nodes table (recording-level HTML/PDF attachments)
+  const htmlNodesExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='html_nodes'"
+  ).get();
+  if (!htmlNodesExists) {
+    db.exec(`
+      CREATE TABLE html_nodes (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        recording_id INTEGER NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+        file_path    TEXT NOT NULL,
+        title        TEXT,
+        file_type    TEXT NOT NULL DEFAULT 'html',
+        sort_order   INTEGER DEFAULT 0,
+        created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_html_nodes_recording ON html_nodes(recording_id);
+    `);
+    console.log('Created html_nodes table');
+  }
+
+  // Migration: Create duration_html_nodes table (duration-level HTML/PDF attachments)
+  const durationHtmlNodesExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='duration_html_nodes'"
+  ).get();
+  if (!durationHtmlNodesExists) {
+    db.exec(`
+      CREATE TABLE duration_html_nodes (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        duration_id INTEGER NOT NULL REFERENCES durations(id) ON DELETE CASCADE,
+        file_path   TEXT NOT NULL,
+        title       TEXT,
+        file_type   TEXT NOT NULL DEFAULT 'html',
+        sort_order  INTEGER DEFAULT 0,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_duration_html_nodes_duration ON duration_html_nodes(duration_id);
+    `);
+    console.log('Created duration_html_nodes table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index
@@ -1458,6 +1498,21 @@ export function rebuildSearchIndex(): void {
       } catch { /* skip on error */ }
       markerInsert.run(am.id, recordingId, am.caption + ' ' + am.marker_type);
     }
+
+    // HTML nodes — recording-level (parent_id = recording_id)
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'html_node', id, recording_id, COALESCE(title, '')
+      FROM html_nodes WHERE title IS NOT NULL AND title != ''
+    `);
+
+    // HTML nodes — duration-level (parent_id = recording_id via durations join)
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'duration_html_node', hn.id, d.recording_id, COALESCE(hn.title, '')
+      FROM duration_html_nodes hn JOIN durations d ON d.id = hn.duration_id
+      WHERE hn.title IS NOT NULL AND hn.title != ''
+    `);
 
     // OCR text — recording-level images (parent_id = recording_id)
     database.exec(`
