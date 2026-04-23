@@ -38,9 +38,10 @@ export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle }: 
 
   return (
     <div
-      className="relative flex items-center gap-2 p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded select-none"
+      className="relative flex items-center gap-2 p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 select-none"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onClick={isEditingTitle ? undefined : onOpen}
     >
       {/* File type badge */}
       <span
@@ -76,9 +77,9 @@ export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle }: 
         )}
       </div>
 
-      {/* Action buttons — always visible: open; hover: rename + delete */}
-      <div className="shrink-0 flex items-center gap-1">
-        {isHovered && (
+      {/* Hover actions: rename + delete, grouped together */}
+      {isHovered && !isEditingTitle && (
+        <div className="shrink-0 flex items-center gap-1" onClick={e => e.stopPropagation()}>
           <button
             onClick={startEdit}
             className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 px-1"
@@ -86,15 +87,6 @@ export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle }: 
           >
             ✎
           </button>
-        )}
-        <button
-          onClick={e => { e.stopPropagation(); onOpen(); }}
-          className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 px-1 font-bold"
-          title="Open in new window"
-        >
-          ↗
-        </button>
-        {isHovered && (
           <button
             onClick={e => { e.stopPropagation(); onDelete(); }}
             className="text-xs text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-200 px-1"
@@ -102,8 +94,8 @@ export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle }: 
           >
             ×
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
