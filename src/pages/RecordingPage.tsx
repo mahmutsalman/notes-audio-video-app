@@ -234,6 +234,7 @@ export default function RecordingPage() {
   const [activeDurationCodeSnippets, setActiveDurationCodeSnippets] = useState<DurationCodeSnippet[]>([]);
   const [htmlNodes, setHtmlNodes] = useState<HtmlNode[]>([]);
   const [activeDurationHtmlNodes, setActiveDurationHtmlNodes] = useState<DurationHtmlNode[]>([]);
+  const [htmlNodeToDelete, setHtmlNodeToDelete] = useState<{ id: number; kind: 'recording' | 'duration' } | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio';
     item: Image | Video | DurationImage | DurationVideo | DurationAudio | Audio;
@@ -1465,9 +1466,8 @@ export default function RecordingPage() {
     if (node) setHtmlNodes(prev => [...prev, node]);
   };
 
-  const handleDeleteHtmlNode = async (nodeId: number) => {
-    await window.electronAPI.htmlNodes.delete(nodeId);
-    setHtmlNodes(prev => prev.filter(n => n.id !== nodeId));
+  const handleDeleteHtmlNode = (nodeId: number) => {
+    setHtmlNodeToDelete({ id: nodeId, kind: 'recording' });
   };
 
   const handleUpdateHtmlNodeTitle = async (nodeId: number, title: string | null) => {
@@ -1481,9 +1481,8 @@ export default function RecordingPage() {
     if (node) setActiveDurationHtmlNodes(prev => [...prev, node]);
   };
 
-  const handleDeleteDurationHtmlNode = async (nodeId: number) => {
-    await window.electronAPI.durationHtmlNodes.delete(nodeId);
-    setActiveDurationHtmlNodes(prev => prev.filter(n => n.id !== nodeId));
+  const handleDeleteDurationHtmlNode = (nodeId: number) => {
+    setHtmlNodeToDelete({ id: nodeId, kind: 'duration' });
   };
 
   const handleUpdateDurationHtmlNodeTitle = async (nodeId: number, title: string | null) => {
@@ -4206,6 +4205,38 @@ export default function RecordingPage() {
           })()}
         </div>
       )}
+
+      {/* HTML/PDF node delete confirmation */}
+      <Modal
+        isOpen={htmlNodeToDelete !== null}
+        onClose={() => setHtmlNodeToDelete(null)}
+        title="Delete File"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">Are you sure you want to delete this file?</p>
+          <p className="text-red-600 dark:text-red-400 text-sm font-medium">This action cannot be undone.</p>
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setHtmlNodeToDelete(null)}>Cancel</Button>
+            <Button
+              variant="danger"
+              onClick={async () => {
+                if (!htmlNodeToDelete) return;
+                if (htmlNodeToDelete.kind === 'recording') {
+                  await window.electronAPI.htmlNodes.delete(htmlNodeToDelete.id);
+                  setHtmlNodes(prev => prev.filter(n => n.id !== htmlNodeToDelete.id));
+                } else {
+                  await window.electronAPI.durationHtmlNodes.delete(htmlNodeToDelete.id);
+                  setActiveDurationHtmlNodes(prev => prev.filter(n => n.id !== htmlNodeToDelete.id));
+                }
+                setHtmlNodeToDelete(null);
+              }}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Delete confirmation modal */}
       <Modal
