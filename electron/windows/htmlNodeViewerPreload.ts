@@ -23,6 +23,7 @@ window.addEventListener('DOMContentLoaded', () => {
     color: #f0f0f0;
     user-select: none;
     box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    transition: padding 0.2s;
   `;
 
   const btnStyle = `
@@ -34,7 +35,14 @@ window.addEventListener('DOMContentLoaded', () => {
     font-size: 16px;
     line-height: 1;
     padding: 2px 8px;
-    transition: background 0.15s;
+    transition: background 0.15s, opacity 0.2s, max-width 0.2s;
+    overflow: hidden;
+    max-width: 0;
+    opacity: 0;
+    pointer-events: none;
+    border: none;
+    padding-left: 0;
+    padding-right: 0;
   `;
 
   const label = document.createElement('span');
@@ -66,6 +74,33 @@ window.addEventListener('DOMContentLoaded', () => {
   const btnReset = makeBtn('↺', 'Reset zoom');
   btnReset.style.fontSize = '14px';
   btnReset.onclick = () => applyZoom(1.0);
+
+  const showButtons = () => {
+    for (const btn of [btnOut, btnIn, btnReset]) {
+      btn.style.maxWidth = '48px';
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'auto';
+      btn.style.border = '1px solid rgba(255,255,255,0.15)';
+      btn.style.paddingLeft = '8px';
+      btn.style.paddingRight = '8px';
+    }
+    toolbar.style.gap = '6px';
+  };
+
+  const hideButtons = () => {
+    for (const btn of [btnOut, btnIn, btnReset]) {
+      btn.style.maxWidth = '0';
+      btn.style.opacity = '0';
+      btn.style.pointerEvents = 'none';
+      btn.style.border = 'none';
+      btn.style.paddingLeft = '0';
+      btn.style.paddingRight = '0';
+    }
+    toolbar.style.gap = '0';
+  };
+
+  toolbar.addEventListener('mouseenter', showButtons);
+  toolbar.addEventListener('mouseleave', hideButtons);
 
   toolbar.appendChild(btnOut);
   toolbar.appendChild(label);
