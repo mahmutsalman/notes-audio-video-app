@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useTabInstance } from '../../context/TabsContext';
 import { useStudyTracker } from '../../context/StudyTrackerContext';
 import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation, ReviewItem, ReviewMask } from '../../types';
@@ -212,6 +212,7 @@ export default function ImageLightbox({
 
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const [imageVisible, setImageVisible] = useState(true);
   const [showZoomIndicator, setShowZoomIndicator] = useState(false);
   const [imageContextMenu, setImageContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [pendingDeleteAudio, setPendingDeleteAudio] = useState<{ audioId: number; imageId: number; index: number } | null>(null);
@@ -273,6 +274,7 @@ export default function ImageLightbox({
   const translateAtDragStart = useRef({ x: 0, y: 0 });
   const zoomIndicatorTimeout = useRef<ReturnType<typeof setTimeout>>();
   const scaleRef = useRef(1);
+  const translateRef = useRef({ x: 0, y: 0 });
 
   // Annotation drag refs
   const isAnnDragging = useRef(false);
@@ -350,8 +352,9 @@ export default function ImageLightbox({
     }
   }, [imageChildren, mediaType, image?.id]);
 
-  // Keep scaleRef in sync with scale state
+  // Keep refs in sync so cleanup handlers always read the latest values
   useEffect(() => { scaleRef.current = scale; }, [scale]);
+  useEffect(() => { translateRef.current = translate; }, [translate]);
   // Keep mirror refs in sync
   useEffect(() => { annotationsRef.current = annotations; }, [annotations]);
   useEffect(() => { drawPreviewRef.current = drawPreview; }, [drawPreview]);
@@ -380,6 +383,13 @@ export default function ImageLightbox({
     };
   }, []);
 
+  // Hide image before the browser paints on navigation — useLayoutEffect fires
+  // synchronously after DOM update but before paint, so no frame is ever visible
+  // at the wrong scale. The restore effect reveals it once the DB read resolves.
+  useLayoutEffect(() => {
+    setImageVisible(false);
+  }, [selectedIndex]);
+
   // Reset zoom + annotation state on navigation
   useEffect(() => {
     setScale(1);
@@ -398,6 +408,22 @@ export default function ImageLightbox({
     isAnnDragging.current = false;
     setOcrCaption2Status('idle');
   }, [selectedIndex]);
+
+  // Save zoom+pan when navigating away (cleanup fires before image.id changes).
+  // Uses refs so we always capture the final scale/translate, not a stale closure.
+  // This fires for every image change, ensuring ALL images — not just the first — are saved.
+  useEffect(() => {
+    const id = image?.id;
+    const type = imageType;
+    return () => {
+      if (!id || !type) return;
+      if (scaleRef.current > 1) {
+        window.electronAPI.imageViewState.save(type, id, scaleRef.current, translateRef.current.x, translateRef.current.y);
+      } else {
+        window.electronAPI.imageViewState.delete(type, id);
+      }
+    };
+  }, [image?.id, imageType]);
 
   // Load annotations when image changes
   useEffect(() => {
@@ -595,6 +621,23 @@ export default function ImageLightbox({
       if (zoomIndicatorTimeout.current) clearTimeout(zoomIndicatorTimeout.current);
     };
   }, []);
+
+  // Restore saved zoom + pan, then reveal the image — ensures the user always
+  // sees the image appear at the correct zoom with no visible intermediate state
+  useEffect(() => {
+    if (!imageType || !image?.id) {
+      setImageVisible(true);
+      return;
+    }
+    window.electronAPI.imageViewState.get(imageType, image.id).then(saved => {
+      if (saved && saved.scale > 1) {
+        setScale(saved.scale);
+        setTranslate({ x: saved.translate_x, y: saved.translate_y });
+        flashZoomIndicator();
+      }
+      setImageVisible(true);
+    });
+  }, [image?.id, imageType, flashZoomIndicator]);
 
   // Wheel handler: pinch/Cmd+scroll → zoom, two-finger scroll when zoomed → pan
   useEffect(() => {
@@ -852,11 +895,14 @@ export default function ImageLightbox({
     };
   }, [getSvgCoords]); // stable deps only — state accessed via refs
 
-  // Double-click to reset zoom
+  // Double-click to reset zoom and clear saved view state
   const handleDoubleClick = useCallback(() => {
     setScale(1);
     setTranslate({ x: 0, y: 0 });
-  }, []);
+    if (imageType && image?.id) {
+      window.electronAPI.imageViewState.delete(imageType, image.id);
+    }
+  }, [imageType, image?.id]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -1116,7 +1162,11 @@ export default function ImageLightbox({
     transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
     transformOrigin: 'center center',
     cursor: drawMode ? 'crosshair' : (isShiftHeld && mediaType ? 'crosshair' : (scale > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'default')),
-    transition: isDragging.current ? 'none' : 'transform 0.1s ease-out',
+    // Hide instantly, reveal with a short fade so the image appears at the restored zoom level
+    opacity: imageVisible ? 1 : 0,
+    transition: isDragging.current ? 'none' : imageVisible
+      ? 'transform 0.1s ease-out, opacity 0.12s ease'
+      : 'none',
     userSelect: 'none' as const,
   };
 

@@ -848,6 +848,11 @@ export interface ElectronAPI {
     delete: (id: number) => Promise<void>;
     updateCaption: (id: number, caption: string | null) => Promise<ImageChildAudio>;
   };
+  imageViewState: {
+    get: (imageType: string, imageId: number) => Promise<{ scale: number; translate_x: number; translate_y: number } | null>;
+    save: (imageType: string, imageId: number, scale: number, translateX: number, translateY: number) => Promise<void>;
+    delete: (imageType: string, imageId: number) => Promise<void>;
+  };
   imageAnnotations: {
     getByImage: (imageType: string, imageId: number) => Promise<ImageAnnotation[]>;
     create: (data: {

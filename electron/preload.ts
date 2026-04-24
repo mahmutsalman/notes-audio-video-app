@@ -894,6 +894,16 @@ const electronAPI = {
       ipcRenderer.invoke('imageChildAudios:updateCaption', id, caption),
   },
 
+  // Image View State (persisted zoom + pan per image)
+  imageViewState: {
+    get: (imageType: string, imageId: number): Promise<{ scale: number; translate_x: number; translate_y: number } | null> =>
+      ipcRenderer.invoke('imageViewState:get', imageType, imageId),
+    save: (imageType: string, imageId: number, scale: number, translateX: number, translateY: number): Promise<void> =>
+      ipcRenderer.invoke('imageViewState:save', imageType, imageId, scale, translateX, translateY),
+    delete: (imageType: string, imageId: number): Promise<void> =>
+      ipcRenderer.invoke('imageViewState:delete', imageType, imageId),
+  },
+
   // Image Annotations
   imageAnnotations: {
     getByImage: (imageType: string, imageId: number): Promise<import('../src/types').ImageAnnotation[]> =>

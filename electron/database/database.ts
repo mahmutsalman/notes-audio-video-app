@@ -1321,6 +1321,25 @@ function runMigrations(db: Database.Database): void {
     console.log('Created duration_html_nodes table');
   }
 
+  // Migration: Create image_view_state table (persists zoom + pan per image)
+  const ivs = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='image_view_state'"
+  ).get();
+  if (!ivs) {
+    db.exec(`
+      CREATE TABLE image_view_state (
+        image_type  TEXT    NOT NULL,
+        image_id    INTEGER NOT NULL,
+        scale       REAL    NOT NULL DEFAULT 1,
+        translate_x REAL    NOT NULL DEFAULT 0,
+        translate_y REAL    NOT NULL DEFAULT 0,
+        updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        PRIMARY KEY (image_type, image_id)
+      );
+    `);
+    console.log('Created image_view_state table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

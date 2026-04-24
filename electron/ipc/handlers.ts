@@ -37,6 +37,7 @@ import {
   ReviewMaskOperations,
   HtmlNodesOperations,
   DurationHtmlNodesOperations,
+  ImageViewStateOperations,
 } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
@@ -2309,6 +2310,19 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('imageAnnotations:delete', async (_, id: number) => {
     ImageAnnotationsOperations.delete(id);
+  });
+
+  // ============ Image View State ============
+  ipcMain.handle('imageViewState:get', async (_, imageType: string, imageId: number) => {
+    return ImageViewStateOperations.get(imageType, imageId);
+  });
+
+  ipcMain.handle('imageViewState:save', async (_, imageType: string, imageId: number, scale: number, translateX: number, translateY: number) => {
+    ImageViewStateOperations.save(imageType, imageId, scale, translateX, translateY);
+  });
+
+  ipcMain.handle('imageViewState:delete', async (_, imageType: string, imageId: number) => {
+    ImageViewStateOperations.delete(imageType, imageId);
   });
 
   // ============ OCR ============

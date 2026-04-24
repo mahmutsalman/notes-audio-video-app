@@ -2913,3 +2913,42 @@ export const DurationHtmlNodesOperations = {
     return row?.file_path ?? null;
   },
 };
+
+// ============ Image View State Operations ============
+// Persists zoom level and pan position per image so the lightbox restores where you left off.
+
+export interface ImageViewState {
+  image_type: string;
+  image_id: number;
+  scale: number;
+  translate_x: number;
+  translate_y: number;
+  updated_at: number;
+}
+
+export const ImageViewStateOperations = {
+  get(imageType: string, imageId: number): ImageViewState | null {
+    const db = getDatabase();
+    return db.prepare(
+      'SELECT * FROM image_view_state WHERE image_type = ? AND image_id = ?'
+    ).get(imageType, imageId) as ImageViewState | null;
+  },
+
+  save(imageType: string, imageId: number, scale: number, translateX: number, translateY: number): void {
+    const db = getDatabase();
+    db.prepare(`
+      INSERT INTO image_view_state (image_type, image_id, scale, translate_x, translate_y, updated_at)
+      VALUES (?, ?, ?, ?, ?, strftime('%s','now'))
+      ON CONFLICT (image_type, image_id) DO UPDATE SET
+        scale = excluded.scale,
+        translate_x = excluded.translate_x,
+        translate_y = excluded.translate_y,
+        updated_at = excluded.updated_at
+    `).run(imageType, imageId, scale, translateX, translateY);
+  },
+
+  delete(imageType: string, imageId: number): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM image_view_state WHERE image_type = ? AND image_id = ?').run(imageType, imageId);
+  },
+};
