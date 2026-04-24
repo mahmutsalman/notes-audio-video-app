@@ -1,9 +1,8 @@
 const SILENCE_THRESHOLD = 0.01;   // RMS below this = silence
 const VOICE_THRESHOLD   = 0.015;  // RMS above this = voice (hysteresis)
-const SILENCE_DURATION_MS = 500;  // ms of silence before firing onAutoPause
+const SILENCE_DURATION_MS = 1000; // ms of silence before firing onAutoPause
 const BUFFER_SIZE = 4096;
 const RESUME_GUARD_MS = 300;      // ignore voice bursts for this long after auto-pause fires
-const VOICE_SUSTAIN_MS = 200;     // voice must stay above threshold for this long to trigger resume
 
 class SilenceDetectionService {
   onAutoPause?: () => void;
@@ -17,7 +16,6 @@ class SilenceDetectionService {
   private silenceStartTime: number | null = null;
   private autoPauseFired = false;
   private resumeIgnoreUntil = 0;
-  private voiceStartTime: number | null = null; // tracks sustained voice while auto-paused
 
   start(audioContext: AudioContext, sourceNode: MediaStreamAudioSourceNode) {
     if (this.scriptProcessor) return; // already running
@@ -48,24 +46,13 @@ class SilenceDetectionService {
             this.onAutoPause?.();
           }
         }
-        // Brief drop back to silence resets the sustained-voice counter
-        this.voiceStartTime = null;
       } else if (rms >= VOICE_THRESHOLD) {
         if (this.isInSilence && now > this.resumeIgnoreUntil) {
-          if (!this.autoPauseFired) {
-            // Silence was brief (pause not fired yet) — reset immediately
-            this.isInSilence = false;
-            this.silenceStartTime = null;
-          } else {
-            // Auto-paused — require sustained voice before resuming
-            if (this.voiceStartTime === null) this.voiceStartTime = now;
-            if (now - this.voiceStartTime >= VOICE_SUSTAIN_MS) {
-              this.isInSilence = false;
-              this.silenceStartTime = null;
-              this.voiceStartTime = null;
-              this.autoPauseFired = false;
-              this.onAutoResume?.();
-            }
+          this.isInSilence = false;
+          this.silenceStartTime = null;
+          if (this.autoPauseFired) {
+            this.autoPauseFired = false;
+            this.onAutoResume?.();
           }
         }
       }
@@ -83,7 +70,6 @@ class SilenceDetectionService {
       this.silenceStartTime = null;
       this.autoPauseFired = false;
       this.resumeIgnoreUntil = 0;
-      this.voiceStartTime = null;
     }
   }
 
@@ -100,7 +86,6 @@ class SilenceDetectionService {
     this.silenceStartTime = null;
     this.autoPauseFired = false;
     this.resumeIgnoreUntil = 0;
-    this.voiceStartTime = null;
     this.enabled = false;
   }
 
