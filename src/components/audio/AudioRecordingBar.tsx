@@ -51,12 +51,16 @@ export default function AudioRecordingBar() {
     activeToggles,
     voiceCommandsEnabled,
     lastVoiceCommand,
+    autoSilencePauseEnabled,
+    isPausedBySilence,
+    lastSilenceEvent,
     pauseRecording,
     resumeRecording,
     stopAndSave,
     cancelRecording,
     addMarkerToggle,
     toggleVoiceCommands,
+    toggleAutoSilencePause,
   } = useAudioRecording();
 
   const [modelStatus, setModelStatus] = useState<'unknown' | 'missing' | 'ready'>('unknown');
@@ -65,6 +69,9 @@ export default function AudioRecordingBar() {
   const [flashCmd, setFlashCmd] = useState<{ type: AudioMarkerType; on: boolean } | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastVoiceCmdTs = useRef<number>(0);
+  const [silenceFlash, setSilenceFlash] = useState<'paused' | 'resumed' | null>(null);
+  const silenceFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSilenceEventRef = useRef<'paused' | 'resumed' | null>(null);
 
   useEffect(() => {
     window.electronAPI.voiceModel.status().then(s => {
@@ -81,6 +88,16 @@ export default function AudioRecordingBar() {
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlashCmd(null), 1800);
   }, [lastVoiceCommand]);
+
+  // Show flash for silence auto-pause / auto-resume events
+  useEffect(() => {
+    if (!lastSilenceEvent) return;
+    if (lastSilenceEvent === lastSilenceEventRef.current) return;
+    lastSilenceEventRef.current = lastSilenceEvent;
+    setSilenceFlash(lastSilenceEvent);
+    if (silenceFlashTimer.current) clearTimeout(silenceFlashTimer.current);
+    silenceFlashTimer.current = setTimeout(() => setSilenceFlash(null), 1800);
+  }, [lastSilenceEvent]);
 
   const handleDownloadModel = async () => {
     setIsDownloading(true);
@@ -101,9 +118,16 @@ export default function AudioRecordingBar() {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900 dark:bg-gray-950 border-t border-gray-700 dark:border-gray-800 shadow-2xl">
       {/* Voice command flash indicator */}
-      {flashCmd && (
+      {flashCmd && !silenceFlash && (
         <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded border text-xs font-medium whitespace-nowrap pointer-events-none ${VOICE_FLASH_COLORS[flashCmd.type]}`}>
           🎙 {MARKER_LABELS[flashCmd.type]} → {flashCmd.on ? 'ON' : 'OFF'}
+        </div>
+      )}
+
+      {/* Silence auto-pause flash indicator */}
+      {silenceFlash && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded border text-xs font-medium whitespace-nowrap pointer-events-none text-amber-400 border-amber-600 bg-amber-900/40">
+          {silenceFlash === 'paused' ? '🤫 Auto-paused' : '🎙 Resumed'}
         </div>
       )}
 
@@ -130,10 +154,17 @@ export default function AudioRecordingBar() {
               <span className="text-sm font-medium text-blue-400">SAVING...</span>
             </>
           ) : isPaused ? (
-            <>
-              <span className="w-2.5 h-2.5 bg-yellow-500 rounded-full" />
-              <span className="text-sm font-medium text-yellow-400">PAUSED</span>
-            </>
+            isPausedBySilence ? (
+              <>
+                <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse" />
+                <span className="text-sm font-medium text-amber-400">AUTO-PAUSED</span>
+              </>
+            ) : (
+              <>
+                <span className="w-2.5 h-2.5 bg-yellow-500 rounded-full" />
+                <span className="text-sm font-medium text-yellow-400">PAUSED</span>
+              </>
+            )
           ) : (
             <>
               <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
@@ -209,6 +240,26 @@ export default function AudioRecordingBar() {
                 <span className="hidden sm:inline">{voiceCommandsEnabled ? 'Voice' : 'Voice'}</span>
               </button>
             )}
+          </div>
+        )}
+
+        {/* Auto-pause on silence toggle */}
+        {isRecording && !isSaving && (
+          <div className="flex items-center">
+            <button
+              onClick={toggleAutoSilencePause}
+              className={`flex items-center gap-1 px-2 py-1 rounded border text-xs font-medium transition-all ${
+                autoSilencePauseEnabled
+                  ? 'bg-amber-700/40 border-amber-500 text-amber-300'
+                  : 'bg-gray-700 border-dashed border-gray-600 text-gray-500 hover:border-amber-600 hover:text-amber-400'
+              }`}
+              title={autoSilencePauseEnabled
+                ? 'Auto-pause ON — recording pauses when you stop speaking (2s silence threshold)'
+                : 'Enable auto-pause: recording pauses automatically when you stop speaking'}
+            >
+              <span className={autoSilencePauseEnabled ? 'animate-pulse' : ''}>🤫</span>
+              <span className="hidden sm:inline">Auto-pause</span>
+            </button>
           </div>
         )}
 

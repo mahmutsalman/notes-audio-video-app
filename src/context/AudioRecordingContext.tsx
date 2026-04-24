@@ -2,6 +2,7 @@ import { createContext, useContext, useCallback, useState, useEffect, useRef, ty
 import { useSimpleAudioRecorder } from '../hooks/useSimpleAudioRecorder';
 import { voiceCommandService } from '../services/voiceCommandService';
 import { audioFeedbackService } from '../services/audioFeedbackService';
+import { silenceDetectionService } from '../services/silenceDetectionService';
 import type { AudioMarkerType } from '../types';
 
 export type RecordingTarget =
@@ -32,6 +33,9 @@ interface AudioRecordingContextValue {
   pendingCaptureAudio: { blob: Blob; durationSec: number; markers: PendingMarker[] } | null;
   voiceCommandsEnabled: boolean;
   lastVoiceCommand: { type: AudioMarkerType; on: boolean; ts: number } | null;
+  autoSilencePauseEnabled: boolean;
+  isPausedBySilence: boolean;
+  lastSilenceEvent: 'paused' | 'resumed' | null;
   // Actions
   startRecording: (target: RecordingTarget) => Promise<void>;
   pauseRecording: () => void;
@@ -41,6 +45,7 @@ interface AudioRecordingContextValue {
   addMarkerToggle: (type: AudioMarkerType) => void;
   clearPendingCaptureAudio: () => void;
   toggleVoiceCommands: () => void;
+  toggleAutoSilencePause: () => void;
 }
 
 const AudioRecordingContext = createContext<AudioRecordingContextValue | null>(null);
@@ -67,6 +72,12 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
     try { return localStorage.getItem('voiceCommandsEnabled') === 'true'; } catch { return false; }
   });
   const [lastVoiceCommand, setLastVoiceCommand] = useState<{ type: AudioMarkerType; on: boolean; ts: number } | null>(null);
+  const [autoSilencePauseEnabled, setAutoSilencePauseEnabled] = useState<boolean>(() => {
+    try { return localStorage.getItem('autoSilencePauseEnabled') === 'true'; } catch { return false; }
+  });
+  const [isPausedBySilence, setIsPausedBySilence] = useState(false);
+  const [lastSilenceEvent, setLastSilenceEvent] = useState<'paused' | 'resumed' | null>(null);
+  const isPausedBySilenceRef = useRef(false);
   const addMarkerToggleRef = useRef<((type: AudioMarkerType, trimSec?: number) => void) | null>(null);
   const recorderRef = useRef(recorder);
   const stopAndSaveRef = useRef<() => Promise<void>>(() => Promise.resolve());
@@ -129,7 +140,46 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
     return () => { voiceCommandService.stop(); };
   }, [recorder.isRecording, voiceCommandsEnabled, recorder.audioContext, recorder.mediaSourceNode]);
 
+  // Wire silence detection service
+  useEffect(() => {
+    const ctx = recorder.audioContext;
+    const src = recorder.mediaSourceNode;
+
+    if (autoSilencePauseEnabled && recorder.isRecording && ctx && src) {
+      silenceDetectionService.onAutoPause = () => {
+        if (!recorderRef.current.isPaused) {
+          isPausedBySilenceRef.current = true;
+          setIsPausedBySilence(true);
+          recorderRef.current.pauseRecording();
+          setLastSilenceEvent('paused');
+        }
+      };
+      silenceDetectionService.onAutoResume = () => {
+        if (isPausedBySilenceRef.current) {
+          isPausedBySilenceRef.current = false;
+          setIsPausedBySilence(false);
+          recorderRef.current.resumeRecording();
+          setLastSilenceEvent('resumed');
+        }
+      };
+      silenceDetectionService.start(ctx, src);
+      silenceDetectionService.setEnabled(true);
+      return () => { silenceDetectionService.stop(); };
+    } else {
+      silenceDetectionService.stop();
+      // If disabled while auto-paused, resume
+      if (isPausedBySilenceRef.current && recorderRef.current.isPaused) {
+        isPausedBySilenceRef.current = false;
+        setIsPausedBySilence(false);
+        recorderRef.current.resumeRecording();
+      }
+    }
+  }, [autoSilencePauseEnabled, recorder.isRecording, recorder.audioContext, recorder.mediaSourceNode]);
+
   const pauseRecording = useCallback(() => {
+    // Manual pause clears the auto-pause flag so auto-resume won't fire
+    isPausedBySilenceRef.current = false;
+    setIsPausedBySilence(false);
     recorder.pauseRecording();
   }, [recorder]);
 
@@ -173,6 +223,14 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
       const next = !prev;
       try { localStorage.setItem('voiceCommandsEnabled', String(next)); } catch { /* ignore */ }
       if (!next) voiceCommandService.stop();
+      return next;
+    });
+  }, []);
+
+  const toggleAutoSilencePause = useCallback(() => {
+    setAutoSilencePauseEnabled(prev => {
+      const next = !prev;
+      try { localStorage.setItem('autoSilencePauseEnabled', String(next)); } catch { /* ignore */ }
       return next;
     });
   }, []);
@@ -266,6 +324,8 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
       setTarget(null);
       setActiveToggles(new Set());
       setPendingMarkers([]);
+      isPausedBySilenceRef.current = false;
+      setIsPausedBySilence(false);
     }
   }, [target, recorder, pendingMarkers]);
   useEffect(() => { stopAndSaveRef.current = stopAndSave; }, [stopAndSave]);
@@ -275,6 +335,8 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
     setTarget(null);
     setActiveToggles(new Set());
     setPendingMarkers([]);
+    isPausedBySilenceRef.current = false;
+    setIsPausedBySilence(false);
   }, [recorder]);
 
   const clearPendingCaptureAudio = useCallback(() => setPendingCaptureAudio(null), []);
@@ -293,6 +355,9 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
         pendingCaptureAudio,
         voiceCommandsEnabled,
         lastVoiceCommand,
+        autoSilencePauseEnabled,
+        isPausedBySilence,
+        lastSilenceEvent,
         clearPendingCaptureAudio,
         startRecording,
         pauseRecording,
@@ -301,6 +366,7 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
         cancelRecording,
         addMarkerToggle,
         toggleVoiceCommands,
+        toggleAutoSilencePause,
       }}
     >
       {children}

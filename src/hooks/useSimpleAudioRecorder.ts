@@ -44,6 +44,7 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const recordingGainRef = useRef<GainNode | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -96,14 +97,25 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
 
       const source = audioContext.createMediaStreamSource(stream);
       mediaSourceRef.current = source;
+
+      // Waveform + silence/voice services tap the raw source directly
       source.connect(analyser);
+
+      // Recording path: source → gainNode → destination stream
+      // The gainNode lets us ramp from 0→1 on resume to eliminate the click pop
+      const recordingGain = audioContext.createGain();
+      recordingGain.gain.setValueAtTime(1, audioContext.currentTime);
+      recordingGainRef.current = recordingGain;
+      const recordingDestination = audioContext.createMediaStreamDestination();
+      source.connect(recordingGain);
+      recordingGain.connect(recordingDestination);
 
       // Create media recorder
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : 'audio/webm';
 
-      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      const mediaRecorder = new MediaRecorder(recordingDestination.stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (event) => {
@@ -176,6 +188,7 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
 
         // Close audio context
         mediaSourceRef.current = null;
+        recordingGainRef.current = null;
         if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
           audioContextRef.current.close();
           audioContextRef.current = null;
@@ -229,6 +242,13 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
     const mediaRecorder = mediaRecorderRef.current;
 
     if (mediaRecorder && mediaRecorder.state === 'paused') {
+      // Ramp gain 0 → 1 over 40ms to eliminate the click pop on resume
+      const ctx = audioContextRef.current;
+      const gain = recordingGainRef.current;
+      if (ctx && gain) {
+        gain.gain.setValueAtTime(0, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.04);
+      }
       mediaRecorder.resume();
 
       // Reset start time for new segment
@@ -267,6 +287,7 @@ export function useSimpleAudioRecorder(): UseSimpleAudioRecorderReturn {
 
     // Close audio context
     mediaSourceRef.current = null;
+    recordingGainRef.current = null;
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close();
       audioContextRef.current = null;
