@@ -596,44 +596,55 @@ export default function ImageLightbox({
     };
   }, []);
 
-  // Wheel handler for pinch-to-zoom and Cmd+scroll
+  // Wheel handler: pinch/Cmd+scroll → zoom, two-finger scroll when zoomed → pan
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const handleWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
-      e.preventDefault();
+      // macOS pinch sends ctrlKey=true; Cmd+scroll sends metaKey=true → zoom
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
 
-      const img = imageRef.current;
-      if (!img) return;
+        const img = imageRef.current;
+        if (!img) return;
 
-      const rect = img.getBoundingClientRect();
-      const cursorX = e.clientX - (rect.left + rect.width / 2);
-      const cursorY = e.clientY - (rect.top + rect.height / 2);
+        const rect = img.getBoundingClientRect();
+        const cursorX = e.clientX - (rect.left + rect.width / 2);
+        const cursorY = e.clientY - (rect.top + rect.height / 2);
 
-      const zoomFactor = 1 - e.deltaY * 0.01;
+        const zoomFactor = 1 - e.deltaY * 0.01;
 
-      setScale(prev => {
-        const newScale = Math.min(5, Math.max(1, prev * zoomFactor));
-        const ratio = newScale / prev;
+        setScale(prev => {
+          const newScale = Math.min(5, Math.max(1, prev * zoomFactor));
+          const ratio = newScale / prev;
 
-        if (newScale === 1) {
-          setTranslate({ x: 0, y: 0 });
-        } else {
-          setTranslate(t => {
-            const raw = {
-              x: cursorX - ratio * (cursorX - t.x),
-              y: cursorY - ratio * (cursorY - t.y),
-            };
+          if (newScale === 1) {
+            setTranslate({ x: 0, y: 0 });
+          } else {
+            setTranslate(t => {
+              const raw = {
+                x: cursorX - ratio * (cursorX - t.x),
+                y: cursorY - ratio * (cursorY - t.y),
+              };
+              return clampTranslate(raw, newScale);
+            });
+          }
 
-            return clampTranslate(raw, newScale);
-          });
-        }
+          if (newScale !== prev) flashZoomIndicator();
+          return newScale;
+        });
+        return;
+      }
 
-        if (newScale !== prev) flashZoomIndicator();
-        return newScale;
-      });
+      // Two-finger scroll when zoomed in → pan
+      if (scaleRef.current > 1) {
+        e.preventDefault();
+        setTranslate(t => clampTranslate(
+          { x: t.x - e.deltaX, y: t.y - e.deltaY },
+          scaleRef.current
+        ));
+      }
     };
 
     container.addEventListener('wheel', handleWheel, { passive: false });
