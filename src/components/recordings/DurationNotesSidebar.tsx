@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { Duration } from '../../types';
 import { formatDuration, formatDurationLength } from '../../utils/formatters';
 import { DURATION_COLORS } from '../../utils/durationColors';
@@ -23,9 +23,17 @@ export default function DurationNotesSidebar({
   onExitVideoMode,
 }: DurationNotesSidebarProps) {
   const isActiveTab = useIsActiveTab();
+  const [searchQuery, setSearchQuery] = useState('');
 
   // In video mode show all marks; otherwise only those with notes
   const durationsWithNotes = videoMode ? durations : durations.filter(d => d.note && d.note.trim() !== '');
+
+  const filteredDurations = searchQuery.trim()
+    ? durationsWithNotes.filter(d => {
+        const plain = (d.note || '').replace(/<[^>]+>/g, ' ').toLowerCase();
+        return plain.includes(searchQuery.toLowerCase());
+      })
+    : durationsWithNotes;
 
   // Auto-scroll to active note when activeDurationId changes
   useEffect(() => {
@@ -77,14 +85,34 @@ export default function DurationNotesSidebar({
         ) : (
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
             <span>📋</span>
-            Section Notes ({durationsWithNotes.length})
+            Section Notes ({searchQuery.trim() ? `${filteredDurations.length} / ${durationsWithNotes.length}` : durationsWithNotes.length})
           </h2>
+        )}
+        {!videoMode && (
+          <div className="mt-2 relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Filter marks..."
+              className="w-full text-xs bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-dark-border rounded-md px-3 py-1.5 pr-7 text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xs"
+                title="Clear"
+              >✕</button>
+            )}
+          </div>
         )}
       </div>
 
       {/* Notes List */}
       <div className="divide-y divide-gray-100 dark:divide-dark-border">
-        {durationsWithNotes.map(duration => {
+        {filteredDurations.length === 0 && searchQuery ? (
+          <p className="text-xs text-gray-400 italic p-4">No marks match "{searchQuery}"</p>
+        ) : filteredDurations.map(duration => {
           const isActive = activeDurationId === duration.id;
           const colorConfig = duration.color ? DURATION_COLORS[duration.color] : null;
           const groupColorConfig = getGroupColorConfig(duration.group_color);
@@ -148,6 +176,7 @@ export default function DurationNotesSidebar({
           );
         })}
       </div>
+
     </aside>
   );
 }
