@@ -622,12 +622,15 @@ export default function ImageLightbox({
     };
   }, []);
 
-  // Restore saved zoom + pan, then reveal the image — ensures the user always
-  // sees the image appear at the correct zoom with no visible intermediate state
+  // Restore saved zoom + pan, then reveal the image.
+  // Scale/translate are applied first (image still invisible), then imageVisible is set
+  // true in the next animation frame — by then the transform is already committed by
+  // the browser so only opacity animates, never the scale jump.
   useEffect(() => {
+    let raf: number;
     if (!imageType || !image?.id) {
-      setImageVisible(true);
-      return;
+      raf = requestAnimationFrame(() => setImageVisible(true));
+      return () => cancelAnimationFrame(raf);
     }
     window.electronAPI.imageViewState.get(imageType, image.id).then(saved => {
       if (saved && saved.scale > 1) {
@@ -635,8 +638,9 @@ export default function ImageLightbox({
         setTranslate({ x: saved.translate_x, y: saved.translate_y });
         flashZoomIndicator();
       }
-      setImageVisible(true);
+      raf = requestAnimationFrame(() => setImageVisible(true));
     });
+    return () => cancelAnimationFrame(raf);
   }, [image?.id, imageType, flashZoomIndicator]);
 
   // Wheel handler: pinch/Cmd+scroll → zoom, two-finger scroll when zoomed → pan
@@ -1162,8 +1166,9 @@ export default function ImageLightbox({
     transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
     transformOrigin: 'center center',
     cursor: drawMode ? 'crosshair' : (isShiftHeld && mediaType ? 'crosshair' : (scale > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'default')),
-    // Hide instantly, reveal with a short fade so the image appears at the restored zoom level
     opacity: imageVisible ? 1 : 0,
+    // transform animates during zoom/pan; opacity fades in on reveal.
+    // Hiding uses 'none' so going invisible is instant.
     transition: isDragging.current ? 'none' : imageVisible
       ? 'transform 0.1s ease-out, opacity 0.12s ease'
       : 'none',
