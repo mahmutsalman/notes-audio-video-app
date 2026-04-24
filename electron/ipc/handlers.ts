@@ -600,17 +600,67 @@ export function setupIpcHandlers(): void {
   });
 
   ipcMain.handle('clipboard:readImage', async () => {
-    const image = clipboard.readImage();
-    if (image.isEmpty()) {
-      return { success: false };
+    // On macOS, Cmd+C on a file in Finder puts BOTH a file URL AND a preview thumbnail
+    // (the generic file icon, not the actual image) in the clipboard. We must check for
+    // image file URLs FIRST so we return the real file bytes, not the icon preview.
+    const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.tiff', '.bmp']);
+    let filePath: string | null = null;
+
+    if (process.platform === 'darwin') {
+      const uriList = clipboard.read('text/uri-list');
+      if (uriList) {
+        const uri = uriList.split('\n').map((l: string) => l.trim()).find((l: string) => l.startsWith('file://') && !l.startsWith('file:///.file/'));
+        if (uri) filePath = decodeURIComponent(uri.replace('file://', ''));
+      }
+      if (!filePath) {
+        const fileUrl = clipboard.read('public.file-url');
+        if (fileUrl && !fileUrl.includes('/.file/id=')) {
+          filePath = decodeURIComponent(fileUrl.replace('file://', ''));
+        } else if (fileUrl && fileUrl.includes('/.file/id=')) {
+          try {
+            const { execSync } = await import('child_process');
+            const result = execSync(
+              `osascript -e 'tell application "Finder" to POSIX path of (the clipboard as alias)'`,
+              { encoding: 'utf8', timeout: 3000 }
+            ).trim();
+            if (result) filePath = result;
+          } catch {}
+        }
+      }
+      if (!filePath) {
+        try {
+          const plist = clipboard.read('NSFilenamesPboardType');
+          if (plist) {
+            const match = plist.match(/<string>([^<]+)<\/string>/);
+            if (match?.[1]) filePath = match[1];
+          }
+        } catch {}
+      }
+    } else {
+      const text = clipboard.readText().trim();
+      if (text.startsWith('file://')) {
+        try { filePath = decodeURIComponent(new URL(text).pathname); } catch {}
+      }
     }
-    // Convert NativeImage to PNG buffer
-    const buffer = image.toPNG();
-    return {
-      success: true,
-      buffer: buffer,
-      extension: 'png'
-    };
+
+    // If clipboard holds an image file path, read the file directly (preserves format + quality)
+    if (filePath) {
+      const ext = path.extname(filePath).toLowerCase();
+      if (IMAGE_EXTENSIONS.has(ext)) {
+        try {
+          const buffer = await fs.promises.readFile(filePath);
+          return { success: true, buffer, extension: ext.slice(1) };
+        } catch {}
+      }
+    }
+
+    // No image file URL — fall back to bitmap data (screenshots, copy-as-image from other apps)
+    const image = clipboard.readImage();
+    if (!image.isEmpty()) {
+      return { success: true, buffer: image.toPNG(), extension: 'png' };
+    }
+
+    return { success: false };
   });
 
   ipcMain.handle('clipboard:readFileUrl', async () => {
@@ -2916,15 +2966,46 @@ export function setupIpcHandlers(): void {
     });
   });
 
+  // Returns the path of an HTML/PDF file from the clipboard, or null if none.
+  const getHtmlFileFromClipboard = (): string | null => {
+    const HTML_EXTENSIONS = new Set(['.html', '.htm', '.pdf']);
+    if (process.platform === 'darwin') {
+      const uriList = clipboard.read('text/uri-list');
+      if (uriList) {
+        const uri = uriList.split('\n').map((l: string) => l.trim()).find((l: string) => l.startsWith('file://') && !l.startsWith('file:///.file/'));
+        if (uri) {
+          const p = decodeURIComponent(uri.replace('file://', ''));
+          if (HTML_EXTENSIONS.has(path.extname(p).toLowerCase())) return p;
+        }
+      }
+      const fileUrl = clipboard.read('public.file-url');
+      if (fileUrl && !fileUrl.includes('/.file/id=')) {
+        const p = decodeURIComponent(fileUrl.replace('file://', ''));
+        if (HTML_EXTENSIONS.has(path.extname(p).toLowerCase())) return p;
+      }
+      try {
+        const plist = clipboard.read('NSFilenamesPboardType');
+        if (plist) {
+          const match = plist.match(/<string>([^<]+)<\/string>/);
+          if (match?.[1] && HTML_EXTENSIONS.has(path.extname(match[1]).toLowerCase())) return match[1];
+        }
+      } catch {}
+    }
+    return null;
+  };
+
   // ── HTML Nodes (recording-level) ──────────────────────────────────────────
   ipcMain.handle('htmlNodes:pickAndAdd', async (_, recordingId: number) => {
-    const result = await dialog.showOpenDialog({
-      title: 'Select HTML or PDF file',
-      filters: [{ name: 'Documents', extensions: ['html', 'htm', 'pdf'] }],
-      properties: ['openFile'],
-    });
-    if (result.canceled || !result.filePaths.length) return null;
-    const sourcePath = result.filePaths[0];
+    let sourcePath = getHtmlFileFromClipboard();
+    if (!sourcePath) {
+      const result = await dialog.showOpenDialog({
+        title: 'Select HTML or PDF file',
+        filters: [{ name: 'Documents', extensions: ['html', 'htm', 'pdf'] }],
+        properties: ['openFile'],
+      });
+      if (result.canceled || !result.filePaths.length) return null;
+      sourcePath = result.filePaths[0];
+    }
     const ext = path.extname(sourcePath).toLowerCase();
     const fileType = ext === '.pdf' ? 'pdf' : 'html';
     const title = path.basename(sourcePath, path.extname(sourcePath));
@@ -2959,13 +3040,16 @@ export function setupIpcHandlers(): void {
 
   // ── Duration HTML Nodes ───────────────────────────────────────────────────
   ipcMain.handle('durationHtmlNodes:pickAndAdd', async (_, durationId: number) => {
-    const result = await dialog.showOpenDialog({
-      title: 'Select HTML or PDF file',
-      filters: [{ name: 'Documents', extensions: ['html', 'htm', 'pdf'] }],
-      properties: ['openFile'],
-    });
-    if (result.canceled || !result.filePaths.length) return null;
-    const sourcePath = result.filePaths[0];
+    let sourcePath = getHtmlFileFromClipboard();
+    if (!sourcePath) {
+      const result = await dialog.showOpenDialog({
+        title: 'Select HTML or PDF file',
+        filters: [{ name: 'Documents', extensions: ['html', 'htm', 'pdf'] }],
+        properties: ['openFile'],
+      });
+      if (result.canceled || !result.filePaths.length) return null;
+      sourcePath = result.filePaths[0];
+    }
     const ext = path.extname(sourcePath).toLowerCase();
     const fileType = ext === '.pdf' ? 'pdf' : 'html';
     const title = path.basename(sourcePath, path.extname(sourcePath));
