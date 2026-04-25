@@ -21,6 +21,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { DurationColor, DurationGroupColor } from '../../types';
 import { DURATION_COLORS } from '../../utils/durationColors';
 import { DURATION_GROUP_COLORS } from '../../utils/durationGroupColors';
+import { IMAGE_COLORS, type ImageColorKey } from '../../utils/imageColors';
 
 /** Minimal image shape shared by Image and DurationImage */
 export interface SortableImageItem {
@@ -67,6 +68,20 @@ interface SortableImageGridProps {
   highlightedId?: number;
   /** Disable drag-and-drop and hide the delete button (read-only display mode) */
   readOnly?: boolean;
+  /** Map of imageId → ordered color key array; renders as stacked rings (first = innermost) */
+  colorKeysMap?: Record<number, string[]>;
+}
+
+/* ── Build stacked color ring box-shadow ──────────────────────── */
+
+function buildColorRings(colorKeys: string[]): string | undefined {
+  if (!colorKeys.length) return undefined;
+  return colorKeys
+    .map((key, i) => {
+      const hex = IMAGE_COLORS[key as ImageColorKey]?.hex ?? '#888';
+      return `0 0 0 ${(i + 1) * 3}px ${hex}`;
+    })
+    .join(', ');
 }
 
 /* ── Sortable wrapper for a single image cell ─────────────────── */
@@ -87,6 +102,7 @@ interface SortableImageProps {
   childCount?: number;
   hasOcr?: boolean;
   isHighlighted?: boolean;
+  colorKeys?: string[];
 }
 
 function SortableImage({
@@ -105,8 +121,10 @@ function SortableImage({
   childCount = 0,
   hasOcr = false,
   isHighlighted = false,
+  colorKeys = [],
 }: SortableImageProps) {
   const [captionExpanded, setCaptionExpanded] = useState(false);
+  const colorRings = buildColorRings(colorKeys);
   const {
     attributes,
     listeners,
@@ -211,6 +229,7 @@ function SortableImage({
         )}
         <div
           className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border"
+          style={colorRings ? { boxShadow: colorRings } : undefined}
           onClick={(e) => {
             // Only open lightbox if this wasn't a drag
             if (!isDragging) {
@@ -270,6 +289,7 @@ interface ReadOnlyImageProps {
   onContextMenu?: (e: React.MouseEvent, image: SortableImageItem) => void;
   audioCount?: number;
   isHighlighted?: boolean;
+  colorKeys?: string[];
 }
 
 function ReadOnlyImage({
@@ -283,8 +303,10 @@ function ReadOnlyImage({
   onContextMenu,
   audioCount = 0,
   isHighlighted = false,
+  colorKeys = [],
 }: ReadOnlyImageProps) {
   const [captionExpanded, setCaptionExpanded] = useState(false);
+  const colorRings = buildColorRings(colorKeys);
 
   return (
     <div
@@ -321,6 +343,7 @@ function ReadOnlyImage({
         )}
         <div
           className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border"
+          style={colorRings ? { boxShadow: colorRings } : undefined}
           onClick={(e) => { e.stopPropagation(); onImageClick(index); }}
         >
           <img
@@ -386,6 +409,7 @@ export default function SortableImageGrid({
   ocrMap,
   highlightedId,
   readOnly = false,
+  colorKeysMap,
 }: SortableImageGridProps) {
   const [activeId, setActiveId] = useState<number | null>(null);
 
@@ -411,6 +435,7 @@ export default function SortableImageGrid({
               onContextMenu={onContextMenu}
               audioCount={audioCountMap?.[img.id] ?? 0}
               isHighlighted={highlightedId === img.id}
+              colorKeys={colorKeysMap?.[img.id] ?? []}
             />
           );
         })}
@@ -487,6 +512,7 @@ export default function SortableImageGrid({
                 childCount={childCountMap?.[img.id] ?? 0}
                 hasOcr={ocrMap?.[img.id] ?? false}
                 isHighlighted={highlightedId === img.id}
+                colorKeys={colorKeysMap?.[img.id] ?? []}
               />
             );
           })}

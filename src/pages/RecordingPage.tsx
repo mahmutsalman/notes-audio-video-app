@@ -2775,6 +2775,7 @@ export default function RecordingPage() {
             tagNamesMap={tagNamesMap}
             childCountMap={durationImageChildCountMap}
             ocrMap={durationImageOcrMap}
+            colorKeysMap={durationImageColorsCache}
             pastePlaceholder={
               <div className="flex flex-col items-center">
                 <div className="relative w-full max-w-[160px]">
@@ -3357,6 +3358,7 @@ export default function RecordingPage() {
             audioCountMap={recordingImageAudioCountMap}
             childCountMap={recordingImageChildCountMap}
             ocrMap={recordingImageOcrMap}
+            colorKeysMap={recordingImageColorsCache}
             pastePlaceholder={
               <div className="flex flex-col items-center">
                 <div className="relative w-full max-w-[160px]">
