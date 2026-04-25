@@ -6,9 +6,11 @@ interface HtmlNodeCardProps {
   onOpen: () => void;
   onDelete: () => void;
   onUpdateTitle: (title: string | null) => void;
+  onTagsClick?: () => void;
+  tagCount?: number;
 }
 
-export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle }: HtmlNodeCardProps) {
+export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle, onTagsClick, tagCount = 0 }: HtmlNodeCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(node.title ?? '');
@@ -65,7 +67,7 @@ export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle }: 
             onKeyDown={handleTitleKeyDown}
             onClick={e => e.stopPropagation()}
             className="w-full text-sm bg-transparent border-b border-blue-400 outline-none text-gray-800 dark:text-gray-200"
-            placeholder="Add title…"
+            placeholder="Add caption…"
           />
         ) : (
           <div className="flex flex-col min-w-0">
@@ -77,9 +79,25 @@ export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle }: 
         )}
       </div>
 
-      {/* Hover actions: rename + delete, grouped together */}
+      {/* Tag count badge */}
+      {tagCount > 0 && !isHovered && (
+        <span className="shrink-0 text-xs bg-orange-500 text-white rounded-full px-1.5 py-0.5 leading-none">
+          {tagCount}
+        </span>
+      )}
+
+      {/* Hover actions */}
       {isHovered && !isEditingTitle && (
         <div className="shrink-0 flex items-center gap-1" onClick={e => e.stopPropagation()}>
+          {onTagsClick && (
+            <button
+              onClick={e => { e.stopPropagation(); onTagsClick(); }}
+              className="text-xs text-orange-400 dark:text-orange-500 hover:text-orange-600 dark:hover:text-orange-300 px-1"
+              title="Tags"
+            >
+              🏷
+            </button>
+          )}
           <button
             onClick={startEdit}
             className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 px-1"

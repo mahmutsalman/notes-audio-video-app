@@ -235,6 +235,8 @@ export default function RecordingPage() {
   const [htmlNodes, setHtmlNodes] = useState<HtmlNode[]>([]);
   const [activeDurationHtmlNodes, setActiveDurationHtmlNodes] = useState<DurationHtmlNode[]>([]);
   const [htmlNodeToDelete, setHtmlNodeToDelete] = useState<{ id: number; kind: 'recording' | 'duration' } | null>(null);
+  const [htmlNodeTagCountMap, setHtmlNodeTagCountMap] = useState<Record<number, number>>({});
+  const [durationHtmlNodeTagCountMap, setDurationHtmlNodeTagCountMap] = useState<Record<number, number>>({});
   const [contextMenu, setContextMenu] = useState<{
     type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio';
     item: Image | Video | DurationImage | DurationVideo | DurationAudio | Audio;
@@ -478,15 +480,30 @@ export default function RecordingPage() {
   // Load recording-level html nodes
   useEffect(() => {
     if (id === null) return;
-    window.electronAPI.htmlNodes.list(id).then(setHtmlNodes);
+    window.electronAPI.htmlNodes.list(id).then(nodes => {
+      setHtmlNodes(nodes);
+      Promise.all(nodes.map(n => window.electronAPI.tags.getByMedia('html_node', n.id))).then(tagArrays => {
+        const map: Record<number, number> = {};
+        nodes.forEach((n, i) => { map[n.id] = tagArrays[i].length; });
+        setHtmlNodeTagCountMap(map);
+      });
+    });
   }, [id]);
 
   // Load duration-level html nodes when active duration changes
   useEffect(() => {
     if (activeDurationId !== null) {
-      window.electronAPI.durationHtmlNodes.list(activeDurationId).then(setActiveDurationHtmlNodes);
+      window.electronAPI.durationHtmlNodes.list(activeDurationId).then(nodes => {
+        setActiveDurationHtmlNodes(nodes);
+        Promise.all(nodes.map(n => window.electronAPI.tags.getByMedia('duration_html_node', n.id))).then(tagArrays => {
+          const map: Record<number, number> = {};
+          nodes.forEach((n, i) => { map[n.id] = tagArrays[i].length; });
+          setDurationHtmlNodeTagCountMap(map);
+        });
+      });
     } else {
       setActiveDurationHtmlNodes([]);
+      setDurationHtmlNodeTagCountMap({});
     }
   }, [activeDurationId]);
 
@@ -3266,6 +3283,8 @@ export default function RecordingPage() {
                   onOpen={() => window.electronAPI.durationHtmlNodes.open(node.id)}
                   onDelete={() => handleDeleteDurationHtmlNode(node.id)}
                   onUpdateTitle={title => handleUpdateDurationHtmlNodeTitle(node.id, title)}
+                  onTagsClick={() => setTagModal({ mediaType: 'duration_html_node', mediaId: node.id, title: node.title || 'Document' })}
+                  tagCount={durationHtmlNodeTagCountMap[node.id] ?? 0}
                 />
               ))}
             </div>
@@ -3817,6 +3836,8 @@ export default function RecordingPage() {
                 onOpen={() => window.electronAPI.htmlNodes.open(node.id)}
                 onDelete={() => handleDeleteHtmlNode(node.id)}
                 onUpdateTitle={title => handleUpdateHtmlNodeTitle(node.id, title)}
+                onTagsClick={() => setTagModal({ mediaType: 'html_node', mediaId: node.id, title: node.title || 'Document' })}
+                tagCount={htmlNodeTagCountMap[node.id] ?? 0}
               />
             ))}
           </div>
@@ -4617,6 +4638,18 @@ export default function RecordingPage() {
             } else if (tagModal.mediaType === 'duration_video') {
               window.electronAPI.tags.getByMedia('duration_video', tagModal.mediaId)
                 .then((tags: { name: string }[]) => setDurationVideoTagCountMap(prev => ({
+                  ...prev,
+                  [tagModal.mediaId]: tags.length,
+                })));
+            } else if (tagModal.mediaType === 'html_node') {
+              window.electronAPI.tags.getByMedia('html_node', tagModal.mediaId)
+                .then((tags: { name: string }[]) => setHtmlNodeTagCountMap(prev => ({
+                  ...prev,
+                  [tagModal.mediaId]: tags.length,
+                })));
+            } else if (tagModal.mediaType === 'duration_html_node') {
+              window.electronAPI.tags.getByMedia('duration_html_node', tagModal.mediaId)
+                .then((tags: { name: string }[]) => setDurationHtmlNodeTagCountMap(prev => ({
                   ...prev,
                   [tagModal.mediaId]: tags.length,
                 })));

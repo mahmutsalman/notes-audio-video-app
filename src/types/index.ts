@@ -1128,7 +1128,7 @@ export interface SearchNavState {
   query: string;
 }
 
-export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio' | 'quick_capture_image' | 'quick_capture_audio' | 'image_child' | 'image_audio' | 'duration_image_audio' | 'quick_capture_image_audio' | 'image_child_audio' | 'video' | 'duration_video';
+export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio' | 'quick_capture_image' | 'quick_capture_audio' | 'image_child' | 'image_audio' | 'duration_image_audio' | 'quick_capture_image_audio' | 'image_child_audio' | 'video' | 'duration_video' | 'html_node' | 'duration_html_node';
 
 export interface Tag {
   id: number;
@@ -1189,6 +1189,29 @@ export interface TaggedChildImage {
   topic_name: string | null;
 }
 
+export interface TaggedHtmlNode {
+  id: number;
+  file_path: string;
+  title: string | null;
+  file_type: 'html' | 'pdf';
+  recording_id: number;
+  recording_name: string | null;
+  topic_id: number;
+  topic_name: string;
+}
+
+export interface TaggedDurationHtmlNode {
+  id: number;
+  file_path: string;
+  title: string | null;
+  file_type: 'html' | 'pdf';
+  duration_id: number;
+  recording_id: number;
+  recording_name: string | null;
+  topic_id: number;
+  topic_name: string;
+}
+
 export interface TaggedItems {
   images: TaggedMediaImage[];
   duration_images: TaggedMediaDurationImage[];
@@ -1196,6 +1219,8 @@ export interface TaggedItems {
   duration_audios: TaggedMediaDurationAudio[];
   capture_images: TaggedCaptureImage[];
   image_children: TaggedChildImage[];
+  html_nodes: TaggedHtmlNode[];
+  duration_html_nodes: TaggedDurationHtmlNode[];
 }
 
 // Quick Capture types
