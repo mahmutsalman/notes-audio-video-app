@@ -5,7 +5,7 @@ import { useRecordingAudioPlayer } from '../../context/RecordingAudioPlayerConte
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 import ImageLightbox from '../common/ImageLightbox';
 import SortableImageGrid from '../common/SortableImageGrid';
-import type { TaggedItems, TaggedCaptureImage, TaggedChildImage, AnyImageAudio } from '../../types';
+import type { TaggedItems, TaggedCaptureImage, TaggedChildImage, TaggedHtmlNode, TaggedDurationHtmlNode, AnyImageAudio } from '../../types';
 
 function fmtDuration(secs: number | null): string {
   if (!secs) return '';
@@ -64,12 +64,14 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
     setLoading(true);
     Promise.all(tagNames.map(t => window.electronAPI.tags.getItemsByTag(t))).then((results) => {
       setItems({
-        images:          dedupeById(results.flatMap(r => r.images)),
-        duration_images: dedupeById(results.flatMap(r => r.duration_images)),
-        audios:          dedupeById(results.flatMap(r => r.audios)),
-        duration_audios: dedupeById(results.flatMap(r => r.duration_audios)),
-        capture_images:  dedupeById(results.flatMap(r => r.capture_images)),
-        image_children:  dedupeById(results.flatMap(r => r.image_children)),
+        images:              dedupeById(results.flatMap(r => r.images)),
+        duration_images:     dedupeById(results.flatMap(r => r.duration_images)),
+        audios:              dedupeById(results.flatMap(r => r.audios)),
+        duration_audios:     dedupeById(results.flatMap(r => r.duration_audios)),
+        capture_images:      dedupeById(results.flatMap(r => r.capture_images)),
+        image_children:      dedupeById(results.flatMap(r => r.image_children)),
+        html_nodes:          dedupeById(results.flatMap(r => r.html_nodes)),
+        duration_html_nodes: dedupeById(results.flatMap(r => r.duration_html_nodes)),
       });
       setLoading(false);
     });
@@ -383,7 +385,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
   if (loading) return <p className="text-sm text-gray-400 py-4">Loading…</p>;
   if (!items) return null;
 
-  const total = items.images.length + items.duration_images.length + items.audios.length + items.duration_audios.length + items.capture_images.length + items.image_children.length;
+  const total = items.images.length + items.duration_images.length + items.audios.length + items.duration_audios.length + items.capture_images.length + items.image_children.length + (items.html_nodes?.length ?? 0) + (items.duration_html_nodes?.length ?? 0);
 
   if (total === 0) {
     return <p className="text-sm text-gray-400 dark:text-gray-500 py-4">No items tagged with {tagNames.map((t, i) => <span key={t}>{i > 0 && ' or '}<span className="font-mono text-blue-500">#{t}</span></span>)}</p>;
@@ -701,6 +703,54 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
           </div>
         </div>
       )}
+
+      {/* HTML & PDF sections */}
+      {[
+        { label: 'HTML & PDF — Recordings', rows: items?.html_nodes ?? [] as TaggedHtmlNode[], isDuration: false },
+        { label: 'HTML & PDF — Marks',      rows: items?.duration_html_nodes ?? [] as TaggedDurationHtmlNode[], isDuration: true },
+      ].filter(s => s.rows.length > 0).map(({ label, rows, isDuration }) => (
+        <div key={label} className="mb-4 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+          <h3 className="text-sm font-medium text-violet-700 dark:text-violet-300 flex items-center gap-1.5 mb-2">
+            <span>📄</span>{label}
+            <span className="font-normal text-violet-400 dark:text-violet-500">({rows.length})</span>
+          </h3>
+          <div className="space-y-1">
+            {(rows as (TaggedHtmlNode | TaggedDurationHtmlNode)[]).map(row => {
+              const isPdf = row.file_type === 'pdf';
+              const displayTitle = row.title || (isPdf ? 'Untitled PDF' : 'Untitled HTML');
+              return (
+                <div
+                  key={row.id}
+                  className="group flex items-center gap-2 p-2 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg cursor-pointer hover:bg-violet-100 dark:hover:bg-violet-900/30 transition-colors"
+                  onClick={() => isDuration
+                    ? window.electronAPI.durationHtmlNodes.open(row.id)
+                    : window.electronAPI.htmlNodes.open(row.id)
+                  }
+                >
+                  <span className={`shrink-0 text-xs font-bold px-1.5 py-0.5 rounded ${isPdf ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'}`}>
+                    {isPdf ? 'PDF' : 'HTML'}
+                  </span>
+                  <span className="flex-1 min-w-0 text-xs text-violet-800 dark:text-violet-200 truncate">
+                    {displayTitle}
+                  </span>
+                  <span className="text-[10px] text-violet-400/70 truncate max-w-[140px] flex-shrink-0">
+                    {row.recording_name || 'Recording'}
+                  </span>
+                  <button
+                    onClick={e => { e.stopPropagation(); onNavigate(row.recording_id); }}
+                    className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-violet-200/50 dark:hover:bg-violet-800/30 text-violet-400"
+                    title="Open recording"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
 
       {/* Audio sections — list */}
       {audioSections.map(({ label, icon, isRecordingLevel, rows }) => (

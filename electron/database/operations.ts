@@ -1892,7 +1892,33 @@ export const TagOperations = {
       ORDER BY ic.sort_order, ic.created_at
     `).all(tagName) as { id: number; file_path: string; thumbnail_path: string | null; caption: string | null; parent_type: string; parent_id: number; recording_id: number | null; recording_name: string | null; topic_name: string | null }[];
 
-    return { images, duration_images, audios, duration_audios, capture_images, image_children };
+    const html_nodes = db.prepare(`
+      SELECT hn.id, hn.file_path, hn.title, hn.file_type, hn.recording_id,
+             r.name as recording_name, r.topic_id,
+             t.name as topic_name
+      FROM html_nodes hn
+      JOIN media_tags mt ON mt.media_type = 'html_node' AND mt.media_id = hn.id
+      JOIN tags tag ON tag.id = mt.tag_id AND tag.name = ?
+      JOIN recordings r ON r.id = hn.recording_id
+      JOIN topics t ON t.id = r.topic_id
+      ORDER BY t.name, r.name, hn.sort_order
+    `).all(tagName) as { id: number; file_path: string; title: string | null; file_type: 'html' | 'pdf'; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
+
+    const duration_html_nodes = db.prepare(`
+      SELECT hn.id, hn.file_path, hn.title, hn.file_type, hn.duration_id,
+             d.recording_id,
+             r.name as recording_name, r.topic_id,
+             t.name as topic_name
+      FROM duration_html_nodes hn
+      JOIN media_tags mt ON mt.media_type = 'duration_html_node' AND mt.media_id = hn.id
+      JOIN tags tag ON tag.id = mt.tag_id AND tag.name = ?
+      JOIN durations d ON d.id = hn.duration_id
+      JOIN recordings r ON r.id = d.recording_id
+      JOIN topics t ON t.id = r.topic_id
+      ORDER BY t.name, r.name, hn.sort_order
+    `).all(tagName) as { id: number; file_path: string; title: string | null; file_type: 'html' | 'pdf'; duration_id: number; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
+
+    return { images, duration_images, audios, duration_audios, capture_images, image_children, html_nodes, duration_html_nodes };
   },
 };
 
