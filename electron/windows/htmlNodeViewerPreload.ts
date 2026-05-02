@@ -1,4 +1,4 @@
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, webFrame } from 'electron';
 
 window.addEventListener('DOMContentLoaded', () => {
   let currentZoom = 1.0;
@@ -62,8 +62,16 @@ window.addEventListener('DOMContentLoaded', () => {
   const applyZoom = (factor: number) => {
     currentZoom = Math.min(4.0, Math.max(0.25, +factor.toFixed(2)));
     label.textContent = Math.round(currentZoom * 100) + '%';
-    ipcRenderer.invoke('htmlNodeViewer:setZoom', currentZoom);
+    webFrame.setZoomFactor(currentZoom);
   };
+
+  // Trackpad pinch (reported as wheel + ctrlKey) and Cmd+scroll wheel (metaKey)
+  window.addEventListener('wheel', (e: WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      applyZoom(currentZoom * (1 - e.deltaY * 0.005));
+    }
+  }, { passive: false });
 
   const btnOut = makeBtn('−', 'Zoom out');
   btnOut.onclick = () => applyZoom(currentZoom - 0.1);
