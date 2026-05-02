@@ -425,7 +425,7 @@ export default function RecordingPage() {
   useEffect(() => {
     // Start loading sources in background when page mounts
     // This makes Cmd+D recording instant by pre-warming Electron's cache
-    window.electronAPI.screenRecording.getSources()
+    window.electronAPI.screenRecording.getSourceIds()
       .then(() => {
         console.log('[RecordingPage] Screen sources preloaded and cached');
       })

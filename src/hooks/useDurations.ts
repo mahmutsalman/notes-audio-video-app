@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Duration, CreateDuration, UpdateDuration, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet } from '../types';
 
 export function useDurations(recordingId: number | null) {
@@ -7,14 +7,24 @@ export function useDurations(recordingId: number | null) {
   const [error, setError] = useState<string | null>(null);
   // Cache of duration images, keyed by duration ID
   const [durationImagesCache, setDurationImagesCache] = useState<Record<number, DurationImage[]>>({});
+  const durationImagesCacheRef = useRef(durationImagesCache);
+  durationImagesCacheRef.current = durationImagesCache;
   // Cache of duration videos, keyed by duration ID
   const [durationVideosCache, setDurationVideosCache] = useState<Record<number, DurationVideo[]>>({});
+  const durationVideosCacheRef = useRef(durationVideosCache);
+  durationVideosCacheRef.current = durationVideosCache;
   // Cache of duration audios, keyed by duration ID
   const [durationAudiosCache, setDurationAudiosCache] = useState<Record<number, DurationAudio[]>>({});
+  const durationAudiosCacheRef = useRef(durationAudiosCache);
+  durationAudiosCacheRef.current = durationAudiosCache;
   // Cache of duration code snippets, keyed by duration ID
   const [durationCodeSnippetsCache, setDurationCodeSnippetsCache] = useState<Record<number, DurationCodeSnippet[]>>({});
+  const durationCodeSnippetsCacheRef = useRef(durationCodeSnippetsCache);
+  durationCodeSnippetsCacheRef.current = durationCodeSnippetsCache;
   // Cache of duration image audios, keyed by duration image ID
   const [durationImageAudiosCache, setDurationImageAudiosCache] = useState<Record<number, DurationImageAudio[]>>({});
+  const durationImageAudiosCacheRef = useRef(durationImageAudiosCache);
+  durationImageAudiosCacheRef.current = durationImageAudiosCache;
 
   const fetchDurations = useCallback(async () => {
     if (recordingId === null) {
@@ -100,12 +110,7 @@ export function useDurations(recordingId: number | null) {
 
   // Fetch images for a specific duration
   const getDurationImages = useCallback(async (durationId: number, force?: boolean): Promise<DurationImage[]> => {
-    // Check cache using functional update to avoid stale closure
-    let cached: DurationImage[] | undefined;
-    setDurationImagesCache(prev => {
-      cached = prev[durationId];
-      return prev; // No update needed
-    });
+    const cached = durationImagesCacheRef.current[durationId];
 
     // Return cached if available AND not forcing refresh
     if (!force && cached) {
@@ -232,12 +237,7 @@ export function useDurations(recordingId: number | null) {
 
   // Fetch videos for a specific duration
   const getDurationVideos = useCallback(async (durationId: number, force?: boolean): Promise<DurationVideo[]> => {
-    // Check cache using functional update to avoid stale closure
-    let cached: DurationVideo[] | undefined;
-    setDurationVideosCache(prev => {
-      cached = prev[durationId];
-      return prev; // No update needed
-    });
+    const cached = durationVideosCacheRef.current[durationId];
 
     // Return cached if available AND not forcing refresh
     if (!force && cached) {
@@ -310,12 +310,7 @@ export function useDurations(recordingId: number | null) {
 
   // Fetch audios for a specific duration
   const getDurationAudios = useCallback(async (durationId: number, force?: boolean): Promise<DurationAudio[]> => {
-    // Check cache using functional update to avoid stale closure
-    let cached: DurationAudio[] | undefined;
-    setDurationAudiosCache(prev => {
-      cached = prev[durationId];
-      return prev; // No update needed
-    });
+    const cached = durationAudiosCacheRef.current[durationId];
 
     // Return cached if available AND not forcing refresh
     if (!force && cached) {
@@ -368,11 +363,7 @@ export function useDurations(recordingId: number | null) {
 
   // Fetch audios for a specific duration image
   const getDurationImageAudios = useCallback(async (durationImageId: number, force?: boolean): Promise<DurationImageAudio[]> => {
-    let cached: DurationImageAudio[] | undefined;
-    setDurationImageAudiosCache(prev => {
-      cached = prev[durationImageId];
-      return prev;
-    });
+    const cached = durationImageAudiosCacheRef.current[durationImageId];
 
     if (!force && cached) {
       return cached;
@@ -420,12 +411,7 @@ export function useDurations(recordingId: number | null) {
 
   // Fetch code snippets for a specific duration
   const getDurationCodeSnippets = useCallback(async (durationId: number, force?: boolean): Promise<DurationCodeSnippet[]> => {
-    // Check cache using functional update to avoid stale closure
-    let cached: DurationCodeSnippet[] | undefined;
-    setDurationCodeSnippetsCache(prev => {
-      cached = prev[durationId];
-      return prev; // No update needed
-    });
+    const cached = durationCodeSnippetsCacheRef.current[durationId];
 
     // Return cached if available AND not forcing refresh
     if (!force && cached) {
@@ -441,12 +427,7 @@ export function useDurations(recordingId: number | null) {
 
   // Add code snippet to a duration
   const addDurationCodeSnippet = async (durationId: number, data: Omit<CreateDurationCodeSnippet, 'duration_id' | 'sort_order'>): Promise<DurationCodeSnippet> => {
-    // Get current snippets count for sort_order using functional update
-    let currentCount = 0;
-    setDurationCodeSnippetsCache(prev => {
-      currentCount = (prev[durationId] || []).length;
-      return prev; // No update needed
-    });
+    const currentCount = (durationCodeSnippetsCacheRef.current[durationId] || []).length;
 
     const newSnippet = await window.electronAPI.durationCodeSnippets.create({
       duration_id: durationId,
