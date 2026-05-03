@@ -27,6 +27,7 @@ export default function DurationAudioPlayerBar() {
     updateCurrentAudioCaption,
     updateMarkerCaption,
     seekToNextMarker,
+    seekToNextAnyMarker,
     dismiss,
   } = useDurationAudioPlayer();
   const [expanded, setExpanded] = useState(false);
@@ -240,6 +241,15 @@ export default function DurationAudioPlayerBar() {
               </button>
             );
           })}
+          {hasMarkers && (
+            <button
+              onClick={seekToNextAnyMarker}
+              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium bg-gray-800 text-gray-300 hover:text-white border border-gray-700 transition-colors"
+              title="Seek to next marker (all types, chronological)"
+            >
+              ⏭
+            </button>
+          )}
           {hasMarkers && (
             <button
               onClick={() => setShowMarkerPanel(prev => !prev)}

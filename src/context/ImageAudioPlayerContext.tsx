@@ -21,6 +21,7 @@ interface ImageAudioPlayerContextValue {
   updateCurrentAudioCaption: (caption: string | null) => Promise<void>;
   updateMarkerCaption: (markerId: number, caption: string | null) => Promise<void>;
   seekToNextMarker: (type: AudioMarkerType) => void;
+  seekToNextAnyMarker: () => void;
   dismiss: () => void;
 }
 
@@ -44,6 +45,7 @@ export function ImageAudioPlayerProvider({ children }: { children: ReactNode }) 
     question: 0,
     similar_question: 0,
   });
+  const [anyMarkerSeekIndex, setAnyMarkerSeekIndex] = useState(0);
   const [onUpdateCaption, setOnUpdateCaption] = useState<((audioId: number, caption: string | null) => Promise<AnyImageAudio | void>) | null>(null);
   const playerRef = useRef<ThemedAudioPlayerHandle | null>(null);
 
@@ -59,6 +61,7 @@ export function ImageAudioPlayerProvider({ children }: { children: ReactNode }) 
     setMediaType(audioMediaType ?? null);
     setMarkers(audioMarkers ?? []);
     setMarkerSeekIndex({ important: 0, question: 0, similar_question: 0 });
+    setAnyMarkerSeekIndex(0);
     setOnUpdateCaption(() => updateCaptionHandler ?? null);
   }, []);
 
@@ -89,12 +92,21 @@ export function ImageAudioPlayerProvider({ children }: { children: ReactNode }) 
     setMarkerSeekIndex(prev => ({ ...prev, [type]: (currentIdx + 1) % ofType.length }));
   }, [markers, markerSeekIndex]);
 
+  const seekToNextAnyMarker = useCallback(() => {
+    const sorted = [...markers].sort((a, b) => a.start_time - b.start_time);
+    if (sorted.length === 0) return;
+    const target = sorted[anyMarkerSeekIndex % sorted.length];
+    playerRef.current?.seekTo(target.start_time);
+    setAnyMarkerSeekIndex(prev => (prev + 1) % sorted.length);
+  }, [markers, anyMarkerSeekIndex]);
+
   const dismiss = useCallback(() => {
     setCurrentAudio(null);
     setImageLabel('');
     setMediaType(null);
     setMarkers([]);
     setMarkerSeekIndex({ important: 0, question: 0, similar_question: 0 });
+    setAnyMarkerSeekIndex(0);
     setOnUpdateCaption(null);
   }, []);
 
@@ -113,6 +125,7 @@ export function ImageAudioPlayerProvider({ children }: { children: ReactNode }) 
         updateCurrentAudioCaption,
         updateMarkerCaption,
         seekToNextMarker,
+        seekToNextAnyMarker,
         dismiss,
       }}
     >
