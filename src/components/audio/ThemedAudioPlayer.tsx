@@ -65,6 +65,13 @@ const ThemedAudioPlayer = forwardRef<ThemedAudioPlayerHandle, ThemedAudioPlayerP
     }
   }, [playbackRate]);
 
+  // Load saved default speed on mount
+  useEffect(() => {
+    window.electronAPI.settings.get('audio_playback_speed').then(saved => {
+      if (saved) setPlaybackRate(parseFloat(saved));
+    });
+  }, []);
+
   // Handle click outside to close speed menu
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -220,6 +227,7 @@ const ThemedAudioPlayer = forwardRef<ThemedAudioPlayerHandle, ThemedAudioPlayerP
                   onClick={() => {
                     setPlaybackRate(speed);
                     setShowSpeedMenu(false);
+                    window.electronAPI.settings.set('audio_playback_speed', String(speed));
                   }}
                   className={`w-full px-2 py-1 text-[10px] text-left transition-colors flex items-center justify-between
                              ${playbackRate === speed

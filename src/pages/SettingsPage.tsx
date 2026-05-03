@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 export default function SettingsPage() {
+  const [defaultAudioSpeed, setDefaultAudioSpeed] = useState(1);
   const [obsEnabled, setObsEnabled] = useState(false);
   const [obsHost, setObsHost] = useState('127.0.0.1');
   const [obsPort, setObsPort] = useState('4455');
@@ -17,12 +18,14 @@ export default function SettingsPage() {
   useEffect(() => {
     async function loadSettings() {
       try {
-        const [enabled, host, port, password] = await Promise.all([
+        const [enabled, host, port, password, speedRaw] = await Promise.all([
           window.electronAPI.settings.get('obs_enabled'),
           window.electronAPI.settings.get('obs_host'),
           window.electronAPI.settings.get('obs_port'),
           window.electronAPI.settings.get('obs_password'),
+          window.electronAPI.settings.get('audio_playback_speed'),
         ]);
+        setDefaultAudioSpeed(speedRaw ? parseFloat(speedRaw) : 1);
         setObsEnabled(enabled === 'true');
         setObsHost(host || '127.0.0.1');
         setObsPort(port || '4455');
@@ -149,6 +152,30 @@ export default function SettingsPage() {
   return (
     <div className="p-6 max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Settings</h1>
+
+      {/* Audio Playback */}
+      <section className="bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Audio Playback</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Default speed for all audio clips</p>
+        <div className="flex flex-wrap gap-2">
+          {([0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3] as const).map(speed => (
+            <button
+              key={speed}
+              onClick={async () => {
+                setDefaultAudioSpeed(speed);
+                await window.electronAPI.settings.set('audio_playback_speed', String(speed));
+              }}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                defaultAudioSpeed === speed
+                  ? 'bg-indigo-500 border-indigo-400 text-white'
+                  : 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-indigo-400'
+              }`}
+            >
+              {speed}×
+            </button>
+          ))}
+        </div>
+      </section>
 
       {/* OBS Integration */}
       <section className="bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl p-6 mb-6">
