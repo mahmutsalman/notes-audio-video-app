@@ -3079,6 +3079,7 @@ export default function RecordingPage() {
                     {video.caption}
                   </p>
                 )}
+                <p className="text-[9px] text-gray-400/50 mt-0.5 text-center leading-tight">{formatRelativeTime(video.created_at)}</p>
               </div>
               );
             })}
@@ -3168,9 +3169,10 @@ export default function RecordingPage() {
                     </svg>
                   </button>
                   {/* Label / caption */}
-                  <span className="flex-1 text-xs text-blue-300 truncate min-w-0">
-                    {audio.caption || markLabel}
-                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-blue-300 truncate">{audio.caption || markLabel}</div>
+                    <div className="text-[10px] text-blue-300/40 leading-tight">{formatRelativeTime(audio.created_at)}</div>
+                  </div>
                   {/* Marker badge chips */}
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {markerCounts.important > 0 && (
@@ -3690,6 +3692,7 @@ export default function RecordingPage() {
                     {video.caption}
                   </p>
                 )}
+                <p className="text-[9px] text-gray-400/50 mt-0.5 text-center leading-tight">{formatRelativeTime(video.created_at)}</p>
               </div>
               );
             })}
@@ -3750,6 +3753,7 @@ export default function RecordingPage() {
                         {audio.caption}
                       </p>
                     )}
+                    <p className="text-[10px] text-violet-300/40 mt-0.5 leading-tight">{formatRelativeTime(audio.created_at)}</p>
                   </div>
                   <button
                     onClick={() => handleDeleteRecordingAudio(audio.id)}
