@@ -283,8 +283,8 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
           buffer,
           'webm'
         );
-      } else {
-        await window.electronAPI.audios.addFromBuffer(
+      } else if (target.type === 'recording') {
+        savedAudio = await window.electronAPI.audios.addFromBuffer(
           target.recordingId,
           buffer,
           'webm'

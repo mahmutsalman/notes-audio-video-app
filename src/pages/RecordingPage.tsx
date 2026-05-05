@@ -9,7 +9,6 @@ import { useDurations } from '../hooks/useDurations';
 import { useAudios } from '../hooks/useAudios';
 import { useCodeSnippets } from '../hooks/useCodeSnippets';
 import AudioPlayer, { AudioPlayerHandle } from '../components/audio/AudioPlayer';
-import SimpleAudioRecordModal from '../components/audio/SimpleAudioRecordModal';
 import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../context/ImageAudioPlayerContext';
@@ -92,7 +91,6 @@ export default function RecordingPage() {
 
   const {
     audios: recordingAudios,
-    addAudioFromBuffer,
     deleteAudio: deleteRecordingAudio,
     updateCaption: updateAudioCaption,
     fetchAudios: refetchRecordingAudios,
@@ -224,7 +222,6 @@ export default function RecordingPage() {
     durationId: number;
   } | null>(null);
   const [recordingAudioToDelete, setRecordingAudioToDelete] = useState<number | null>(null);
-  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [showCodeSnippetModal, setShowCodeSnippetModal] = useState(false);
   const [editingCodeSnippet, setEditingCodeSnippet] = useState<CodeSnippet | null>(null);
   const [codeSnippetToDelete, setCodeSnippetToDelete] = useState<number | null>(null);
@@ -1320,13 +1317,6 @@ export default function RecordingPage() {
     if (!durationAudioToDelete) return;
     await deleteDurationAudio(durationAudioToDelete.audioId, durationAudioToDelete.durationId);
     setDurationAudioToDelete(null);
-  };
-
-  // Handle saving recording audio from recording modal
-  const handleSaveRecordingAudio = async (audioBlob: Blob) => {
-    const buffer = await audioBlob.arrayBuffer();
-    await addAudioFromBuffer(buffer, 'webm');
-    setIsRecordingAudio(false);
   };
 
   const handleRecordDurationAudio = () => {
@@ -3713,7 +3703,14 @@ export default function RecordingPage() {
             })()}
           </h2>
           <button
-            onClick={() => setIsRecordingAudio(true)}
+            onClick={() => {
+              if (!id) return;
+              audioRecording.startRecording({
+                type: 'recording',
+                recordingId: id,
+                label: recording?.name || 'Recording',
+              });
+            }}
             className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300"
           >
             🎙️ Record
@@ -4707,14 +4704,6 @@ export default function RecordingPage() {
         </div>
       </Modal>
 
-
-      {/* Recording Audio Record Modal */}
-      <SimpleAudioRecordModal
-        isOpen={isRecordingAudio}
-        onClose={() => setIsRecordingAudio(false)}
-        onSave={handleSaveRecordingAudio}
-        title="Record Audio"
-      />
 
       {/* Code Snippet Modal */}
       {showCodeSnippetModal && (

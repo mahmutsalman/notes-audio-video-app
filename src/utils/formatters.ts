@@ -28,11 +28,21 @@ export function formatDurationLength(startSeconds: number, endSeconds: number): 
   return formatDuration(length);
 }
 
+// SQLite CURRENT_TIMESTAMP returns UTC without a timezone marker (e.g. "2024-01-15 07:30:00").
+// V8 parses such strings as local time, causing the wrong offset. Normalize to ISO UTC first.
+function parseUtcDate(dateString: string): Date {
+  if (!dateString) return new Date(NaN);
+  // Already has timezone info — parse as-is
+  if (dateString.endsWith('Z') || dateString.includes('+')) return new Date(dateString);
+  // Replace the SQLite space separator with T and append Z to mark as UTC
+  return new Date(dateString.replace(' ', 'T') + 'Z');
+}
+
 /**
  * Format date to relative time (e.g., "2 hours ago", "Yesterday")
  */
 export function formatRelativeTime(dateString: string): string {
-  const date = new Date(dateString);
+  const date = parseUtcDate(dateString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffSecs = Math.floor(diffMs / 1000);
@@ -63,7 +73,7 @@ export function formatRelativeTime(dateString: string): string {
  * Format date to full date string
  */
 export function formatDate(dateString: string): string {
-  const date = new Date(dateString);
+  const date = parseUtcDate(dateString);
   return date.toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
