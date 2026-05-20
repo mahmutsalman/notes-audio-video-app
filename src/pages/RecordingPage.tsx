@@ -28,6 +28,7 @@ import CodeSnippetCard from '../components/code/CodeSnippetCard';
 import HtmlNodeCard from '../components/common/HtmlNodeCard';
 import CodeSnippetModal from '../components/code/CodeSnippetModal';
 import ImageLightbox from '../components/common/ImageLightbox';
+import VideoLightbox from '../components/common/VideoLightbox';
 import SortableImageGrid from '../components/common/SortableImageGrid';
 import ScreenRecordingModal from '../components/screen/ScreenRecordingModal';
 import { formatDuration, formatDate, formatRelativeTime, formatFileSize } from '../utils/formatters';
@@ -148,6 +149,11 @@ export default function RecordingPage() {
   const [contextMenuShowColors, setContextMenuShowColors] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [selectedVideoForMarks, setSelectedVideoForMarks] = useState<Video | null>(null);
+  const [videoLightbox, setVideoLightbox] = useState<
+    | { kind: 'video'; item: Video }
+    | { kind: 'durationVideo'; item: DurationVideo }
+    | null
+  >(null);
   const [videoLoadFailed, setVideoLoadFailed] = useState(false);
   const [durationVideoLoadFailed, setDurationVideoLoadFailed] = useState(false);
   const [isPastingVideo, setIsPastingVideo] = useState(false);
@@ -2965,7 +2971,7 @@ export default function RecordingPage() {
                   )}
                   <div
                     className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
-                    onClick={() => handleDurationVideoSelect(video)}
+                    onClick={() => setVideoLightbox({ kind: 'durationVideo', item: video })}
                     onContextMenu={(e) => handleContextMenu(e, 'durationVideo', video)}
                   >
                     {video.thumbnail_path ? (
@@ -3579,7 +3585,7 @@ export default function RecordingPage() {
                   )}
                   <div
                     className="aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-dark-border cursor-pointer"
-                    onClick={() => handleVideoSelect(video)}
+                    onClick={() => setVideoLightbox({ kind: 'video', item: video })}
                   >
                     {video.thumbnail_path ? (
                       <img
@@ -3980,6 +3986,15 @@ export default function RecordingPage() {
                 setDurationImageAudioTagCountMap(prev => ({ ...prev, [audioId]: tags.length }))
               );
           }}
+        />
+      )}
+
+      {/* Clean video viewer (default thumbnail click) */}
+      {videoLightbox && (
+        <VideoLightbox
+          src={window.electronAPI.paths.getFileUrl(videoLightbox.item.file_path)}
+          caption={videoLightbox.item.caption}
+          onClose={() => setVideoLightbox(null)}
         />
       )}
 
@@ -4543,6 +4558,34 @@ export default function RecordingPage() {
             >
               <span>🏷️</span>
               Tags
+            </button>
+          )}
+          {(contextMenu.type === 'video' || contextMenu.type === 'durationVideo') && (
+            <button
+              className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+              onClick={() => {
+                const item = contextMenu.item;
+                const kind = contextMenu.type;
+                setContextMenu(null);
+                if (kind === 'video') handleVideoSelect(item as Video);
+                else handleDurationVideoSelect(item as DurationVideo);
+              }}
+            >
+              <span>📝</span>
+              Open with marks
+            </button>
+          )}
+          {(contextMenu.type === 'video' || contextMenu.type === 'durationVideo') && (
+            <button
+              className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+              onClick={() => {
+                const filePath = contextMenu.item.file_path;
+                setContextMenu(null);
+                if (filePath) window.electronAPI.paths.openFile(filePath);
+              }}
+            >
+              <span>↗</span>
+              Open in default app
             </button>
           )}
           {(contextMenu.type === 'image' || contextMenu.type === 'durationImage') && (
