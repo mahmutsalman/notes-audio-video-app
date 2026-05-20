@@ -9,10 +9,10 @@ import { useDurations } from '../hooks/useDurations';
 import { useAudios } from '../hooks/useAudios';
 import { useCodeSnippets } from '../hooks/useCodeSnippets';
 import AudioPlayer, { AudioPlayerHandle } from '../components/audio/AudioPlayer';
-import ThemedAudioPlayer from '../components/audio/ThemedAudioPlayer';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../context/ImageAudioPlayerContext';
 import { useDurationAudioPlayer } from '../context/DurationAudioPlayerContext';
+import { useRecordingAudioPlayer } from '../context/RecordingAudioPlayerContext';
 import { SYNC_COMPLETED_EVENT } from '../utils/events';
 import DurationList from '../components/recordings/DurationList';
 import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
@@ -218,7 +218,9 @@ export default function RecordingPage() {
   const audioRecording = useAudioRecording();
   const imageAudioPlayer = useImageAudioPlayer();
   const durationAudioPlayer = useDurationAudioPlayer();
+  const recordingAudioPlayer = useRecordingAudioPlayer();
   const [durationAudioMarkersCache, setDurationAudioMarkersCache] = useState<Record<number, AudioMarker[]>>({});
+  const [recordingAudioMarkersCache, setRecordingAudioMarkersCache] = useState<Record<number, AudioMarker[]>>({});
   // Local state to track media color changes for rendering (priority colors - left/right bars)
   const [mediaColorOverrides] = useState<Record<string, DurationColor>>({});
   // Local state to track media group color changes for instant visual feedback (group colors - top bar)
@@ -1311,6 +1313,24 @@ export default function RecordingPage() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDurationId, durationAudiosCache]);
+
+  // Load markers for recording-level audios whenever the list changes
+  useEffect(() => {
+    if (recordingAudios.length === 0) return;
+    Promise.all(
+      recordingAudios.map(audio =>
+        window.electronAPI.audioMarkers.getByAudio(audio.id, 'recording').then(markers => ({ id: audio.id, markers }))
+      )
+    ).then(results => {
+      setRecordingAudioMarkersCache(prev => {
+        const next = { ...prev };
+        for (const { id: audioId, markers } of results) {
+          next[audioId] = markers;
+        }
+        return next;
+      });
+    });
+  }, [recordingAudios]);
 
   // Handle deleting a duration audio
   const handleDeleteDurationAudio = (audioId: number) => {
@@ -3746,23 +3766,55 @@ export default function RecordingPage() {
                   <span className="w-4 h-4 bg-violet-500/30 border border-violet-400/50 text-violet-300 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
                     {index + 1}
                   </span>
-                  <div className="flex-1">
-                    <ThemedAudioPlayer
-                      src={window.electronAPI.paths.getFileUrl(audio.file_path)}
-                      theme="violet"
-                    />
-                    {audio.caption && (
-                      <p className="text-xs text-violet-400 mt-1 italic font-light leading-tight">
-                        {audio.caption}
-                      </p>
-                    )}
-                    <p className="text-[10px] text-violet-300/40 mt-0.5 leading-tight">{formatRelativeTime(audio.created_at)}</p>
+                  {/* Play button — opens bottom player */}
+                  <button
+                    onClick={async () => {
+                      const freshMarkers = await window.electronAPI.audioMarkers.getByAudio(audio.id, 'recording');
+                      recordingAudioPlayer.play(audio, audio.caption || recording?.name || 'Recording', freshMarkers, async (audioId, caption) => {
+                        const result = await updateAudioCaption(audioId, caption);
+                        return result ?? undefined;
+                      });
+                    }}
+                    className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-violet-600 hover:bg-violet-500 text-white transition-colors shadow"
+                    title="Play in bottom bar"
+                  >
+                    <svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </button>
+                  {/* Label / caption */}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-violet-300 truncate">{audio.caption || recording?.name || 'Recording'}</div>
+                    <div className="text-[10px] text-violet-300/40 leading-tight">{formatRelativeTime(audio.created_at)}</div>
                   </div>
+                  {/* Marker badge chips */}
+                  {(() => {
+                    const audioMarkers = recordingAudioMarkersCache[audio.id] ?? [];
+                    const counts = {
+                      important: audioMarkers.filter(m => m.marker_type === 'important').length,
+                      question: audioMarkers.filter(m => m.marker_type === 'question').length,
+                      similar_question: audioMarkers.filter(m => m.marker_type === 'similar_question').length,
+                    };
+                    if (!counts.important && !counts.question && !counts.similar_question) return null;
+                    return (
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {counts.important > 0 && (
+                          <span className="text-xs px-1 py-0.5 rounded bg-red-900/50 text-red-300 border border-red-800/40">❗{counts.important}</span>
+                        )}
+                        {counts.question > 0 && (
+                          <span className="text-xs px-1 py-0.5 rounded bg-blue-900/50 text-blue-300 border border-blue-800/40">❓{counts.question}</span>
+                        )}
+                        {counts.similar_question > 0 && (
+                          <span className="text-xs px-1 py-0.5 rounded bg-purple-900/50 text-purple-300 border border-purple-800/40">↔{counts.similar_question}</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <button
                     onClick={() => handleDeleteRecordingAudio(audio.id)}
                     className="w-6 h-6 bg-red-500 text-white rounded-full
                                opacity-0 group-hover:opacity-100 transition-opacity
-                               flex items-center justify-center text-sm mt-3"
+                               flex items-center justify-center text-sm flex-shrink-0"
                   >
                     ×
                   </button>
