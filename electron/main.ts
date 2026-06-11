@@ -264,11 +264,14 @@ app.whenReady().then(async () => {
   // Register activate handler AFTER first window is created so it doesn't
   // race with whenReady and open a second window on macOS launch
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+    // Use the tracked mainWindow reference — getAllWindows() also contains the
+    // OBS status/overlay windows (no displayId), so a heuristic search could
+    // show the hidden OBS status window on every dock-click/Cmd+Tab activation.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
     } else {
-      const mainWin = BrowserWindow.getAllWindows().find((w: any) => !('displayId' in w));
-      if (mainWin) { mainWin.show(); mainWin.focus(); }
+      createWindow();
     }
   });
 
