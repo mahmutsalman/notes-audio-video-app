@@ -3,7 +3,7 @@ import { useIsActiveTab, useTabInstance } from '../context/TabsContext';
 import { useStudyTracker } from '../context/StudyTrackerContext';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTabTitle } from '../hooks/useTabTitle';
-import { useRecording, useRecordings } from '../hooks/useRecordings';
+import { useRecording } from '../hooks/useRecordings';
 import { useTopic } from '../hooks/useTopics';
 import { useDurations } from '../hooks/useDurations';
 import { useAudios } from '../hooks/useAudios';
@@ -55,7 +55,6 @@ export default function RecordingPage() {
   const { recording, loading, refetch, setRecording } = useRecording(id);
   const { topic } = useTopic(recording?.topic_id ?? null);
   useTabTitle(recording?.name ?? 'Recording');
-  const { recordings: topicRecordings } = useRecordings(recording?.topic_id ?? null);
   const {
     durations,
     createDuration,
@@ -105,13 +104,6 @@ export default function RecordingPage() {
   } = useCodeSnippets(id);
 
   const recordingPlans = useRecordingPlans(id);
-
-  // Calculate adjacent recording IDs for navigation
-  const currentIndex = topicRecordings.findIndex(r => r.id === id);
-  const prevRecordingId = currentIndex > 0 ? topicRecordings[currentIndex - 1].id : null;
-  const nextRecordingId = currentIndex >= 0 && currentIndex < topicRecordings.length - 1
-    ? topicRecordings[currentIndex + 1].id
-    : null;
 
   const [canvasMode, setCanvasMode] = useState(false);
   const [planMode, setPlanMode] = useState(false);
@@ -215,6 +207,8 @@ export default function RecordingPage() {
   const fsLastPositionRef = useRef<Map<string, number>>(new Map());
   // Stable ref to handleFsAddMark so the keyboard effect can call it without stale closure
   const handleFsAddMarkRef = useRef<() => Promise<void>>(async () => {});
+  // Stable ref to handleDurationClick so the arrow-key effect doesn't restart on every render
+  const handleDurationClickRef = useRef<(d: Duration) => Promise<void> | void>(() => {});
   const audioRecording = useAudioRecording();
   const imageAudioPlayer = useImageAudioPlayer();
   const durationAudioPlayer = useDurationAudioPlayer();
@@ -1132,6 +1126,7 @@ export default function RecordingPage() {
   };
   // Keep ref in sync so the keyboard handler can call it without a stale closure
   handleFsAddMarkRef.current = handleFsAddMark;
+  handleDurationClickRef.current = handleDurationClick;
   // Keep marks refs in sync so ghost nav keyboard handler always sees the latest arrays
   useEffect(() => { videoMarksRef.current = videoMarks; }, [videoMarks]);
   useEffect(() => { durationVideoMarksRef.current = durationVideoMarks; }, [durationVideoMarks]);
@@ -2121,8 +2116,10 @@ export default function RecordingPage() {
     setRecordingAudioToDelete(null);
   }, [isActiveTab]);
 
-  // Keyboard navigation for recording navigation (between recordings in same topic)
-  // Only active tab should respond to keyboard navigation
+  // Keyboard navigation between duration marks within the current recording.
+  // ←/→ moves between adjacent marks in `durations` (sort_order, start_time order).
+  // Esc clears the active mark and stops loop playback.
+  // Skips while typing, editing notes, or when any lightbox/overlay is open.
   useEffect(() => {
     if (!isActiveTab) return;
     const handleRecordingNav = (e: KeyboardEvent) => {
@@ -2132,8 +2129,9 @@ export default function RecordingPage() {
       // Skip if duration image lightbox is open
       if (selectedDurationImageIndex !== null) return;
 
-      // Skip if video lightbox is open
+      // Skip if video lightbox is open (inline player or new VideoLightbox)
       if (selectedVideo !== null) return;
+      if (videoLightbox !== null) return;
 
       // Skip if fullscreen video mark overlay is open
       if (videoMarkFullscreen) return;
@@ -2150,10 +2148,23 @@ export default function RecordingPage() {
         activeEl?.closest('[contenteditable="true"]')
       ) return;
 
-      if (e.key === 'ArrowLeft' && prevRecordingId) {
-        navigate(`/recording/${prevRecordingId}`);
-      } else if (e.key === 'ArrowRight' && nextRecordingId) {
-        navigate(`/recording/${nextRecordingId}`);
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (durations.length === 0) return;
+        e.preventDefault();
+        const currentIdx = activeDurationId !== null
+          ? durations.findIndex(d => d.id === activeDurationId)
+          : -1;
+        let targetIdx: number;
+        if (currentIdx === -1) {
+          targetIdx = e.key === 'ArrowRight' ? 0 : durations.length - 1;
+        } else if (e.key === 'ArrowRight') {
+          if (currentIdx >= durations.length - 1) return;
+          targetIdx = currentIdx + 1;
+        } else {
+          if (currentIdx <= 0) return;
+          targetIdx = currentIdx - 1;
+        }
+        handleDurationClickRef.current(durations[targetIdx]);
       } else if (e.key === 'Escape' && activeDurationId !== null) {
         // Stop loop playback on Escape
         audioPlayerRef.current?.clearLoopRegion();
@@ -2163,7 +2174,7 @@ export default function RecordingPage() {
 
     window.addEventListener('keydown', handleRecordingNav);
     return () => window.removeEventListener('keydown', handleRecordingNav);
-  }, [isActiveTab, selectedImageIndex, selectedDurationImageIndex, selectedVideo, videoMarkFullscreen, isEditing, prevRecordingId, nextRecordingId, navigate, activeDurationId]);
+  }, [isActiveTab, selectedImageIndex, selectedDurationImageIndex, selectedVideo, videoLightbox, videoMarkFullscreen, isEditing, activeDurationId, durations]);
 
   // Keyboard controls for fullscreen video mark overlay
   // Space = play/pause, ←/→ = seek ±3s, Escape = close
