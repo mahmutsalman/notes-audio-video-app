@@ -1,31 +1,17 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { ReviewItem, ReviewMask, ReviewRating } from '../../types';
+import type { ReviewItem, ReviewMask, ReviewRating, ReviewPreset } from '../../types';
 import { formatDueLabel } from '../../utils/srsAlgorithm';
 import {
-  previewRatings, applyRating, applyManual,
+  previewRatings, applyRating, applyManual, applyManualDate,
   buildRatingEvent, buildManualEvent, type ReviewNoteExtras,
 } from '../../utils/fsrs';
 import PixelatedImage from './PixelatedImage';
-
-const PRESET_DAYS: Record<string, number> = {
-  '1d': 1, '3d': 3, '5d': 5, '1w': 7, '2w': 14, '1m': 30, '3m': 90,
-};
 
 interface ReviewSessionProps {
   items: ReviewItem[];
   onSessionEnd: () => void;
 }
-
-const MANUAL_PRESETS: { label: string; key: string }[] = [
-  { label: '1 day', key: '1d' },
-  { label: '3 days', key: '3d' },
-  { label: '5 days', key: '5d' },
-  { label: '1 week', key: '1w' },
-  { label: '2 weeks', key: '2w' },
-  { label: '1 month', key: '1m' },
-  { label: '3 months', key: '3m' },
-];
 
 const RATING_CONFIG: { rating: ReviewRating; label: string; color: string; hint: string }[] = [
   { rating: 'again', label: 'Again', color: 'bg-red-600 hover:bg-red-500', hint: 'Blackout — reset' },
@@ -51,6 +37,16 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
   const [allRevealed, setAllRevealed] = useState(false);
   const [showManualSchedule, setShowManualSchedule] = useState(false);
   const [isRating, setIsRating] = useState(false);
+
+  // Editable manual-schedule presets (loaded from DB once).
+  const [presets, setPresets] = useState<ReviewPreset[]>([]);
+  const [managePresets, setManagePresets] = useState(false);
+  const [newPresetDays, setNewPresetDays] = useState('');
+
+  const loadPresets = useCallback(() => {
+    window.electronAPI.reviewPresets.getAll().then(setPresets);
+  }, []);
+  useEffect(() => { loadPresets(); }, [loadPresets]);
 
   // Per-review reflective note + optional study timer (reset on each card).
   const [note, setNote] = useState('');
@@ -133,13 +129,38 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
     advance();
   };
 
-  const handleManualSchedule = async (preset: string) => {
+  const handleManualSchedule = async (days: number) => {
     if (!current || isRating) return;
     setIsRating(true);
-    const fields = applyManual(current, PRESET_DAYS[preset] ?? 7);
+    const fields = applyManual(current, days);
     const event = buildManualEvent(current, fields, noteExtras());
     await window.electronAPI.review.schedule(current.id, fields, event);
     advance();
+  };
+
+  const handleManualDate = async (dateStr: string) => {
+    if (!current || isRating || !dateStr) return;
+    setIsRating(true);
+    const fields = applyManualDate(current, new Date(dateStr + 'T00:00:00'));
+    const event = buildManualEvent(current, fields, noteExtras());
+    await window.electronAPI.review.schedule(current.id, fields, event);
+    advance();
+  };
+
+  const addPreset = async () => {
+    const days = parseInt(newPresetDays, 10);
+    if (!Number.isFinite(days) || days < 1) return;
+    const label = days % 30 === 0 && days >= 30 ? `${days / 30} month${days > 30 ? 's' : ''}`
+      : days % 7 === 0 ? `${days / 7} week${days > 7 ? 's' : ''}`
+      : `${days} day${days > 1 ? 's' : ''}`;
+    await window.electronAPI.reviewPresets.create(label, days);
+    setNewPresetDays('');
+    loadPresets();
+  };
+
+  const deletePreset = async (id: number) => {
+    await window.electronAPI.reviewPresets.delete(id);
+    loadPresets();
   };
 
   const advance = () => {
@@ -338,23 +359,70 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
             <div className="flex items-center gap-2 mb-1">
               <span className="text-gray-300 text-sm">Schedule for:</span>
               <button
-                onClick={() => setShowManualSchedule(false)}
+                onClick={() => setManagePresets(m => !m)}
+                className="text-gray-500 hover:text-gray-300 text-xs"
+                title="Add or remove presets"
+              >
+                {managePresets ? 'Done' : 'Edit presets'}
+              </button>
+              <button
+                onClick={() => { setShowManualSchedule(false); setManagePresets(false); }}
                 className="text-gray-500 hover:text-gray-300 text-xs ml-auto"
               >
                 ← Use algorithm instead
               </button>
             </div>
-            <div className="flex gap-2 flex-wrap">
-              {MANUAL_PRESETS.map(({ label, key }) => (
-                <button
-                  key={key}
-                  onClick={() => handleManualSchedule(key)}
-                  disabled={isRating}
-                  className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {label}
-                </button>
+            <div className="flex gap-2 flex-wrap items-center">
+              {presets.map(p => (
+                <div key={p.id} className="relative group/preset">
+                  <button
+                    onClick={() => handleManualSchedule(p.days)}
+                    disabled={isRating}
+                    className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {p.label}
+                  </button>
+                  {managePresets && (
+                    <button
+                      onClick={() => deletePreset(p.id)}
+                      className="absolute -top-1.5 -right-1.5 bg-red-600 text-white w-4 h-4 rounded-full text-[10px] flex items-center justify-center"
+                      title="Delete preset"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
               ))}
+
+              {managePresets && (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={1}
+                    value={newPresetDays}
+                    onChange={e => setNewPresetDays(e.target.value)}
+                    placeholder="days"
+                    className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-700 text-white text-sm rounded-lg focus:outline-none focus:border-gray-500"
+                  />
+                  <button
+                    onClick={addPreset}
+                    className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-sm rounded-lg transition-colors"
+                  >
+                    ＋ Add
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Arbitrary calendar date */}
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-gray-500 text-xs">or pick a date:</span>
+              <input
+                type="date"
+                disabled={isRating}
+                onChange={e => handleManualDate(e.target.value)}
+                className="px-2 py-1 bg-gray-900 border border-gray-700 text-white text-sm rounded-lg focus:outline-none focus:border-gray-500 disabled:opacity-50"
+              />
             </div>
           </div>
         )}

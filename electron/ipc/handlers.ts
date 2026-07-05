@@ -36,6 +36,7 @@ import {
   ReviewOperations,
   ReviewMaskOperations,
   ReviewEventOperations,
+  ReviewPresetOperations,
   HtmlNodesOperations,
   DurationHtmlNodesOperations,
   ImageViewStateOperations,
@@ -2934,6 +2935,15 @@ export function setupIpcHandlers(): void {
     ReviewEventOperations.getDayEvents(reviewItemId, date));
   ipcMain.handle('reviewEvents:getItemStats', (_, reviewItemId: number) =>
     ReviewEventOperations.getItemStats(reviewItemId));
+
+  ipcMain.handle('reviewPresets:getAll', () => ReviewPresetOperations.getAll());
+  ipcMain.handle('reviewPresets:create', (_, label: string, days: number) =>
+    ReviewPresetOperations.create(label, days));
+  ipcMain.handle('reviewPresets:update', (_, id: number, label: string, days: number) =>
+    ReviewPresetOperations.update(id, label, days));
+  ipcMain.handle('reviewPresets:delete', (_, id: number) => ReviewPresetOperations.delete(id));
+  ipcMain.handle('reviewPresets:reorder', (_, orderedIds: number[]) =>
+    ReviewPresetOperations.reorder(orderedIds));
 
   ipcMain.handle('reviewMasks:getByItem', (_, reviewItemId: number) =>
     ReviewMaskOperations.getByItem(reviewItemId));

@@ -1035,6 +1035,14 @@ const electronAPI = {
     getItemStats: (reviewItemId: number) => ipcRenderer.invoke('reviewEvents:getItemStats', reviewItemId),
   },
 
+  reviewPresets: {
+    getAll: () => ipcRenderer.invoke('reviewPresets:getAll'),
+    create: (label: string, days: number) => ipcRenderer.invoke('reviewPresets:create', label, days),
+    update: (id: number, label: string, days: number) => ipcRenderer.invoke('reviewPresets:update', id, label, days),
+    delete: (id: number) => ipcRenderer.invoke('reviewPresets:delete', id),
+    reorder: (orderedIds: number[]) => ipcRenderer.invoke('reviewPresets:reorder', orderedIds),
+  },
+
   reviewMasks: {
     getByItem: (reviewItemId: number) => ipcRenderer.invoke('reviewMasks:getByItem', reviewItemId),
     create: (

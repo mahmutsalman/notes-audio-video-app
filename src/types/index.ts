@@ -933,6 +933,13 @@ export interface ElectronAPI {
     getDayEvents: (reviewItemId: number | null, date: string) => Promise<ReviewEvent[]>;
     getItemStats: (reviewItemId: number) => Promise<ReviewItemStats>;
   };
+  reviewPresets: {
+    getAll: () => Promise<ReviewPreset[]>;
+    create: (label: string, days: number) => Promise<ReviewPreset>;
+    update: (id: number, label: string, days: number) => Promise<ReviewPreset>;
+    delete: (id: number) => Promise<void>;
+    reorder: (orderedIds: number[]) => Promise<void>;
+  };
   reviewMasks: {
     getByItem: (reviewItemId: number) => Promise<ReviewMask[]>;
     create: (reviewItemId: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null, sortOrder: number) => Promise<ReviewMask>;
@@ -1386,6 +1393,13 @@ export interface ReviewItemStats {
   avg_rating: number | null;
   again_count: number;
   distinct_days: number;
+}
+
+export interface ReviewPreset {
+  id: number;
+  label: string;
+  days: number;
+  sort_order: number;
 }
 
 export interface ReviewMask {

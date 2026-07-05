@@ -2997,6 +2997,35 @@ export const ReviewEventOperations = {
   },
 };
 
+export const ReviewPresetOperations = {
+  getAll(): any[] {
+    return getDatabase().prepare('SELECT * FROM review_presets ORDER BY sort_order, days').all();
+  },
+
+  create(label: string, days: number): any {
+    const db = getDatabase();
+    const max = (db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM review_presets').get() as { m: number }).m;
+    const result = db.prepare('INSERT INTO review_presets (label, days, sort_order) VALUES (?, ?, ?)').run(label, days, max + 1);
+    return db.prepare('SELECT * FROM review_presets WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  update(id: number, label: string, days: number): any {
+    const db = getDatabase();
+    db.prepare('UPDATE review_presets SET label = ?, days = ? WHERE id = ?').run(label, days, id);
+    return db.prepare('SELECT * FROM review_presets WHERE id = ?').get(id);
+  },
+
+  delete(id: number): void {
+    getDatabase().prepare('DELETE FROM review_presets WHERE id = ?').run(id);
+  },
+
+  reorder(orderedIds: number[]): void {
+    const db = getDatabase();
+    const stmt = db.prepare('UPDATE review_presets SET sort_order = ? WHERE id = ?');
+    db.transaction(() => orderedIds.forEach((id, i) => stmt.run(i, id)))();
+  },
+};
+
 export const ReviewMaskOperations = {
   getByItem(reviewItemId: number): any[] {
     const db = getDatabase();

@@ -1,7 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { ReviewItem, ReviewEvent, ReviewItemStats } from '../types';
+import type { ReviewItem, ReviewEvent, ReviewItemStats, ReviewHeatmapDay } from '../types';
 import { formatDueLabel } from '../utils/srsAlgorithm';
+import HeatmapCalendar, { HEATMAP_WINDOWS, type HeatmapWindow } from '../components/echo/HeatmapCalendar';
+
+/** Local 'YYYY-MM-DD' key for an ISO timestamp (matches the heatmap + SQLite localtime). */
+function localDayKey(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 const RATING_META: Record<number, { label: string; cls: string }> = {
   1: { label: 'Again', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
@@ -32,6 +42,28 @@ export default function EchoImageDetailPage() {
   const [item, setItem] = useState<ReviewItem | null>(null);
   const [stats, setStats] = useState<ReviewItemStats | null>(null);
   const [events, setEvents] = useState<ReviewEvent[]>([]);
+  const [windowKey, setWindowKey] = useState<HeatmapWindow>('1yr');
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+  // Derive heatmap buckets from the already-loaded events (grouped by local day).
+  const heatmapData = useMemo<ReviewHeatmapDay[]>(() => {
+    const byDay = new Map<string, { count: number; sum: number; rated: number }>();
+    for (const e of events) {
+      const key = localDayKey(e.reviewed_at);
+      const cur = byDay.get(key) ?? { count: 0, sum: 0, rated: 0 };
+      cur.count += 1;
+      if (e.rating != null) { cur.sum += e.rating; cur.rated += 1; }
+      byDay.set(key, cur);
+    }
+    return [...byDay.entries()].map(([day, v]) => ({
+      day, count: v.count, avg_rating: v.rated > 0 ? v.sum / v.rated : null,
+    }));
+  }, [events]);
+
+  const shownEvents = useMemo(
+    () => (selectedDay ? events.filter(e => localDayKey(e.reviewed_at) === selectedDay) : events),
+    [events, selectedDay]
+  );
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -114,17 +146,57 @@ export default function EchoImageDetailPage() {
             </div>
           </div>
 
-          {/* Right: backlog history */}
-          <div className="flex flex-col gap-3 min-w-0">
-            {/* Heatmap slot — filled in Phase 4 */}
-            <div className="text-sm font-medium text-gray-700 dark:text-gray-300">History</div>
-            {events.length === 0 ? (
+          {/* Right: heatmap + backlog history */}
+          <div className="flex flex-col gap-4 min-w-0">
+            {/* Heatmap + window selector */}
+            <div className="rounded-xl border border-gray-200 dark:border-dark-border bg-gray-50 dark:bg-dark-surface p-4">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Activity</span>
+                <div className="flex gap-1 flex-wrap">
+                  {HEATMAP_WINDOWS.map(w => (
+                    <button
+                      key={w.key}
+                      onClick={() => setWindowKey(w.key)}
+                      className={`px-2 py-0.5 text-xs rounded-md transition-colors ${
+                        windowKey === w.key
+                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium'
+                          : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      {w.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <HeatmapCalendar
+                data={heatmapData}
+                windowKey={windowKey}
+                selectedDay={selectedDay}
+                onDayClick={day => setSelectedDay(prev => (prev === day ? null : day))}
+              />
+            </div>
+
+            {/* History list (filtered to a clicked day if any) */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">History</span>
+              {selectedDay && (
+                <button
+                  onClick={() => setSelectedDay(null)}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  {new Date(selectedDay + 'T00:00:00').toLocaleDateString()} ✕ clear
+                </button>
+              )}
+            </div>
+            {shownEvents.length === 0 ? (
               <div className="text-sm text-gray-500 dark:text-gray-400 py-8 text-center border border-dashed border-gray-200 dark:border-dark-border rounded-xl">
-                No reviews logged yet. Reviews you do from now on will appear here.
+                {selectedDay
+                  ? 'No reviews on this day.'
+                  : 'No reviews logged yet. Reviews you do from now on will appear here.'}
               </div>
             ) : (
               <ul className="flex flex-col gap-2">
-                {events.map(ev => (
+                {shownEvents.map(ev => (
                   <EventRow key={ev.id} event={ev} onSaved={load} />
                 ))}
               </ul>

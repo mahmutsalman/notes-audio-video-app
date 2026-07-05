@@ -1321,6 +1321,25 @@ function runMigrations(db: Database.Database): void {
     console.log('Created review_events table');
   }
 
+  // Migration: review_presets (Echo) — user-editable manual reschedule presets.
+  const reviewPresetsExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='review_presets'"
+  ).get();
+  if (!reviewPresetsExists) {
+    db.exec(`
+      CREATE TABLE review_presets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        label TEXT NOT NULL,
+        days INTEGER NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+    const seed = db.prepare('INSERT INTO review_presets (label, days, sort_order) VALUES (?, ?, ?)');
+    [['1 day', 1], ['3 days', 3], ['5 days', 5], ['1 week', 7], ['2 weeks', 14], ['1 month', 30], ['3 months', 90]]
+      .forEach(([label, days], i) => seed.run(label, days, i));
+    console.log('Created review_presets table (seeded defaults)');
+  }
+
   // Migration: Add color + caption columns to obs_ghost_marks
   const ghostMarkCols = db.prepare("PRAGMA table_info(obs_ghost_marks)").all() as { name: string }[];
   if (!ghostMarkCols.some(c => c.name === 'color')) {
