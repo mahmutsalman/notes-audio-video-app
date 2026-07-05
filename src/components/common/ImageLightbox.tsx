@@ -8,6 +8,7 @@ import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordi
 import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
 import WaveformVisualizer from '../audio/WaveformVisualizer';
 import { formatDuration } from '../../utils/formatters';
+import { emitReviewChanged } from '../../utils/events';
 import { TagModal } from './TagModal';
 import {
   DndContext,
@@ -1529,6 +1530,7 @@ export default function ImageLightbox({
                   setImageContextMenu(null);
                   const enrolled = await onEnrollInReview();
                   if (enrolled) {
+                    emitReviewChanged();
                     const masks = await window.electronAPI.reviewMasks.getByItem(enrolled.id);
                     setMaskEditorItem(enrolled);
                     setMaskEditorMasks(masks);

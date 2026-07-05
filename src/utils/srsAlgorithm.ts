@@ -93,3 +93,30 @@ export function formatDueLabel(nextReviewAt: string): string {
   if (diffDays < 365) return `Due in ${Math.round(diffDays / 30)}mo`;
   return `Due in ${Math.round(diffDays / 365)}y`;
 }
+
+/**
+ * Exact next-review label: date + clock time, and minute-precision for sub-hour
+ * intervals — so a learning-phase card due in 10 min no longer masquerades as "tomorrow".
+ * e.g. "in 10 min · 4:16 PM", "Today 6:12 PM", "Tomorrow 9:00 AM", "Jul 13, 9:00 AM".
+ */
+export function formatDueExact(nextReviewAt: string, now: Date = new Date()): string {
+  const then = new Date(nextReviewAt);
+  const diffMs = then.getTime() - now.getTime();
+  const time = then.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  if (diffMs <= 0) return `now · ${time}`;
+
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMin < 60) return `in ${diffMin} min · ${time}`;
+
+  const startOfDay = (d: Date) => { const c = new Date(d); c.setHours(0, 0, 0, 0); return c; };
+  const dayDiff = Math.round((startOfDay(then).getTime() - startOfDay(now).getTime()) / 86_400_000);
+  if (dayDiff === 0) return `Today ${time}`;
+  if (dayDiff === 1) return `Tomorrow ${time}`;
+
+  const sameYear = then.getFullYear() === now.getFullYear();
+  const date = then.toLocaleDateString([], sameYear
+    ? { month: 'short', day: 'numeric' }
+    : { year: 'numeric', month: 'short', day: 'numeric' });
+  return `${date}, ${time}`;
+}

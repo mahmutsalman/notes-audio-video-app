@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ReviewItem, ReviewMask, ReviewRating, ReviewPreset } from '../../types';
-import { formatDueLabel } from '../../utils/srsAlgorithm';
+import { formatDueExact } from '../../utils/srsAlgorithm';
 import {
   previewRatings, applyRating, applyManual, applyManualDate,
   buildRatingEvent, buildManualEvent, type ReviewNoteExtras,
@@ -58,12 +58,22 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
 
   const current = items[currentIndex] ?? null;
 
-  // Esc to end session
+  const goPrev = useCallback(() => setCurrentIndex(i => Math.max(0, i - 1)), []);
+  const goNext = useCallback(() => setCurrentIndex(i => Math.min(items.length - 1, i + 1)), [items.length]);
+
+  // Keyboard: Esc ends the session; ← / → skip between images (without rating).
+  // Ignored while typing in the note/preset fields.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onSessionEnd(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onSessionEnd(); return; }
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); goPrev(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onSessionEnd]);
+  }, [onSessionEnd, goPrev, goNext]);
 
   // Load masks + reset per-card state when the current item changes.
   useEffect(() => {
@@ -223,7 +233,30 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
             <span>⏱ {formatTimer(elapsedSeconds)}</span>
           </button>
 
-          <div className="text-gray-300 text-sm font-medium tabular-nums">{progress}</div>
+          {/* Skip navigation — move between images without rating */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={goPrev}
+              disabled={currentIndex === 0}
+              className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              title="Previous image (←) — no rating"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div className="text-gray-300 text-sm font-medium tabular-nums min-w-[3.5rem] text-center">{progress}</div>
+            <button
+              onClick={goNext}
+              disabled={currentIndex >= items.length - 1}
+              className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              title="Next image (→) — no rating"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {(current.recording_id || current.capture_id) && (
@@ -338,7 +371,7 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
                     className={`flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-50 flex flex-col items-center gap-0.5 ${color}`}
                   >
                     <span>{label}</span>
-                    <span className="text-[11px] opacity-75">{preview ? formatDueLabel(preview.nextReviewAt) : ''}</span>
+                    <span className="text-[11px] opacity-75">{preview ? formatDueExact(preview.nextReviewAt) : ''}</span>
                     <span className="text-[10px] opacity-50">{hint}</span>
                   </button>
                 );

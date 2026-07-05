@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ReviewItem, ReviewMask, BrowseReviewItem } from '../types';
 import { formatDueLabel } from '../utils/srsAlgorithm';
+import { REVIEW_CHANGED_EVENT, emitReviewChanged } from '../utils/events';
 import ReviewSession from '../components/review/ReviewSession';
 import MaskEditor from '../components/review/MaskEditor';
 
@@ -23,13 +24,29 @@ export default function EchoPage() {
     setAllItems(items);
   }, []);
 
+  const loadBrowse = useCallback(async () => {
+    const items = await window.electronAPI.review.getAllEnrolled();
+    setBrowseItems(items);
+  }, []);
+
   useEffect(() => { loadItems(); }, [loadItems]);
 
   // Load the richer Browse aggregates when that tab is opened.
   useEffect(() => {
     if (filter !== 'browse') return;
-    window.electronAPI.review.getAllEnrolled().then(setBrowseItems);
-  }, [filter]);
+    loadBrowse();
+  }, [filter, loadBrowse]);
+
+  // Refresh live when a review is enrolled/rated/removed from anywhere (any tab in this
+  // renderer). Window CustomEvent — no polling; only fires on an actual change.
+  useEffect(() => {
+    const onChanged = () => {
+      loadItems();
+      if (filter === 'browse') loadBrowse();
+    };
+    window.addEventListener(REVIEW_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(REVIEW_CHANGED_EVENT, onChanged);
+  }, [loadItems, loadBrowse, filter]);
 
   const openDetail = (id: number) => navigate(`/echo/${id}`);
 
@@ -51,12 +68,15 @@ export default function EchoPage() {
   const handleSessionEnd = () => {
     setSessionItems(null);
     loadItems();
+    if (filter === 'browse') loadBrowse();
+    emitReviewChanged(); // keep any other open Echo tab in sync
   };
 
   const handleRemove = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
     await window.electronAPI.review.delete(id);
     setAllItems(prev => prev.filter(i => i.id !== id));
+    emitReviewChanged();
   };
 
   const handleOpenMaskEditor = async (item: ReviewItem, e: React.MouseEvent) => {
