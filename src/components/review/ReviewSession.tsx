@@ -1,8 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ReviewItem, ReviewMask, ReviewRating } from '../../types';
 import { formatDueLabel } from '../../utils/srsAlgorithm';
-import { previewRatings, applyRating, applyManual } from '../../utils/fsrs';
+import {
+  previewRatings, applyRating, applyManual,
+  buildRatingEvent, buildManualEvent, type ReviewNoteExtras,
+} from '../../utils/fsrs';
 import PixelatedImage from './PixelatedImage';
 
 const PRESET_DAYS: Record<string, number> = {
@@ -31,6 +34,15 @@ const RATING_CONFIG: { rating: ReviewRating; label: string; color: string; hint:
   { rating: 'easy', label: 'Easy', color: 'bg-emerald-600 hover:bg-emerald-500', hint: 'Perfect recall' },
 ];
 
+function formatTimer(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
 export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProps) {
   const navigate = useNavigate();
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -39,6 +51,14 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
   const [allRevealed, setAllRevealed] = useState(false);
   const [showManualSchedule, setShowManualSchedule] = useState(false);
   const [isRating, setIsRating] = useState(false);
+
+  // Per-review reflective note + optional study timer (reset on each card).
+  const [note, setNote] = useState('');
+  const [missedPoints, setMissedPoints] = useState('');
+  const [showNotePanel, setShowNotePanel] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const timerTouched = useRef(false);
 
   const current = items[currentIndex] ?? null;
 
@@ -49,12 +69,18 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
     return () => window.removeEventListener('keydown', onKey);
   }, [onSessionEnd]);
 
-  // Load masks for the current item
+  // Load masks + reset per-card state when the current item changes.
   useEffect(() => {
     if (!current) return;
     setRevealedMaskIds(new Set());
     setAllRevealed(false);
     setShowManualSchedule(false);
+    setNote('');
+    setMissedPoints('');
+    setShowNotePanel(false);
+    setElapsedSeconds(0);
+    setTimerRunning(false);
+    timerTouched.current = false;
     window.electronAPI.reviewMasks.getByItem(current.id).then(setMasks);
   }, [current?.id]);
 
@@ -62,6 +88,18 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
   useEffect(() => {
     if (masks.length === 0) setAllRevealed(true);
   }, [masks]);
+
+  // Study timer ticker.
+  useEffect(() => {
+    if (!timerRunning) return;
+    const id = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [timerRunning]);
+
+  const toggleTimer = () => {
+    timerTouched.current = true;
+    setTimerRunning(r => !r);
+  };
 
   const revealMask = useCallback((maskId: number) => {
     setRevealedMaskIds(prev => {
@@ -80,11 +118,18 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
   // Preview the four FSRS outcomes once per card (drives the button due-labels).
   const previews = useMemo(() => (current ? previewRatings(current) : null), [current?.id]);
 
+  const noteExtras = (): ReviewNoteExtras => ({
+    note: note.trim() || null,
+    missedPoints: missedPoints.trim() || null,
+    durationSeconds: timerTouched.current ? elapsedSeconds : null,
+  });
+
   const handleRate = async (rating: ReviewRating) => {
     if (!current || isRating) return;
     setIsRating(true);
-    const { fields } = applyRating(current, rating);
-    await window.electronAPI.review.rate(current.id, fields);
+    const applied = applyRating(current, rating);
+    const event = buildRatingEvent(current, applied, rating, noteExtras());
+    await window.electronAPI.review.rate(current.id, applied.fields, event);
     advance();
   };
 
@@ -92,7 +137,8 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
     if (!current || isRating) return;
     setIsRating(true);
     const fields = applyManual(current, PRESET_DAYS[preset] ?? 7);
-    await window.electronAPI.review.schedule(current.id, fields);
+    const event = buildManualEvent(current, fields, noteExtras());
+    await window.electronAPI.review.schedule(current.id, fields, event);
     advance();
   };
 
@@ -135,7 +181,29 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
           End Session
         </button>
 
-        <div className="text-gray-300 text-sm font-medium tabular-nums">{progress}</div>
+        <div className="flex items-center gap-4">
+          {/* Study timer chip */}
+          <button
+            onClick={toggleTimer}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium tabular-nums transition-colors ${
+              timerRunning
+                ? 'bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30'
+                : timerTouched.current
+                  ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  : 'bg-gray-800 text-gray-500 hover:bg-gray-700'
+            }`}
+            title={timerRunning ? 'Pause study timer' : 'Start study timer (optional)'}
+          >
+            {timerRunning ? (
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16"><rect x="4" y="3" width="3" height="10" rx="1" /><rect x="9" y="3" width="3" height="10" rx="1" /></svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5v9l7-4.5-7-4.5z" /></svg>
+            )}
+            <span>⏱ {formatTimer(elapsedSeconds)}</span>
+          </button>
+
+          <div className="text-gray-300 text-sm font-medium tabular-nums">{progress}</div>
+        </div>
 
         {(current.recording_id || current.capture_id) && (
           <button
@@ -201,6 +269,37 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
                 💡 {m.hint_text}
               </span>
             ))}
+          </div>
+        )}
+
+        {/* Reflective note panel — the "what did I think / what did I miss" log */}
+        {allRevealed && (
+          <div className="flex flex-col gap-2">
+            {!showNotePanel ? (
+              <button
+                onClick={() => setShowNotePanel(true)}
+                className="self-start text-gray-500 hover:text-gray-300 text-xs transition-colors flex items-center gap-1"
+              >
+                ✍️ Add a review note{(note || missedPoints) ? ' •' : ''}
+              </button>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <textarea
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  placeholder="What did you think? How did it feel?"
+                  rows={2}
+                  className="w-full resize-none rounded-lg bg-gray-900 border border-gray-800 text-gray-200 text-sm px-3 py-2 placeholder-gray-600 focus:outline-none focus:border-gray-600"
+                />
+                <textarea
+                  value={missedPoints}
+                  onChange={e => setMissedPoints(e.target.value)}
+                  placeholder="What did you miss / keep forgetting?"
+                  rows={2}
+                  className="w-full resize-none rounded-lg bg-gray-900 border border-gray-800 text-gray-200 text-sm px-3 py-2 placeholder-gray-600 focus:outline-none focus:border-gray-600"
+                />
+              </div>
+            )}
           </div>
         )}
 

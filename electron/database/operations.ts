@@ -2808,12 +2808,21 @@ export const ReviewOperations = {
 
   // Persist a full FSRS card snapshot. Used by both algorithm-driven ratings and
   // manual scheduling (the renderer computes the fields via src/utils/fsrs.ts).
-  rate(id: number, f: ReviewCardFields): void {
-    writeReviewCardFields(getDatabase(), id, f);
+  // Optionally logs a review_events row atomically in the same transaction.
+  rate(id: number, f: ReviewCardFields, event?: ReviewEventInput): void {
+    const db = getDatabase();
+    db.transaction(() => {
+      writeReviewCardFields(db, id, f);
+      if (event) insertReviewEvent(db, id, event);
+    })();
   },
 
-  schedule(id: number, f: ReviewCardFields): void {
-    writeReviewCardFields(getDatabase(), id, f);
+  schedule(id: number, f: ReviewCardFields, event?: ReviewEventInput): void {
+    const db = getDatabase();
+    db.transaction(() => {
+      writeReviewCardFields(db, id, f);
+      if (event) insertReviewEvent(db, id, event);
+    })();
   },
 };
 
@@ -2830,6 +2839,26 @@ export interface ReviewCardFields {
   interval_days: number;
 }
 
+export interface ReviewEventInput {
+  reviewed_at: string;
+  rating: number | null;                 // FSRS rating 1-4, null for manual
+  scheduling_mode: 'fsrs' | 'manual';
+  stability_before: number | null;
+  stability_after: number | null;
+  difficulty_before: number | null;
+  difficulty_after: number | null;
+  state_before: number | null;
+  state_after: number | null;
+  elapsed_days: number | null;
+  scheduled_days: number | null;
+  interval_before: number | null;
+  interval_after: number | null;
+  next_review_at: string | null;
+  note: string | null;
+  missed_points: string | null;
+  duration_seconds: number | null;
+}
+
 function writeReviewCardFields(db: ReturnType<typeof getDatabase>, id: number, f: ReviewCardFields): void {
   db.prepare(`
     UPDATE review_items
@@ -2842,6 +2871,101 @@ function writeReviewCardFields(db: ReturnType<typeof getDatabase>, id: number, f
     f.repetitions, f.lapses, f.last_review_at, f.next_review_at, f.interval_days, id
   );
 }
+
+function insertReviewEvent(db: ReturnType<typeof getDatabase>, reviewItemId: number, e: ReviewEventInput): any {
+  const result = db.prepare(`
+    INSERT INTO review_events
+      (review_item_id, reviewed_at, rating, scheduling_mode,
+       stability_before, stability_after, difficulty_before, difficulty_after,
+       state_before, state_after, elapsed_days, scheduled_days,
+       interval_before, interval_after, next_review_at, note, missed_points, duration_seconds)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    reviewItemId, e.reviewed_at, e.rating, e.scheduling_mode,
+    e.stability_before, e.stability_after, e.difficulty_before, e.difficulty_after,
+    e.state_before, e.state_after, e.elapsed_days, e.scheduled_days,
+    e.interval_before, e.interval_after, e.next_review_at, e.note, e.missed_points, e.duration_seconds
+  );
+  return db.prepare('SELECT * FROM review_events WHERE id = ?').get(result.lastInsertRowid);
+}
+
+export const ReviewEventOperations = {
+  /** Full backlog for one image, newest first. */
+  getByItem(reviewItemId: number): any[] {
+    const db = getDatabase();
+    return db.prepare(
+      'SELECT * FROM review_events WHERE review_item_id = ? ORDER BY reviewed_at DESC, id DESC'
+    ).all(reviewItemId);
+  },
+
+  /** Standalone note log (e.g. from the detail page) with no schedule change. */
+  log(reviewItemId: number, event: ReviewEventInput): any {
+    return insertReviewEvent(getDatabase(), reviewItemId, event);
+  },
+
+  /** Edit a past review's reflective note / missed-points. */
+  updateNote(eventId: number, note: string | null, missedPoints: string | null): void {
+    getDatabase().prepare(
+      'UPDATE review_events SET note = ?, missed_points = ? WHERE id = ?'
+    ).run(note, missedPoints, eventId);
+  },
+
+  delete(eventId: number): void {
+    getDatabase().prepare('DELETE FROM review_events WHERE id = ?').run(eventId);
+  },
+
+  /**
+   * Day-bucketed counts for the calendar heatmap. Days are local (date(..,'localtime')).
+   * reviewItemId null ⇒ across all enrolled images. from/to are 'YYYY-MM-DD' inclusive.
+   */
+  getHeatmap(reviewItemId: number | null, fromDate: string, toDate: string): { day: string; count: number; avg_rating: number | null }[] {
+    const db = getDatabase();
+    const where = reviewItemId != null ? 'WHERE review_item_id = ? AND' : 'WHERE';
+    const rows = db.prepare(`
+      SELECT date(reviewed_at, 'localtime') AS day,
+             COUNT(*) AS count,
+             AVG(rating) AS avg_rating
+      FROM review_events
+      ${where} date(reviewed_at, 'localtime') BETWEEN ? AND ?
+      GROUP BY day
+      ORDER BY day
+    `).all(...(reviewItemId != null ? [reviewItemId, fromDate, toDate] : [fromDate, toDate]));
+    return rows as any;
+  },
+
+  /** All events on one local calendar day (for the day-click drill-down). */
+  getDayEvents(reviewItemId: number | null, date: string): any[] {
+    const db = getDatabase();
+    const where = reviewItemId != null ? 'WHERE review_item_id = ? AND' : 'WHERE';
+    return db.prepare(`
+      SELECT * FROM review_events
+      ${where} date(reviewed_at, 'localtime') = ?
+      ORDER BY reviewed_at DESC, id DESC
+    `).all(...(reviewItemId != null ? [reviewItemId, date] : [date]));
+  },
+
+  /** Aggregate stats for the per-image analytics cards. */
+  getItemStats(reviewItemId: number): {
+    total_reviews: number;
+    first_reviewed_at: string | null;
+    last_reviewed_at: string | null;
+    avg_rating: number | null;
+    again_count: number;
+    distinct_days: number;
+  } {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT COUNT(*) AS total_reviews,
+             MIN(reviewed_at) AS first_reviewed_at,
+             MAX(reviewed_at) AS last_reviewed_at,
+             AVG(rating) AS avg_rating,
+             SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END) AS again_count,
+             COUNT(DISTINCT date(reviewed_at, 'localtime')) AS distinct_days
+      FROM review_events
+      WHERE review_item_id = ?
+    `).get(reviewItemId) as any;
+  },
+};
 
 export const ReviewMaskOperations = {
   getByItem(reviewItemId: number): any[] {

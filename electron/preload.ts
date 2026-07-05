@@ -1013,10 +1013,24 @@ const electronAPI = {
       recordingId: number | null, captureId: number | null
     ) => ipcRenderer.invoke('review:enroll', mediaType, mediaId, filePath, thumbnailPath, caption, recordingId, captureId),
     delete: (id: number) => ipcRenderer.invoke('review:delete', id),
-    rate: (id: number, fields: import('../src/types').ReviewCardFields) =>
-      ipcRenderer.invoke('review:rate', id, fields),
-    schedule: (id: number, fields: import('../src/types').ReviewCardFields) =>
-      ipcRenderer.invoke('review:schedule', id, fields),
+    rate: (id: number, fields: import('../src/types').ReviewCardFields, event?: import('../src/types').ReviewEventInput) =>
+      ipcRenderer.invoke('review:rate', id, fields, event),
+    schedule: (id: number, fields: import('../src/types').ReviewCardFields, event?: import('../src/types').ReviewEventInput) =>
+      ipcRenderer.invoke('review:schedule', id, fields, event),
+  },
+
+  reviewEvents: {
+    getByItem: (reviewItemId: number) => ipcRenderer.invoke('reviewEvents:getByItem', reviewItemId),
+    log: (reviewItemId: number, event: import('../src/types').ReviewEventInput) =>
+      ipcRenderer.invoke('reviewEvents:log', reviewItemId, event),
+    updateNote: (eventId: number, note: string | null, missedPoints: string | null) =>
+      ipcRenderer.invoke('reviewEvents:updateNote', eventId, note, missedPoints),
+    delete: (eventId: number) => ipcRenderer.invoke('reviewEvents:delete', eventId),
+    getHeatmap: (reviewItemId: number | null, fromDate: string, toDate: string) =>
+      ipcRenderer.invoke('reviewEvents:getHeatmap', reviewItemId, fromDate, toDate),
+    getDayEvents: (reviewItemId: number | null, date: string) =>
+      ipcRenderer.invoke('reviewEvents:getDayEvents', reviewItemId, date),
+    getItemStats: (reviewItemId: number) => ipcRenderer.invoke('reviewEvents:getItemStats', reviewItemId),
   },
 
   reviewMasks: {

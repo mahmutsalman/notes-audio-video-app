@@ -919,8 +919,17 @@ export interface ElectronAPI {
     getAll: () => Promise<ReviewItem[]>;
     enroll: (mediaType: string, mediaId: number, filePath: string | null, thumbnailPath: string | null, caption: string | null, recordingId: number | null, captureId: number | null) => Promise<ReviewItem>;
     delete: (id: number) => Promise<void>;
-    rate: (id: number, fields: ReviewCardFields) => Promise<void>;
-    schedule: (id: number, fields: ReviewCardFields) => Promise<void>;
+    rate: (id: number, fields: ReviewCardFields, event?: ReviewEventInput) => Promise<void>;
+    schedule: (id: number, fields: ReviewCardFields, event?: ReviewEventInput) => Promise<void>;
+  };
+  reviewEvents: {
+    getByItem: (reviewItemId: number) => Promise<ReviewEvent[]>;
+    log: (reviewItemId: number, event: ReviewEventInput) => Promise<ReviewEvent>;
+    updateNote: (eventId: number, note: string | null, missedPoints: string | null) => Promise<void>;
+    delete: (eventId: number) => Promise<void>;
+    getHeatmap: (reviewItemId: number | null, fromDate: string, toDate: string) => Promise<ReviewHeatmapDay[]>;
+    getDayEvents: (reviewItemId: number | null, date: string) => Promise<ReviewEvent[]>;
+    getItemStats: (reviewItemId: number) => Promise<ReviewItemStats>;
   };
   reviewMasks: {
     getByItem: (reviewItemId: number) => Promise<ReviewMask[]>;
@@ -1325,6 +1334,49 @@ export interface ReviewCardFields {
   last_review_at: string | null;
   next_review_at: string;
   interval_days: number;
+}
+
+/** Payload for one logged review (schedule change + reflective note). */
+export interface ReviewEventInput {
+  reviewed_at: string;
+  rating: number | null;                 // FSRS rating 1-4, null for manual
+  scheduling_mode: 'fsrs' | 'manual';
+  stability_before: number | null;
+  stability_after: number | null;
+  difficulty_before: number | null;
+  difficulty_after: number | null;
+  state_before: number | null;
+  state_after: number | null;
+  elapsed_days: number | null;
+  scheduled_days: number | null;
+  interval_before: number | null;
+  interval_after: number | null;
+  next_review_at: string | null;
+  note: string | null;
+  missed_points: string | null;
+  duration_seconds: number | null;
+}
+
+/** A persisted review_events row. */
+export interface ReviewEvent extends ReviewEventInput {
+  id: number;
+  review_item_id: number;
+  created_at: string;
+}
+
+export interface ReviewHeatmapDay {
+  day: string;              // 'YYYY-MM-DD' (local)
+  count: number;
+  avg_rating: number | null;
+}
+
+export interface ReviewItemStats {
+  total_reviews: number;
+  first_reviewed_at: string | null;
+  last_reviewed_at: string | null;
+  avg_rating: number | null;
+  again_count: number;
+  distinct_days: number;
 }
 
 export interface ReviewMask {

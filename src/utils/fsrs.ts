@@ -9,7 +9,7 @@ import {
   type RecordLogItem,
   type FSRSParameters,
 } from 'ts-fsrs';
-import type { ReviewItem, ReviewRating, ReviewCardFields } from '../types';
+import type { ReviewItem, ReviewRating, ReviewCardFields, ReviewEventInput } from '../types';
 
 /**
  * FSRS scheduler wrapper for Echo.
@@ -147,4 +147,71 @@ function startOfDay(d: Date): Date {
   const c = new Date(d);
   c.setHours(0, 0, 0, 0);
   return c;
+}
+
+export interface ReviewNoteExtras {
+  note: string | null;
+  missedPoints: string | null;
+  durationSeconds: number | null;
+}
+
+/** Build the review_events payload for an algorithm-driven rating. */
+export function buildRatingEvent(
+  item: ReviewItem,
+  applied: AppliedReview,
+  rating: ReviewRating,
+  extras: ReviewNoteExtras,
+  now: Date = new Date()
+): ReviewEventInput {
+  const { before, after, log } = applied;
+  return {
+    reviewed_at: now.toISOString(),
+    rating: RATING_TO_GRADE[rating], // 1..4
+    scheduling_mode: 'fsrs',
+    stability_before: before.stability,
+    stability_after: after.stability,
+    difficulty_before: before.difficulty,
+    difficulty_after: after.difficulty,
+    state_before: before.state,
+    state_after: after.state,
+    elapsed_days: log.elapsed_days ?? null,
+    scheduled_days: after.scheduled_days,
+    interval_before: item.interval_days ?? null,
+    interval_after: after.scheduled_days,
+    next_review_at: new Date(after.due).toISOString(),
+    note: extras.note,
+    missed_points: extras.missedPoints,
+    duration_seconds: extras.durationSeconds,
+  };
+}
+
+/** Build the review_events payload for a manual reschedule (no algorithm run). */
+export function buildManualEvent(
+  item: ReviewItem,
+  fields: ReviewCardFields,
+  extras: ReviewNoteExtras,
+  now: Date = new Date()
+): ReviewEventInput {
+  const elapsed = item.last_review_at
+    ? Math.round((now.getTime() - new Date(item.last_review_at).getTime()) / 86_400_000)
+    : null;
+  return {
+    reviewed_at: now.toISOString(),
+    rating: null,
+    scheduling_mode: 'manual',
+    stability_before: item.stability,
+    stability_after: fields.stability,
+    difficulty_before: item.difficulty,
+    difficulty_after: fields.difficulty,
+    state_before: item.state ?? null,
+    state_after: fields.state,
+    elapsed_days: elapsed,
+    scheduled_days: fields.scheduled_days,
+    interval_before: item.interval_days ?? null,
+    interval_after: fields.interval_days,
+    next_review_at: fields.next_review_at,
+    note: extras.note,
+    missed_points: extras.missedPoints,
+    duration_seconds: extras.durationSeconds,
+  };
 }

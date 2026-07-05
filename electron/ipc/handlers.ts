@@ -35,11 +35,12 @@ import {
   ObsGhostMarksOperations,
   ReviewOperations,
   ReviewMaskOperations,
+  ReviewEventOperations,
   HtmlNodesOperations,
   DurationHtmlNodesOperations,
   ImageViewStateOperations,
 } from '../database/operations';
-import type { ReviewCardFields } from '../database/operations';
+import type { ReviewCardFields, ReviewEventInput } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
   saveAudioFile,
@@ -2912,10 +2913,25 @@ export function setupIpcHandlers(): void {
     recordingId: number | null, captureId: number | null
   ) => ReviewOperations.enroll(mediaType, mediaId, filePath, thumbnailPath, caption, recordingId, captureId));
   ipcMain.handle('review:delete', (_, id: number) => ReviewOperations.delete(id));
-  ipcMain.handle('review:rate', (_, id: number, fields: ReviewCardFields) =>
-    ReviewOperations.rate(id, fields));
-  ipcMain.handle('review:schedule', (_, id: number, fields: ReviewCardFields) =>
-    ReviewOperations.schedule(id, fields));
+  ipcMain.handle('review:rate', (_, id: number, fields: ReviewCardFields, event?: ReviewEventInput) =>
+    ReviewOperations.rate(id, fields, event));
+  ipcMain.handle('review:schedule', (_, id: number, fields: ReviewCardFields, event?: ReviewEventInput) =>
+    ReviewOperations.schedule(id, fields, event));
+
+  ipcMain.handle('reviewEvents:getByItem', (_, reviewItemId: number) =>
+    ReviewEventOperations.getByItem(reviewItemId));
+  ipcMain.handle('reviewEvents:log', (_, reviewItemId: number, event: ReviewEventInput) =>
+    ReviewEventOperations.log(reviewItemId, event));
+  ipcMain.handle('reviewEvents:updateNote', (_, eventId: number, note: string | null, missedPoints: string | null) =>
+    ReviewEventOperations.updateNote(eventId, note, missedPoints));
+  ipcMain.handle('reviewEvents:delete', (_, eventId: number) =>
+    ReviewEventOperations.delete(eventId));
+  ipcMain.handle('reviewEvents:getHeatmap', (_, reviewItemId: number | null, fromDate: string, toDate: string) =>
+    ReviewEventOperations.getHeatmap(reviewItemId, fromDate, toDate));
+  ipcMain.handle('reviewEvents:getDayEvents', (_, reviewItemId: number | null, date: string) =>
+    ReviewEventOperations.getDayEvents(reviewItemId, date));
+  ipcMain.handle('reviewEvents:getItemStats', (_, reviewItemId: number) =>
+    ReviewEventOperations.getItemStats(reviewItemId));
 
   ipcMain.handle('reviewMasks:getByItem', (_, reviewItemId: number) =>
     ReviewMaskOperations.getByItem(reviewItemId));

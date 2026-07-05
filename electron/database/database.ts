@@ -1285,6 +1285,42 @@ function runMigrations(db: Database.Database): void {
     console.log('Ensured FSRS columns on review_items');
   }
 
+  // Migration: review_events (Echo) — one row per actual review.
+  // Backbone of the history/backlog, the calendar heatmap (GROUP BY date(reviewed_at,'localtime')),
+  // the per-review reflective note, and future FSRS parameter optimization.
+  const reviewEventsExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='review_events'"
+  ).get();
+  if (!reviewEventsExists) {
+    db.exec(`
+      CREATE TABLE review_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_item_id INTEGER NOT NULL REFERENCES review_items(id) ON DELETE CASCADE,
+        reviewed_at TEXT NOT NULL,
+        rating INTEGER,
+        scheduling_mode TEXT,
+        stability_before REAL,
+        stability_after REAL,
+        difficulty_before REAL,
+        difficulty_after REAL,
+        state_before INTEGER,
+        state_after INTEGER,
+        elapsed_days INTEGER,
+        scheduled_days INTEGER,
+        interval_before REAL,
+        interval_after REAL,
+        next_review_at TEXT,
+        note TEXT,
+        missed_points TEXT,
+        duration_seconds INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_review_events_item ON review_events(review_item_id);
+      CREATE INDEX idx_review_events_reviewed_at ON review_events(reviewed_at);
+    `);
+    console.log('Created review_events table');
+  }
+
   // Migration: Add color + caption columns to obs_ghost_marks
   const ghostMarkCols = db.prepare("PRAGMA table_info(obs_ghost_marks)").all() as { name: string }[];
   if (!ghostMarkCols.some(c => c.name === 'color')) {
