@@ -919,6 +919,8 @@ export interface ElectronAPI {
     getAll: () => Promise<ReviewItem[]>;
     getAllEnrolled: () => Promise<BrowseReviewItem[]>;
     getById: (id: number) => Promise<ReviewItem | null>;
+    getByRecording: (recordingId: number) => Promise<ReviewItem[]>;
+    getAllEnrolledByRecording: (recordingId: number) => Promise<BrowseReviewItem[]>;
     enroll: (mediaType: string, mediaId: number, filePath: string | null, thumbnailPath: string | null, caption: string | null, recordingId: number | null, captureId: number | null) => Promise<ReviewItem>;
     delete: (id: number) => Promise<void>;
     rate: (id: number, fields: ReviewCardFields, event?: ReviewEventInput) => Promise<void>;

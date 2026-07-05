@@ -2910,6 +2910,8 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('review:getAll', () => ReviewOperations.getAll());
   ipcMain.handle('review:getAllEnrolled', () => ReviewOperations.getAllEnrolled());
   ipcMain.handle('review:getById', (_, id: number) => ReviewOperations.getById(id));
+  ipcMain.handle('review:getByRecording', (_, recordingId: number) => ReviewOperations.getByRecording(recordingId));
+  ipcMain.handle('review:getAllEnrolledByRecording', (_, recordingId: number) => ReviewOperations.getAllEnrolledByRecording(recordingId));
   ipcMain.handle('review:enroll', (_,
     mediaType: string, mediaId: number,
     filePath: string | null, thumbnailPath: string | null, caption: string | null,

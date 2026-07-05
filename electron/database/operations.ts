@@ -2815,6 +2815,39 @@ export const ReviewOperations = {
     `).get(id);
   },
 
+  /** Queue scoped to one recording (note) — enrolled images whose recording_id matches. */
+  getByRecording(recordingId: number): any[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT ri.*,
+             r.name  AS recording_name,
+             t.name  AS topic_name
+      FROM   review_items ri
+      LEFT   JOIN recordings r ON ri.recording_id = r.id
+      LEFT   JOIN topics     t ON r.topic_id = t.id
+      WHERE  ri.recording_id = ?
+      ORDER  BY ri.next_review_at ASC
+    `).all(recordingId);
+  },
+
+  /** Browse aggregates scoped to one recording (note). */
+  getAllEnrolledByRecording(recordingId: number): any[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT ri.*,
+             r.name AS recording_name,
+             t.name AS topic_name,
+             (SELECT COUNT(*) FROM review_events re WHERE re.review_item_id = ri.id) AS total_reviews,
+             (SELECT SUM(CASE WHEN re.rating = 1 THEN 1 ELSE 0 END) FROM review_events re WHERE re.review_item_id = ri.id) AS again_count,
+             (SELECT MAX(re.reviewed_at) FROM review_events re WHERE re.review_item_id = ri.id) AS last_reviewed_at
+      FROM   review_items ri
+      LEFT   JOIN recordings r ON ri.recording_id = r.id
+      LEFT   JOIN topics     t ON r.topic_id = t.id
+      WHERE  ri.recording_id = ?
+      ORDER  BY total_reviews DESC, ri.created_at DESC
+    `).all(recordingId);
+  },
+
   enroll(
     mediaType: string, mediaId: number,
     filePath: string | null, thumbnailPath: string | null, caption: string | null,

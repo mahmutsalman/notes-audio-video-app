@@ -96,13 +96,14 @@ export default function EchoImageDetailPage() {
       {/* Header */}
       <div className="px-5 pt-5 pb-3 border-b border-gray-200 dark:border-dark-border flex items-center gap-3 flex-shrink-0">
         <button
-          onClick={() => navigate('/echo')}
+          onClick={() => navigate(-1)}
           className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 text-sm flex items-center gap-1 transition-colors"
+          title="Back"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          Echo
+          Back
         </button>
         <div className="flex-1 min-w-0">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">

@@ -17,7 +17,8 @@ import { SYNC_COMPLETED_EVENT } from '../utils/events';
 import DurationList from '../components/recordings/DurationList';
 import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
 import MarkList from '../components/recordings/MarkList';
-import { isBookNote, isReaderNote, isMarkBasedNote, createMarkTimes, getNextMarkIndex } from '../utils/marks';
+import { isBookNote, isReaderNote, isMarkBasedNote, isWrittenNote, createMarkTimes, getNextMarkIndex } from '../utils/marks';
+import NoteEchoSection from '../components/echo/NoteEchoSection';
 import PdfViewer, { PdfViewerHandle } from '../components/pdf/PdfViewer';
 import BookReaderView, { BookReaderViewHandle } from '../components/reader/BookReaderView';
 import { emitRecordingUpdated } from '../utils/events';
@@ -2660,6 +2661,11 @@ export default function RecordingPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Note-scoped Echo (written notes only) */}
+      {isWrittenNote(recording) && id && (
+        <NoteEchoSection recordingId={id} />
       )}
 
       {/* Duration markers / Marks */}

@@ -1009,6 +1009,8 @@ const electronAPI = {
     getAll: () => ipcRenderer.invoke('review:getAll'),
     getAllEnrolled: () => ipcRenderer.invoke('review:getAllEnrolled'),
     getById: (id: number) => ipcRenderer.invoke('review:getById', id),
+    getByRecording: (recordingId: number) => ipcRenderer.invoke('review:getByRecording', recordingId),
+    getAllEnrolledByRecording: (recordingId: number) => ipcRenderer.invoke('review:getAllEnrolledByRecording', recordingId),
     enroll: (
       mediaType: string, mediaId: number,
       filePath: string | null, thumbnailPath: string | null, caption: string | null,
