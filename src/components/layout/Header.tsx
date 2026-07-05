@@ -177,16 +177,16 @@ export default function Header() {
         </svg>
       </button>
 
-      {/* Review button */}
+      {/* Echo button — spaced-repetition image review */}
       <button
-        onClick={() => navigate('/review')}
+        onClick={() => navigate('/echo')}
         className={`titlebar-no-drag p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-hover transition-colors ml-2 ${
-          location.pathname === '/review' ? 'bg-gray-100 dark:bg-dark-hover' : ''
+          location.pathname.startsWith('/echo') ? 'bg-gray-100 dark:bg-dark-hover' : ''
         }`}
-        title="Review — spaced repetition for images"
+        title="Echo — spaced-repetition review for images"
       >
         <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
       </button>
 

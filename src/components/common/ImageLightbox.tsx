@@ -1535,7 +1535,7 @@ export default function ImageLightbox({
                   }
                 }}
               >
-                <span>🔁</span> Add to Review
+                <span>🔁</span> Add to Echo
               </button>
             )}
           </div>

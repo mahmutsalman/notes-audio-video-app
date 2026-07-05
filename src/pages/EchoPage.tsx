@@ -7,7 +7,7 @@ import MaskEditor from '../components/review/MaskEditor';
 type FilterTab = 'due' | 'all' | 'upcoming';
 type ViewMode = 'grid' | 'list';
 
-export default function ReviewPage() {
+export default function EchoPage() {
   const [allItems, setAllItems] = useState<ReviewItem[]>([]);
   const [filter, setFilter] = useState<FilterTab>('due');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -64,7 +64,7 @@ export default function ReviewPage() {
       {/* Header */}
       <div className="px-5 pt-5 pb-3 border-b border-gray-200 dark:border-dark-border flex items-center gap-4 flex-shrink-0">
         <div className="flex-1">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Review Queue</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Echo</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
             {allItems.length} enrolled · {dueItems.length} due now
           </p>
@@ -145,7 +145,7 @@ export default function ReviewPage() {
                 </p>
                 {allItems.length === 0 && (
                   <p className="text-gray-400 dark:text-gray-500 text-xs mt-2">
-                    Right-click any image and choose "Add to Review"
+                    Right-click any image and choose "Add to Echo"
                   </p>
                 )}
               </>
@@ -221,7 +221,7 @@ function ReviewItemGridCard({
         <button
           onClick={(e) => onRemove(item.id, e)}
           className="absolute top-1.5 right-1.5 bg-black/60 text-white/70 hover:text-red-400 w-6 h-6 rounded-full text-xs hidden group-hover:flex items-center justify-center transition-colors"
-          title="Remove from review"
+          title="Remove from Echo"
         >
           ×
         </button>
@@ -307,7 +307,7 @@ function ReviewItemListRow({
         <button
           onClick={(e) => onRemove(item.id, e)}
           className="text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all text-lg leading-none"
-          title="Remove from review"
+          title="Remove from Echo"
         >
           ×
         </button>
