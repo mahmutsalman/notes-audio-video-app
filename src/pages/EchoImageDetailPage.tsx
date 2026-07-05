@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { ReviewItem, ReviewEvent, ReviewItemStats, ReviewHeatmapDay } from '../types';
 import { formatDueLabel } from '../utils/srsAlgorithm';
+import { currentRetrievability, stateLabel } from '../utils/fsrs';
 import HeatmapCalendar, { HEATMAP_WINDOWS, type HeatmapWindow } from '../components/echo/HeatmapCalendar';
 
 /** Local 'YYYY-MM-DD' key for an ISO timestamp (matches the heatmap + SQLite localtime). */
@@ -144,6 +145,42 @@ export default function EchoImageDetailPage() {
                 value={stats?.last_reviewed_at ? new Date(stats.last_reviewed_at).toLocaleDateString() : 'never'}
               />
             </div>
+
+            {/* FSRS memory model — the raw scheduler state */}
+            <div className="rounded-xl border border-gray-200 dark:border-dark-border bg-gray-50 dark:bg-dark-surface p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] uppercase tracking-wide text-gray-400">Memory model (FSRS)</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-200 dark:bg-dark-hover text-gray-600 dark:text-gray-300">
+                  {stateLabel(item.state)}
+                </span>
+              </div>
+              {item.stability == null ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Not modelled yet — review this card once and FSRS starts tracking its difficulty, stability, and retrievability.
+                </p>
+              ) : (
+                <div className="grid grid-cols-3 gap-3">
+                  <ModelStat
+                    label="Difficulty"
+                    value={`${item.difficulty?.toFixed(1)}`}
+                    sub="/ 10"
+                    hint="how hard this card is (1 easy → 10 hard)"
+                  />
+                  <ModelStat
+                    label="Stability"
+                    value={item.stability >= 1 ? `${Math.round(item.stability)}` : item.stability.toFixed(1)}
+                    sub="days"
+                    hint="days until recall falls to ~90%"
+                  />
+                  <ModelStat
+                    label="Retrievability"
+                    value={(() => { const r = currentRetrievability(item); return r == null ? '—' : `${Math.round(r)}%`; })()}
+                    sub="now"
+                    hint="predicted chance you'd recall it right now"
+                  />
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Right: heatmap + backlog history */}
@@ -218,6 +255,17 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
   );
 }
 
+function ModelStat({ label, value, sub, hint }: { label: string; value: string; sub: string; hint: string }) {
+  return (
+    <div title={hint}>
+      <p className="text-[10px] text-gray-400">{label}</p>
+      <p className="text-base font-semibold text-gray-900 dark:text-gray-100 leading-tight">
+        {value} <span className="text-[10px] font-normal text-gray-400">{sub}</span>
+      </p>
+    </div>
+  );
+}
+
 function EventRow({ event, onSaved }: { event: ReviewEvent; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState(event.note ?? '');
@@ -244,6 +292,15 @@ function EventRow({ event, onSaved }: { event: ReviewEvent; onSaved: () => void 
         </span>
         {event.interval_after != null && (
           <span className="text-[11px] text-gray-400">→ next in {event.interval_after}d</span>
+        )}
+        {event.stability_after != null && (
+          <span
+            className="text-[11px] text-gray-400"
+            title="FSRS stability (days) and difficulty (/10) after this review"
+          >
+            · S {event.stability_after >= 1 ? Math.round(event.stability_after) : event.stability_after.toFixed(1)}
+            {event.difficulty_after != null && ` · D ${event.difficulty_after.toFixed(1)}`}
+          </span>
         )}
         {duration && <span className="text-[11px] text-gray-400">· ⏱ {duration}</span>}
         <button

@@ -9,6 +9,9 @@ import {
   type RecordLogItem,
   type FSRSParameters,
 } from 'ts-fsrs';
+
+/** The retention target the scheduler optimizes for (also the retrievability at the due date). */
+export const REQUEST_RETENTION = 0.9;
 import type { ReviewItem, ReviewRating, ReviewCardFields, ReviewEventInput } from '../types';
 
 /**
@@ -21,7 +24,7 @@ import type { ReviewItem, ReviewRating, ReviewCardFields, ReviewEventInput } fro
  * user setting later; the per-user parameter optimizer is a future follow-up fed by review_events.
  */
 const params: FSRSParameters = generatorParameters({
-  request_retention: 0.9,
+  request_retention: REQUEST_RETENTION,
   enable_fuzz: true, // small day-level randomization so cards don't bunch on identical due dates
 });
 
@@ -147,6 +150,29 @@ function startOfDay(d: Date): Date {
   const c = new Date(d);
   c.setHours(0, 0, 0, 0);
   return c;
+}
+
+/**
+ * Predicted probability (0–100%) that you'd recall this card right now, from the FSRS
+ * forgetting curve (stability + days since last review). null if the card has never been
+ * FSRS-reviewed. Unlike stability/difficulty this is NOT stored — it decays continuously.
+ */
+export function currentRetrievability(item: ReviewItem, now: Date = new Date()): number | null {
+  if (item.stability == null || item.difficulty == null) return null;
+  const card = itemToCard(item);
+  const r = scheduler.get_retrievability(card, now, false);
+  return typeof r === 'number' ? r * 100 : null;
+}
+
+const STATE_LABELS: Record<number, string> = {
+  [State.New]: 'New',
+  [State.Learning]: 'Learning',
+  [State.Review]: 'Review',
+  [State.Relearning]: 'Relearning',
+};
+
+export function stateLabel(state: number | null | undefined): string {
+  return state == null ? 'New' : (STATE_LABELS[state] ?? 'New');
 }
 
 export interface ReviewNoteExtras {
