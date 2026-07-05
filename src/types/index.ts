@@ -917,6 +917,8 @@ export interface ElectronAPI {
   };
   review: {
     getAll: () => Promise<ReviewItem[]>;
+    getAllEnrolled: () => Promise<BrowseReviewItem[]>;
+    getById: (id: number) => Promise<ReviewItem | null>;
     enroll: (mediaType: string, mediaId: number, filePath: string | null, thumbnailPath: string | null, caption: string | null, recordingId: number | null, captureId: number | null) => Promise<ReviewItem>;
     delete: (id: number) => Promise<void>;
     rate: (id: number, fields: ReviewCardFields, event?: ReviewEventInput) => Promise<void>;
@@ -1320,6 +1322,13 @@ export interface ReviewItem {
   // Joined
   topic_name: string | null;
   recording_name: string | null;
+}
+
+/** Enrolled image with review aggregates, for the Browse grid. */
+export interface BrowseReviewItem extends ReviewItem {
+  total_reviews: number;
+  again_count: number | null;
+  last_reviewed_at: string | null;
 }
 
 /** Full FSRS card snapshot persisted by review:rate / review:schedule. */

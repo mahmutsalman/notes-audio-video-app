@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ReviewItem, ReviewMask } from '../types';
+import { useNavigate } from 'react-router-dom';
+import type { ReviewItem, ReviewMask, BrowseReviewItem } from '../types';
 import { formatDueLabel } from '../utils/srsAlgorithm';
 import ReviewSession from '../components/review/ReviewSession';
 import MaskEditor from '../components/review/MaskEditor';
 
-type FilterTab = 'due' | 'all' | 'upcoming';
+type FilterTab = 'due' | 'all' | 'upcoming' | 'browse';
 type ViewMode = 'grid' | 'list';
 
 export default function EchoPage() {
+  const navigate = useNavigate();
   const [allItems, setAllItems] = useState<ReviewItem[]>([]);
+  const [browseItems, setBrowseItems] = useState<BrowseReviewItem[]>([]);
   const [filter, setFilter] = useState<FilterTab>('due');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [sessionItems, setSessionItems] = useState<ReviewItem[] | null>(null);
@@ -21,6 +24,14 @@ export default function EchoPage() {
   }, []);
 
   useEffect(() => { loadItems(); }, [loadItems]);
+
+  // Load the richer Browse aggregates when that tab is opened.
+  useEffect(() => {
+    if (filter !== 'browse') return;
+    window.electronAPI.review.getAllEnrolled().then(setBrowseItems);
+  }, [filter]);
+
+  const openDetail = (id: number) => navigate(`/echo/${id}`);
 
   const now = new Date();
 
@@ -109,8 +120,12 @@ export default function EchoPage() {
 
       {/* Filter tabs */}
       <div className="flex gap-1 px-5 py-2 border-b border-gray-200 dark:border-dark-border flex-shrink-0">
-        {(['due', 'all', 'upcoming'] as FilterTab[]).map(tab => {
-          const count = tab === 'due' ? dueItems.length : tab === 'upcoming' ? upcomingItems.length : allItems.length;
+        {(['due', 'all', 'upcoming', 'browse'] as FilterTab[]).map(tab => {
+          const count =
+            tab === 'due' ? dueItems.length :
+            tab === 'upcoming' ? upcomingItems.length :
+            tab === 'browse' ? (browseItems.length || allItems.length) :
+            allItems.length;
           return (
             <button
               key={tab}
@@ -121,7 +136,7 @@ export default function EchoPage() {
                   : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
               }`}
             >
-              {tab === 'due' ? 'Due Now' : tab === 'upcoming' ? 'Upcoming' : 'All'}
+              {tab === 'due' ? 'Due Now' : tab === 'upcoming' ? 'Upcoming' : tab === 'browse' ? '▦ Browse' : 'All'}
               {' '}
               <span className={`text-xs ${filter === tab ? 'text-blue-500' : 'text-gray-400'}`}>
                 {count}
@@ -133,40 +148,60 @@ export default function EchoPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-5">
-        {displayedItems.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-64 text-center">
-            {filter === 'due' ? (
-              <>
-                <div className="text-4xl mb-3">✅</div>
-                <p className="text-gray-500 dark:text-gray-400 text-sm">
-                  {allItems.length === 0
-                    ? 'No images enrolled for review yet.'
-                    : 'All caught up! Nothing due right now.'}
-                </p>
-                {allItems.length === 0 && (
-                  <p className="text-gray-400 dark:text-gray-500 text-xs mt-2">
-                    Right-click any image and choose "Add to Echo"
-                  </p>
-                )}
-              </>
-            ) : (
-              <p className="text-gray-500 dark:text-gray-400 text-sm">No items in this view.</p>
-            )}
-          </div>
-        )}
-
-        {viewMode === 'grid' ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {displayedItems.map(item => (
-              <ReviewItemGridCard key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} />
-            ))}
-          </div>
+        {filter === 'browse' ? (
+          browseItems.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-center">
+              <div className="text-4xl mb-3">🗂️</div>
+              <p className="text-gray-500 dark:text-gray-400 text-sm">No images enrolled yet.</p>
+              <p className="text-gray-400 dark:text-gray-500 text-xs mt-2">
+                Right-click any image and choose "Add to Echo"
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              {browseItems.map(item => (
+                <BrowseCard key={item.id} item={item} onOpen={() => openDetail(item.id)} />
+              ))}
+            </div>
+          )
         ) : (
-          <div className="flex flex-col gap-2">
-            {displayedItems.map(item => (
-              <ReviewItemListRow key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} />
-            ))}
-          </div>
+          <>
+            {displayedItems.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-64 text-center">
+                {filter === 'due' ? (
+                  <>
+                    <div className="text-4xl mb-3">✅</div>
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">
+                      {allItems.length === 0
+                        ? 'No images enrolled for review yet.'
+                        : 'All caught up! Nothing due right now.'}
+                    </p>
+                    {allItems.length === 0 && (
+                      <p className="text-gray-400 dark:text-gray-500 text-xs mt-2">
+                        Right-click any image and choose "Add to Echo"
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">No items in this view.</p>
+                )}
+              </div>
+            )}
+
+            {viewMode === 'grid' ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {displayedItems.map(item => (
+                  <ReviewItemGridCard key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} onOpen={() => openDetail(item.id)} />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {displayedItems.map(item => (
+                  <ReviewItemListRow key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} onOpen={() => openDetail(item.id)} />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -190,10 +225,12 @@ function ReviewItemGridCard({
   item,
   onRemove,
   onEditMasks,
+  onOpen,
 }: {
   item: ReviewItem;
   onRemove: (id: number, e: React.MouseEvent) => void;
   onEditMasks: (item: ReviewItem, e: React.MouseEvent) => void;
+  onOpen: () => void;
 }) {
   const isDue = new Date(item.next_review_at) <= new Date();
   const dueLabel = formatDueLabel(item.next_review_at);
@@ -204,7 +241,11 @@ function ReviewItemGridCard({
       : null;
 
   return (
-    <div className="relative rounded-xl overflow-hidden bg-gray-100 dark:bg-dark-surface group border border-gray-200 dark:border-dark-border">
+    <div
+      onClick={onOpen}
+      className="relative rounded-xl overflow-hidden bg-gray-100 dark:bg-dark-surface group border border-gray-200 dark:border-dark-border cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+      title="Open Echo history"
+    >
       <div className="aspect-square relative overflow-hidden">
         {src ? (
           <img src={src} alt="" className="w-full h-full object-cover" />
@@ -252,10 +293,12 @@ function ReviewItemListRow({
   item,
   onRemove,
   onEditMasks,
+  onOpen,
 }: {
   item: ReviewItem;
   onRemove: (id: number, e: React.MouseEvent) => void;
   onEditMasks: (item: ReviewItem, e: React.MouseEvent) => void;
+  onOpen: () => void;
 }) {
   const isDue = new Date(item.next_review_at) <= new Date();
   const dueLabel = formatDueLabel(item.next_review_at);
@@ -266,7 +309,11 @@ function ReviewItemListRow({
       : null;
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-50 dark:bg-dark-surface border border-gray-200 dark:border-dark-border hover:border-gray-300 dark:hover:border-dark-hover group transition-colors">
+    <div
+      onClick={onOpen}
+      className="flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-50 dark:bg-dark-surface border border-gray-200 dark:border-dark-border hover:border-gray-300 dark:hover:border-dark-hover group transition-colors cursor-pointer"
+      title="Open Echo history"
+    >
       <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-200 dark:bg-dark-hover">
         {src ? (
           <img src={src} alt="" className="w-full h-full object-cover" />
@@ -311,6 +358,57 @@ function ReviewItemListRow({
         >
           ×
         </button>
+      </div>
+    </div>
+  );
+}
+
+function BrowseCard({ item, onOpen }: { item: BrowseReviewItem; onOpen: () => void }) {
+  const src = item.thumbnail_path
+    ? window.electronAPI.paths.getFileUrl(item.thumbnail_path)
+    : item.file_path
+      ? window.electronAPI.paths.getFileUrl(item.file_path)
+      : null;
+  const reviews = item.total_reviews ?? 0;
+  const againRate = reviews > 0 && item.again_count != null
+    ? Math.round((item.again_count / reviews) * 100)
+    : null;
+  const lastReviewed = item.last_reviewed_at
+    ? new Date(item.last_reviewed_at).toLocaleDateString()
+    : 'never';
+
+  return (
+    <div
+      onClick={onOpen}
+      className="relative rounded-xl overflow-hidden bg-gray-100 dark:bg-dark-surface group border border-gray-200 dark:border-dark-border cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+      title="Open Echo history"
+    >
+      <div className="aspect-square relative overflow-hidden">
+        {src ? (
+          <img src={src} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full bg-gray-200 dark:bg-dark-hover flex items-center justify-center">
+            <span className="text-gray-400 text-2xl">🖼️</span>
+          </div>
+        )}
+        <div className="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+          {reviews} review{reviews !== 1 ? 's' : ''}
+        </div>
+        {againRate != null && (
+          <div
+            className="absolute top-1.5 right-1.5 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-full"
+            title="How often you rated this 'Again'"
+          >
+            {againRate}% again
+          </div>
+        )}
+      </div>
+      <div className="p-2">
+        {item.caption && (
+          <p className="text-gray-700 dark:text-gray-300 text-xs truncate" title={item.caption}>{item.caption}</p>
+        )}
+        <p className="text-gray-400 text-[10px] truncate mt-0.5">Last: {lastReviewed}</p>
+        <p className="text-[11px] mt-0.5 text-gray-400">{formatDueLabel(item.next_review_at)}</p>
       </div>
     </div>
   );

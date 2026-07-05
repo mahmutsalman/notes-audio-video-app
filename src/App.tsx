@@ -9,6 +9,7 @@ import CapturePage from './pages/CapturePage';
 import PlansPage from './pages/PlansPage';
 import SettingsPage from './pages/SettingsPage';
 import EchoPage from './pages/EchoPage';
+import EchoImageDetailPage from './pages/EchoImageDetailPage';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
         <Route path="/plans" element={<PlansPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/echo" element={<EchoPage />} />
+        <Route path="/echo/:reviewItemId" element={<EchoImageDetailPage />} />
       </Routes>
     </MainLayout>
   );

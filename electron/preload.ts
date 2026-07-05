@@ -1007,6 +1007,8 @@ const electronAPI = {
   // Review (Spaced Repetition)
   review: {
     getAll: () => ipcRenderer.invoke('review:getAll'),
+    getAllEnrolled: () => ipcRenderer.invoke('review:getAllEnrolled'),
+    getById: (id: number) => ipcRenderer.invoke('review:getById', id),
     enroll: (
       mediaType: string, mediaId: number,
       filePath: string | null, thumbnailPath: string | null, caption: string | null,

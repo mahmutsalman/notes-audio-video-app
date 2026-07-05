@@ -2907,6 +2907,8 @@ export function setupIpcHandlers(): void {
 
   // ============ Review (Spaced Repetition) ============
   ipcMain.handle('review:getAll', () => ReviewOperations.getAll());
+  ipcMain.handle('review:getAllEnrolled', () => ReviewOperations.getAllEnrolled());
+  ipcMain.handle('review:getById', (_, id: number) => ReviewOperations.getById(id));
   ipcMain.handle('review:enroll', (_,
     mediaType: string, mediaId: number,
     filePath: string | null, thumbnailPath: string | null, caption: string | null,

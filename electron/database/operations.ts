@@ -2785,6 +2785,36 @@ export const ReviewOperations = {
     `).all();
   },
 
+  /** Browse view: every enrolled image with review-count + again-count + last-reviewed aggregates. */
+  getAllEnrolled(): any[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT ri.*,
+             r.name AS recording_name,
+             t.name AS topic_name,
+             (SELECT COUNT(*) FROM review_events re WHERE re.review_item_id = ri.id) AS total_reviews,
+             (SELECT SUM(CASE WHEN re.rating = 1 THEN 1 ELSE 0 END) FROM review_events re WHERE re.review_item_id = ri.id) AS again_count,
+             (SELECT MAX(re.reviewed_at) FROM review_events re WHERE re.review_item_id = ri.id) AS last_reviewed_at
+      FROM   review_items ri
+      LEFT   JOIN recordings r ON ri.recording_id = r.id
+      LEFT   JOIN topics     t ON r.topic_id = t.id
+      ORDER  BY total_reviews DESC, ri.created_at DESC
+    `).all();
+  },
+
+  getById(id: number): any {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT ri.*,
+             r.name AS recording_name,
+             t.name AS topic_name
+      FROM   review_items ri
+      LEFT   JOIN recordings r ON ri.recording_id = r.id
+      LEFT   JOIN topics     t ON r.topic_id = t.id
+      WHERE  ri.id = ?
+    `).get(id);
+  },
+
   enroll(
     mediaType: string, mediaId: number,
     filePath: string | null, thumbnailPath: string | null, caption: string | null,
