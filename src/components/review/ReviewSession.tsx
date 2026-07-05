@@ -1,8 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ReviewItem, ReviewMask, ReviewRating } from '../../types';
-import { computeNextReview, presetToNextReview, formatDueLabel } from '../../utils/srsAlgorithm';
+import { formatDueLabel } from '../../utils/srsAlgorithm';
+import { previewRatings, applyRating, applyManual } from '../../utils/fsrs';
 import PixelatedImage from './PixelatedImage';
+
+const PRESET_DAYS: Record<string, number> = {
+  '1d': 1, '3d': 3, '5d': 5, '1w': 7, '2w': 14, '1m': 30, '3m': 90,
+};
 
 interface ReviewSessionProps {
   items: ReviewItem[];
@@ -72,21 +77,22 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
     setAllRevealed(true);
   };
 
+  // Preview the four FSRS outcomes once per card (drives the button due-labels).
+  const previews = useMemo(() => (current ? previewRatings(current) : null), [current?.id]);
+
   const handleRate = async (rating: ReviewRating) => {
     if (!current || isRating) return;
     setIsRating(true);
-    const result = computeNextReview(current.interval_days, current.ease_factor, current.repetitions, rating);
-    await window.electronAPI.review.rate(
-      current.id, rating, result.intervalDays, result.easeFactor, result.repetitions, result.nextReviewAt
-    );
+    const { fields } = applyRating(current, rating);
+    await window.electronAPI.review.rate(current.id, fields);
     advance();
   };
 
   const handleManualSchedule = async (preset: string) => {
     if (!current || isRating) return;
     setIsRating(true);
-    const { nextReviewAt, intervalDays } = presetToNextReview(preset);
-    await window.electronAPI.review.schedule(current.id, nextReviewAt, intervalDays);
+    const fields = applyManual(current, PRESET_DAYS[preset] ?? 7);
+    await window.electronAPI.review.schedule(current.id, fields);
     advance();
   };
 
@@ -203,7 +209,7 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
           <div className="flex flex-col gap-2">
             <div className="flex gap-2">
               {RATING_CONFIG.map(({ rating, label, color, hint }) => {
-                const result = computeNextReview(current.interval_days, current.ease_factor, current.repetitions, rating);
+                const preview = previews?.[rating];
                 return (
                   <button
                     key={rating}
@@ -212,7 +218,7 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
                     className={`flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-50 flex flex-col items-center gap-0.5 ${color}`}
                   >
                     <span>{label}</span>
-                    <span className="text-[11px] opacity-75">{formatDueLabel(result.nextReviewAt)}</span>
+                    <span className="text-[11px] opacity-75">{preview ? formatDueLabel(preview.nextReviewAt) : ''}</span>
                     <span className="text-[10px] opacity-50">{hint}</span>
                   </button>
                 );

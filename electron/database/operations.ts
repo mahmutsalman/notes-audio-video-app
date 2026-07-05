@@ -2806,25 +2806,42 @@ export const ReviewOperations = {
     db.prepare('DELETE FROM review_items WHERE id = ?').run(id);
   },
 
-  rate(id: number, _rating: string, intervalDays: number, easeFactor: number, repetitions: number, nextReviewAt: string): void {
-    const db = getDatabase();
-    db.prepare(`
-      UPDATE review_items
-      SET interval_days = ?, ease_factor = ?, repetitions = ?,
-          next_review_at = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(intervalDays, easeFactor, repetitions, nextReviewAt, id);
+  // Persist a full FSRS card snapshot. Used by both algorithm-driven ratings and
+  // manual scheduling (the renderer computes the fields via src/utils/fsrs.ts).
+  rate(id: number, f: ReviewCardFields): void {
+    writeReviewCardFields(getDatabase(), id, f);
   },
 
-  schedule(id: number, nextReviewAt: string, intervalDays: number): void {
-    const db = getDatabase();
-    db.prepare(`
-      UPDATE review_items
-      SET next_review_at = ?, interval_days = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(nextReviewAt, intervalDays, id);
+  schedule(id: number, f: ReviewCardFields): void {
+    writeReviewCardFields(getDatabase(), id, f);
   },
 };
+
+export interface ReviewCardFields {
+  stability: number | null;
+  difficulty: number | null;
+  state: number;
+  scheduled_days: number;
+  learning_steps: number;
+  repetitions: number;
+  lapses: number;
+  last_review_at: string | null;
+  next_review_at: string;
+  interval_days: number;
+}
+
+function writeReviewCardFields(db: ReturnType<typeof getDatabase>, id: number, f: ReviewCardFields): void {
+  db.prepare(`
+    UPDATE review_items
+    SET stability = ?, difficulty = ?, state = ?, scheduled_days = ?, learning_steps = ?,
+        repetitions = ?, lapses = ?, last_review_at = ?, next_review_at = ?, interval_days = ?,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).run(
+    f.stability, f.difficulty, f.state, f.scheduled_days, f.learning_steps,
+    f.repetitions, f.lapses, f.last_review_at, f.next_review_at, f.interval_days, id
+  );
+}
 
 export const ReviewMaskOperations = {
   getByItem(reviewItemId: number): any[] {

@@ -1270,6 +1270,21 @@ function runMigrations(db: Database.Database): void {
     console.log('Created review_masks table');
   }
 
+  // Migration: FSRS scheduler fields on review_items (Echo).
+  // NULL stability/difficulty/last_review_at ⇒ item predates FSRS: it is treated as a
+  // fresh createEmptyCard() on its next review while its existing next_review_at is kept.
+  {
+    const riCols = (db.prepare("PRAGMA table_info(review_items)").all() as { name: string }[]).map(c => c.name);
+    if (!riCols.includes('stability'))       db.exec("ALTER TABLE review_items ADD COLUMN stability REAL");
+    if (!riCols.includes('difficulty'))      db.exec("ALTER TABLE review_items ADD COLUMN difficulty REAL");
+    if (!riCols.includes('state'))           db.exec("ALTER TABLE review_items ADD COLUMN state INTEGER NOT NULL DEFAULT 0");
+    if (!riCols.includes('scheduled_days'))  db.exec("ALTER TABLE review_items ADD COLUMN scheduled_days INTEGER NOT NULL DEFAULT 0");
+    if (!riCols.includes('learning_steps'))  db.exec("ALTER TABLE review_items ADD COLUMN learning_steps INTEGER NOT NULL DEFAULT 0");
+    if (!riCols.includes('lapses'))          db.exec("ALTER TABLE review_items ADD COLUMN lapses INTEGER NOT NULL DEFAULT 0");
+    if (!riCols.includes('last_review_at'))  db.exec("ALTER TABLE review_items ADD COLUMN last_review_at TEXT");
+    console.log('Ensured FSRS columns on review_items');
+  }
+
   // Migration: Add color + caption columns to obs_ghost_marks
   const ghostMarkCols = db.prepare("PRAGMA table_info(obs_ghost_marks)").all() as { name: string }[];
   if (!ghostMarkCols.some(c => c.name === 'color')) {

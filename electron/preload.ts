@@ -977,30 +977,6 @@ const electronAPI = {
     delete: (id: number) =>
       ipcRenderer.invoke('calendarTodos:delete', id),
   },
-  review: {
-    getByImage: (imageType: string, imageId: number) =>
-      ipcRenderer.invoke('review:getByImage', imageType, imageId),
-    getAll: () => ipcRenderer.invoke('review:getAll'),
-    getDue: () => ipcRenderer.invoke('review:getDue'),
-    create: (imageType: string, imageId: number) =>
-      ipcRenderer.invoke('review:create', imageType, imageId),
-    delete: (id: number) => ipcRenderer.invoke('review:delete', id),
-    rate: (id: number, rating: string, intervalDays: number, easeFactor: number, repetitions: number, nextReviewAt: string) =>
-      ipcRenderer.invoke('review:rate', id, rating, intervalDays, easeFactor, repetitions, nextReviewAt),
-    schedule: (id: number, nextReviewAt: string, intervalDays: number) =>
-      ipcRenderer.invoke('review:schedule', id, nextReviewAt, intervalDays),
-    getHistory: (reviewItemId: number) =>
-      ipcRenderer.invoke('review:getHistory', reviewItemId),
-  },
-  reviewMasks: {
-    getByItem: (reviewItemId: number) =>
-      ipcRenderer.invoke('reviewMasks:getByItem', reviewItemId),
-    create: (reviewItemId: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null, sortOrder: number) =>
-      ipcRenderer.invoke('reviewMasks:create', reviewItemId, x, y, w, h, pixelationLevel, hintText, sortOrder),
-    update: (id: number, x: number, y: number, w: number, h: number, pixelationLevel: number, hintText: string | null) =>
-      ipcRenderer.invoke('reviewMasks:update', id, x, y, w, h, pixelationLevel, hintText),
-    delete: (id: number) => ipcRenderer.invoke('reviewMasks:delete', id),
-  },
   studyTracker: {
     createSession: (startedAt: string) =>
       ipcRenderer.invoke('studyTracker:createSession', startedAt),
@@ -1037,10 +1013,10 @@ const electronAPI = {
       recordingId: number | null, captureId: number | null
     ) => ipcRenderer.invoke('review:enroll', mediaType, mediaId, filePath, thumbnailPath, caption, recordingId, captureId),
     delete: (id: number) => ipcRenderer.invoke('review:delete', id),
-    rate: (id: number, rating: string, intervalDays: number, easeFactor: number, repetitions: number, nextReviewAt: string) =>
-      ipcRenderer.invoke('review:rate', id, rating, intervalDays, easeFactor, repetitions, nextReviewAt),
-    schedule: (id: number, nextReviewAt: string, intervalDays: number) =>
-      ipcRenderer.invoke('review:schedule', id, nextReviewAt, intervalDays),
+    rate: (id: number, fields: import('../src/types').ReviewCardFields) =>
+      ipcRenderer.invoke('review:rate', id, fields),
+    schedule: (id: number, fields: import('../src/types').ReviewCardFields) =>
+      ipcRenderer.invoke('review:schedule', id, fields),
   },
 
   reviewMasks: {

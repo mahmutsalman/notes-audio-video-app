@@ -39,6 +39,7 @@ import {
   DurationHtmlNodesOperations,
   ImageViewStateOperations,
 } from '../database/operations';
+import type { ReviewCardFields } from '../database/operations';
 import { rebuildSearchIndex, scheduleSearchReindex } from '../database/database';
 import {
   saveAudioFile,
@@ -2911,11 +2912,10 @@ export function setupIpcHandlers(): void {
     recordingId: number | null, captureId: number | null
   ) => ReviewOperations.enroll(mediaType, mediaId, filePath, thumbnailPath, caption, recordingId, captureId));
   ipcMain.handle('review:delete', (_, id: number) => ReviewOperations.delete(id));
-  ipcMain.handle('review:rate', (_,
-    id: number, rating: string, intervalDays: number, easeFactor: number, repetitions: number, nextReviewAt: string
-  ) => ReviewOperations.rate(id, rating, intervalDays, easeFactor, repetitions, nextReviewAt));
-  ipcMain.handle('review:schedule', (_, id: number, nextReviewAt: string, intervalDays: number) =>
-    ReviewOperations.schedule(id, nextReviewAt, intervalDays));
+  ipcMain.handle('review:rate', (_, id: number, fields: ReviewCardFields) =>
+    ReviewOperations.rate(id, fields));
+  ipcMain.handle('review:schedule', (_, id: number, fields: ReviewCardFields) =>
+    ReviewOperations.schedule(id, fields));
 
   ipcMain.handle('reviewMasks:getByItem', (_, reviewItemId: number) =>
     ReviewMaskOperations.getByItem(reviewItemId));

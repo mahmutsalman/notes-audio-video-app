@@ -919,8 +919,8 @@ export interface ElectronAPI {
     getAll: () => Promise<ReviewItem[]>;
     enroll: (mediaType: string, mediaId: number, filePath: string | null, thumbnailPath: string | null, caption: string | null, recordingId: number | null, captureId: number | null) => Promise<ReviewItem>;
     delete: (id: number) => Promise<void>;
-    rate: (id: number, rating: ReviewRating, intervalDays: number, easeFactor: number, repetitions: number, nextReviewAt: string) => Promise<void>;
-    schedule: (id: number, nextReviewAt: string, intervalDays: number) => Promise<void>;
+    rate: (id: number, fields: ReviewCardFields) => Promise<void>;
+    schedule: (id: number, fields: ReviewCardFields) => Promise<void>;
   };
   reviewMasks: {
     getByItem: (reviewItemId: number) => Promise<ReviewMask[]>;
@@ -1300,9 +1300,31 @@ export interface ReviewItem {
   repetitions: number;
   next_review_at: string;
   created_at: string;
+  // FSRS scheduler fields (nullable ⇒ item predates FSRS → treat as a fresh card)
+  stability: number | null;
+  difficulty: number | null;
+  state: number;            // 0=New 1=Learning 2=Review 3=Relearning
+  scheduled_days: number;
+  learning_steps: number;
+  lapses: number;
+  last_review_at: string | null;
   // Joined
   topic_name: string | null;
   recording_name: string | null;
+}
+
+/** Full FSRS card snapshot persisted by review:rate / review:schedule. */
+export interface ReviewCardFields {
+  stability: number | null;
+  difficulty: number | null;
+  state: number;
+  scheduled_days: number;
+  learning_steps: number;
+  repetitions: number;
+  lapses: number;
+  last_review_at: string | null;
+  next_review_at: string;
+  interval_days: number;
 }
 
 export interface ReviewMask {
