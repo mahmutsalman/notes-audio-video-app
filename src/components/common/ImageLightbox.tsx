@@ -1900,6 +1900,12 @@ export default function ImageLightbox({
             onExtractOcr={async () => {
               await window.electronAPI.ocr.extractCaption2('image_child', child.id, child.file_path);
             }}
+            onEnrollInReview={async () => {
+              return window.electronAPI.review.enroll(
+                'image_child', child.id, child.file_path, null,
+                child.caption ?? null, null, null
+              );
+            }}
             onDelete={() => setPendingDeleteChild(child.id)}
             imageColors={childImageColorsMap[child.id] ?? []}
             onToggleColor={(colorKey) => handleToggleChildImageColor(child.id, colorKey)}

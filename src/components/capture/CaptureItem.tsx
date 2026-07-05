@@ -544,6 +544,13 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
             const img = localImages[lightboxIndex!];
             await window.electronAPI.ocr.extractCaption2('quick_capture_image', img.id, img.file_path);
           } : undefined}
+          onEnrollInReview={lightboxIndex !== null && localImages[lightboxIndex]?.id ? async () => {
+            const img = localImages[lightboxIndex!];
+            return window.electronAPI.review.enroll(
+              'quick_capture_image', img.id, img.file_path, img.thumbnail_path ?? null,
+              img.caption ?? null, null, capture.id
+            );
+          } : undefined}
           imageType="quick_capture_image"
           imageColors={lightboxIndex !== null && localImages[lightboxIndex]?.id ? imageColorsMap[localImages[lightboxIndex].id] ?? [] : []}
           onToggleColor={lightboxIndex !== null && localImages[lightboxIndex]?.id ? async (key) => {
