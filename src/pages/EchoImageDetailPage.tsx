@@ -35,16 +35,39 @@ function fmtDuration(sec: number | null): string | null {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-export default function EchoImageDetailPage() {
-  const { reviewItemId } = useParams<{ reviewItemId: string }>();
+interface EchoImageDetailPageProps {
+  /** When embedded (e.g. inside a note), the id + navigation come from props instead of the route. */
+  reviewItemId?: number;
+  onBack?: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+}
+
+export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPrev, onNext }: EchoImageDetailPageProps = {}) {
+  const params = useParams<{ reviewItemId: string }>();
   const navigate = useNavigate();
-  const id = Number(reviewItemId);
+  const id = idProp ?? Number(params.reviewItemId);
+  const back = onBack ?? (() => navigate(-1));
 
   const [item, setItem] = useState<ReviewItem | null>(null);
   const [stats, setStats] = useState<ReviewItemStats | null>(null);
   const [events, setEvents] = useState<ReviewEvent[]>([]);
   const [windowKey, setWindowKey] = useState<HeatmapWindow>('1yr');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+  // ← / → navigate to prev/next echo (only when embedded with sibling callbacks).
+  // Ignored while typing in a note field.
+  useEffect(() => {
+    if (!onPrev && !onNext) return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.key === 'ArrowLeft' && onPrev) { e.preventDefault(); onPrev(); }
+      else if (e.key === 'ArrowRight' && onNext) { e.preventDefault(); onNext(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onPrev, onNext]);
 
   // Derive heatmap buckets from the already-loaded events (grouped by local day).
   const heatmapData = useMemo<ReviewHeatmapDay[]>(() => {
@@ -68,6 +91,7 @@ export default function EchoImageDetailPage() {
 
   const load = useCallback(async () => {
     if (!id) return;
+    setSelectedDay(null); // reset day filter when switching between echoes
     const [it, st, ev] = await Promise.all([
       window.electronAPI.review.getById(id),
       window.electronAPI.reviewEvents.getItemStats(id),
@@ -95,8 +119,32 @@ export default function EchoImageDetailPage() {
     <div className="flex flex-col h-full bg-white dark:bg-dark-bg overflow-hidden">
       {/* Header */}
       <div className="px-5 pt-5 pb-3 border-b border-gray-200 dark:border-dark-border flex items-center gap-3 flex-shrink-0">
+        {(onPrev || onNext) && (
+          <div className="flex items-center gap-1 mr-1">
+            <button
+              onClick={onPrev}
+              disabled={!onPrev}
+              className="p-1.5 rounded-lg text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              title="Previous echo (←)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <button
+              onClick={onNext}
+              disabled={!onNext}
+              className="p-1.5 rounded-lg text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              title="Next echo (→)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        )}
         <button
-          onClick={() => navigate(-1)}
+          onClick={back}
           className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 text-sm flex items-center gap-1 transition-colors"
           title="Back"
         >

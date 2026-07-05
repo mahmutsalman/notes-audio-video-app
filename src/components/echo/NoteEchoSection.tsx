@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import type { ReviewItem, ReviewMask, BrowseReviewItem } from '../../types';
 import { REVIEW_CHANGED_EVENT, emitReviewChanged } from '../../utils/events';
 import ReviewSession from '../review/ReviewSession';
 import MaskEditor from '../review/MaskEditor';
+import EchoImageDetailPage from '../../pages/EchoImageDetailPage';
 import { ReviewItemGridCard, BrowseCard } from './EchoCards';
 
 type FilterTab = 'due' | 'all' | 'upcoming' | 'browse';
@@ -13,7 +13,6 @@ type FilterTab = 'due' | 'all' | 'upcoming' | 'browse';
  * the /echo/:id detail page) but loads only review_items whose recording_id matches this note.
  */
 export default function NoteEchoSection({ recordingId }: { recordingId: number }) {
-  const navigate = useNavigate();
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [browseItems, setBrowseItems] = useState<BrowseReviewItem[]>([]);
   const [filter, setFilter] = useState<FilterTab>('due');
@@ -21,6 +20,8 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
   const [sessionItems, setSessionItems] = useState<ReviewItem[] | null>(null);
   const [maskEditorItem, setMaskEditorItem] = useState<ReviewItem | null>(null);
   const [maskEditorMasks, setMaskEditorMasks] = useState<ReviewMask[]>([]);
+  // Inline analytics overlay: the open item + the ordered id list it was opened from (for ←/→).
+  const [detail, setDetail] = useState<{ id: number; list: number[] } | null>(null);
 
   const loadItems = useCallback(async () => {
     setItems(await window.electronAPI.review.getByRecording(recordingId));
@@ -51,7 +52,11 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
   const upcomingItems = items.filter(i => new Date(i.next_review_at) > now);
   const displayedItems = filter === 'due' ? dueItems : filter === 'upcoming' ? upcomingItems : items;
 
-  const openDetail = (id: number) => navigate(`/echo/${id}`);
+  // Open the inline analytics overlay, capturing the current grid's order for ←/→ nav.
+  const openDetail = (id: number) => {
+    const list = (filter === 'browse' ? browseItems : displayedItems).map(i => i.id);
+    setDetail({ id, list });
+  };
 
   const startSession = () => { if (dueItems.length > 0) setSessionItems(dueItems); };
 
@@ -78,6 +83,24 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
 
   if (sessionItems) {
     return <ReviewSession items={sessionItems} onSessionEnd={handleSessionEnd} />;
+  }
+
+  // Inline analytics overlay — keeps the note (and this section's expanded/filter state)
+  // mounted underneath, so closing returns exactly where you were. ←/→ walk the list.
+  if (detail) {
+    const idx = detail.list.indexOf(detail.id);
+    const prevId = idx > 0 ? detail.list[idx - 1] : null;
+    const nextId = idx >= 0 && idx < detail.list.length - 1 ? detail.list[idx + 1] : null;
+    return (
+      <div className="fixed inset-0 z-50 bg-white dark:bg-dark-bg overflow-auto">
+        <EchoImageDetailPage
+          reviewItemId={detail.id}
+          onBack={() => { setDetail(null); loadItems(); if (filter === 'browse') loadBrowse(); }}
+          onPrev={prevId != null ? () => setDetail(d => (d ? { ...d, id: prevId } : d)) : undefined}
+          onNext={nextId != null ? () => setDetail(d => (d ? { ...d, id: nextId } : d)) : undefined}
+        />
+      </div>
+    );
   }
 
   return (
