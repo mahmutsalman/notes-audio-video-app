@@ -62,17 +62,20 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
   const goNext = useCallback(() => setCurrentIndex(i => Math.min(items.length - 1, i + 1)), [items.length]);
 
   // Keyboard: Esc ends the session; ← / → skip between images (without rating).
-  // Ignored while typing in the note/preset fields.
+  // Capture phase + stopImmediatePropagation so this full-screen session owns the keys
+  // even when launched from a page with its own arrow/Esc handlers (e.g. a written note's
+  // mark navigation). Ignored while typing in the note/preset fields.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { onSessionEnd(); return; }
       const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (e.key === 'ArrowLeft') { e.preventDefault(); goPrev(); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA';
+      if (e.key === 'Escape') { e.stopImmediatePropagation(); onSessionEnd(); return; }
+      if (typing) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopImmediatePropagation(); goPrev(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); e.stopImmediatePropagation(); goNext(); }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [onSessionEnd, goPrev, goNext]);
 
   // Load masks + reset per-card state when the current item changes.

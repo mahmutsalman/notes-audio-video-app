@@ -55,19 +55,24 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
   const [windowKey, setWindowKey] = useState<HeatmapWindow>('1yr');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
-  // ← / → navigate to prev/next echo (only when embedded with sibling callbacks).
-  // Ignored while typing in a note field.
+  // ← / → navigate to prev/next echo when shown as an embedded overlay (onBack set).
+  // Runs in the CAPTURE phase and stops propagation so it beats the host page's own
+  // arrow-key handlers (e.g. a written note's mark navigation) — the overlay owns the
+  // arrows while it's open. Ignored while typing in a note field.
   useEffect(() => {
-    if (!onPrev && !onNext) return;
+    if (!onBack) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (e.key === 'ArrowLeft' && onPrev) { e.preventDefault(); onPrev(); }
-      else if (e.key === 'ArrowRight' && onNext) { e.preventDefault(); onNext(); }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.key === 'ArrowLeft') onPrev?.();
+      else onNext?.();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onPrev, onNext]);
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [onBack, onPrev, onNext]);
 
   // Derive heatmap buckets from the already-loaded events (grouped by local day).
   const heatmapData = useMemo<ReviewHeatmapDay[]>(() => {
