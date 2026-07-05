@@ -198,13 +198,15 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col">
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-800">
+      {/* Top bar — titlebar-drag so empty space still moves the window; every button
+          below is titlebar-no-drag so it stays clickable inside the macOS title strip
+          (app-region is computed globally and ignores the overlay's z-index). */}
+      <div className="titlebar-drag flex items-center justify-between px-5 py-3 border-b border-gray-800">
         {/* Traffic light spacer */}
         <div className="w-16 flex-shrink-0" />
         <button
           onClick={onSessionEnd}
-          className="text-gray-400 hover:text-white text-sm transition-colors flex items-center gap-1.5"
+          className="titlebar-no-drag text-gray-400 hover:text-white text-sm transition-colors flex items-center gap-1.5"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -216,7 +218,7 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
           {/* Study timer chip */}
           <button
             onClick={toggleTimer}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium tabular-nums transition-colors ${
+            className={`titlebar-no-drag flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium tabular-nums transition-colors ${
               timerRunning
                 ? 'bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30'
                 : timerTouched.current
@@ -238,7 +240,7 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
             <button
               onClick={goPrev}
               disabled={currentIndex === 0}
-              className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              className="titlebar-no-drag p-1 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
               title="Previous image (←) — no rating"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -249,7 +251,7 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
             <button
               onClick={goNext}
               disabled={currentIndex >= items.length - 1}
-              className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              className="titlebar-no-drag p-1 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
               title="Next image (→) — no rating"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -262,7 +264,7 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
         {(current.recording_id || current.capture_id) && (
           <button
             onClick={handleNavigateToOriginal}
-            className="text-gray-400 hover:text-blue-400 text-sm transition-colors flex items-center gap-1.5"
+            className="titlebar-no-drag text-gray-400 hover:text-blue-400 text-sm transition-colors flex items-center gap-1.5"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
