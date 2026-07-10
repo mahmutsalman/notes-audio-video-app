@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ReviewNoteImage } from '../../types';
 import ImageLightbox from '../common/ImageLightbox';
 
@@ -14,16 +14,28 @@ interface ReviewNoteImagesProps {
 /**
  * Pictures attached to one reflective review note.
  *
- * Lightweight by design (ADR-0006): paste to attach, click to view, hover to delete.
- * No tags, no OCR, no FTS — which is why ImageLightbox is rendered without `mediaType`
- * or `imageType`, so its tag/OCR/enroll affordances stay hidden.
+ * Paste to attach, click to view, hover to delete. Tags, OCR and full-text search are wired up
+ * (ADR-0007) by passing `mediaType` + `imageType` to ImageLightbox, which unlocks its tag modal
+ * and "Extract OCR text" action. Child images stay off: review-note pictures are leaves.
+ * There is deliberately no attached-audio support — see IMAGE_AUDIO_TYPES in SearchPage.
  */
 export default function ReviewNoteImages({ noteId, images, onChange, variant = 'dark' }: ReviewNoteImagesProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [tagCounts, setTagCounts] = useState<Record<number, number>>({});
 
   const dark = variant === 'dark';
+
+  const refreshTagCounts = useCallback(async () => {
+    const entries = await Promise.all(images.map(async img => {
+      const tags = await window.electronAPI.tags.getByMedia('review_note_image', img.id);
+      return [img.id, (tags as { name: string }[]).length] as const;
+    }));
+    setTagCounts(Object.fromEntries(entries));
+  }, [images]);
+
+  useEffect(() => { void refreshTagCounts(); }, [refreshTagCounts]);
 
   const attachFromClipboard = async () => {
     if (busy) return;
@@ -67,6 +79,15 @@ export default function ReviewNoteImages({ noteId, images, onChange, variant = '
                 dark ? 'border-gray-700' : 'border-gray-200 dark:border-dark-border'
               }`}
             />
+            {tagCounts[img.id] > 0 && (
+              <span
+                title={`${tagCounts[img.id]} tag${tagCounts[img.id] === 1 ? '' : 's'}`}
+                className="absolute bottom-0 left-0 px-1 rounded-tr rounded-bl bg-orange-500 text-white
+                           text-[9px] leading-[13px] group-hover/img:opacity-0 transition-opacity"
+              >
+                {tagCounts[img.id]}
+              </span>
+            )}
             <button
               onClick={() => remove(img.id)}
               title="Delete this image"
@@ -102,6 +123,10 @@ export default function ReviewNoteImages({ noteId, images, onChange, variant = '
           onClose={() => setLightboxIndex(null)}
           onNavigate={setLightboxIndex}
           onDelete={() => remove(images[lightboxIndex].id)}
+          mediaType="review_note_image"
+          imageType="review_note_image"
+          disableChildImages
+          onTagsChanged={refreshTagCounts}
         />
       )}
     </>

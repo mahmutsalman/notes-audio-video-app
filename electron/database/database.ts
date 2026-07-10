@@ -1420,6 +1420,11 @@ function runMigrations(db: Database.Database): void {
   // that already exist or slip through a missed delete path. Idempotent: a no-op once clean.
   {
     // media_type -> owning table. Keep in sync with MediaTagType in src/types/index.ts.
+    // ⚠️ This map is also the allow-list for the "unknown media_type" purge below, which HARD
+    // DELETES any media_tags row whose type is absent here. Two consequences: (1) a new tagged
+    // media type must be added here in the SAME build that starts writing its tags, or the next
+    // startup silently erases them; (2) running an OLDER build after tagging a NEWER type erases
+    // that type's tags on launch. Tags are user-authored — see NFR-04 and ADR-0004.
     const mediaTagTables: Record<string, string> = {
       image: 'images',
       duration_image: 'duration_images',
@@ -1436,6 +1441,7 @@ function runMigrations(db: Database.Database): void {
       duration_video: 'duration_videos',
       html_node: 'html_nodes',
       duration_html_node: 'duration_html_nodes',
+      review_note_image: 'review_note_images',
     };
     let purged = 0;
     for (const [mediaType, table] of Object.entries(mediaTagTables)) {
@@ -1518,8 +1524,7 @@ function runMigrations(db: Database.Database): void {
   }
 
   // Migration: review_note_images — pictures attached to a reflective review note.
-  // Lightweight attachments for now: no tags, no OCR, no FTS (ADR-0006). Adding those later
-  // is additive — media_tags is polymorphic and needs no migration here.
+  // Tags, OCR and FTS are wired up (ADR-0007, superseding ADR-0006's "lightweight" scope).
   // NOTE: rows cascade with the note, but the FILES on disk do not. Every delete path
   // (note / event / review item) must collect file_path first and unlink — see handlers.ts.
   const reviewNoteImagesExists = db.prepare(
@@ -1533,12 +1538,23 @@ function runMigrations(db: Database.Database): void {
         file_path      TEXT NOT NULL,
         thumbnail_path TEXT,
         caption        TEXT,
+        caption2       TEXT,
         sort_order     INTEGER NOT NULL DEFAULT 0,
         created_at     TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE INDEX idx_review_note_images_note ON review_note_images(review_note_id);
     `);
     console.log('Created review_note_images table');
+  }
+
+  // Migration: caption2 (OCR text, search-only) on review_note_images.
+  // Deliberately NOT grouped with the other four caption2 guards above — those run before
+  // review_note_images is created, so a PRAGMA there returns no columns on a fresh DB and the
+  // ALTER would hit a nonexistent table. Must stay after the CREATE above.
+  const rniCols2 = db.prepare("PRAGMA table_info(review_note_images)").all() as { name: string }[];
+  if (!rniCols2.some(c => c.name === 'caption2')) {
+    db.exec('ALTER TABLE review_note_images ADD COLUMN caption2 TEXT');
+    console.log('Added caption2 column to review_note_images table');
   }
 
   // Migration: archive support for quick captures.
@@ -1702,6 +1718,27 @@ export function rebuildSearchIndex(): void {
       qciInsert.run(row.id, row.capture_id, `${row.caption} ${tagNames}`.trim());
     }
 
+    // Review note images: caption + per-image tags from media_tags.
+    // parent_id = review_note_id (a note, not a recording) — same shape as quick capture's
+    // capture_id, so it deliberately does not resolve through recordingContextMap.
+    const rniRows = database.prepare(`
+      SELECT rni.id, rni.review_note_id, COALESCE(rni.caption, '') as caption
+      FROM review_note_images rni
+    `).all() as Array<{ id: number; review_note_id: number; caption: string }>;
+    const rniTagsStmt = database.prepare(`
+      SELECT t.name FROM tags t
+      JOIN media_tags mt ON mt.tag_id = t.id
+      WHERE mt.media_type = 'review_note_image' AND mt.media_id = ?
+    `);
+    const rniInsert = database.prepare(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      VALUES ('review_note_image', ?, ?, ?)
+    `);
+    for (const row of rniRows) {
+      const tagNames = (rniTagsStmt.all(row.id) as Array<{ name: string }>).map(t => t.name).join(' ');
+      rniInsert.run(row.id, row.review_note_id, `${row.caption} ${tagNames}`.trim());
+    }
+
     // Audio markers: caption + marker_type — parent_id computed per audio_type
     const audioMarkers = database.prepare('SELECT id, audio_id, audio_type, marker_type, caption FROM audio_markers WHERE caption IS NOT NULL AND caption != \'\'').all() as Array<{id: number, audio_id: number, audio_type: string, marker_type: string, caption: string}>;
     const markerInsert = database.prepare(`
@@ -1763,6 +1800,13 @@ export function rebuildSearchIndex(): void {
       INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
       SELECT 'quick_capture_image_ocr', id, capture_id, caption2
       FROM quick_capture_images WHERE caption2 IS NOT NULL AND caption2 != ''
+    `);
+
+    // OCR text — review note images (parent_id = review_note_id, same as review_note_image)
+    database.exec(`
+      INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
+      SELECT 'review_note_image_ocr', id, review_note_id, caption2
+      FROM review_note_images WHERE caption2 IS NOT NULL AND caption2 != ''
     `);
 
     // OCR text — child images (parent_id resolved to recording_id where possible)

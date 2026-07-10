@@ -61,7 +61,9 @@ interface ImageLightboxProps {
   // Color labels (many-to-many)
   imageColors?: string[];
   onToggleColor?: (colorKey: string) => void;
-  imageType?: 'image' | 'duration_image' | 'quick_capture_image' | 'image_child';
+  // Gates the OCR action, colour labels and study tracking. `review_note_image` has no attached
+  // audio, so resolveAudioMediaType below never sees it — callers must not pass the audio props.
+  imageType?: 'image' | 'duration_image' | 'quick_capture_image' | 'image_child' | 'review_note_image';
   // Color labels for image-attached audios
   audioColorsMap?: Record<number, string[]>;
   onToggleAudioColor?: (audioId: number, colorKey: string) => void;

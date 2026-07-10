@@ -1144,8 +1144,9 @@ export interface GlobalSearchResult {
     | 'duration_image' | 'duration_video' | 'duration_audio'
     | 'code_snippet' | 'duration_code_snippet'
     | 'audio_marker' | 'duration_image_audio' | 'image_audio'
-    | 'quick_capture_image'
+    | 'quick_capture_image' | 'review_note_image'
     | 'image_ocr' | 'duration_image_ocr' | 'quick_capture_image_ocr' | 'image_child_ocr'
+    | 'review_note_image_ocr'
     | 'html_node' | 'duration_html_node';
   source_id: number;
   parent_id: number;
@@ -1170,7 +1171,9 @@ export interface SearchNavState {
   query: string;
 }
 
-export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio' | 'quick_capture_image' | 'quick_capture_audio' | 'image_child' | 'image_audio' | 'duration_image_audio' | 'quick_capture_image_audio' | 'image_child_audio' | 'video' | 'duration_video' | 'html_node' | 'duration_html_node';
+// Adding a member here also requires an entry in `mediaTagTables` in electron/database/database.ts —
+// that map is the allow-list for the startup orphan purge, which hard-deletes tags of unknown types.
+export type MediaTagType = 'image' | 'audio' | 'duration_image' | 'duration_audio' | 'quick_capture_image' | 'quick_capture_audio' | 'image_child' | 'image_audio' | 'duration_image_audio' | 'quick_capture_image_audio' | 'image_child_audio' | 'video' | 'duration_video' | 'html_node' | 'duration_html_node' | 'review_note_image';
 
 export interface Tag {
   id: number;
@@ -1219,6 +1222,15 @@ export interface TaggedCaptureImage {
   caption: string | null;
 }
 
+/** No recording/topic context: a review note belongs to a review item, not to topic → recording. */
+export interface TaggedReviewNoteImage {
+  id: number;
+  review_note_id: number;
+  file_path: string;
+  thumbnail_path: string | null;
+  caption: string | null;
+}
+
 export interface TaggedChildImage {
   id: number;
   file_path: string;
@@ -1260,6 +1272,7 @@ export interface TaggedItems {
   audios: TaggedMediaAudio[];
   duration_audios: TaggedMediaDurationAudio[];
   capture_images: TaggedCaptureImage[];
+  review_note_images: TaggedReviewNoteImage[];
   image_children: TaggedChildImage[];
   html_nodes: TaggedHtmlNode[];
   duration_html_nodes: TaggedDurationHtmlNode[];

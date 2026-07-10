@@ -2789,6 +2789,7 @@ export function setupIpcHandlers(): void {
       case 'duration_image':      DurationImagesOperations.updateCaption2(imageId, ocrText || null); break;
       case 'quick_capture_image': QuickCaptureOperations.updateImageCaption2(imageId, ocrText || null); break;
       case 'image_child':         ImageChildrenOperations.updateCaption2(imageId, ocrText || null); break;
+      case 'review_note_image':   ReviewNoteImageOperations.updateCaption2(imageId, ocrText || null); break;
       default: throw new Error(`Unknown imageType for caption2: ${imageType}`);
     }
     scheduleSearchReindex();
@@ -3285,6 +3286,7 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('review:delete', async (_, id: number) => {
     const { imagePaths } = ReviewOperations.delete(id);
     await unlinkAll(imagePaths);
+    scheduleSearchReindex();
   });
   // Rows cascade with the note; the FILES do not. Every review delete path unlinks what the
   // ops layer collected, or each deleted note silently leaks its pictures onto disk.
@@ -3294,9 +3296,13 @@ export function setupIpcHandlers(): void {
     await Promise.all(paths.map(p => fsp.unlink(p).catch(() => {})));
   };
 
+  // Each of these mutates what rebuildSearchIndex() reads (caption, tags, row existence),
+  // so every one reindexes — CLAUDE.md: "Any image delete handler must call scheduleSearchReindex()".
   ipcMain.handle('reviewNoteImages:add', async (_, reviewNoteId: number, imageBuffer: ArrayBuffer, extension?: string) => {
     const { filePath, thumbnailPath } = await saveReviewNoteImage(imageBuffer, extension);
-    return ReviewNoteImageOperations.add(reviewNoteId, filePath, thumbnailPath);
+    const row = ReviewNoteImageOperations.add(reviewNoteId, filePath, thumbnailPath);
+    scheduleSearchReindex();
+    return row;
   });
   ipcMain.handle('reviewNoteImages:getByNote', (_, reviewNoteId: number) =>
     ReviewNoteImageOperations.getByNote(reviewNoteId));
@@ -3304,9 +3310,12 @@ export function setupIpcHandlers(): void {
     const { filePath, thumbnailPath } = ReviewNoteImageOperations.delete(imageId);
     if (filePath) await fsp.unlink(filePath).catch(() => {});
     if (thumbnailPath && thumbnailPath !== filePath) await fsp.unlink(thumbnailPath).catch(() => {});
+    scheduleSearchReindex();
   });
-  ipcMain.handle('reviewNoteImages:updateCaption', (_, imageId: number, caption: string | null) =>
-    ReviewNoteImageOperations.updateCaption(imageId, caption));
+  ipcMain.handle('reviewNoteImages:updateCaption', (_, imageId: number, caption: string | null) => {
+    ReviewNoteImageOperations.updateCaption(imageId, caption);
+    scheduleSearchReindex();
+  });
 
   ipcMain.handle('reviewNotes:add', (_, reviewItemId: number, kind: 'note' | 'missed', body: string, reviewEventId?: number | null) =>
     ReviewNoteOperations.add(reviewItemId, kind, body, reviewEventId));
@@ -3321,6 +3330,7 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('reviewNotes:delete', async (_, id: number) => {
     const { imagePaths } = ReviewNoteOperations.delete(id);
     await unlinkAll(imagePaths);
+    scheduleSearchReindex();
   });
 
   ipcMain.handle('review:rate', (_, id: number, fields: ReviewCardFields, event?: ReviewEventInput, noteIds?: number[]) =>
@@ -3335,6 +3345,7 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('reviewEvents:delete', async (_, eventId: number) => {
     const { imagePaths } = ReviewEventOperations.delete(eventId);
     await unlinkAll(imagePaths);
+    scheduleSearchReindex();
   });
   ipcMain.handle('reviewEvents:getHeatmap', (_, reviewItemId: number | null, fromDate: string, toDate: string) =>
     ReviewEventOperations.getHeatmap(reviewItemId, fromDate, toDate));

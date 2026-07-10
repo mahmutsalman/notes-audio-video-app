@@ -19,10 +19,12 @@ export interface GroupedSearchResults {
   duration_image_audio: GlobalSearchResult[];
   image_audio: GlobalSearchResult[];
   quick_capture_image: GlobalSearchResult[];
+  review_note_image: GlobalSearchResult[];
   image_ocr: GlobalSearchResult[];
   duration_image_ocr: GlobalSearchResult[];
   quick_capture_image_ocr: GlobalSearchResult[];
   image_child_ocr: GlobalSearchResult[];
+  review_note_image_ocr: GlobalSearchResult[];
   html_node: GlobalSearchResult[];
   duration_html_node: GlobalSearchResult[];
 }
@@ -67,8 +69,9 @@ export function useGlobalSearch() {
       duration_image: [], duration_video: [], duration_audio: [],
       code_snippet: [], duration_code_snippet: [],
       audio_marker: [], duration_image_audio: [], image_audio: [],
-      quick_capture_image: [],
+      quick_capture_image: [], review_note_image: [],
       image_ocr: [], duration_image_ocr: [], quick_capture_image_ocr: [], image_child_ocr: [],
+      review_note_image_ocr: [],
       html_node: [], duration_html_node: [],
     };
     for (const r of results) {

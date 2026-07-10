@@ -1478,7 +1478,7 @@ export const SearchOperations = {
     // Step 4: Batch fetch type-specific extra fields (file paths, thumbnails, code, marker_type)
     const extraByType = new Map<string, Map<number, any>>();
     const typeToIds = new Map<string, number[]>();
-    const typesNeedingExtra = new Set(['image', 'video', 'audio', 'duration_image', 'duration_video', 'duration_audio', 'code_snippet', 'duration_code_snippet', 'audio_marker', 'duration_image_audio', 'image_audio', 'quick_capture_image', 'image_ocr', 'duration_image_ocr', 'quick_capture_image_ocr', 'image_child_ocr']);
+    const typesNeedingExtra = new Set(['image', 'video', 'audio', 'duration_image', 'duration_video', 'duration_audio', 'code_snippet', 'duration_code_snippet', 'audio_marker', 'duration_image_audio', 'image_audio', 'quick_capture_image', 'review_note_image', 'image_ocr', 'duration_image_ocr', 'quick_capture_image_ocr', 'image_child_ocr', 'review_note_image_ocr']);
     for (const m of matches) {
       if (typesNeedingExtra.has(m.content_type)) {
         if (!typeToIds.has(m.content_type)) typeToIds.set(m.content_type, []);
@@ -1499,10 +1499,12 @@ export const SearchOperations = {
       duration_image_audio: 'SELECT dia.id, dia.file_path, NULL as thumbnail_path, di.duration_id FROM duration_image_audios dia JOIN duration_images di ON di.id = dia.duration_image_id WHERE dia.id IN',
       image_audio: 'SELECT id, file_path, NULL as thumbnail_path, NULL as duration_id FROM image_audios WHERE id IN',
       quick_capture_image: 'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM quick_capture_images WHERE id IN',
+      review_note_image: 'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM review_note_images WHERE id IN',
       image_ocr:               'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM images WHERE id IN',
       duration_image_ocr:      'SELECT id, file_path, thumbnail_path, duration_id FROM duration_images WHERE id IN',
       quick_capture_image_ocr: 'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM quick_capture_images WHERE id IN',
       image_child_ocr:         'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM image_children WHERE id IN',
+      review_note_image_ocr:   'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM review_note_images WHERE id IN',
     };
 
     for (const [type, ids] of typeToIds) {
@@ -1575,11 +1577,13 @@ const PARENT_ID_QUERIES: Record<string, string> = {
   duration_image_audio:   'SELECT dia.id as source_id, d.recording_id as parent_id, dia.file_path, NULL as thumbnail_path, di.duration_id, NULL as caption, NULL as language, NULL as code, NULL as marker_type FROM duration_image_audios dia JOIN duration_images di ON di.id = dia.duration_image_id JOIN durations d ON d.id = di.duration_id WHERE dia.id IN',
   image_audio:            'SELECT ia.id as source_id, i.recording_id as parent_id, ia.file_path, NULL as thumbnail_path, NULL as duration_id, NULL as caption, NULL as language, NULL as code, NULL as marker_type FROM image_audios ia JOIN images i ON i.id = ia.image_id WHERE ia.id IN',
   quick_capture_image:    'SELECT id as source_id, NULL as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM quick_capture_images WHERE id IN',
+  review_note_image:      'SELECT id as source_id, NULL as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM review_note_images WHERE id IN',
   image_child:            'SELECT id as source_id, NULL as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM image_children WHERE id IN',
   image_ocr:              'SELECT id as source_id, recording_id as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM images WHERE id IN',
   duration_image_ocr:     'SELECT di.id as source_id, d.recording_id as parent_id, di.file_path, di.thumbnail_path, di.duration_id, di.caption, NULL as language, NULL as code, NULL as marker_type FROM duration_images di JOIN durations d ON d.id = di.duration_id WHERE di.id IN',
   quick_capture_image_ocr:'SELECT id as source_id, NULL as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM quick_capture_images WHERE id IN',
   image_child_ocr:        'SELECT id as source_id, NULL as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM image_children WHERE id IN',
+  review_note_image_ocr:  'SELECT id as source_id, NULL as parent_id, file_path, thumbnail_path, NULL as duration_id, caption, NULL as language, NULL as code, NULL as marker_type FROM review_note_images WHERE id IN',
 };
 
 export const FilteredSearchOperations = {
@@ -1911,6 +1915,17 @@ export const TagOperations = {
       ORDER BY qci.sort_order
     `).all(tagName) as { id: number; capture_id: number; file_path: string; thumbnail_path: string | null; caption: string | null }[];
 
+    // Review note images carry no recording/topic context — they hang off a review note,
+    // which belongs to a review item, not to the topic → recording hierarchy. Same shape as
+    // capture_images above: parent id, paths, caption, and nothing else.
+    const review_note_images = db.prepare(`
+      SELECT rni.id, rni.review_note_id, rni.file_path, rni.thumbnail_path, rni.caption
+      FROM review_note_images rni
+      JOIN media_tags mt ON mt.media_type = 'review_note_image' AND mt.media_id = rni.id
+      JOIN tags tag ON tag.id = mt.tag_id AND tag.name = ?
+      ORDER BY rni.sort_order
+    `).all(tagName) as { id: number; review_note_id: number; file_path: string; thumbnail_path: string | null; caption: string | null }[];
+
     const image_children = db.prepare(`
       SELECT ic.id, ic.file_path, ic.thumbnail_path, ic.caption,
              ic.parent_type, ic.parent_id,
@@ -1956,7 +1971,7 @@ export const TagOperations = {
       ORDER BY t.name, r.name, hn.sort_order
     `).all(tagName) as { id: number; file_path: string; title: string | null; file_type: 'html' | 'pdf'; duration_id: number; recording_id: number; recording_name: string | null; topic_id: number; topic_name: string }[];
 
-    return { images, duration_images, audios, duration_audios, capture_images, image_children, html_nodes, duration_html_nodes };
+    return { images, duration_images, audios, duration_audios, capture_images, review_note_images, image_children, html_nodes, duration_html_nodes };
   },
 };
 
@@ -3161,16 +3176,24 @@ function attachImagesToNotes(db: ReturnType<typeof getDatabase>, notes: any[]): 
 }
 
 /**
- * Every file_path under a set of notes. Collected BEFORE the rows are deleted, because
+ * Every file_path under a set of notes, collected BEFORE the rows are deleted, because
  * `ON DELETE CASCADE` removes the image rows but never the files on disk. Callers in
  * handlers.ts unlink what this returns.
+ *
+ * Also purges each image's media_tags, for the same reason: media_tags has no FK on
+ * media_id, so the cascade leaves tag associations pointing at dead rows, which inflates
+ * tag counts (the anı 12-vs-2 bug). Both jobs live in one function on purpose — every
+ * caller is about to cascade, so there is no case where you want the paths without the
+ * purge, and splitting them is how a future delete path silently forgets one.
  */
 function imagePathsForNotes(db: ReturnType<typeof getDatabase>, noteIds: number[]): string[] {
   if (noteIds.length === 0) return [];
   const placeholders = noteIds.map(() => '?').join(', ');
   const rows = db.prepare(
-    `SELECT file_path, thumbnail_path FROM review_note_images WHERE review_note_id IN (${placeholders})`
-  ).all(...noteIds) as { file_path: string; thumbnail_path: string | null }[];
+    `SELECT id, file_path, thumbnail_path FROM review_note_images WHERE review_note_id IN (${placeholders})`
+  ).all(...noteIds) as { id: number; file_path: string; thumbnail_path: string | null }[];
+
+  deleteMediaTagsBulk('review_note_image', rows.map(r => r.id));
 
   const paths = new Set<string>();
   for (const r of rows) {
@@ -3208,6 +3231,7 @@ export const ReviewNoteImageOperations = {
       'SELECT file_path, thumbnail_path FROM review_note_images WHERE id = ?'
     ).get(imageId) as { file_path: string; thumbnail_path: string | null } | undefined;
 
+    deleteMediaTags('review_note_image', imageId);
     db.prepare('DELETE FROM review_note_images WHERE id = ?').run(imageId);
     return { filePath: row?.file_path ?? null, thumbnailPath: row?.thumbnail_path ?? null };
   },
@@ -3215,6 +3239,12 @@ export const ReviewNoteImageOperations = {
   updateCaption(imageId: number, caption: string | null): void {
     getDatabase().prepare('UPDATE review_note_images SET caption = ? WHERE id = ?')
       .run(caption?.trim() || null, imageId);
+  },
+
+  /** OCR text — search-only, never displayed. See ocr:extractCaption2 in handlers.ts. */
+  updateCaption2(imageId: number, caption2: string | null): void {
+    getDatabase().prepare('UPDATE review_note_images SET caption2 = ? WHERE id = ?')
+      .run(caption2, imageId);
   },
 };
 

@@ -5,7 +5,7 @@ import { useRecordingAudioPlayer } from '../../context/RecordingAudioPlayerConte
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 import ImageLightbox from '../common/ImageLightbox';
 import SortableImageGrid from '../common/SortableImageGrid';
-import type { TaggedItems, TaggedCaptureImage, TaggedChildImage, TaggedHtmlNode, TaggedDurationHtmlNode, AnyImageAudio } from '../../types';
+import type { TaggedItems, TaggedCaptureImage, TaggedReviewNoteImage, TaggedChildImage, TaggedHtmlNode, TaggedDurationHtmlNode, AnyImageAudio } from '../../types';
 
 function fmtDuration(secs: number | null): string {
   if (!secs) return '';
@@ -59,6 +59,8 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
   // Child image lightbox
   const [childLightbox, setChildLightbox] = useState<{ rows: TaggedChildImage[]; index: number } | null>(null);
   const [childImageAudiosMap, setChildImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
+  // Review-note images have no attached audio and no child images, so no audio map here.
+  const [reviewNoteLightbox, setReviewNoteLightbox] = useState<{ rows: TaggedReviewNoteImage[]; index: number } | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -69,6 +71,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
         audios:              dedupeById(results.flatMap(r => r.audios)),
         duration_audios:     dedupeById(results.flatMap(r => r.duration_audios)),
         capture_images:      dedupeById(results.flatMap(r => r.capture_images)),
+        review_note_images:  dedupeById(results.flatMap(r => r.review_note_images ?? [])),
         image_children:      dedupeById(results.flatMap(r => r.image_children)),
         html_nodes:          dedupeById(results.flatMap(r => r.html_nodes)),
         duration_html_nodes: dedupeById(results.flatMap(r => r.duration_html_nodes)),
@@ -352,6 +355,17 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
     }
   }, [captureLightbox]);
 
+  const handleReviewNoteDeleteImage = useCallback(async () => {
+    if (!reviewNoteLightbox) return;
+    const row = reviewNoteLightbox.rows[reviewNoteLightbox.index];
+    if (!window.confirm('Delete this image?')) return;
+    await window.electronAPI.reviewNoteImages.delete(row.id);
+    const remaining = reviewNoteLightbox.rows.filter((_, i) => i !== reviewNoteLightbox.index);
+    setItems(prev => prev ? { ...prev, review_note_images: prev.review_note_images.filter(img => img.id !== row.id) } : prev);
+    if (remaining.length === 0) setReviewNoteLightbox(null);
+    else setReviewNoteLightbox({ rows: remaining, index: Math.min(reviewNoteLightbox.index, remaining.length - 1) });
+  }, [reviewNoteLightbox]);
+
   const handleCaptureReplaceWithClipboard = useCallback(async () => {
     if (!currentCaptureRow) return;
     const result = await window.electronAPI.clipboard.readImage();
@@ -385,7 +399,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
   if (loading) return <p className="text-sm text-gray-400 py-4">Loading…</p>;
   if (!items) return null;
 
-  const total = items.images.length + items.duration_images.length + items.audios.length + items.duration_audios.length + items.capture_images.length + items.image_children.length + (items.html_nodes?.length ?? 0) + (items.duration_html_nodes?.length ?? 0);
+  const total = items.images.length + items.duration_images.length + items.audios.length + items.duration_audios.length + items.capture_images.length + (items.review_note_images?.length ?? 0) + items.image_children.length + (items.html_nodes?.length ?? 0) + (items.duration_html_nodes?.length ?? 0);
 
   if (total === 0) {
     return <p className="text-sm text-gray-400 dark:text-gray-500 py-4">No items tagged with {tagNames.map((t, i) => <span key={t}>{i > 0 && ' or '}<span className="font-mono text-blue-500">#{t}</span></span>)}</p>;
@@ -488,6 +502,20 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
           onReplaceWithClipboard={handleCaptureReplaceWithClipboard}
           onEditCaption={handleCaptureEditCaption}
           onDelete={handleCaptureDeleteImage}
+        />
+      )}
+
+      {/* Review note image lightbox — view, tag, OCR, delete. No audio, no child images. */}
+      {reviewNoteLightbox && (
+        <ImageLightbox
+          images={reviewNoteLightbox.rows.map(r => ({ file_path: r.file_path, caption: r.caption, id: r.id }))}
+          selectedIndex={reviewNoteLightbox.index}
+          onClose={() => setReviewNoteLightbox(null)}
+          onNavigate={i => setReviewNoteLightbox(lb => lb ? { ...lb, index: i } : lb)}
+          mediaType="review_note_image"
+          imageType="review_note_image"
+          disableChildImages
+          onDelete={handleReviewNoteDeleteImage}
         />
       )}
 
@@ -652,6 +680,38 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
               colorOverrides={{}}
               groupColorOverrides={{}}
               onImageClick={(index) => openCaptureLightbox(items.capture_images, index)}
+              onDelete={() => {}}
+              onReorder={() => {}}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Review Note Images section */}
+      {(items.review_note_images?.length ?? 0) > 0 && (
+        <div className="mb-4 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+          <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 flex items-center gap-1.5 mb-2">
+            <span>🧠</span>Review Note Images
+            <span className="font-normal text-blue-400 dark:text-blue-500">({items.review_note_images.length})</span>
+          </h3>
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg p-3">
+            <SortableImageGrid
+              images={items.review_note_images.map(r => ({
+                id: r.id,
+                file_path: r.file_path,
+                thumbnail_path: r.thumbnail_path ?? null,
+                caption: r.caption,
+                color: null,
+                group_color: null,
+              }))}
+              gridClassName="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1"
+              readOnly
+              showNumberBadge={false}
+              colorKeyPrefix="reviewNoteTagResult"
+              captionColorClass="text-blue-600 dark:text-blue-400"
+              colorOverrides={{}}
+              groupColorOverrides={{}}
+              onImageClick={(index) => setReviewNoteLightbox({ rows: items.review_note_images, index })}
               onDelete={() => {}}
               onReorder={() => {}}
             />
