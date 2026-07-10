@@ -76,6 +76,9 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   const [note, setNote] = useState('');
   const [missedPoints, setMissedPoints] = useState('');
   const [draftNotes, setDraftNotes] = useState<ReviewNote[]>([]);
+  // Inline edit of an already-logged note. null = nothing being edited.
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editingBody, setEditingBody] = useState('');
   const [showNotePanel, setShowNotePanel] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -172,6 +175,8 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     setShowNotePanel(false);
     setElapsedSeconds(0);
     setTimerRunning(false);
+    setEditingNoteId(null);
+    setEditingBody('');
     timerTouched.current = false;
     window.electronAPI.reviewMasks.getByItem(current.id).then(setMasks);
     // Re-hydrate any notes logged for this card but not yet tied to a rating — e.g. typed,
@@ -221,6 +226,32 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   const removeNote = async (id: number) => {
     await window.electronAPI.reviewNotes.delete(id);
     setDraftNotes(prev => prev.filter(n => n.id !== id));
+  };
+
+  const beginEditNote = (n: ReviewNote) => {
+    setEditingNoteId(n.id);
+    setEditingBody(n.body);
+  };
+
+  const cancelEditNote = () => {
+    setEditingNoteId(null);
+    setEditingBody('');
+  };
+
+  /**
+   * Save an edited note. An empty body is a cancel, not a delete — `ReviewNoteOperations.update`
+   * rejects an empty body, and silently deleting on backspace-to-empty would be a trapdoor.
+   * Deleting is the ✕ button, explicitly.
+   */
+  const saveEditNote = async () => {
+    if (editingNoteId === null) return;
+    const id = editingNoteId;
+    const body = editingBody.trim();
+    const original = draftNotes.find(n => n.id === id);
+    if (!body || body === original?.body) return cancelEditNote();
+    await window.electronAPI.reviewNotes.update(id, body);
+    setDraftNotes(prev => prev.map(n => n.id === id ? { ...n, body } : n));
+    cancelEditNote();
   };
 
   // Enter logs the note and starts a fresh one (no newline); Shift+Enter inserts a newline.
@@ -517,7 +548,30 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                         >
                           <div className="flex items-start gap-2">
                             <span className="text-[10px] text-gray-500 tabular-nums pt-0.5 shrink-0">{i + 1}</span>
-                            <p className="flex-1 text-sm text-gray-300 whitespace-pre-wrap break-words">{n.body}</p>
+                            {editingNoteId === n.id ? (
+                              <textarea
+                                autoFocus
+                                rows={Math.min(6, editingBody.split('\n').length)}
+                                value={editingBody}
+                                onChange={e => setEditingBody(e.target.value)}
+                                onBlur={saveEditNote}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void saveEditNote(); }
+                                  else if (e.key === 'Escape') { e.preventDefault(); cancelEditNote(); }
+                                }}
+                                className="flex-1 resize-none bg-gray-900/60 border border-primary-600 rounded px-2 py-1
+                                           text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                              />
+                            ) : (
+                              <p
+                                onClick={() => beginEditNote(n)}
+                                title="Click to edit • Enter saves, Shift+Enter for a newline, Esc cancels"
+                                className="flex-1 text-sm text-gray-300 whitespace-pre-wrap break-words cursor-text
+                                           rounded px-1 -mx-1 hover:bg-gray-700/40 transition-colors"
+                              >
+                                {n.body}
+                              </p>
+                            )}
                             <button
                               onClick={() => removeNote(n.id)}
                               title="Delete this note"
