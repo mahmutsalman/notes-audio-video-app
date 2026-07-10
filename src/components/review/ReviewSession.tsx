@@ -159,22 +159,54 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     return () => area.removeEventListener('wheel', onWheel);
   }, [clampImgTranslate]);
 
-  // Keyboard: Esc ends the session; ← / → skip between images (without rating).
-  // Capture phase + stopImmediatePropagation so this full-screen session owns the keys
-  // even when launched from a page with its own arrow/Esc handlers (e.g. a written note's
-  // mark navigation). Ignored while typing in the note/preset fields.
+  // Keyboard: Esc ends the session; ← / → skip between images (without rating);
+  // Space shows the rating buttons without revealing the masks.
+  //
+  // Capture phase + stopImmediatePropagation so this full-screen session owns the keys even when
+  // launched from a page with its own arrow/Esc handlers (e.g. a written note's mark navigation).
+  //
+  // Two things this must NOT do, both learned the hard way:
+  //   1. Tag-sniffing for 'TEXTAREA' does not detect Monaco. Monaco focuses a hidden <textarea>
+  //      only while the caret is in the text; click the gutter, margin or scrollbar and focus is a
+  //      <div>, so ← / → fell through and flipped to the next card mid-edit. Ask "is the focus
+  //      inside the editor" (.monaco-editor) instead of "what tag is it".
+  //   2. Handling Escape before the typing check meant this capture listener swallowed it — the
+  //      note editor's own Escape-to-cancel never ran, and Escape inside Monaco ended the whole
+  //      session instead of closing the autocomplete popup. Let the focused field have it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      const typing = tag === 'INPUT' || tag === 'TEXTAREA';
-      if (e.key === 'Escape') { e.stopImmediatePropagation(); onSessionEnd(); return; }
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      const inMonaco = !!el?.closest?.('.monaco-editor');
+      const typing =
+        tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+        !!el?.isContentEditable || inMonaco;
+
+      if (e.key === 'Escape') {
+        // The code editor and an in-progress note edit own their own Escape.
+        if (inMonaco || editingNoteId !== null) return;
+        e.stopImmediatePropagation();
+        onSessionEnd();
+        return;
+      }
       if (typing) return;
+
       if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopImmediatePropagation(); goPrev(); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); e.stopImmediatePropagation(); goNext(); }
+      else if (e.code === 'Space') {
+        // Show the grading controls, masks still blurred. Peek mode grades nothing.
+        if (readOnly) return;
+        // A focused button owns Space — swallowing it here would stop the keyboard from
+        // activating Reveal All, or the rating buttons themselves.
+        if (tag === 'BUTTON' || tag === 'A') return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setRatingsRequested(true);
+      }
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [onSessionEnd, goPrev, goNext]);
+  }, [onSessionEnd, goPrev, goNext, editingNoteId, readOnly]);
 
   // Load masks + reset per-card state when the current item changes.
   useEffect(() => {
@@ -552,11 +584,12 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
             {!readOnly && !ratingsRequested && (
               <button
                 onClick={() => setRatingsRequested(true)}
-                title="Grade this card without revealing the masks"
+                title="Grade this card without revealing the masks (Space)"
                 className="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700
-                           text-sm rounded-lg transition-colors"
+                           text-sm rounded-lg transition-colors flex items-center gap-2"
               >
                 Rate this card
+                <kbd className="text-[10px] text-gray-500 border border-gray-700 rounded px-1 py-0.5">Space</kbd>
               </button>
             )}
             {masks.filter(m => !revealedMaskIds.has(m.id) && m.hint_text).map(m => (
