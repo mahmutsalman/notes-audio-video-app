@@ -8,6 +8,22 @@ release/
 out/
 electron/native/screencapturekit/build/
 
+# Stray bundler output: some builds emit dist-electron's chunks into the repo root
+# too. `npm run clean` does not remove them, and they are not distinguishable from
+# source by extension alone — the entry stubs (preload.js, main.js) carry no hash.
+/main.js
+/preload.js
+/htmlNodeViewerPreload.js
+/main-*.js
+/index-*.js
+/obsService-*.js
+/videoMerger-*.js
+/videoCompression-*.js
+/obsStatusWindow-*.js
+/obsMarkOverlay-*.js
+/htmlNodeWindow-*.js
+/_commonjs-dynamic-modules-*.js
+
 # Local environment
 .env
 .env.local
