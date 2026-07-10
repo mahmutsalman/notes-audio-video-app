@@ -3248,6 +3248,37 @@ export const ReviewNoteImageOperations = {
   },
 };
 
+/**
+ * One scratch code pad per enrolled card (ADR-0009). Anchored to review_item_id — a review_note
+ * row only exists once the user presses Enter, and there are many of them per card.
+ */
+export const ReviewCodeSnippetOperations = {
+  /** Null when nothing has ever been typed on this card. */
+  getByItem(reviewItemId: number): any | null {
+    return getDatabase().prepare(
+      'SELECT * FROM review_code_snippets WHERE review_item_id = ?'
+    ).get(reviewItemId) ?? null;
+  },
+
+  /**
+   * Create-or-update, keyed on the UNIQUE review_item_id. Autosave calls this on every debounce
+   * tick, so it has to be idempotent: ON CONFLICT makes the second call an update, never a
+   * second row.
+   */
+  save(reviewItemId: number, code: string, language: string): any {
+    const db = getDatabase();
+    db.prepare(`
+      INSERT INTO review_code_snippets (review_item_id, code, language)
+      VALUES (?, ?, ?)
+      ON CONFLICT(review_item_id) DO UPDATE SET
+        code = excluded.code,
+        language = excluded.language,
+        updated_at = datetime('now')
+    `).run(reviewItemId, code, language);
+    return db.prepare('SELECT * FROM review_code_snippets WHERE review_item_id = ?').get(reviewItemId);
+  },
+};
+
 export const ReviewNoteOperations = {
   /**
    * Write one note immediately (the user pressed Enter).

@@ -35,6 +35,7 @@ import {
   ReviewEventOperations,
   ReviewNoteOperations,
   ReviewNoteImageOperations,
+  ReviewCodeSnippetOperations,
   ReviewPresetOperations,
   HtmlNodesOperations,
   DurationHtmlNodesOperations,
@@ -3316,6 +3317,12 @@ export function setupIpcHandlers(): void {
     ReviewNoteImageOperations.updateCaption(imageId, caption);
     scheduleSearchReindex();
   });
+
+  // One scratch code pad per card. No reindex: review code is not in FTS yet (ADR-0009).
+  ipcMain.handle('reviewCodeSnippets:getByItem', (_, reviewItemId: number) =>
+    ReviewCodeSnippetOperations.getByItem(reviewItemId));
+  ipcMain.handle('reviewCodeSnippets:save', (_, reviewItemId: number, code: string, language: string) =>
+    ReviewCodeSnippetOperations.save(reviewItemId, code, language));
 
   ipcMain.handle('reviewNotes:add', (_, reviewItemId: number, kind: 'note' | 'missed', body: string, reviewEventId?: number | null) =>
     ReviewNoteOperations.add(reviewItemId, kind, body, reviewEventId));

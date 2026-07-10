@@ -8,6 +8,7 @@ import {
 } from '../../utils/fsrs';
 import PixelatedImage from './PixelatedImage';
 import ReviewNoteImages from './ReviewNoteImages';
+import ReviewCodePane from './ReviewCodePane';
 
 interface ReviewSessionProps {
   items: ReviewItem[];
@@ -60,6 +61,14 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   // "Rate this card" shows the grading controls while leaving the masks blurred, so grading
   // does not force you to look at the answer. Revealing everything implies it too.
   const [ratingsRequested, setRatingsRequested] = useState(false);
+  // Scratch code pad visibility, remembered across sessions. Off by default so an existing
+  // review flow is unchanged until you ask for it.
+  const [showCodePane, setShowCodePane] = useState(
+    () => localStorage.getItem('echo.showCodePane') === '1'
+  );
+  useEffect(() => {
+    localStorage.setItem('echo.showCodePane', showCodePane ? '1' : '0');
+  }, [showCodePane]);
   const [showManualSchedule, setShowManualSchedule] = useState(false);
   const [isRating, setIsRating] = useState(false);
 
@@ -441,17 +450,32 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
           </div>
         </div>
 
-        {(current.recording_id || current.capture_id) && (
+        <div className="flex items-center gap-4">
           <button
-            onClick={handleNavigateToOriginal}
-            className="titlebar-no-drag text-gray-400 hover:text-blue-400 text-sm transition-colors flex items-center gap-1.5"
+            onClick={() => setShowCodePane(v => !v)}
+            title={showCodePane ? 'Hide the scratch code pad' : 'Show the scratch code pad'}
+            className={`titlebar-no-drag text-sm transition-colors flex items-center gap-1.5 ${
+              showCodePane ? 'text-blue-400 hover:text-blue-300' : 'text-gray-400 hover:text-blue-400'
+            }`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
             </svg>
-            Go to original
+            Code
           </button>
-        )}
+
+          {(current.recording_id || current.capture_id) && (
+            <button
+              onClick={handleNavigateToOriginal}
+              className="titlebar-no-drag text-gray-400 hover:text-blue-400 text-sm transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              Go to original
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Progress bar */}
@@ -473,32 +497,43 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
       )}
 
       {/* Image area — Cmd/Ctrl + wheel to zoom, scroll to pan when zoomed */}
-      <div
-        ref={imageAreaRef}
-        className="flex-1 relative flex items-center justify-center px-4 py-2 overflow-hidden min-h-0"
-      >
-        {current.file_path && (
-          <div
-            ref={imageWrapRef}
-            className="w-full h-full"
-            style={{
-              transform: `scale(${imgScale}) translate(${imgTranslate.x / imgScale}px, ${imgTranslate.y / imgScale}px)`,
-              transformOrigin: 'center center',
-              cursor: imgScale > 1 ? 'grab' : 'default',
-            }}
-          >
-            <PixelatedImage
-              src={fileSrc}
-              masks={masks}
-              revealedMaskIds={revealedMaskIds}
-              onMaskClick={revealMask}
+      {/* Card + optional scratch code pad, side by side. The card keeps its own zoom/pan refs. */}
+      <div className="flex-1 flex min-h-0">
+        <div
+          ref={imageAreaRef}
+          className="flex-1 relative flex items-center justify-center px-4 py-2 overflow-hidden min-h-0"
+        >
+          {current.file_path && (
+            <div
+              ref={imageWrapRef}
               className="w-full h-full"
-            />
-          </div>
-        )}
-        {imgScale > 1 && (
-          <div className="absolute top-3 right-3 bg-black/60 text-white/80 text-xs px-2 py-1 rounded-full pointer-events-none">
-            {Math.round(imgScale * 100)}%
+              style={{
+                transform: `scale(${imgScale}) translate(${imgTranslate.x / imgScale}px, ${imgTranslate.y / imgScale}px)`,
+                transformOrigin: 'center center',
+                cursor: imgScale > 1 ? 'grab' : 'default',
+              }}
+            >
+              <PixelatedImage
+                src={fileSrc}
+                masks={masks}
+                revealedMaskIds={revealedMaskIds}
+                onMaskClick={revealMask}
+                className="w-full h-full"
+              />
+            </div>
+          )}
+          {imgScale > 1 && (
+            <div className="absolute top-3 right-3 bg-black/60 text-white/80 text-xs px-2 py-1 rounded-full pointer-events-none">
+              {Math.round(imgScale * 100)}%
+            </div>
+          )}
+        </div>
+
+        {showCodePane && (
+          <div className="w-[42%] min-w-[320px] max-w-[760px] min-h-0 shrink-0">
+            {/* Keyed on the card: remounting is what guarantees the pad reloads and the previous
+                card's pending autosave flushes before the next one loads. */}
+            <ReviewCodePane key={current.id} reviewItemId={current.id} readOnly={readOnly} />
           </div>
         )}
       </div>

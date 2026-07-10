@@ -1057,6 +1057,13 @@ const electronAPI = {
       ipcRenderer.invoke('reviewNoteImages:updateCaption', imageId, caption),
   },
 
+  reviewCodeSnippets: {
+    getByItem: (reviewItemId: number) =>
+      ipcRenderer.invoke('reviewCodeSnippets:getByItem', reviewItemId),
+    save: (reviewItemId: number, code: string, language: string) =>
+      ipcRenderer.invoke('reviewCodeSnippets:save', reviewItemId, code, language),
+  },
+
   reviewEvents: {
     getByItem: (reviewItemId: number) => ipcRenderer.invoke('reviewEvents:getByItem', reviewItemId),
     log: (reviewItemId: number, event: import('../src/types').ReviewEventInput) =>

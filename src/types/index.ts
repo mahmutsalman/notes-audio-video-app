@@ -949,6 +949,10 @@ export interface ElectronAPI {
     delete: (imageId: number) => Promise<void>;
     updateCaption: (imageId: number, caption: string | null) => Promise<void>;
   };
+  reviewCodeSnippets: {
+    getByItem: (reviewItemId: number) => Promise<ReviewCodeSnippet | null>;
+    save: (reviewItemId: number, code: string, language: string) => Promise<ReviewCodeSnippet>;
+  };
   reviewEvents: {
     getByItem: (reviewItemId: number) => Promise<ReviewEvent[]>;
     log: (reviewItemId: number, event: ReviewEventInput) => Promise<ReviewEvent>;
@@ -1418,6 +1422,16 @@ export interface ReviewEventInput {
 export type ReviewNoteKind = 'note' | 'missed';
 
 /** A picture attached to a reflective note. Lightweight: no tags, no OCR, no FTS (ADR-0006). */
+/** One scratch code pad per enrolled card. UNIQUE on review_item_id — see ADR-0009. */
+export interface ReviewCodeSnippet {
+  id: number;
+  review_item_id: number;
+  language: string;
+  code: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ReviewNoteImage {
   id: number;
   review_note_id: number;

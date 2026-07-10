@@ -1557,6 +1557,29 @@ function runMigrations(db: Database.Database): void {
     console.log('Added caption2 column to review_note_images table');
   }
 
+  // Migration: review_code_snippets — one scratch code pad per enrolled card (ADR-0009).
+  // Anchored to review_item_id, not review_note_id: a review_note row only exists once the user
+  // presses Enter, and there are many per card, so there is no single note to hang code off.
+  // UNIQUE(review_item_id) enforces "one pad per card" in the schema rather than by convention,
+  // so the upsert below cannot silently create a second row.
+  const reviewCodeSnippetsExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='review_code_snippets'"
+  ).get();
+  if (!reviewCodeSnippetsExists) {
+    db.exec(`
+      CREATE TABLE review_code_snippets (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_item_id INTEGER NOT NULL UNIQUE REFERENCES review_items(id) ON DELETE CASCADE,
+        language       TEXT NOT NULL DEFAULT 'java',
+        code           TEXT NOT NULL DEFAULT '',
+        created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_review_code_snippets_item ON review_code_snippets(review_item_id);
+    `);
+    console.log('Created review_code_snippets table');
+  }
+
   // Migration: archive support for quick captures.
   // Archiving hides a capture from the Capture board WITHOUT deleting anything —
   // rows, files, tags and FTS entries all stay. NULL = on the board, timestamp = archived.

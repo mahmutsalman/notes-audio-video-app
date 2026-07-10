@@ -40,6 +40,12 @@ interface CodeEditorProps {
   readOnly?: boolean;
   height?: string;
   showLanguageSelector?: boolean;
+  /**
+   * Stretch to fill a flex parent instead of sizing to `height`. Required for `height="100%"`:
+   * the default root has no height of its own, so a percentage height resolves to zero.
+   * Off by default — existing callers pass fixed pixel heights.
+   */
+  fill?: boolean;
 }
 
 const SUPPORTED_LANGUAGES = [
@@ -72,6 +78,7 @@ export default function CodeEditor({
   readOnly = false,
   height = '400px',
   showLanguageSelector = true,
+  fill = false,
 }: CodeEditorProps) {
   const [theme, setTheme] = useState<'light' | 'vs-dark'>('vs-dark');
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
@@ -135,9 +142,9 @@ export default function CodeEditor({
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className={`flex flex-col gap-2${fill ? ' h-full min-h-0' : ''}`}>
       {showLanguageSelector && (
-        <div className="flex items-center gap-2">
+        <div className={`flex items-center gap-2${fill ? ' px-3 pt-2 shrink-0' : ''}`}>
           <label htmlFor="language-select" className="text-sm font-medium text-gray-300">
             Language:
           </label>
@@ -156,9 +163,14 @@ export default function CodeEditor({
           </select>
         </div>
       )}
-      <div ref={containerRef} className="border border-gray-700 rounded overflow-hidden">
+      <div
+        ref={containerRef}
+        className={fill
+          ? 'flex-1 min-h-0 overflow-hidden'
+          : 'border border-gray-700 rounded overflow-hidden'}
+      >
         <Editor
-          height={height}
+          height={fill ? '100%' : height}
           language={language}
           value={code}
           onChange={(value) => onChange?.(value || '')}
