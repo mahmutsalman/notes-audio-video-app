@@ -12,6 +12,25 @@ import {
 
 /** The retention target the scheduler optimizes for (also the retrievability at the due date). */
 export const REQUEST_RETENTION = 0.9;
+
+/**
+ * Short-term steps for cards that have not graduated yet (ADR-0008).
+ *
+ * ts-fsrs ships 1m/10m. Those made Hard on a Learning card land 6 minutes out, so a card rated
+ * Hard came straight back in the same sitting and never left Learning — you study, and nothing
+ * moves. FSRS does not expose Hard directly: on a learning step it schedules the **midpoint of
+ * the current and next step**, so the pair below is what sets all three of Again/Hard/Good.
+ *
+ *   Again -> 15m   (step 0)
+ *   Hard  -> 3.1h  (midpoint of 15m and 6h)
+ *   Good  -> 6h    (step 1), then ~9d on the next Good, which graduates the card
+ *
+ * RELEARNING_STEPS applies after a lapse on an already-graduated card. Only the pre-graduation
+ * schedule is touched: a Review-state card's Hard is pure FSRS stability maths and still yields
+ * day-scale intervals.
+ */
+export const LEARNING_STEPS = ['15m', '6h'] as const;
+export const RELEARNING_STEPS = ['15m'] as const;
 import type { ReviewItem, ReviewRating, ReviewCardFields, ReviewEventInput } from '../types';
 
 /**
@@ -26,6 +45,8 @@ import type { ReviewItem, ReviewRating, ReviewCardFields, ReviewEventInput } fro
 const params: FSRSParameters = generatorParameters({
   request_retention: REQUEST_RETENTION,
   enable_fuzz: true, // small day-level randomization so cards don't bunch on identical due dates
+  learning_steps: [...LEARNING_STEPS],
+  relearning_steps: [...RELEARNING_STEPS],
 });
 
 const scheduler = fsrs(params);

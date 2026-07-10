@@ -57,6 +57,9 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   const [masks, setMasks] = useState<ReviewMask[]>([]);
   const [revealedMaskIds, setRevealedMaskIds] = useState<Set<number>>(new Set());
   const [allRevealed, setAllRevealed] = useState(false);
+  // "Rate this card" shows the grading controls while leaving the masks blurred, so grading
+  // does not force you to look at the answer. Revealing everything implies it too.
+  const [ratingsRequested, setRatingsRequested] = useState(false);
   const [showManualSchedule, setShowManualSchedule] = useState(false);
   const [isRating, setIsRating] = useState(false);
 
@@ -169,6 +172,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     if (!current) return;
     setRevealedMaskIds(new Set());
     setAllRevealed(false);
+    setRatingsRequested(false);
     setShowManualSchedule(false);
     setNote('');
     setMissedPoints('');
@@ -214,6 +218,9 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     setRevealedMaskIds(new Set(masks.map(m => m.id)));
     setAllRevealed(true);
   };
+
+  /** Grading controls are up once you've either seen the answer or explicitly asked to grade. */
+  const canRate = allRevealed || ratingsRequested;
 
   /** Persist one note now and clear its box, ready for the next. No-op on empty text. */
   const commitNote = useCallback(async (kind: ReviewNoteKind, body: string): Promise<ReviewNote | null> => {
@@ -498,7 +505,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
 
       {/* Bottom controls */}
       <div className="px-5 py-4 border-t border-gray-800 flex flex-col gap-3">
-        {/* Reveal All + hint list */}
+        {/* Reveal All + "Rate this card" + hint list */}
         {!allRevealed && masks.length > 0 && (
           <div className="flex items-center gap-3 flex-wrap">
             <button
@@ -507,6 +514,16 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
             >
               Reveal All
             </button>
+            {!readOnly && !ratingsRequested && (
+              <button
+                onClick={() => setRatingsRequested(true)}
+                title="Grade this card without revealing the masks"
+                className="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700
+                           text-sm rounded-lg transition-colors"
+              >
+                Rate this card
+              </button>
+            )}
             {masks.filter(m => !revealedMaskIds.has(m.id) && m.hint_text).map(m => (
               <span
                 key={m.id}
@@ -521,7 +538,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
 
         {/* Reflective note panel — the "what did I think / what did I miss" log.
             Study-only; hidden in Peek mode. */}
-        {!readOnly && allRevealed && (
+        {!readOnly && canRate && (
           <div className="flex flex-col gap-2">
             {!showNotePanel ? (
               <button
@@ -608,9 +625,9 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
           </div>
         )}
 
-        {/* Rating buttons — shown only after revealing. Hidden in Peek mode (these are the
-            only controls that write FSRS state / a review_events row). */}
-        {!readOnly && allRevealed && !showManualSchedule && (
+        {/* Rating buttons — shown after Reveal All or "Rate this card". Hidden in Peek mode
+            (these are the only controls that write FSRS state / a review_events row). */}
+        {!readOnly && canRate && !showManualSchedule && (
           <div className="flex flex-col gap-2">
             <div className="flex gap-2">
               {RATING_CONFIG.map(({ rating, label, color, hint }) => {
@@ -639,7 +656,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
         )}
 
         {/* Manual schedule — study-only; hidden in Peek mode. */}
-        {!readOnly && allRevealed && showManualSchedule && (
+        {!readOnly && canRate && showManualSchedule && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-gray-300 text-sm">Schedule for:</span>
