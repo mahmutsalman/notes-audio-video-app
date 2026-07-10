@@ -12,7 +12,8 @@ import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordi
 interface CaptureItemProps {
   capture: QuickCapture;
   onDelete: (id: number) => void;
-  expiresInDays?: number;
+  /** Present only in the Archived view — puts the capture back on the board. */
+  onRestore?: (id: number) => void;
 }
 
 type ContextMenuState =
@@ -49,7 +50,7 @@ function relativeTime(dateStr: string): string {
   return d === 1 ? 'yesterday' : `${d}d ago`;
 }
 
-export default function CaptureItem({ capture, onDelete, expiresInDays }: CaptureItemProps) {
+export default function CaptureItem({ capture, onDelete, onRestore }: CaptureItemProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [captureImageAudiosMap, setCaptureImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
@@ -386,11 +387,22 @@ export default function CaptureItem({ capture, onDelete, expiresInDays }: Captur
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-400 dark:text-gray-500">{relativeTime(capture.created_at)}</span>
-          {expiresInDays !== undefined && expiresInDays <= 2 && (
-            <span className="text-xs text-amber-500 dark:text-amber-400 font-medium">expires in {expiresInDays}d</span>
+          {capture.archived_at && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-dark-border text-gray-500 dark:text-gray-400 font-medium">
+              archived
+            </span>
           )}
         </div>
         <div className="flex items-center gap-1">
+          {onRestore && !confirmDelete && (
+            <button
+              onClick={() => onRestore(capture.id)}
+              className="text-xs px-2 py-0.5 rounded border border-gray-200 dark:border-dark-border text-gray-600 dark:text-gray-400 hover:border-primary-400 hover:text-primary-600 transition-colors"
+              title="Put this capture back on the board"
+            >
+              Restore
+            </button>
+          )}
           {confirmDelete ? (
             <>
               <button

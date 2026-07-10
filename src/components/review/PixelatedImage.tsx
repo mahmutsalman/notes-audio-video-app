@@ -23,6 +23,7 @@ export default function PixelatedImage({
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [displaySize, setDisplaySize] = useState<{ w: number; h: number } | null>(null);
+  const [hoveredMaskId, setHoveredMaskId] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Load image and measure it
@@ -115,12 +116,17 @@ export default function PixelatedImage({
     }
   }, [naturalSize, displaySize, masks, revealedMaskIds, src]);
 
-  // Handle canvas click — find which mask was clicked
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!onMaskClick || !naturalSize || !displaySize) return;
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
+  // Find which unrevealed mask (if any) sits under a client-space point.
+  // Derive the on-screen scale from the rendered rect vs. the canvas's intrinsic size, so
+  // hit-testing stays correct even when an ancestor applies a CSS zoom transform.
+  const maskAtPoint = (clientX: number, clientY: number): ReviewMask | null => {
+    if (!naturalSize || !displaySize) return null;
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const sx = canvas.width ? rect.width / canvas.width : 1;
+    const sy = canvas.height ? rect.height / canvas.height : 1;
+    const cx = (clientX - rect.left) / (sx || 1);
+    const cy = (clientY - rect.top) / (sy || 1);
 
     const { w: dw, h: dh } = displaySize;
     const scale = Math.min(dw / naturalSize.w, dh / naturalSize.h);
@@ -135,11 +141,23 @@ export default function PixelatedImage({
       const my = offsetY + mask.y * fitH;
       const mw = mask.w * fitW;
       const mh = mask.h * fitH;
-      if (cx >= mx && cx <= mx + mw && cy >= my && cy <= my + mh) {
-        onMaskClick(mask.id);
-        return;
-      }
+      if (cx >= mx && cx <= mx + mw && cy >= my && cy <= my + mh) return mask;
     }
+    return null;
+  };
+
+  // Handle canvas click — reveal the mask under the cursor
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onMaskClick) return;
+    const mask = maskAtPoint(e.clientX, e.clientY);
+    if (mask) onMaskClick(mask.id);
+  };
+
+  // Track the hovered mask so its hint is shown only while the cursor is over it
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const mask = maskAtPoint(e.clientX, e.clientY);
+    const id = mask && mask.hint_text ? mask.id : null;
+    setHoveredMaskId(prev => (prev === id ? prev : id));
   };
 
   return (
@@ -149,10 +167,12 @@ export default function PixelatedImage({
         className="w-full h-full"
         style={{ imageRendering: 'pixelated' }}
         onClick={handleCanvasClick}
+        onMouseMove={handleCanvasMouseMove}
+        onMouseLeave={() => setHoveredMaskId(null)}
       />
-      {/* Hint text overlays for unrevealed masks */}
+      {/* Hint text overlays — shown only for the mask currently hovered */}
       {naturalSize && displaySize && masks.map(mask => {
-        if (revealedMaskIds.has(mask.id) || !mask.hint_text) return null;
+        if (revealedMaskIds.has(mask.id) || !mask.hint_text || hoveredMaskId !== mask.id) return null;
         const { w: dw, h: dh } = displaySize;
         const scale = Math.min(dw / naturalSize.w, dh / naturalSize.h);
         const fitW = naturalSize.w * scale;

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ReviewItem, ReviewMask, BrowseReviewItem } from '../../types';
+import type { ReviewItem, ReviewMask, BrowseReviewItem, MediaTagType } from '../../types';
 import { REVIEW_CHANGED_EVENT, emitReviewChanged } from '../../utils/events';
 import ReviewSession from '../review/ReviewSession';
 import MaskEditor from '../review/MaskEditor';
 import EchoImageDetailPage from '../../pages/EchoImageDetailPage';
 import { ReviewItemGridCard, BrowseCard } from './EchoCards';
+import EchoTagFilter from './EchoTagFilter';
 
 type FilterTab = 'due' | 'all' | 'upcoming' | 'browse';
 
@@ -18,18 +19,28 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
   const [filter, setFilter] = useState<FilterTab>('due');
   const [expanded, setExpanded] = useState(false);
   const [sessionItems, setSessionItems] = useState<ReviewItem[] | null>(null);
+  const [peekItems, setPeekItems] = useState<ReviewItem[] | null>(null);
   const [maskEditorItem, setMaskEditorItem] = useState<ReviewItem | null>(null);
   const [maskEditorMasks, setMaskEditorMasks] = useState<ReviewMask[]>([]);
   // Inline analytics overlay: the open item + the ordered id list it was opened from (for ←/→).
   const [detail, setDetail] = useState<{ id: number; list: number[] } | null>(null);
+  // Tag filter (note-scoped) — composes with the due/all/upcoming/browse tabs (ANY/OR match).
+  const [activeTags, setActiveTags] = useState<string[]>([]);
+  // Enrolled count IGNORING the tag filter, so a filter that matches nothing doesn't make the
+  // section look empty (and trap the filter). Captured whenever no filter is active.
+  const [totalEnrolled, setTotalEnrolled] = useState(0);
 
   const loadItems = useCallback(async () => {
-    setItems(await window.electronAPI.review.getByRecording(recordingId));
-  }, [recordingId]);
+    setItems(activeTags.length > 0
+      ? await window.electronAPI.review.getByRecordingAndTags(recordingId, activeTags)
+      : await window.electronAPI.review.getByRecording(recordingId));
+  }, [recordingId, activeTags]);
 
   const loadBrowse = useCallback(async () => {
-    setBrowseItems(await window.electronAPI.review.getAllEnrolledByRecording(recordingId));
-  }, [recordingId]);
+    setBrowseItems(activeTags.length > 0
+      ? await window.electronAPI.review.getAllEnrolledByRecordingAndTags(recordingId, activeTags)
+      : await window.electronAPI.review.getAllEnrolledByRecording(recordingId));
+  }, [recordingId, activeTags]);
 
   useEffect(() => { loadItems(); }, [loadItems]);
 
@@ -47,6 +58,11 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
     return () => window.removeEventListener(REVIEW_CHANGED_EVENT, onChanged);
   }, [loadItems, loadBrowse, filter]);
 
+  // When no filter is active, `items` is the full enrolled set → remember its size.
+  useEffect(() => {
+    if (activeTags.length === 0) setTotalEnrolled(items.length);
+  }, [activeTags, items]);
+
   const now = new Date();
   const dueItems = items.filter(i => new Date(i.next_review_at) <= now);
   const upcomingItems = items.filter(i => new Date(i.next_review_at) > now);
@@ -59,6 +75,12 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
   };
 
   const startSession = () => { if (dueItems.length > 0) setSessionItems(dueItems); };
+
+  // Peek — browse this note's masked questions (whatever tab is active) without saving progress.
+  const startPeek = () => {
+    const source: ReviewItem[] = filter === 'browse' ? browseItems : displayedItems;
+    if (source.length > 0) setPeekItems(source);
+  };
 
   const handleSessionEnd = () => {
     setSessionItems(null);
@@ -83,6 +105,11 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
 
   if (sessionItems) {
     return <ReviewSession items={sessionItems} onSessionEnd={handleSessionEnd} />;
+  }
+
+  // Peek mode writes nothing, so closing just clears the overlay.
+  if (peekItems) {
+    return <ReviewSession items={peekItems} readOnly onSessionEnd={() => setPeekItems(null)} />;
   }
 
   // Inline analytics overlay — keeps the note (and this section's expanded/filter state)
@@ -120,11 +147,25 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
           </svg>
           <span className="text-base font-semibold text-gray-900 dark:text-gray-100">🔁 Echo</span>
           <span className="text-xs text-gray-500 dark:text-gray-400">
-            {items.length === 0
+            {totalEnrolled === 0
               ? 'nothing enrolled'
-              : `${items.length} enrolled · ${dueItems.length} due now`}
+              : `${totalEnrolled} enrolled · ${dueItems.length} due now`}
           </span>
         </button>
+
+        {items.length > 0 && (
+          <button
+            onClick={startPeek}
+            className="px-3 py-1.5 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 flex-shrink-0"
+            title="Review the masked questions without saving progress"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            Peek
+          </button>
+        )}
 
         {dueItems.length > 0 && (
           <button
@@ -143,12 +184,32 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
       {/* Expanded body */}
       {expanded && (
         <div className="mt-3">
-          {items.length === 0 ? (
+          {totalEnrolled === 0 ? (
             <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">
               No images from this note enrolled yet. Right-click a mark's image and choose "Add to Echo".
             </p>
           ) : (
             <>
+              {/* Tag filter — always shown when there ARE enrolled echoes, so an active
+                  filter can always be cleared even when it matches nothing. */}
+              <EchoTagFilter
+                activeTags={activeTags}
+                onChange={setActiveTags}
+                recordingId={recordingId}
+                containerClassName="mb-3"
+              />
+              {items.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">
+                  No enrolled echoes match the selected tag{activeTags.length > 1 ? 's' : ''}.{' '}
+                  <button
+                    onClick={() => setActiveTags([])}
+                    className="text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    Clear filter
+                  </button>
+                </p>
+              ) : (
+                <>
               {/* Filter tabs */}
               <div className="flex gap-1 mb-3 flex-wrap">
                 {(['due', 'all', 'upcoming', 'browse'] as FilterTab[]).map(tab => {
@@ -201,6 +262,8 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
               )}
             </>
           )}
+            </>
+          )}
         </div>
       )}
 
@@ -212,6 +275,8 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
             reviewItemId={maskEditorItem.id}
             existingMasks={maskEditorMasks}
             onMasksChanged={setMaskEditorMasks}
+            mediaTagType={maskEditorItem.media_type as MediaTagType}
+            mediaTagId={maskEditorItem.media_id}
             onClose={() => { setMaskEditorItem(null); setMaskEditorMasks([]); }}
           />
         </div>

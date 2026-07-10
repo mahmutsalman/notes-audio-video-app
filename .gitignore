@@ -96,7 +96,7 @@ docs/use-cases.md
 electron/package-lock.json
 
 # Local resources (scripts, screenshots, etc.)
-localResources/
+/localResources/
 
 # Backup folder (created by app backup feature)
 backup/

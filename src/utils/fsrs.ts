@@ -175,9 +175,11 @@ export function stateLabel(state: number | null | undefined): string {
   return state == null ? 'New' : (STATE_LABELS[state] ?? 'New');
 }
 
+/**
+ * Extras carried onto a review_events row. Reflective notes are NOT here — they live in
+ * `review_notes`, written on Enter and linked to the event by id (see ADR-0005).
+ */
 export interface ReviewNoteExtras {
-  note: string | null;
-  missedPoints: string | null;
   durationSeconds: number | null;
 }
 
@@ -205,8 +207,8 @@ export function buildRatingEvent(
     interval_before: item.interval_days ?? null,
     interval_after: after.scheduled_days,
     next_review_at: new Date(after.due).toISOString(),
-    note: extras.note,
-    missed_points: extras.missedPoints,
+    note: null,           // frozen legacy column — notes live in review_notes
+    missed_points: null,  // frozen legacy column — notes live in review_notes
     duration_seconds: extras.durationSeconds,
   };
 }
@@ -236,8 +238,8 @@ export function buildManualEvent(
     interval_before: item.interval_days ?? null,
     interval_after: fields.interval_days,
     next_review_at: fields.next_review_at,
-    note: extras.note,
-    missed_points: extras.missedPoints,
+    note: null,           // frozen legacy column — notes live in review_notes
+    missed_points: null,  // frozen legacy column — notes live in review_notes
     duration_seconds: extras.durationSeconds,
   };
 }

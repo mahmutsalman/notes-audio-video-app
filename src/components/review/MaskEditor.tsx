@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { ReviewMask } from '../../types';
+import type { ReviewMask, ReviewItem, MediaTagType } from '../../types';
+import { TagAutocomplete } from '../common/TagAutocomplete';
+import { emitReviewChanged } from '../../utils/events';
 
 interface DrawingRect {
   x: number; y: number; w: number; h: number; // normalized 0–1
@@ -8,21 +10,34 @@ interface DrawingRect {
 interface MaskEditorProps {
   /** Absolute path to the image file */
   src: string;
-  reviewItemId: number;
+  /**
+   * The enrolled review item's id, or `null` for a DRAFT. In draft mode nothing is written
+   * to the DB — masks are buffered in memory and only persisted when the user clicks Save,
+   * which first calls `onCommit()` to create the review item. Closing/× discards everything.
+   */
+  reviewItemId: number | null;
   existingMasks: ReviewMask[];
   onMasksChanged: (masks: ReviewMask[]) => void;
   onClose: () => void;
+  /** Underlying image identity, so tags can be assigned (they live on the image, not the echo). */
+  mediaTagType?: MediaTagType;
+  mediaTagId?: number;
+  /** Draft-only: create the review item on Save and return it (null ⇒ enroll failed, keep editor open). */
+  onCommit?: () => Promise<ReviewItem | null>;
 }
 
 const LEVEL_LABELS = ['Level 1 — nearly readable', 'Level 2', 'Level 3 (default)', 'Level 4', 'Level 5 — very hard'];
 
-export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksChanged, onClose }: MaskEditorProps) {
+export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksChanged, onClose, mediaTagType, mediaTagId, onCommit }: MaskEditorProps) {
+  // Draft mode = brand-new "Add to Echo": buffer everything, persist only on Save.
+  const draft = reviewItemId == null;
   const [masks, setMasks] = useState<ReviewMask[]>(existingMasks);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawStart, setDrawStart] = useState<{ nx: number; ny: number } | null>(null);
   const [drawPreview, setDrawPreview] = useState<DrawingRect | null>(null);
   const [selectedMaskId, setSelectedMaskId] = useState<number | null>(null);
   const [defaultLevel, setDefaultLevel] = useState(3);
+  const [saving, setSaving] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -92,16 +107,30 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
     // Ignore tiny accidental clicks
     if (w < 0.01 || h < 0.01) { setDrawPreview(null); setDrawStart(null); return; }
 
-    const newMask = await window.electronAPI.reviewMasks.create(
-      reviewItemId, x, y, w, h, defaultLevel, null, masks.length
-    );
+    let newMask: ReviewMask;
+    if (draft) {
+      // Buffer in memory with a temp negative id; persisted on Save.
+      newMask = {
+        id: -(masks.length + 1),
+        review_item_id: -1,
+        x, y, w, h,
+        pixelation_level: defaultLevel,
+        hint_text: null,
+        sort_order: masks.length,
+        created_at: '',
+      };
+    } else {
+      newMask = await window.electronAPI.reviewMasks.create(
+        reviewItemId!, x, y, w, h, defaultLevel, null, masks.length
+      );
+    }
     const updated = [...masks, newMask];
     setMasks(updated);
     onMasksChanged(updated);
     setSelectedMaskId(newMask.id);
     setDrawPreview(null);
     setDrawStart(null);
-  }, [isDrawing, drawStart, toNorm, masks, reviewItemId, defaultLevel, onMasksChanged]);
+  }, [isDrawing, drawStart, toNorm, masks, reviewItemId, draft, defaultLevel, onMasksChanged]);
 
   useEffect(() => {
     window.addEventListener('mousemove', handleMouseMove);
@@ -113,7 +142,7 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
   }, [handleMouseMove, handleMouseUp]);
 
   const handleDeleteMask = async (id: number) => {
-    await window.electronAPI.reviewMasks.delete(id);
+    if (!draft) await window.electronAPI.reviewMasks.delete(id);
     const updated = masks.filter(m => m.id !== id);
     setMasks(updated);
     onMasksChanged(updated);
@@ -121,17 +150,33 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
   };
 
   const handleUpdateHint = async (mask: ReviewMask, hint: string) => {
-    await window.electronAPI.reviewMasks.update(mask.id, mask.x, mask.y, mask.w, mask.h, mask.pixelation_level, hint || null);
+    if (!draft) await window.electronAPI.reviewMasks.update(mask.id, mask.x, mask.y, mask.w, mask.h, mask.pixelation_level, hint || null);
     const updated = masks.map(m => m.id === mask.id ? { ...m, hint_text: hint || null } : m);
     setMasks(updated);
     onMasksChanged(updated);
   };
 
   const handleUpdateLevel = async (mask: ReviewMask, level: number) => {
-    await window.electronAPI.reviewMasks.update(mask.id, mask.x, mask.y, mask.w, mask.h, level, mask.hint_text);
+    if (!draft) await window.electronAPI.reviewMasks.update(mask.id, mask.x, mask.y, mask.w, mask.h, level, mask.hint_text);
     const updated = masks.map(m => m.id === mask.id ? { ...m, pixelation_level: level } : m);
     setMasks(updated);
     onMasksChanged(updated);
+  };
+
+  // Save: in draft mode this is the ONLY thing that writes to the DB — create the review
+  // item, then persist the buffered masks in order. Existing items already autosaved live.
+  const handleSave = async () => {
+    if (!draft) { onClose(); return; }
+    if (saving) return;
+    setSaving(true);
+    const item = await onCommit?.();
+    if (!item) { setSaving(false); return; }  // enroll failed — keep the editor open
+    for (let i = 0; i < masks.length; i++) {
+      const m = masks[i];
+      await window.electronAPI.reviewMasks.create(item.id, m.x, m.y, m.w, m.h, m.pixelation_level, m.hint_text, i);
+    }
+    emitReviewChanged();
+    onClose();
   };
 
   const imgRect = getImageRect();
@@ -193,10 +238,10 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
           />
         )}
 
-        {/* Instruction hint */}
+        {/* Instruction hint — pinned to the bottom edge so it never covers the image content */}
         {masks.length === 0 && !isDrawing && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="bg-black/70 text-white text-sm px-4 py-2 rounded-lg">
+          <div className="absolute inset-x-0 bottom-0 flex justify-center pb-3 pointer-events-none">
+            <div className="bg-black/70 text-white text-xs px-3 py-1.5 rounded-full">
               Drag to draw a mask rectangle
             </div>
           </div>
@@ -206,14 +251,30 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
       {/* Right panel */}
       <div className="w-72 bg-gray-900 border-l border-gray-700 flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-          <span className="text-white text-sm font-medium">Mask Editor</span>
+          <span className="text-white text-sm font-medium">{draft ? 'Add to Echo' : 'Mask Editor'}</span>
           <button
             onClick={onClose}
+            title={draft ? 'Discard — nothing is saved' : 'Close'}
             className="text-gray-400 hover:text-white text-xl leading-none"
           >
             ×
           </button>
         </div>
+
+        {/* Tags — assigned to the underlying image (shared with the image's own tags and
+            Browse-by-Tag). Autosaves immediately via tags.setForMedia; works even in draft
+            mode because the image already exists (only the echo is deferred). */}
+        {mediaTagType && mediaTagId != null && (
+          <div className="px-4 py-3 border-b border-gray-700">
+            <p className="text-gray-400 text-xs mb-2">Tags</p>
+            <TagAutocomplete
+              mediaType={mediaTagType}
+              mediaId={mediaTagId}
+              key={`${mediaTagType}-${mediaTagId}`}
+              autoFocus={false}
+            />
+          </div>
+        )}
 
         {/* Default level selector */}
         <div className="px-4 py-3 border-b border-gray-700">
@@ -297,12 +358,22 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
           ))}
         </div>
 
-        <div className="px-4 py-3 border-t border-gray-700">
+        <div className="px-4 py-3 border-t border-gray-700 flex gap-2">
+          {draft && (
+            <button
+              onClick={onClose}
+              disabled={saving}
+              className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-200 text-sm font-medium rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+          )}
           <button
-            onClick={onClose}
-            className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
           >
-            Done
+            {draft ? (saving ? 'Saving…' : 'Save') : 'Done'}
           </button>
         </div>
       </div>

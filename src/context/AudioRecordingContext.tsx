@@ -302,7 +302,7 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
           .filter(m => m.start_time !== undefined)
           .map(m => ({
             audio_id: savedAudio!.id,
-            audio_type: audioType as 'duration' | 'duration_image',
+            audio_type: audioType as 'duration' | 'duration_image' | 'recording' | 'recording_image',
             marker_type: m.marker_type,
             start_time: m.start_time,
             end_time: m.end_time,

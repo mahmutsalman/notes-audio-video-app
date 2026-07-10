@@ -403,6 +403,16 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
     return () => window.removeEventListener(AUDIO_SAVED_EVENT, refresh);
   }, [lightbox, fetchImageAudios]);
 
+  // Load color labels for currently viewed lightbox image
+  useEffect(() => {
+    if (!lightbox) { setLightboxImageColors([]); return; }
+    const img = lightbox.images[lightbox.index];
+    if (!img?.id) { setLightboxImageColors([]); return; }
+    const imgType = baseType(result.content_type);
+    if (!['image', 'duration_image', 'quick_capture_image', 'image_child'].includes(imgType)) { setLightboxImageColors([]); return; }
+    window.electronAPI.mediaColors.getByMedia(imgType, img.id).then(setLightboxImageColors);
+  }, [lightbox?.index, lightbox?.images, result.content_type]);
+
   const handleToggle = useCallback(() => {
     if (!previewKind) return;
     setIsExpanded(prev => {
@@ -1009,6 +1019,16 @@ function ImageResultSection({
     window.addEventListener(AUDIO_SAVED_EVENT, refresh);
     return () => window.removeEventListener(AUDIO_SAVED_EVENT, refresh);
   }, [lightbox, activeItems, fetchImageAudios]);
+
+  // Load color labels for currently viewed lightbox image
+  useEffect(() => {
+    if (!lightbox) { setLightboxImageColors([]); return; }
+    const img = lightbox.images[lightbox.index];
+    if (!img?.id) { setLightboxImageColors([]); return; }
+    const imgType = baseType(lightbox.contentType);
+    if (!['image', 'duration_image', 'quick_capture_image', 'image_child'].includes(imgType)) { setLightboxImageColors([]); return; }
+    window.electronAPI.mediaColors.getByMedia(imgType, img.id).then(setLightboxImageColors);
+  }, [lightbox?.index, lightbox?.contentType]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, img: SortableImageItem) => {
     e.preventDefault();

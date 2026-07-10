@@ -5,9 +5,10 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder && npm run resign",
-    "build:ci": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder --publish never && npm run resign",
-    "build:dmg": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder -m dmg && npm run resign",
+    "clean": "rimraf dist dist-electron",
+    "build": "npm run clean && tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder && npm run resign",
+    "build:ci": "npm run clean && tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder --publish never && npm run resign",
+    "build:dmg": "npm run clean && tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && electron-builder -m dmg && npm run resign",
     "resign": "codesign --deep --force --sign \"${CODESIGN_IDENTITY:--}\" --entitlements build/entitlements.mac.plist --options runtime 'release/mac-arm64/Notes With Audio And Video.app'",
     "backfill:video-size": "node scripts/backfill-video-size.js",
     "preview": "vite preview",
@@ -96,7 +97,10 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "electron/native/screencapturekit/build/Release/**/*"
+      "electron/native/screencapturekit/build/Release/**/*",
+      "!mobile/**/*",
+      "!server/**/*",
+      "!sync/**/*"
     ],
     "asarUnpack": [
       "node_modules/ffmpeg-static/**/*",

@@ -822,6 +822,9 @@ export interface ElectronAPI {
     create: (note: string, tags: string[]) => Promise<{ id: number }>;
     getOrCreate: (note: string, tags: string[]) => Promise<{ id: number }>;
     getRecent: () => Promise<QuickCapture[]>;
+    getArchived: () => Promise<QuickCapture[]>;
+    archiveAll: () => Promise<{ ids: number[] }>;
+    unarchive: (ids: number[]) => Promise<void>;
     addImage: (captureId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<QuickCaptureImage>;
     addAudio: (captureId: number, audioBuffer: ArrayBuffer, extension?: string) => Promise<QuickCaptureAudio>;
     delete: (id: number) => Promise<void>;
@@ -921,15 +924,34 @@ export interface ElectronAPI {
     getById: (id: number) => Promise<ReviewItem | null>;
     getByRecording: (recordingId: number) => Promise<ReviewItem[]>;
     getAllEnrolledByRecording: (recordingId: number) => Promise<BrowseReviewItem[]>;
+    getByTags: (tagNames: string[]) => Promise<ReviewItem[]>;
+    getByRecordingAndTags: (recordingId: number, tagNames: string[]) => Promise<ReviewItem[]>;
+    getAllEnrolledByTags: (tagNames: string[]) => Promise<BrowseReviewItem[]>;
+    getAllEnrolledByRecordingAndTags: (recordingId: number, tagNames: string[]) => Promise<BrowseReviewItem[]>;
+    getEnrolledTags: () => Promise<{ name: string; count: number }[]>;
+    getEnrolledTagsByRecording: (recordingId: number) => Promise<{ name: string; count: number }[]>;
     enroll: (mediaType: string, mediaId: number, filePath: string | null, thumbnailPath: string | null, caption: string | null, recordingId: number | null, captureId: number | null) => Promise<ReviewItem>;
     delete: (id: number) => Promise<void>;
-    rate: (id: number, fields: ReviewCardFields, event?: ReviewEventInput) => Promise<void>;
-    schedule: (id: number, fields: ReviewCardFields, event?: ReviewEventInput) => Promise<void>;
+    rate: (id: number, fields: ReviewCardFields, event?: ReviewEventInput, noteIds?: number[]) => Promise<void>;
+    schedule: (id: number, fields: ReviewCardFields, event?: ReviewEventInput, noteIds?: number[]) => Promise<void>;
+  };
+  reviewNotes: {
+    add: (reviewItemId: number, kind: ReviewNoteKind, body: string, reviewEventId?: number | null) => Promise<ReviewNote>;
+    getDraftsByItem: (reviewItemId: number) => Promise<ReviewNote[]>;
+    getByEvent: (reviewEventId: number) => Promise<ReviewNote[]>;
+    getByItem: (reviewItemId: number) => Promise<ReviewNote[]>;
+    update: (id: number, body: string) => Promise<void>;
+    delete: (id: number) => Promise<void>;
+  };
+  reviewNoteImages: {
+    add: (reviewNoteId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<ReviewNoteImage>;
+    getByNote: (reviewNoteId: number) => Promise<ReviewNoteImage[]>;
+    delete: (imageId: number) => Promise<void>;
+    updateCaption: (imageId: number, caption: string | null) => Promise<void>;
   };
   reviewEvents: {
     getByItem: (reviewItemId: number) => Promise<ReviewEvent[]>;
     log: (reviewItemId: number, event: ReviewEventInput) => Promise<ReviewEvent>;
-    updateNote: (eventId: number, note: string | null, missedPoints: string | null) => Promise<void>;
     delete: (eventId: number) => Promise<void>;
     getHeatmap: (reviewItemId: number | null, fromDate: string, toDate: string) => Promise<ReviewHeatmapDay[]>;
     getDayEvents: (reviewItemId: number | null, date: string) => Promise<ReviewEvent[]>;
@@ -1270,6 +1292,8 @@ export interface QuickCapture {
   note: string | null;
   tags: string[];
   created_at: string;
+  /** NULL = on the Capture board. Timestamp = cleared off the board (never deleted). */
+  archived_at: string | null;
   images: QuickCaptureImage[];
   audios: QuickCaptureAudio[];
 }
@@ -1370,9 +1394,41 @@ export interface ReviewEventInput {
   interval_before: number | null;
   interval_after: number | null;
   next_review_at: string | null;
+  /** @deprecated Frozen legacy columns. Notes live in `review_notes`. Always written as null. */
   note: string | null;
+  /** @deprecated Frozen legacy columns. Notes live in `review_notes`. Always written as null. */
   missed_points: string | null;
   duration_seconds: number | null;
+}
+
+/** Which of the two reflective prompts a note answers. */
+export type ReviewNoteKind = 'note' | 'missed';
+
+/** A picture attached to a reflective note. Lightweight: no tags, no OCR, no FTS (ADR-0006). */
+export interface ReviewNoteImage {
+  id: number;
+  review_note_id: number;
+  file_path: string;
+  thumbnail_path: string | null;
+  caption: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+/**
+ * One reflective note. Written the moment the user presses Enter, so `review_event_id`
+ * is null until the card is rated. Many notes per kind per review.
+ */
+export interface ReviewNote {
+  id: number;
+  review_item_id: number;
+  review_event_id: number | null;
+  kind: ReviewNoteKind;
+  body: string;
+  sort_order: number;
+  created_at: string;
+  /** Attached by the note readers (getDraftsByItem / getByEvent / getByItem). */
+  images?: ReviewNoteImage[];
 }
 
 /** A persisted review_events row. */
@@ -1380,6 +1436,8 @@ export interface ReviewEvent extends ReviewEventInput {
   id: number;
   review_item_id: number;
   created_at: string;
+  /** Attached by ReviewEventOperations.getByItem / getDayEvents. */
+  notes?: ReviewNote[];
 }
 
 export interface ReviewHeatmapDay {

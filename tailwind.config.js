@@ -32,6 +32,7 @@ export default {
       animation: {
         'pulse-recording': 'pulse-recording 1.5s ease-in-out infinite',
         'waveform': 'waveform 0.5s ease-in-out infinite',
+        'input-glow': 'input-glow 0.6s ease-out',
       },
       keyframes: {
         'pulse-recording': {
@@ -41,6 +42,12 @@ export default {
         'waveform': {
           '0%, 100%': { height: '20%' },
           '50%': { height: '100%' },
+        },
+        // Accomplishment pulse when the user presses Enter in a review note field
+        'input-glow': {
+          '0%':   { boxShadow: '0 0 0 0 rgba(16,185,129,0)', borderColor: 'rgb(16,185,129)' },
+          '25%':  { boxShadow: '0 0 0 3px rgba(16,185,129,0.45), 0 0 22px 4px rgba(16,185,129,0.55)', borderColor: 'rgb(16,185,129)' },
+          '100%': { boxShadow: '0 0 0 0 rgba(16,185,129,0)', borderColor: 'rgb(16,185,129)' },
         },
       },
     },

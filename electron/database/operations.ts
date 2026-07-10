@@ -30,6 +30,26 @@ function parseTags(tagsJson: string | null): string[] {
   }
 }
 
+// Remove any tag associations for a media item that is about to be (or has just been)
+// deleted. Call this from every media delete path — media_tags has NO foreign key on
+// media_id (the column is polymorphic), so nothing cascades and orphaned tag rows would
+// otherwise pile up (the root cause of the tag-count > items-shown bug). The startup
+// orphan-purge in database.ts (runMigrations) is the catch-all safety net for any missed path.
+export function deleteMediaTags(mediaType: MediaTagType, mediaId: number): void {
+  const db = getDatabase();
+  db.prepare(`DELETE FROM media_tags WHERE media_type = ? AND media_id = ?`).run(mediaType, mediaId);
+}
+
+// Bulk variant for deleting a whole capture/parent's worth of children in one statement.
+function deleteMediaTagsBulk(mediaType: MediaTagType, mediaIds: number[]): void {
+  if (mediaIds.length === 0) return;
+  const db = getDatabase();
+  const placeholders = mediaIds.map(() => '?').join(', ');
+  db.prepare(
+    `DELETE FROM media_tags WHERE media_type = ? AND media_id IN (${placeholders})`
+  ).run(mediaType, ...mediaIds);
+}
+
 // Helper to convert row to Topic
 function rowToTopic(row: Record<string, unknown>): Topic {
   return {
@@ -396,6 +416,7 @@ export const ImagesOperations = {
 
   delete(id: number): void {
     const db = getDatabase();
+    deleteMediaTags('image', id);
     db.prepare('DELETE FROM images WHERE id = ?').run(id);
   },
 
@@ -491,6 +512,7 @@ export const VideosOperations = {
 
   delete(id: number): void {
     const db = getDatabase();
+    deleteMediaTags('video', id);
     db.prepare('DELETE FROM videos WHERE id = ?').run(id);
   },
 
@@ -720,11 +742,14 @@ export const DurationImagesOperations = {
 
   delete(id: number): void {
     const db = getDatabase();
+    deleteMediaTags('duration_image', id);
     db.prepare('DELETE FROM duration_images WHERE id = ?').run(id);
   },
 
   deleteByDuration(durationId: number): void {
     const db = getDatabase();
+    const ids = (db.prepare('SELECT id FROM duration_images WHERE duration_id = ?').all(durationId) as { id: number }[]).map(r => r.id);
+    deleteMediaTagsBulk('duration_image', ids);
     db.prepare('DELETE FROM duration_images WHERE duration_id = ?').run(durationId);
   },
 
@@ -820,11 +845,14 @@ export const DurationVideosOperations = {
 
   delete(id: number): void {
     const db = getDatabase();
+    deleteMediaTags('duration_video', id);
     db.prepare('DELETE FROM duration_videos WHERE id = ?').run(id);
   },
 
   deleteByDuration(durationId: number): void {
     const db = getDatabase();
+    const ids = (db.prepare('SELECT id FROM duration_videos WHERE duration_id = ?').all(durationId) as { id: number }[]).map(r => r.id);
+    deleteMediaTagsBulk('duration_video', ids);
     db.prepare('DELETE FROM duration_videos WHERE duration_id = ?').run(durationId);
   },
 
@@ -890,6 +918,7 @@ export const AudiosOperations = {
 
   delete(id: number): void {
     const db = getDatabase();
+    deleteMediaTags('audio', id);
     db.prepare('DELETE FROM audios WHERE id = ?').run(id);
   },
 
@@ -913,7 +942,7 @@ export const DurationAudiosOperations = {
     return db.prepare(`
       SELECT * FROM duration_audios
       WHERE duration_id = ?
-      ORDER BY sort_order, created_at
+      ORDER BY created_at
     `).all(durationId) as DurationAudio[];
   },
 
@@ -943,12 +972,24 @@ export const DurationAudiosOperations = {
 
   delete(id: number): void {
     const db = getDatabase();
+    deleteMediaTags('duration_audio', id);
     db.prepare('DELETE FROM duration_audios WHERE id = ?').run(id);
   },
 
   deleteByDuration(durationId: number): void {
     const db = getDatabase();
+    const ids = (db.prepare('SELECT id FROM duration_audios WHERE duration_id = ?').all(durationId) as { id: number }[]).map(r => r.id);
+    deleteMediaTagsBulk('duration_audio', ids);
     db.prepare('DELETE FROM duration_audios WHERE duration_id = ?').run(durationId);
+  },
+
+  getMaxSortOrder(durationId: number): number {
+    const db = getDatabase();
+    const result = db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) as max_order
+      FROM duration_audios WHERE duration_id = ?
+    `).get(durationId) as { max_order: number };
+    return result.max_order;
   },
 
   updateCaption(id: number, caption: string | null): DurationAudio {
@@ -1437,7 +1478,7 @@ export const SearchOperations = {
     // Step 4: Batch fetch type-specific extra fields (file paths, thumbnails, code, marker_type)
     const extraByType = new Map<string, Map<number, any>>();
     const typeToIds = new Map<string, number[]>();
-    const typesNeedingExtra = new Set(['image', 'video', 'audio', 'duration_image', 'duration_video', 'duration_audio', 'code_snippet', 'duration_code_snippet', 'audio_marker', 'duration_image_audio', 'image_audio', 'quick_capture_image', 'image_ocr', 'duration_image_ocr', 'quick_capture_image_ocr', 'image_child_ocr', 'html_node', 'duration_html_node']);
+    const typesNeedingExtra = new Set(['image', 'video', 'audio', 'duration_image', 'duration_video', 'duration_audio', 'code_snippet', 'duration_code_snippet', 'audio_marker', 'duration_image_audio', 'image_audio', 'quick_capture_image', 'image_ocr', 'duration_image_ocr', 'quick_capture_image_ocr', 'image_child_ocr']);
     for (const m of matches) {
       if (typesNeedingExtra.has(m.content_type)) {
         if (!typeToIds.has(m.content_type)) typeToIds.set(m.content_type, []);
@@ -1462,8 +1503,6 @@ export const SearchOperations = {
       duration_image_ocr:      'SELECT id, file_path, thumbnail_path, duration_id FROM duration_images WHERE id IN',
       quick_capture_image_ocr: 'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM quick_capture_images WHERE id IN',
       image_child_ocr:         'SELECT id, file_path, thumbnail_path, NULL as duration_id FROM image_children WHERE id IN',
-      html_node:               'SELECT id, file_path, NULL as thumbnail_path, file_type, NULL as duration_id FROM html_nodes WHERE id IN',
-      duration_html_node:      'SELECT hn.id, hn.file_path, NULL as thumbnail_path, hn.file_type, hn.duration_id FROM duration_html_nodes hn WHERE hn.id IN',
     };
 
     for (const [type, ids] of typeToIds) {
@@ -1513,7 +1552,6 @@ export const SearchOperations = {
         marker_type: extra?.marker_type ?? null,
         language: extra?.language ?? null,
         code: extra?.code ?? null,
-        file_type: extra?.file_type ?? null,
       } as GlobalSearchResult;
     });
   },
@@ -1932,11 +1970,15 @@ export const QuickCaptureOperations = {
     return { id: result.lastInsertRowid as number };
   },
 
-  /** Reuse the most recent capture (within 7 days) so all saves land in one package. */
+  /**
+   * Reuse the most recent capture still on the board so all saves land in one package.
+   * Archived captures are skipped — otherwise the next paste after "Clear board" would
+   * reopen the archived package and drag every image in it back onto the board.
+   */
   getOrCreate(note: string, tags: string[]): { id: number } {
     const db = getDatabase();
     const existing = db.prepare(
-      `SELECT id, note, tags FROM quick_captures WHERE created_at >= datetime('now', '-7 days') ORDER BY created_at DESC LIMIT 1`
+      `SELECT id, note, tags FROM quick_captures WHERE archived_at IS NULL ORDER BY created_at DESC LIMIT 1`
     ).get() as { id: number; note: string | null; tags: string } | undefined;
 
     if (existing) {
@@ -1958,12 +2000,11 @@ export const QuickCaptureOperations = {
     return { id: result.lastInsertRowid as number };
   },
 
-  getRecent(): import('../../src/types').QuickCapture[] {
+  /** Attach images + audios to raw capture rows. Shared by getRecent and getArchived. */
+  _hydrate(
+    rows: { id: number; note: string | null; tags: string; created_at: string; archived_at: string | null }[]
+  ): import('../../src/types').QuickCapture[] {
     const db = getDatabase();
-    const rows = db.prepare(
-      `SELECT * FROM quick_captures WHERE created_at >= datetime('now', '-7 days') ORDER BY created_at DESC`
-    ).all() as { id: number; note: string | null; tags: string; created_at: string }[];
-
     return rows.map(row => {
       const images = db.prepare(
         `SELECT * FROM quick_capture_images WHERE capture_id = ? ORDER BY sort_order ASC`
@@ -1978,10 +2019,58 @@ export const QuickCaptureOperations = {
         note: row.note,
         tags: (() => { try { return JSON.parse(row.tags); } catch { return []; } })(),
         created_at: row.created_at,
+        archived_at: row.archived_at ?? null,
         images,
         audios,
       };
     });
+  },
+
+  /** Captures currently on the board. Nothing ages out — only "Clear board" removes them. */
+  getRecent(): import('../../src/types').QuickCapture[] {
+    const db = getDatabase();
+    const rows = db.prepare(
+      `SELECT * FROM quick_captures WHERE archived_at IS NULL ORDER BY created_at DESC`
+    ).all() as { id: number; note: string | null; tags: string; created_at: string; archived_at: string | null }[];
+    return this._hydrate(rows);
+  },
+
+  /** Captures cleared off the board. Still in the DB, still tagged, still searchable. */
+  getArchived(): import('../../src/types').QuickCapture[] {
+    const db = getDatabase();
+    const rows = db.prepare(
+      `SELECT * FROM quick_captures WHERE archived_at IS NOT NULL ORDER BY archived_at DESC`
+    ).all() as { id: number; note: string | null; tags: string; created_at: string; archived_at: string | null }[];
+    return this._hydrate(rows);
+  },
+
+  /**
+   * Clear the board: mark every un-archived capture as archived.
+   * Deletes NOTHING — no rows, no files, no tags, no FTS entries.
+   * Returns the affected ids so the UI can offer an immediate Undo.
+   */
+  archiveAll(): { ids: number[] } {
+    const db = getDatabase();
+    const ids = (db.prepare(
+      `SELECT id FROM quick_captures WHERE archived_at IS NULL`
+    ).all() as { id: number }[]).map(r => r.id);
+
+    if (ids.length > 0) {
+      db.prepare(
+        `UPDATE quick_captures SET archived_at = CURRENT_TIMESTAMP WHERE archived_at IS NULL`
+      ).run();
+    }
+    return { ids };
+  },
+
+  /** Put archived captures back on the board. */
+  unarchive(ids: number[]): void {
+    if (ids.length === 0) return;
+    const db = getDatabase();
+    const placeholders = ids.map(() => '?').join(', ');
+    db.prepare(
+      `UPDATE quick_captures SET archived_at = NULL WHERE id IN (${placeholders})`
+    ).run(...ids);
   },
 
   addImage(captureId: number, filePath: string, thumbnailPath: string | null): import('../../src/types').QuickCaptureImage {
@@ -2012,12 +2101,16 @@ export const QuickCaptureOperations = {
 
   delete(id: number): { imagePaths: string[]; audioPaths: string[] } {
     const db = getDatabase();
-    const images = db.prepare(`SELECT file_path FROM quick_capture_images WHERE capture_id = ?`).all(id) as { file_path: string }[];
-    const audios = db.prepare(`SELECT file_path FROM quick_capture_audios WHERE capture_id = ?`).all(id) as { file_path: string }[];
+    const imageRows = db.prepare(`SELECT id, file_path FROM quick_capture_images WHERE capture_id = ?`).all(id) as { id: number; file_path: string }[];
+    const audioRows = db.prepare(`SELECT id, file_path FROM quick_capture_audios WHERE capture_id = ?`).all(id) as { id: number; file_path: string }[];
+    // The quick_capture_images/audios rows cascade-delete via the FK on capture_id, but
+    // media_tags has no cascade on media_id — purge those associations explicitly first.
+    deleteMediaTagsBulk('quick_capture_image', imageRows.map(r => r.id));
+    deleteMediaTagsBulk('quick_capture_audio', audioRows.map(r => r.id));
     db.prepare(`DELETE FROM quick_captures WHERE id = ?`).run(id);
     return {
-      imagePaths: images.map(r => r.file_path),
-      audioPaths: audios.map(r => r.file_path),
+      imagePaths: imageRows.map(r => r.file_path),
+      audioPaths: audioRows.map(r => r.file_path),
     };
   },
 
@@ -2040,6 +2133,7 @@ export const QuickCaptureOperations = {
     const row = db.prepare('SELECT file_path, thumbnail_path FROM quick_capture_images WHERE id = ?').get(imageId) as
       { file_path: string; thumbnail_path: string | null } | undefined;
     if (!row) return { filePath: '', thumbnailPath: null };
+    deleteMediaTags('quick_capture_image', imageId);
     db.prepare('DELETE FROM quick_capture_images WHERE id = ?').run(imageId);
     return { filePath: row.file_path, thumbnailPath: row.thumbnail_path };
   },
@@ -2071,6 +2165,7 @@ export const QuickCaptureOperations = {
     const row = db.prepare('SELECT file_path FROM quick_capture_audios WHERE id = ?').get(audioId) as
       { file_path: string } | undefined;
     if (!row) return { filePath: '' };
+    deleteMediaTags('quick_capture_audio', audioId);
     db.prepare('DELETE FROM quick_capture_audios WHERE id = ?').run(audioId);
     return { filePath: row.file_path };
   },
@@ -2081,17 +2176,32 @@ export const QuickCaptureOperations = {
     return db.prepare('SELECT * FROM quick_capture_audios WHERE id = ?').get(audioId) as import('../../src/types').QuickCaptureAudio;
   },
 
+  // SAFEGUARD 2026-07-07 — auto-deletion of expired Quick Captures is DISABLED.
+  // Quick Capture was used as a primary capture method, and this 7-day TTL silently
+  // hard-deleted DB rows + files (and their tag associations) on every app startup,
+  // causing real data loss. Until the promote-to-permanent fix ships, this cleaner is
+  // a no-op: it deletes NOTHING and returns [] so both callers (main.ts startup and the
+  // quickCaptures:cleanup IPC handler) skip all file deletion too.
+  // To re-enable the old destructive behavior, flip AUTO_DELETE_ENABLED back to true.
   getExpired(): { id: number; imagePaths: string[]; audioPaths: string[] }[] {
+    const AUTO_DELETE_ENABLED: boolean = false;
+    if (!AUTO_DELETE_ENABLED) return [];
+
     const db = getDatabase();
     const rows = db.prepare(`SELECT id FROM quick_captures WHERE created_at < datetime('now', '-7 days')`).all() as { id: number }[];
     return rows.map(row => {
-      const images = db.prepare(`SELECT file_path FROM quick_capture_images WHERE capture_id = ?`).all(row.id) as { file_path: string }[];
-      const audios = db.prepare(`SELECT file_path FROM quick_capture_audios WHERE capture_id = ?`).all(row.id) as { file_path: string }[];
+      const imageRows = db.prepare(`SELECT id, file_path FROM quick_capture_images WHERE capture_id = ?`).all(row.id) as { id: number; file_path: string }[];
+      const audioRows = db.prepare(`SELECT id, file_path FROM quick_capture_audios WHERE capture_id = ?`).all(row.id) as { id: number; file_path: string }[];
+      // Expiry deletes the capture (images/audios cascade), but media_tags has no cascade
+      // on media_id — purge those associations so they don't become orphans (the root cause
+      // of the tag-count > items-shown bug).
+      deleteMediaTagsBulk('quick_capture_image', imageRows.map(r => r.id));
+      deleteMediaTagsBulk('quick_capture_audio', audioRows.map(r => r.id));
       db.prepare(`DELETE FROM quick_captures WHERE id = ?`).run(row.id);
       return {
         id: row.id,
-        imagePaths: images.map(r => r.file_path),
-        audioPaths: audios.map(r => r.file_path),
+        imagePaths: imageRows.map(r => r.file_path),
+        audioPaths: audioRows.map(r => r.file_path),
       };
     });
   },
@@ -2131,6 +2241,7 @@ export const ImageChildrenOperations = {
 
   delete(id: number): void {
     const db = getDatabase();
+    deleteMediaTags('image_child', id);
     db.prepare('DELETE FROM image_children WHERE id = ?').run(id);
   },
 
@@ -2848,6 +2959,122 @@ export const ReviewOperations = {
     `).all(recordingId);
   },
 
+  // ── Tag filtering ─────────────────────────────────────────────────────────────
+  // Echoes are filtered by the tags on their UNDERLYING image (media_tags keyed on
+  // ri.media_type + ri.media_id), so echo tags stay unified with the image's own tags and
+  // Browse-by-Tag. ANY/OR semantics (an echo matches if it has at least one selected tag),
+  // matching the app-wide TagResultsView behavior; DISTINCT collapses multi-tag matches.
+
+  /** Global queue filtered to echoes whose image carries ANY of the given tags. */
+  getByTags(tagNames: string[]): any[] {
+    if (tagNames.length === 0) return [];
+    const db = getDatabase();
+    const placeholders = tagNames.map(() => '?').join(', ');
+    return db.prepare(`
+      SELECT DISTINCT ri.*,
+             r.name AS recording_name,
+             t.name AS topic_name
+      FROM   review_items ri
+      JOIN   media_tags mt ON mt.media_type = ri.media_type AND mt.media_id = ri.media_id
+      JOIN   tags tg ON tg.id = mt.tag_id
+      LEFT   JOIN recordings r ON ri.recording_id = r.id
+      LEFT   JOIN topics     t ON r.topic_id = t.id
+      WHERE  tg.name IN (${placeholders})
+      ORDER  BY ri.next_review_at ASC
+    `).all(...tagNames);
+  },
+
+  /** Note-scoped variant of getByTags. */
+  getByRecordingAndTags(recordingId: number, tagNames: string[]): any[] {
+    if (tagNames.length === 0) return [];
+    const db = getDatabase();
+    const placeholders = tagNames.map(() => '?').join(', ');
+    return db.prepare(`
+      SELECT DISTINCT ri.*,
+             r.name AS recording_name,
+             t.name AS topic_name
+      FROM   review_items ri
+      JOIN   media_tags mt ON mt.media_type = ri.media_type AND mt.media_id = ri.media_id
+      JOIN   tags tg ON tg.id = mt.tag_id
+      LEFT   JOIN recordings r ON ri.recording_id = r.id
+      LEFT   JOIN topics     t ON r.topic_id = t.id
+      WHERE  ri.recording_id = ? AND tg.name IN (${placeholders})
+      ORDER  BY ri.next_review_at ASC
+    `).all(recordingId, ...tagNames);
+  },
+
+  /** Browse aggregates for echoes carrying ANY of the given tags (global). */
+  getAllEnrolledByTags(tagNames: string[]): any[] {
+    if (tagNames.length === 0) return [];
+    const db = getDatabase();
+    const placeholders = tagNames.map(() => '?').join(', ');
+    return db.prepare(`
+      SELECT DISTINCT ri.*,
+             r.name AS recording_name,
+             t.name AS topic_name,
+             (SELECT COUNT(*) FROM review_events re WHERE re.review_item_id = ri.id) AS total_reviews,
+             (SELECT SUM(CASE WHEN re.rating = 1 THEN 1 ELSE 0 END) FROM review_events re WHERE re.review_item_id = ri.id) AS again_count,
+             (SELECT MAX(re.reviewed_at) FROM review_events re WHERE re.review_item_id = ri.id) AS last_reviewed_at
+      FROM   review_items ri
+      JOIN   media_tags mt ON mt.media_type = ri.media_type AND mt.media_id = ri.media_id
+      JOIN   tags tg ON tg.id = mt.tag_id
+      LEFT   JOIN recordings r ON ri.recording_id = r.id
+      LEFT   JOIN topics     t ON r.topic_id = t.id
+      WHERE  tg.name IN (${placeholders})
+      ORDER  BY total_reviews DESC, ri.created_at DESC
+    `).all(...tagNames);
+  },
+
+  /** Browse aggregates for tag-filtered echoes scoped to one recording. */
+  getAllEnrolledByRecordingAndTags(recordingId: number, tagNames: string[]): any[] {
+    if (tagNames.length === 0) return [];
+    const db = getDatabase();
+    const placeholders = tagNames.map(() => '?').join(', ');
+    return db.prepare(`
+      SELECT DISTINCT ri.*,
+             r.name AS recording_name,
+             t.name AS topic_name,
+             (SELECT COUNT(*) FROM review_events re WHERE re.review_item_id = ri.id) AS total_reviews,
+             (SELECT SUM(CASE WHEN re.rating = 1 THEN 1 ELSE 0 END) FROM review_events re WHERE re.review_item_id = ri.id) AS again_count,
+             (SELECT MAX(re.reviewed_at) FROM review_events re WHERE re.review_item_id = ri.id) AS last_reviewed_at
+      FROM   review_items ri
+      JOIN   media_tags mt ON mt.media_type = ri.media_type AND mt.media_id = ri.media_id
+      JOIN   tags tg ON tg.id = mt.tag_id
+      LEFT   JOIN recordings r ON ri.recording_id = r.id
+      LEFT   JOIN topics     t ON r.topic_id = t.id
+      WHERE  ri.recording_id = ? AND tg.name IN (${placeholders})
+      ORDER  BY total_reviews DESC, ri.created_at DESC
+    `).all(recordingId, ...tagNames);
+  },
+
+  /** Distinct tag names actually present on enrolled echoes, with a usage count (for the
+      filter pill row). Only surfaces tags that will match at least one echo. */
+  getEnrolledTags(): { name: string; count: number }[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT tg.name AS name, COUNT(DISTINCT ri.id) AS count
+      FROM   review_items ri
+      JOIN   media_tags mt ON mt.media_type = ri.media_type AND mt.media_id = ri.media_id
+      JOIN   tags tg ON tg.id = mt.tag_id
+      GROUP  BY tg.name
+      ORDER  BY count DESC, tg.name ASC
+    `).all() as { name: string; count: number }[];
+  },
+
+  /** Note-scoped variant of getEnrolledTags. */
+  getEnrolledTagsByRecording(recordingId: number): { name: string; count: number }[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT tg.name AS name, COUNT(DISTINCT ri.id) AS count
+      FROM   review_items ri
+      JOIN   media_tags mt ON mt.media_type = ri.media_type AND mt.media_id = ri.media_id
+      JOIN   tags tg ON tg.id = mt.tag_id
+      WHERE  ri.recording_id = ?
+      GROUP  BY tg.name
+      ORDER  BY count DESC, tg.name ASC
+    `).all(recordingId) as { name: string; count: number }[];
+  },
+
   enroll(
     mediaType: string, mediaId: number,
     filePath: string | null, thumbnailPath: string | null, caption: string | null,
@@ -2864,28 +3091,210 @@ export const ReviewOperations = {
     return db.prepare('SELECT * FROM review_items WHERE id = ?').get(result.lastInsertRowid);
   },
 
-  delete(id: number): void {
+  /**
+   * Deleting a review item cascades events -> notes -> note images (rows), but not the files.
+   * Collect every image path under the item first so the handler can unlink them.
+   */
+  delete(id: number): { imagePaths: string[] } {
     const db = getDatabase();
+    const noteIds = (db.prepare(
+      'SELECT id FROM review_notes WHERE review_item_id = ?'
+    ).all(id) as { id: number }[]).map(r => r.id);
+
+    const imagePaths = imagePathsForNotes(db, noteIds);
     db.prepare('DELETE FROM review_items WHERE id = ?').run(id);
+    return { imagePaths };
   },
 
   // Persist a full FSRS card snapshot. Used by both algorithm-driven ratings and
   // manual scheduling (the renderer computes the fields via src/utils/fsrs.ts).
   // Optionally logs a review_events row atomically in the same transaction.
-  rate(id: number, f: ReviewCardFields, event?: ReviewEventInput): void {
+  /**
+   * `noteIds` are draft review_notes rows written earlier (on Enter) that belong to this
+   * review. They are linked to the new event inside the same transaction, so a note is
+   * never orphaned by a half-applied rating.
+   */
+  rate(id: number, f: ReviewCardFields, event?: ReviewEventInput, noteIds?: number[]): void {
     const db = getDatabase();
     db.transaction(() => {
       writeReviewCardFields(db, id, f);
-      if (event) insertReviewEvent(db, id, event);
+      const row = event ? insertReviewEvent(db, id, event) : null;
+      if (row && noteIds?.length) linkNotesToEvent(db, id, row.id, noteIds);
     })();
   },
 
-  schedule(id: number, f: ReviewCardFields, event?: ReviewEventInput): void {
+  schedule(id: number, f: ReviewCardFields, event?: ReviewEventInput, noteIds?: number[]): void {
     const db = getDatabase();
     db.transaction(() => {
       writeReviewCardFields(db, id, f);
-      if (event) insertReviewEvent(db, id, event);
+      const row = event ? insertReviewEvent(db, id, event) : null;
+      if (row && noteIds?.length) linkNotesToEvent(db, id, row.id, noteIds);
     })();
+  },
+};
+
+/**
+ * Attach draft notes to the event that just closed the review.
+ * Scoped by review_item_id and `review_event_id IS NULL` so a stale id from another card,
+ * or a note already claimed by an earlier event, can never be re-parented.
+ */
+function linkNotesToEvent(
+  db: ReturnType<typeof getDatabase>, reviewItemId: number, eventId: number, noteIds: number[]
+): void {
+  if (noteIds.length === 0) return;
+  const placeholders = noteIds.map(() => '?').join(', ');
+  db.prepare(
+    `UPDATE review_notes SET review_event_id = ?
+     WHERE id IN (${placeholders}) AND review_item_id = ? AND review_event_id IS NULL`
+  ).run(eventId, ...noteIds, reviewItemId);
+}
+
+export type ReviewNoteKind = 'note' | 'missed';
+
+/** Attach each note's images, so callers render them without a second round-trip. */
+function attachImagesToNotes(db: ReturnType<typeof getDatabase>, notes: any[]): any[] {
+  if (notes.length === 0) return notes;
+  const stmt = db.prepare(
+    'SELECT * FROM review_note_images WHERE review_note_id = ? ORDER BY sort_order, id'
+  );
+  return notes.map(n => ({ ...n, images: stmt.all(n.id) }));
+}
+
+/**
+ * Every file_path under a set of notes. Collected BEFORE the rows are deleted, because
+ * `ON DELETE CASCADE` removes the image rows but never the files on disk. Callers in
+ * handlers.ts unlink what this returns.
+ */
+function imagePathsForNotes(db: ReturnType<typeof getDatabase>, noteIds: number[]): string[] {
+  if (noteIds.length === 0) return [];
+  const placeholders = noteIds.map(() => '?').join(', ');
+  const rows = db.prepare(
+    `SELECT file_path, thumbnail_path FROM review_note_images WHERE review_note_id IN (${placeholders})`
+  ).all(...noteIds) as { file_path: string; thumbnail_path: string | null }[];
+
+  const paths = new Set<string>();
+  for (const r of rows) {
+    if (r.file_path) paths.add(r.file_path);
+    if (r.thumbnail_path) paths.add(r.thumbnail_path);
+  }
+  return [...paths];
+}
+
+export const ReviewNoteImageOperations = {
+  add(reviewNoteId: number, filePath: string, thumbnailPath: string | null): any {
+    const db = getDatabase();
+    const sortOrder = (db.prepare(
+      'SELECT COUNT(*) AS cnt FROM review_note_images WHERE review_note_id = ?'
+    ).get(reviewNoteId) as { cnt: number }).cnt;
+
+    const result = db.prepare(
+      `INSERT INTO review_note_images (review_note_id, file_path, thumbnail_path, sort_order)
+       VALUES (?, ?, ?, ?)`
+    ).run(reviewNoteId, filePath, thumbnailPath, sortOrder);
+
+    return db.prepare('SELECT * FROM review_note_images WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  getByNote(reviewNoteId: number): any[] {
+    return getDatabase().prepare(
+      'SELECT * FROM review_note_images WHERE review_note_id = ? ORDER BY sort_order, id'
+    ).all(reviewNoteId);
+  },
+
+  /** Returns the paths so the caller can unlink the files. */
+  delete(imageId: number): { filePath: string | null; thumbnailPath: string | null } {
+    const db = getDatabase();
+    const row = db.prepare(
+      'SELECT file_path, thumbnail_path FROM review_note_images WHERE id = ?'
+    ).get(imageId) as { file_path: string; thumbnail_path: string | null } | undefined;
+
+    db.prepare('DELETE FROM review_note_images WHERE id = ?').run(imageId);
+    return { filePath: row?.file_path ?? null, thumbnailPath: row?.thumbnail_path ?? null };
+  },
+
+  updateCaption(imageId: number, caption: string | null): void {
+    getDatabase().prepare('UPDATE review_note_images SET caption = ? WHERE id = ?')
+      .run(caption?.trim() || null, imageId);
+  },
+};
+
+export const ReviewNoteOperations = {
+  /**
+   * Write one note immediately (the user pressed Enter).
+   *
+   * During a review the event does not exist yet, so `reviewEventId` is omitted and the row
+   * stays a draft (`review_event_id IS NULL`) until the card is rated. When adding a note to a
+   * past review from the detail page, the event already exists — pass its id.
+   */
+  add(reviewItemId: number, kind: ReviewNoteKind, body: string, reviewEventId?: number | null): any {
+    const db = getDatabase();
+    const trimmed = body.trim();
+    if (!trimmed) throw new Error('review note body is empty');
+    const eventId = reviewEventId ?? null;
+
+    // Order within the group this note joins: the card's drafts, or one event's notes.
+    const sortOrder = (eventId == null
+      ? db.prepare(
+          `SELECT COUNT(*) AS cnt FROM review_notes
+           WHERE review_item_id = ? AND kind = ? AND review_event_id IS NULL`
+        ).get(reviewItemId, kind)
+      : db.prepare(
+          `SELECT COUNT(*) AS cnt FROM review_notes WHERE review_event_id = ? AND kind = ?`
+        ).get(eventId, kind)
+    ) as { cnt: number };
+
+    const result = db.prepare(
+      `INSERT INTO review_notes (review_item_id, review_event_id, kind, body, sort_order)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(reviewItemId, eventId, kind, trimmed, sortOrder.cnt);
+
+    return db.prepare('SELECT * FROM review_notes WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  /** Un-rated notes for a card — what the session re-displays when you navigate back to it. */
+  getDraftsByItem(reviewItemId: number): any[] {
+    const db = getDatabase();
+    const notes = db.prepare(
+      `SELECT * FROM review_notes
+       WHERE review_item_id = ? AND review_event_id IS NULL
+       ORDER BY kind, sort_order, id`
+    ).all(reviewItemId);
+    return attachImagesToNotes(db, notes);
+  },
+
+  /** Notes belonging to one past review. */
+  getByEvent(reviewEventId: number): any[] {
+    const db = getDatabase();
+    const notes = db.prepare(
+      `SELECT * FROM review_notes WHERE review_event_id = ? ORDER BY kind, sort_order, id`
+    ).all(reviewEventId);
+    return attachImagesToNotes(db, notes);
+  },
+
+  /** Every note ever written for a card, drafts included. */
+  getByItem(reviewItemId: number): any[] {
+    const db = getDatabase();
+    const notes = db.prepare(
+      `SELECT * FROM review_notes WHERE review_item_id = ? ORDER BY created_at DESC, id DESC`
+    ).all(reviewItemId);
+    return attachImagesToNotes(db, notes);
+  },
+
+  update(id: number, body: string): void {
+    const trimmed = body.trim();
+    if (!trimmed) throw new Error('review note body is empty');
+    getDatabase().prepare('UPDATE review_notes SET body = ? WHERE id = ?').run(trimmed, id);
+  },
+
+  /**
+   * Deleting a note cascades its image ROWS but not the files. Collect the paths first
+   * so the IPC handler can unlink them; otherwise every deleted note leaks its pictures.
+   */
+  delete(id: number): { imagePaths: string[] } {
+    const db = getDatabase();
+    const imagePaths = imagePathsForNotes(db, [id]);
+    db.prepare('DELETE FROM review_notes WHERE id = ?').run(id);
+    return { imagePaths };
   },
 };
 
@@ -2952,13 +3361,23 @@ function insertReviewEvent(db: ReturnType<typeof getDatabase>, reviewItemId: num
   return db.prepare('SELECT * FROM review_events WHERE id = ?').get(result.lastInsertRowid);
 }
 
+/** Attach each event's review_notes rows, so callers render notes without a second round-trip. */
+function withNotes(db: ReturnType<typeof getDatabase>, events: any[]): any[] {
+  if (events.length === 0) return events;
+  const stmt = db.prepare(
+    'SELECT * FROM review_notes WHERE review_event_id = ? ORDER BY kind, sort_order, id'
+  );
+  return events.map(e => ({ ...e, notes: attachImagesToNotes(db, stmt.all(e.id)) }));
+}
+
 export const ReviewEventOperations = {
   /** Full backlog for one image, newest first. */
   getByItem(reviewItemId: number): any[] {
     const db = getDatabase();
-    return db.prepare(
+    const events = db.prepare(
       'SELECT * FROM review_events WHERE review_item_id = ? ORDER BY reviewed_at DESC, id DESC'
     ).all(reviewItemId);
+    return withNotes(db, events);
   },
 
   /** Standalone note log (e.g. from the detail page) with no schedule change. */
@@ -2966,15 +3385,19 @@ export const ReviewEventOperations = {
     return insertReviewEvent(getDatabase(), reviewItemId, event);
   },
 
-  /** Edit a past review's reflective note / missed-points. */
-  updateNote(eventId: number, note: string | null, missedPoints: string | null): void {
-    getDatabase().prepare(
-      'UPDATE review_events SET note = ?, missed_points = ? WHERE id = ?'
-    ).run(note, missedPoints, eventId);
-  },
+  /**
+   * Deleting an event cascades review_notes -> review_note_images (rows), but not the files.
+   * Collect the image paths first so the handler can unlink them.
+   */
+  delete(eventId: number): { imagePaths: string[] } {
+    const db = getDatabase();
+    const noteIds = (db.prepare(
+      'SELECT id FROM review_notes WHERE review_event_id = ?'
+    ).all(eventId) as { id: number }[]).map(r => r.id);
 
-  delete(eventId: number): void {
-    getDatabase().prepare('DELETE FROM review_events WHERE id = ?').run(eventId);
+    const imagePaths = imagePathsForNotes(db, noteIds);
+    db.prepare('DELETE FROM review_events WHERE id = ?').run(eventId);
+    return { imagePaths };
   },
 
   /**
@@ -3000,11 +3423,12 @@ export const ReviewEventOperations = {
   getDayEvents(reviewItemId: number | null, date: string): any[] {
     const db = getDatabase();
     const where = reviewItemId != null ? 'WHERE review_item_id = ? AND' : 'WHERE';
-    return db.prepare(`
+    const events = db.prepare(`
       SELECT * FROM review_events
       ${where} date(reviewed_at, 'localtime') = ?
       ORDER BY reviewed_at DESC, id DESC
     `).all(...(reviewItemId != null ? [reviewItemId, date] : [date]));
+    return withNotes(db, events);
   },
 
   /** Aggregate stats for the per-image analytics cards. */
@@ -3129,6 +3553,7 @@ export const HtmlNodesOperations = {
   delete(id: number): string | null {
     const db = getDatabase();
     const row = db.prepare('SELECT file_path FROM html_nodes WHERE id = ?').get(id) as any;
+    deleteMediaTags('html_node', id);
     db.prepare('DELETE FROM html_nodes WHERE id = ?').run(id);
     return row?.file_path ?? null;
   },
@@ -3168,6 +3593,7 @@ export const DurationHtmlNodesOperations = {
   delete(id: number): string | null {
     const db = getDatabase();
     const row = db.prepare('SELECT file_path FROM duration_html_nodes WHERE id = ?').get(id) as any;
+    deleteMediaTags('duration_html_node', id);
     db.prepare('DELETE FROM duration_html_nodes WHERE id = ?').run(id);
     return row?.file_path ?? null;
   },

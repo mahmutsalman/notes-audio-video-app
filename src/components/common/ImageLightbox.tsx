@@ -1,14 +1,13 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useTabInstance } from '../../context/TabsContext';
 import { useStudyTracker } from '../../context/StudyTrackerContext';
-import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation, ReviewItem, ReviewMask } from '../../types';
+import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation, ReviewItem } from '../../types';
 import MaskEditor from '../review/MaskEditor';
 import { IMAGE_COLORS, IMAGE_COLOR_KEYS } from '../../utils/imageColors';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
 import WaveformVisualizer from '../audio/WaveformVisualizer';
 import { formatDuration } from '../../utils/formatters';
-import { emitReviewChanged } from '../../utils/events';
 import { TagModal } from './TagModal';
 import {
   DndContext,
@@ -233,8 +232,9 @@ export default function ImageLightbox({
   const [ocrCaption2Status, setOcrCaption2Status] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
 
   // Review mask editor
-  const [maskEditorItem, setMaskEditorItem] = useState<ReviewItem | null>(null);
-  const [maskEditorMasks, setMaskEditorMasks] = useState<ReviewMask[]>([]);
+  // "Add to Echo" opens the Mask Editor in DRAFT mode — nothing is enrolled until the user
+  // clicks Save inside the editor (closing/× discards). Holds just the image identity.
+  const [draftEcho, setDraftEcho] = useState<{ src: string; mediaType: MediaTagType; mediaId: number } | null>(null);
 
   // OCR region selection state
   const [ocrSelectStart, setOcrSelectStart] = useState<{ x: number; y: number } | null>(null);
@@ -913,7 +913,7 @@ export default function ImageLightbox({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (imageContextMenu) {
-        if (e.key === 'Escape') setImageContextMenu(null);
+        if (e.key === 'Escape') { setImageContextMenu(null); setShowColorPicker(false); }
         return;
       }
       const tag = (e.target as HTMLElement).tagName;
@@ -982,6 +982,7 @@ export default function ImageLightbox({
   const handleBackdropClick = useCallback(() => {
     if (imageContextMenu) {
       setImageContextMenu(null);
+      setShowColorPicker(false);
       return;
     }
     if (scale > 1) {
@@ -997,6 +998,7 @@ export default function ImageLightbox({
     e.stopPropagation();
     if (imageContextMenu) {
       setImageContextMenu(null);
+      setShowColorPicker(false);
       return;
     }
     if (hasDragged.current) {
@@ -1523,18 +1525,17 @@ export default function ImageLightbox({
             {onEnrollInReview && (
               <div className="border-t border-gray-700 my-1" />
             )}
-            {onEnrollInReview && (
+            {onEnrollInReview && mediaType && image?.id && image?.file_path && (
               <button
                 className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
-                onClick={async () => {
+                onClick={() => {
                   setImageContextMenu(null);
-                  const enrolled = await onEnrollInReview();
-                  if (enrolled) {
-                    emitReviewChanged();
-                    const masks = await window.electronAPI.reviewMasks.getByItem(enrolled.id);
-                    setMaskEditorItem(enrolled);
-                    setMaskEditorMasks(masks);
-                  }
+                  // Open the editor as a DRAFT — enroll happens only on Save (onCommit).
+                  setDraftEcho({
+                    src: window.electronAPI.paths.getFileUrl(image.file_path!),
+                    mediaType,
+                    mediaId: image.id!,
+                  });
                 }}
               >
                 <span>🔁</span> Add to Echo
@@ -2109,14 +2110,17 @@ export default function ImageLightbox({
         </div>
       )}
 
-      {/* ── Review Mask Editor (opened immediately after "Add to Review") ── */}
-      {maskEditorItem && maskEditorItem.file_path && (
+      {/* ── Review Mask Editor — DRAFT "Add to Echo": nothing persists until Save ── */}
+      {draftEcho && onEnrollInReview && (
         <MaskEditor
-          src={window.electronAPI.paths.getFileUrl(maskEditorItem.file_path)}
-          reviewItemId={maskEditorItem.id}
-          existingMasks={maskEditorMasks}
-          onMasksChanged={setMaskEditorMasks}
-          onClose={() => { setMaskEditorItem(null); setMaskEditorMasks([]); }}
+          src={draftEcho.src}
+          reviewItemId={null}
+          existingMasks={[]}
+          onMasksChanged={() => {}}
+          onCommit={onEnrollInReview}
+          mediaTagType={draftEcho.mediaType}
+          mediaTagId={draftEcho.mediaId}
+          onClose={() => setDraftEcho(null)}
         />
       )}
 

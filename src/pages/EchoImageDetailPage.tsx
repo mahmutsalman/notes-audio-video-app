@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { ReviewItem, ReviewEvent, ReviewItemStats, ReviewHeatmapDay } from '../types';
+import type { ReviewItem, ReviewEvent, ReviewItemStats, ReviewHeatmapDay, ReviewNote, ReviewNoteKind, ReviewNoteImage } from '../types';
 import { formatDueLabel } from '../utils/srsAlgorithm';
 import { currentRetrievability, stateLabel } from '../utils/fsrs';
 import HeatmapCalendar, { HEATMAP_WINDOWS, type HeatmapWindow } from '../components/echo/HeatmapCalendar';
+import ReviewNoteImages from '../components/review/ReviewNoteImages';
 
 /** Local 'YYYY-MM-DD' key for an ISO timestamp (matches the heatmap + SQLite localtime). */
 function localDayKey(iso: string): string {
@@ -320,22 +321,61 @@ function ModelStat({ label, value, sub, hint }: { label: string; value: string; 
   );
 }
 
+const NOTE_KINDS: { kind: ReviewNoteKind; placeholder: string }[] = [
+  { kind: 'note', placeholder: 'What did you think? (Enter to log)' },
+  { kind: 'missed', placeholder: 'What did you miss? (Enter to log)' },
+];
+
+/** Read-only thumbnail strip for a note's pictures. Editing lives in ReviewNoteImages. */
+function NoteThumbs({ images }: { images: ReviewNoteImage[] }) {
+  if (images.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {images.map(img => (
+        <img
+          key={img.id}
+          src={window.electronAPI.paths.getFileUrl(img.thumbnail_path ?? img.file_path)}
+          alt={img.caption ?? ''}
+          className="h-12 w-12 object-cover rounded border border-gray-200 dark:border-dark-border"
+        />
+      ))}
+    </div>
+  );
+}
+
 function EventRow({ event, onSaved }: { event: ReviewEvent; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
-  const [note, setNote] = useState(event.note ?? '');
-  const [missed, setMissed] = useState(event.missed_points ?? '');
-  const [saving, setSaving] = useState(false);
+  const [notes, setNotes] = useState<ReviewNote[]>(event.notes ?? []);
+  const [drafts, setDrafts] = useState<Record<ReviewNoteKind, string>>({ note: '', missed: '' });
   const badge = ratingBadge(event);
   const when = new Date(event.reviewed_at);
   const duration = fmtDuration(event.duration_seconds);
 
-  const save = async () => {
-    setSaving(true);
-    await window.electronAPI.reviewEvents.updateNote(event.id, note.trim() || null, missed.trim() || null);
-    setSaving(false);
-    setEditing(false);
+  // The event already exists here, so a note added from this page is attached to it directly.
+  const addNote = async (kind: ReviewNoteKind, body: string) => {
+    if (!body.trim()) return;
+    const saved = await window.electronAPI.reviewNotes.add(event.review_item_id, kind, body, event.id);
+    setNotes(prev => [...prev, saved]);
+    setDrafts(d => ({ ...d, [kind]: '' }));
     onSaved();
   };
+
+  const deleteNote = async (id: number) => {
+    await window.electronAPI.reviewNotes.delete(id);
+    setNotes(prev => prev.filter(n => n.id !== id));
+    onSaved();
+  };
+
+  const setNoteImages = (noteId: number, images: ReviewNoteImage[]) =>
+    setNotes(prev => prev.map(n => n.id === noteId ? { ...n, images } : n));
+
+  const onKeyDown = (kind: ReviewNoteKind) => (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    e.preventDefault();
+    void addNote(kind, e.currentTarget.value);
+  };
+
+  const byKind = (k: ReviewNoteKind) => notes.filter(n => n.kind === k);
 
   return (
     <li className="rounded-xl border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface px-4 py-3">
@@ -361,47 +401,75 @@ function EventRow({ event, onSaved }: { event: ReviewEvent; onSaved: () => void 
           onClick={() => setEditing(e => !e)}
           className="ml-auto text-[11px] text-gray-400 hover:text-blue-500 transition-colors"
         >
-          {editing ? 'Cancel' : (event.note || event.missed_points ? 'Edit note' : 'Add note')}
+          {editing ? 'Done' : (notes.length > 0 ? `Notes · ${notes.length}` : 'Add note')}
         </button>
       </div>
 
-      {!editing ? (
-        (event.note || event.missed_points) && (
-          <div className="mt-2 flex flex-col gap-1.5">
-            {event.note && (
-              <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{event.note}</p>
-            )}
-            {event.missed_points && (
+      {/* Read-only list of every note logged for this review. */}
+      {!editing && notes.length > 0 && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          {byKind('note').map(n => (
+            <div key={n.id} className="flex flex-col gap-1">
+              <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{n.body}</p>
+              <NoteThumbs images={n.images ?? []} />
+            </div>
+          ))}
+          {byKind('missed').map(n => (
+            <div key={n.id} className="flex flex-col gap-1">
               <p className="text-sm text-amber-700 dark:text-amber-400 whitespace-pre-wrap">
                 <span className="text-[11px] uppercase tracking-wide text-amber-500/70 mr-1">Missed</span>
-                {event.missed_points}
+                {n.body}
               </p>
-            )}
-          </div>
-        )
-      ) : (
-        <div className="mt-2 flex flex-col gap-2">
-          <textarea
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            placeholder="What did you think?"
-            rows={2}
-            className="w-full resize-none rounded-lg bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-dark-border text-gray-800 dark:text-gray-200 text-sm px-3 py-2 focus:outline-none focus:border-blue-400"
-          />
-          <textarea
-            value={missed}
-            onChange={e => setMissed(e.target.value)}
-            placeholder="What did you miss?"
-            rows={2}
-            className="w-full resize-none rounded-lg bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-dark-border text-gray-800 dark:text-gray-200 text-sm px-3 py-2 focus:outline-none focus:border-blue-400"
-          />
-          <button
-            onClick={save}
-            disabled={saving}
-            className="self-start px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+              <NoteThumbs images={n.images ?? []} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editing && (
+        <div className="mt-2 flex flex-col gap-3">
+          {NOTE_KINDS.map(({ kind, placeholder }) => (
+            <div key={kind} className="flex flex-col gap-1.5">
+              {byKind(kind).map(n => (
+                <div
+                  key={n.id}
+                  className="group flex flex-col gap-1.5 rounded-lg bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-dark-border px-3 py-1.5"
+                >
+                  <div className="flex items-start gap-2">
+                    <p className={`flex-1 text-sm whitespace-pre-wrap break-words ${
+                      kind === 'missed'
+                        ? 'text-amber-700 dark:text-amber-400'
+                        : 'text-gray-800 dark:text-gray-200'
+                    }`}>
+                      {n.body}
+                    </p>
+                    <button
+                      onClick={() => deleteNote(n.id)}
+                      title="Delete this note"
+                      className="shrink-0 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none pt-1"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <ReviewNoteImages
+                    noteId={n.id}
+                    images={n.images ?? []}
+                    onChange={imgs => { setNoteImages(n.id, imgs); onSaved(); }}
+                    variant="light"
+                  />
+                </div>
+              ))}
+              <textarea
+                value={drafts[kind]}
+                onChange={e => setDrafts(d => ({ ...d, [kind]: e.target.value }))}
+                onKeyDown={onKeyDown(kind)}
+                onBlur={e => void addNote(kind, e.currentTarget.value)}
+                placeholder={placeholder}
+                rows={2}
+                className="w-full resize-none rounded-lg bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-dark-border text-gray-800 dark:text-gray-200 text-sm px-3 py-2 focus:outline-none focus:border-blue-400"
+              />
+            </div>
+          ))}
         </div>
       )}
     </li>

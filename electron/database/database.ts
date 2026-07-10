@@ -1410,6 +1410,146 @@ function runMigrations(db: Database.Database): void {
     console.log('Created image_view_state table');
   }
 
+  // Orphaned media_tags purge (self-healing, runs every startup).
+  // media_tags is polymorphic (media_type, media_id) with a FK only on tag_id — nothing
+  // cascades from media_id, so deleting/expiring a tagged media row (most visibly the 7-day
+  // quick-capture TTL sweep) leaves its tag associations behind. Those orphans inflate the
+  // "Count" column (COUNT over media_tags) above the items actually shown (getItemsByTag
+  // inner-joins the real media table and drops them) — the anı 12-vs-2 bug. Delete-time
+  // cleanup (deleteMediaTags in operations.ts) prevents new orphans; this block heals any
+  // that already exist or slip through a missed delete path. Idempotent: a no-op once clean.
+  {
+    // media_type -> owning table. Keep in sync with MediaTagType in src/types/index.ts.
+    const mediaTagTables: Record<string, string> = {
+      image: 'images',
+      duration_image: 'duration_images',
+      audio: 'audios',
+      duration_audio: 'duration_audios',
+      quick_capture_image: 'quick_capture_images',
+      quick_capture_audio: 'quick_capture_audios',
+      image_child: 'image_children',
+      image_audio: 'image_audios',
+      duration_image_audio: 'duration_image_audios',
+      quick_capture_image_audio: 'quick_capture_image_audios',
+      image_child_audio: 'image_child_audios',
+      video: 'videos',
+      duration_video: 'duration_videos',
+      html_node: 'html_nodes',
+      duration_html_node: 'duration_html_nodes',
+    };
+    let purged = 0;
+    for (const [mediaType, table] of Object.entries(mediaTagTables)) {
+      // Skip types whose owning table doesn't exist in this DB (defensive).
+      const tableExists = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+      ).get(table);
+      if (!tableExists) continue;
+      const res = db.prepare(
+        `DELETE FROM media_tags
+          WHERE media_type = ?
+            AND media_id NOT IN (SELECT id FROM ${table})`
+      ).run(mediaType);
+      purged += res.changes;
+    }
+    // Also purge associations whose media_type isn't a known type at all (data drift).
+    const knownTypes = Object.keys(mediaTagTables);
+    const placeholders = knownTypes.map(() => '?').join(', ');
+    const resUnknown = db.prepare(
+      `DELETE FROM media_tags WHERE media_type NOT IN (${placeholders})`
+    ).run(...knownTypes);
+    purged += resUnknown.changes;
+    if (purged > 0) console.log(`Purged ${purged} orphaned media_tags rows`);
+  }
+
+  // Migration: review_notes — many reflective notes per review, instead of the single
+  // `review_events.note` / `.missed_points` columns.
+  //
+  // A note is written the moment the user presses Enter, before any rating exists, so
+  // `review_event_id` is NULL until the card is rated (then the session links them).
+  // That is what lets notes survive arrow-key navigation and abandoned cards.
+  //
+  // The legacy `review_events.note` / `.missed_points` columns are backfilled into this
+  // table once, then frozen: never read, never written again. They are left in place as a
+  // recovery copy rather than dropped (see ADR-0004 — we do not destroy user-authored content).
+  const reviewNotesExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='review_notes'"
+  ).get();
+  if (!reviewNotesExists) {
+    db.exec(`
+      CREATE TABLE review_notes (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_item_id  INTEGER NOT NULL REFERENCES review_items(id) ON DELETE CASCADE,
+        review_event_id INTEGER REFERENCES review_events(id) ON DELETE CASCADE,
+        kind            TEXT NOT NULL CHECK(kind IN ('note','missed')),
+        body            TEXT NOT NULL,
+        sort_order      INTEGER NOT NULL DEFAULT 0,
+        created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_review_notes_item  ON review_notes(review_item_id);
+      CREATE INDEX idx_review_notes_event ON review_notes(review_event_id);
+    `);
+
+    // Backfill: one row per non-empty legacy note / missed_points value.
+    const legacy = db.prepare(`
+      SELECT id, review_item_id, note, missed_points
+      FROM review_events
+      WHERE (note IS NOT NULL AND trim(note) <> '')
+         OR (missed_points IS NOT NULL AND trim(missed_points) <> '')
+    `).all() as { id: number; review_item_id: number; note: string | null; missed_points: string | null }[];
+
+    const insertNote = db.prepare(`
+      INSERT INTO review_notes (review_item_id, review_event_id, kind, body, sort_order)
+      VALUES (?, ?, ?, ?, 0)
+    `);
+    let backfilled = 0;
+    db.transaction(() => {
+      for (const row of legacy) {
+        if (row.note && row.note.trim()) {
+          insertNote.run(row.review_item_id, row.id, 'note', row.note.trim());
+          backfilled++;
+        }
+        if (row.missed_points && row.missed_points.trim()) {
+          insertNote.run(row.review_item_id, row.id, 'missed', row.missed_points.trim());
+          backfilled++;
+        }
+      }
+    })();
+    console.log(`Created review_notes table (backfilled ${backfilled} notes from ${legacy.length} events)`);
+  }
+
+  // Migration: review_note_images — pictures attached to a reflective review note.
+  // Lightweight attachments for now: no tags, no OCR, no FTS (ADR-0006). Adding those later
+  // is additive — media_tags is polymorphic and needs no migration here.
+  // NOTE: rows cascade with the note, but the FILES on disk do not. Every delete path
+  // (note / event / review item) must collect file_path first and unlink — see handlers.ts.
+  const reviewNoteImagesExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='review_note_images'"
+  ).get();
+  if (!reviewNoteImagesExists) {
+    db.exec(`
+      CREATE TABLE review_note_images (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_note_id INTEGER NOT NULL REFERENCES review_notes(id) ON DELETE CASCADE,
+        file_path      TEXT NOT NULL,
+        thumbnail_path TEXT,
+        caption        TEXT,
+        sort_order     INTEGER NOT NULL DEFAULT 0,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_review_note_images_note ON review_note_images(review_note_id);
+    `);
+    console.log('Created review_note_images table');
+  }
+
+  // Migration: archive support for quick captures.
+  // Archiving hides a capture from the Capture board WITHOUT deleting anything —
+  // rows, files, tags and FTS entries all stay. NULL = on the board, timestamp = archived.
+  const qcCols = db.prepare("PRAGMA table_info(quick_captures)").all() as { name: string }[];
+  if (!qcCols.some(c => c.name === 'archived_at')) {
+    db.exec('ALTER TABLE quick_captures ADD COLUMN archived_at DATETIME');
+    console.log('Added archived_at column to quick_captures table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

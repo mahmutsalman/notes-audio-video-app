@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { ReviewItem, ReviewMask, BrowseReviewItem } from '../types';
+import type { ReviewItem, ReviewMask, BrowseReviewItem, MediaTagType } from '../types';
 import { REVIEW_CHANGED_EVENT, emitReviewChanged } from '../utils/events';
 import ReviewSession from '../components/review/ReviewSession';
 import MaskEditor from '../components/review/MaskEditor';
 import { ReviewItemGridCard, ReviewItemListRow, BrowseCard } from '../components/echo/EchoCards';
+import EchoTagFilter from '../components/echo/EchoTagFilter';
 
 type FilterTab = 'due' | 'all' | 'upcoming' | 'browse';
 type ViewMode = 'grid' | 'list';
@@ -16,18 +17,28 @@ export default function EchoPage() {
   const [filter, setFilter] = useState<FilterTab>('due');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [sessionItems, setSessionItems] = useState<ReviewItem[] | null>(null);
+  const [peekItems, setPeekItems] = useState<ReviewItem[] | null>(null);
   const [maskEditorItem, setMaskEditorItem] = useState<ReviewItem | null>(null);
   const [maskEditorMasks, setMaskEditorMasks] = useState<ReviewMask[]>([]);
+  // Tag filter — composes with the due/all/upcoming/browse tabs (ANY/OR match).
+  const [activeTags, setActiveTags] = useState<string[]>([]);
+  // Enrolled count IGNORING the tag filter — so the header reads right when a filter matches
+  // nothing. Captured whenever no filter is active.
+  const [totalEnrolled, setTotalEnrolled] = useState(0);
 
   const loadItems = useCallback(async () => {
-    const items = await window.electronAPI.review.getAll();
+    const items = activeTags.length > 0
+      ? await window.electronAPI.review.getByTags(activeTags)
+      : await window.electronAPI.review.getAll();
     setAllItems(items);
-  }, []);
+  }, [activeTags]);
 
   const loadBrowse = useCallback(async () => {
-    const items = await window.electronAPI.review.getAllEnrolled();
+    const items = activeTags.length > 0
+      ? await window.electronAPI.review.getAllEnrolledByTags(activeTags)
+      : await window.electronAPI.review.getAllEnrolled();
     setBrowseItems(items);
-  }, []);
+  }, [activeTags]);
 
   useEffect(() => { loadItems(); }, [loadItems]);
 
@@ -48,8 +59,14 @@ export default function EchoPage() {
     return () => window.removeEventListener(REVIEW_CHANGED_EVENT, onChanged);
   }, [loadItems, loadBrowse, filter]);
 
+  // When no filter is active, allItems is the full enrolled set → remember its size.
+  useEffect(() => {
+    if (activeTags.length === 0) setTotalEnrolled(allItems.length);
+  }, [activeTags, allItems]);
+
   const openDetail = (id: number) => navigate(`/echo/${id}`);
 
+  const filterActive = activeTags.length > 0;
   const now = new Date();
 
   const dueItems = allItems.filter(item => new Date(item.next_review_at) <= now);
@@ -63,6 +80,14 @@ export default function EchoPage() {
   const startSession = () => {
     if (dueItems.length === 0) return;
     setSessionItems(dueItems);
+  };
+
+  // Peek — browse the masked "front" of the currently-shown set (whatever tab is active),
+  // reveal blur, ←/→ navigate, without saving any progress. Browse uses its own aggregate list.
+  const startPeek = () => {
+    const source: ReviewItem[] = filter === 'browse' ? browseItems : displayedItems;
+    if (source.length === 0) return;
+    setPeekItems(source);
   };
 
   const handleSessionEnd = () => {
@@ -90,6 +115,11 @@ export default function EchoPage() {
     return <ReviewSession items={sessionItems} onSessionEnd={handleSessionEnd} />;
   }
 
+  // Peek mode writes nothing, so closing just clears the overlay — no reload/emit needed.
+  if (peekItems) {
+    return <ReviewSession items={peekItems} readOnly onSessionEnd={() => setPeekItems(null)} />;
+  }
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-dark-bg overflow-hidden">
       {/* Header */}
@@ -97,9 +127,24 @@ export default function EchoPage() {
         <div className="flex-1">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Echo</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            {allItems.length} enrolled · {dueItems.length} due now
+            {totalEnrolled} enrolled · {dueItems.length} due now
           </p>
         </div>
+
+        {/* Peek — look at the masked questions without studying/saving. Reflects the active tab. */}
+        {allItems.length > 0 && (
+          <button
+            onClick={startPeek}
+            className="px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-hover text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+            title="Review the masked questions without saving progress"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            Peek
+          </button>
+        )}
 
         {dueItems.length > 0 && (
           <button
@@ -166,16 +211,32 @@ export default function EchoPage() {
         })}
       </div>
 
+      {/* Tag filter — narrows every tab (ANY/OR) to echoes whose image carries a selected tag. */}
+      <EchoTagFilter
+        activeTags={activeTags}
+        onChange={setActiveTags}
+        containerClassName="px-5 py-2 border-b border-gray-200 dark:border-dark-border flex-shrink-0"
+      />
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-5">
         {filter === 'browse' ? (
           browseItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-center">
-              <div className="text-4xl mb-3">🗂️</div>
-              <p className="text-gray-500 dark:text-gray-400 text-sm">No images enrolled yet.</p>
-              <p className="text-gray-400 dark:text-gray-500 text-xs mt-2">
-                Right-click any image and choose "Add to Echo"
-              </p>
+              <div className="text-4xl mb-3">{filterActive ? '🏷️' : '🗂️'}</div>
+              {filterActive ? (
+                <>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">No echoes match the selected tag{activeTags.length > 1 ? 's' : ''}.</p>
+                  <button onClick={() => setActiveTags([])} className="text-blue-600 dark:text-blue-400 hover:underline text-xs mt-2">Clear filter</button>
+                </>
+              ) : (
+                <>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">No images enrolled yet.</p>
+                  <p className="text-gray-400 dark:text-gray-500 text-xs mt-2">
+                    Right-click any image and choose "Add to Echo"
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -188,7 +249,15 @@ export default function EchoPage() {
           <>
             {displayedItems.length === 0 && (
               <div className="flex flex-col items-center justify-center h-64 text-center">
-                {filter === 'due' ? (
+                {filterActive ? (
+                  <>
+                    <div className="text-4xl mb-3">🏷️</div>
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">
+                      No echoes in this view match the selected tag{activeTags.length > 1 ? 's' : ''}.
+                    </p>
+                    <button onClick={() => setActiveTags([])} className="text-blue-600 dark:text-blue-400 hover:underline text-xs mt-2">Clear filter</button>
+                  </>
+                ) : filter === 'due' ? (
                   <>
                     <div className="text-4xl mb-3">✅</div>
                     <p className="text-gray-500 dark:text-gray-400 text-sm">
@@ -233,6 +302,8 @@ export default function EchoPage() {
             reviewItemId={maskEditorItem.id}
             existingMasks={maskEditorMasks}
             onMasksChanged={setMaskEditorMasks}
+            mediaTagType={maskEditorItem.media_type as MediaTagType}
+            mediaTagId={maskEditorItem.media_id}
             onClose={() => { setMaskEditorItem(null); setMaskEditorMasks([]); }}
           />
         </div>

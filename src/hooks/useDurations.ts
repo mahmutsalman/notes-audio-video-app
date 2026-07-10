@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Duration, CreateDuration, UpdateDuration, DurationImage, DurationVideo, DurationAudio, DurationImageAudio, DurationCodeSnippet, CreateDurationCodeSnippet, UpdateDurationCodeSnippet } from '../types';
+import { SYNC_COMPLETED_EVENT } from '../utils/events';
 
 export function useDurations(recordingId: number | null) {
   const [durations, setDurations] = useState<Duration[]>([]);
@@ -26,7 +27,7 @@ export function useDurations(recordingId: number | null) {
   const durationImageAudiosCacheRef = useRef(durationImageAudiosCache);
   durationImageAudiosCacheRef.current = durationImageAudiosCache;
 
-  const fetchDurations = useCallback(async () => {
+  const fetchDurations = useCallback(async (silent = false) => {
     if (recordingId === null) {
       setDurations([]);
       setLoading(false);
@@ -34,7 +35,7 @@ export function useDurations(recordingId: number | null) {
     }
 
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
       const data = await window.electronAPI.durations.getByRecording(recordingId);
       setDurations(data);
@@ -483,6 +484,15 @@ export function useDurations(recordingId: number | null) {
     clearDurationCodeSnippetsCache();
     setDurationImageAudiosCache({});
   }, [recordingId, clearDurationImagesCache, clearDurationVideosCache, clearDurationAudiosCache, clearDurationCodeSnippetsCache]);
+
+  // Re-fetch after cloud sync completes (silent — no loading spinner, no cache wipe)
+  useEffect(() => {
+    const handleSyncCompleted = () => {
+      fetchDurations(true);
+    };
+    window.addEventListener(SYNC_COMPLETED_EVENT, handleSyncCompleted);
+    return () => window.removeEventListener(SYNC_COMPLETED_EVENT, handleSyncCompleted);
+  }, [fetchDurations]);
 
   return {
     durations,

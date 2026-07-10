@@ -630,7 +630,6 @@ const electronAPI = {
     updateStagedMarkCaption: (id: number, caption: string): void => ipcRenderer.send('obs:updateStagedMarkCaption', id, caption),
     mergeStagedMarks: (keepId: number, deleteId: number, caption: string | null): void => ipcRenderer.send('obs:mergeStagedMarks', keepId, deleteId, caption),
     hideOverlay: (): void => ipcRenderer.send('obs:hideOverlay'),
-    hideStatusWindow: (): void => ipcRenderer.send('obs:hideStatusWindow'),
     onPaused: (cb: (data: { timecode: number; timecodeStr: string }) => void) => {
       const listener = (_: any, data: any) => cb(data);
       ipcRenderer.on('obs:paused', listener);
@@ -843,6 +842,12 @@ const electronAPI = {
       ipcRenderer.invoke('quickCaptures:getOrCreate', note, tags),
     getRecent: (): Promise<import('../src/types').QuickCapture[]> =>
       ipcRenderer.invoke('quickCaptures:getRecent'),
+    getArchived: (): Promise<import('../src/types').QuickCapture[]> =>
+      ipcRenderer.invoke('quickCaptures:getArchived'),
+    archiveAll: (): Promise<{ ids: number[] }> =>
+      ipcRenderer.invoke('quickCaptures:archiveAll'),
+    unarchive: (ids: number[]): Promise<void> =>
+      ipcRenderer.invoke('quickCaptures:unarchive', ids),
     addImage: (captureId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<import('../src/types').QuickCaptureImage> =>
       ipcRenderer.invoke('quickCaptures:addImage', captureId, imageBuffer, extension),
     addAudio: (captureId: number, audioBuffer: ArrayBuffer, extension?: string): Promise<import('../src/types').QuickCaptureAudio> =>
@@ -1011,24 +1016,51 @@ const electronAPI = {
     getById: (id: number) => ipcRenderer.invoke('review:getById', id),
     getByRecording: (recordingId: number) => ipcRenderer.invoke('review:getByRecording', recordingId),
     getAllEnrolledByRecording: (recordingId: number) => ipcRenderer.invoke('review:getAllEnrolledByRecording', recordingId),
+    getByTags: (tagNames: string[]) => ipcRenderer.invoke('review:getByTags', tagNames),
+    getByRecordingAndTags: (recordingId: number, tagNames: string[]) => ipcRenderer.invoke('review:getByRecordingAndTags', recordingId, tagNames),
+    getAllEnrolledByTags: (tagNames: string[]) => ipcRenderer.invoke('review:getAllEnrolledByTags', tagNames),
+    getAllEnrolledByRecordingAndTags: (recordingId: number, tagNames: string[]) => ipcRenderer.invoke('review:getAllEnrolledByRecordingAndTags', recordingId, tagNames),
+    getEnrolledTags: () => ipcRenderer.invoke('review:getEnrolledTags'),
+    getEnrolledTagsByRecording: (recordingId: number) => ipcRenderer.invoke('review:getEnrolledTagsByRecording', recordingId),
     enroll: (
       mediaType: string, mediaId: number,
       filePath: string | null, thumbnailPath: string | null, caption: string | null,
       recordingId: number | null, captureId: number | null
     ) => ipcRenderer.invoke('review:enroll', mediaType, mediaId, filePath, thumbnailPath, caption, recordingId, captureId),
     delete: (id: number) => ipcRenderer.invoke('review:delete', id),
-    rate: (id: number, fields: import('../src/types').ReviewCardFields, event?: import('../src/types').ReviewEventInput) =>
-      ipcRenderer.invoke('review:rate', id, fields, event),
-    schedule: (id: number, fields: import('../src/types').ReviewCardFields, event?: import('../src/types').ReviewEventInput) =>
-      ipcRenderer.invoke('review:schedule', id, fields, event),
+    rate: (id: number, fields: import('../src/types').ReviewCardFields, event?: import('../src/types').ReviewEventInput, noteIds?: number[]) =>
+      ipcRenderer.invoke('review:rate', id, fields, event, noteIds),
+    schedule: (id: number, fields: import('../src/types').ReviewCardFields, event?: import('../src/types').ReviewEventInput, noteIds?: number[]) =>
+      ipcRenderer.invoke('review:schedule', id, fields, event, noteIds),
+  },
+
+  reviewNotes: {
+    add: (reviewItemId: number, kind: 'note' | 'missed', body: string, reviewEventId?: number | null) =>
+      ipcRenderer.invoke('reviewNotes:add', reviewItemId, kind, body, reviewEventId),
+    getDraftsByItem: (reviewItemId: number) =>
+      ipcRenderer.invoke('reviewNotes:getDraftsByItem', reviewItemId),
+    getByEvent: (reviewEventId: number) =>
+      ipcRenderer.invoke('reviewNotes:getByEvent', reviewEventId),
+    getByItem: (reviewItemId: number) =>
+      ipcRenderer.invoke('reviewNotes:getByItem', reviewItemId),
+    update: (id: number, body: string) => ipcRenderer.invoke('reviewNotes:update', id, body),
+    delete: (id: number) => ipcRenderer.invoke('reviewNotes:delete', id),
+  },
+
+  reviewNoteImages: {
+    add: (reviewNoteId: number, imageBuffer: ArrayBuffer, extension?: string) =>
+      ipcRenderer.invoke('reviewNoteImages:add', reviewNoteId, imageBuffer, extension),
+    getByNote: (reviewNoteId: number) =>
+      ipcRenderer.invoke('reviewNoteImages:getByNote', reviewNoteId),
+    delete: (imageId: number) => ipcRenderer.invoke('reviewNoteImages:delete', imageId),
+    updateCaption: (imageId: number, caption: string | null) =>
+      ipcRenderer.invoke('reviewNoteImages:updateCaption', imageId, caption),
   },
 
   reviewEvents: {
     getByItem: (reviewItemId: number) => ipcRenderer.invoke('reviewEvents:getByItem', reviewItemId),
     log: (reviewItemId: number, event: import('../src/types').ReviewEventInput) =>
       ipcRenderer.invoke('reviewEvents:log', reviewItemId, event),
-    updateNote: (eventId: number, note: string | null, missedPoints: string | null) =>
-      ipcRenderer.invoke('reviewEvents:updateNote', eventId, note, missedPoints),
     delete: (eventId: number) => ipcRenderer.invoke('reviewEvents:delete', eventId),
     getHeatmap: (reviewItemId: number | null, fromDate: string, toDate: string) =>
       ipcRenderer.invoke('reviewEvents:getHeatmap', reviewItemId, fromDate, toDate),

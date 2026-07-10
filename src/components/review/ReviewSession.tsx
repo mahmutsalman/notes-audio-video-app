@@ -1,17 +1,39 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { ReviewItem, ReviewMask, ReviewRating, ReviewPreset } from '../../types';
+import type { ReviewItem, ReviewMask, ReviewRating, ReviewPreset, ReviewNote, ReviewNoteKind } from '../../types';
 import { formatDueExact } from '../../utils/srsAlgorithm';
 import {
   previewRatings, applyRating, applyManual, applyManualDate,
   buildRatingEvent, buildManualEvent, type ReviewNoteExtras,
 } from '../../utils/fsrs';
 import PixelatedImage from './PixelatedImage';
+import ReviewNoteImages from './ReviewNoteImages';
 
 interface ReviewSessionProps {
   items: ReviewItem[];
   onSessionEnd: () => void;
+  /**
+   * Peek mode: browse the masked "front" of cards (reveal blur, ←/→ navigate) without
+   * saving any progress. Hides every study-only control (rating buttons, manual schedule,
+   * reflective note, timer) — the only code paths that write FSRS state / review_events —
+   * so nothing can be persisted.
+   */
+  readOnly?: boolean;
 }
+
+/** The two reflective prompts. Both accept many notes; Enter logs one and starts the next. */
+const NOTE_COLUMNS: { kind: ReviewNoteKind; placeholder: string; nextPlaceholder: string }[] = [
+  {
+    kind: 'note',
+    placeholder: 'What did you think? How did it feel? (Enter to log · Shift+Enter for new line)',
+    nextPlaceholder: 'Another thought? (Enter to log)',
+  },
+  {
+    kind: 'missed',
+    placeholder: 'What did you miss / keep forgetting? (Enter to log · Shift+Enter for new line)',
+    nextPlaceholder: 'Anything else you missed? (Enter to log)',
+  },
+];
 
 const RATING_CONFIG: { rating: ReviewRating; label: string; color: string; hint: string }[] = [
   { rating: 'again', label: 'Again', color: 'bg-red-600 hover:bg-red-500', hint: 'Blackout — reset' },
@@ -29,7 +51,7 @@ function formatTimer(totalSeconds: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProps) {
+export default function ReviewSession({ items, onSessionEnd, readOnly = false }: ReviewSessionProps) {
   const navigate = useNavigate();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [masks, setMasks] = useState<ReviewMask[]>([]);
@@ -48,9 +70,12 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
   }, []);
   useEffect(() => { loadPresets(); }, [loadPresets]);
 
-  // Per-review reflective note + optional study timer (reset on each card).
+  // Per-review reflective notes + optional study timer (reset on each card).
+  // `note` / `missedPoints` are only the *pending* text in each box; committed notes live in
+  // `draftNotes`, persisted the moment Enter is pressed so navigating away cannot lose them.
   const [note, setNote] = useState('');
   const [missedPoints, setMissedPoints] = useState('');
+  const [draftNotes, setDraftNotes] = useState<ReviewNote[]>([]);
   const [showNotePanel, setShowNotePanel] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -60,6 +85,64 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
 
   const goPrev = useCallback(() => setCurrentIndex(i => Math.max(0, i - 1)), []);
   const goNext = useCallback(() => setCurrentIndex(i => Math.min(items.length - 1, i + 1)), [items.length]);
+
+  // ── Image zoom (Cmd/Ctrl + wheel), mirroring the ImageLightbox behavior ──────────
+  const imageAreaRef = useRef<HTMLDivElement>(null);
+  const imageWrapRef = useRef<HTMLDivElement>(null);
+  const [imgScale, setImgScale] = useState(1);
+  const [imgTranslate, setImgTranslate] = useState({ x: 0, y: 0 });
+  const imgScaleRef = useRef(1);
+  useEffect(() => { imgScaleRef.current = imgScale; }, [imgScale]);
+
+  // Keep the (letterboxed) image from panning past the viewport edge
+  const clampImgTranslate = useCallback((t: { x: number; y: number }, s: number) => {
+    const area = imageAreaRef.current;
+    if (!area) return t;
+    const w = area.clientWidth, h = area.clientHeight;
+    const maxX = Math.max(0, (w * s - w) / 2);
+    const maxY = Math.max(0, (h * s - h) / 2);
+    return { x: Math.max(-maxX, Math.min(maxX, t.x)), y: Math.max(-maxY, Math.min(maxY, t.y)) };
+  }, []);
+
+  // Reset zoom whenever the card changes
+  useEffect(() => { setImgScale(1); setImgTranslate({ x: 0, y: 0 }); }, [currentIndex]);
+
+  // Cmd/Ctrl+scroll → zoom at cursor; plain scroll while zoomed → pan
+  useEffect(() => {
+    const area = imageAreaRef.current;
+    if (!area) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const wrap = imageWrapRef.current;
+        if (!wrap) return;
+        const rect = wrap.getBoundingClientRect();
+        const cursorX = e.clientX - (rect.left + rect.width / 2);
+        const cursorY = e.clientY - (rect.top + rect.height / 2);
+        const zoomFactor = 1 - e.deltaY * 0.01;
+        setImgScale(prev => {
+          const next = Math.min(5, Math.max(1, prev * zoomFactor));
+          const ratio = next / prev;
+          if (next === 1) {
+            setImgTranslate({ x: 0, y: 0 });
+          } else if (next !== prev) {
+            setImgTranslate(t => clampImgTranslate({
+              x: cursorX - ratio * (cursorX - t.x),
+              y: cursorY - ratio * (cursorY - t.y),
+            }, next));
+          }
+          return next;
+        });
+        return;
+      }
+      if (imgScaleRef.current > 1) {
+        e.preventDefault();
+        setImgTranslate(t => clampImgTranslate({ x: t.x - e.deltaX, y: t.y - e.deltaY }, imgScaleRef.current));
+      }
+    };
+    area.addEventListener('wheel', onWheel, { passive: false });
+    return () => area.removeEventListener('wheel', onWheel);
+  }, [clampImgTranslate]);
 
   // Keyboard: Esc ends the session; ← / → skip between images (without rating).
   // Capture phase + stopImmediatePropagation so this full-screen session owns the keys
@@ -91,6 +174,9 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
     setTimerRunning(false);
     timerTouched.current = false;
     window.electronAPI.reviewMasks.getByItem(current.id).then(setMasks);
+    // Re-hydrate any notes logged for this card but not yet tied to a rating — e.g. typed,
+    // then navigated away with the arrow keys, or logged in an abandoned session.
+    window.electronAPI.reviewNotes.getDraftsByItem(current.id).then(setDraftNotes);
   }, [current?.id]);
 
   // If no masks, consider auto-revealed
@@ -124,39 +210,90 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
     setAllRevealed(true);
   };
 
+  /** Persist one note now and clear its box, ready for the next. No-op on empty text. */
+  const commitNote = useCallback(async (kind: ReviewNoteKind, body: string): Promise<ReviewNote | null> => {
+    if (!current || !body.trim()) return null;
+    const saved = await window.electronAPI.reviewNotes.add(current.id, kind, body);
+    setDraftNotes(prev => [...prev, saved]);
+    return saved;
+  }, [current?.id]);
+
+  const removeNote = async (id: number) => {
+    await window.electronAPI.reviewNotes.delete(id);
+    setDraftNotes(prev => prev.filter(n => n.id !== id));
+  };
+
+  // Enter logs the note and starts a fresh one (no newline); Shift+Enter inserts a newline.
+  // The accomplishment glow replays on every press: drop the class, force a reflow, re-add.
+  const handleNoteKeyDown = (kind: ReviewNoteKind) => async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const body = el.value;
+    if (!body.trim()) return;
+
+    el.classList.remove('animate-input-glow');
+    void el.offsetWidth; // force reflow so the animation replays
+    el.classList.add('animate-input-glow');
+
+    if (kind === 'note') setNote(''); else setMissedPoints('');
+    await commitNote(kind, body);
+  };
+
   // Preview the four FSRS outcomes once per card (drives the button due-labels).
-  const previews = useMemo(() => (current ? previewRatings(current) : null), [current?.id]);
+  // Skipped in Peek mode — the rating buttons are hidden, and browse-opened cards may
+  // lack the FSRS fields previewRatings expects.
+  const previews = useMemo(
+    () => (current && !readOnly ? previewRatings(current) : null),
+    [current?.id, readOnly],
+  );
 
   const noteExtras = (): ReviewNoteExtras => ({
-    note: note.trim() || null,
-    missedPoints: missedPoints.trim() || null,
     durationSeconds: timerTouched.current ? elapsedSeconds : null,
   });
+
+  /**
+   * Commit whatever is still sitting in the two boxes un-Entered, then return every draft
+   * note id for this card. Rating with text left in a box must never silently discard it.
+   * Reads the freshly-saved rows directly — `draftNotes` state has not re-rendered yet.
+   */
+  const flushPendingNotes = async (): Promise<number[]> => {
+    const pending = await Promise.all([
+      commitNote('note', note),
+      commitNote('missed', missedPoints),
+    ]);
+    setNote('');
+    setMissedPoints('');
+    return [...draftNotes.map(n => n.id), ...pending.filter(Boolean).map(n => n!.id)];
+  };
 
   const handleRate = async (rating: ReviewRating) => {
     if (!current || isRating) return;
     setIsRating(true);
+    const noteIds = await flushPendingNotes();
     const applied = applyRating(current, rating);
     const event = buildRatingEvent(current, applied, rating, noteExtras());
-    await window.electronAPI.review.rate(current.id, applied.fields, event);
+    await window.electronAPI.review.rate(current.id, applied.fields, event, noteIds);
     advance();
   };
 
   const handleManualSchedule = async (days: number) => {
     if (!current || isRating) return;
     setIsRating(true);
+    const noteIds = await flushPendingNotes();
     const fields = applyManual(current, days);
     const event = buildManualEvent(current, fields, noteExtras());
-    await window.electronAPI.review.schedule(current.id, fields, event);
+    await window.electronAPI.review.schedule(current.id, fields, event, noteIds);
     advance();
   };
 
   const handleManualDate = async (dateStr: string) => {
     if (!current || isRating || !dateStr) return;
     setIsRating(true);
+    const noteIds = await flushPendingNotes();
     const fields = applyManualDate(current, new Date(dateStr + 'T00:00:00'));
     const event = buildManualEvent(current, fields, noteExtras());
-    await window.electronAPI.review.schedule(current.id, fields, event);
+    await window.electronAPI.review.schedule(current.id, fields, event, noteIds);
     advance();
   };
 
@@ -214,11 +351,12 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
-          End Session
+          {readOnly ? 'Close' : 'End Session'}
         </button>
 
         <div className="flex items-center gap-4">
-          {/* Study timer chip */}
+          {/* Study timer chip — study-only, hidden in Peek mode */}
+          {!readOnly && (
           <button
             onClick={toggleTimer}
             className={`titlebar-no-drag flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium tabular-nums transition-colors ${
@@ -237,6 +375,7 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
             )}
             <span>⏱ {formatTimer(elapsedSeconds)}</span>
           </button>
+          )}
 
           {/* Skip navigation — move between images without rating */}
           <div className="flex items-center gap-1">
@@ -295,16 +434,34 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
         </div>
       )}
 
-      {/* Image area */}
-      <div className="flex-1 relative flex items-center justify-center px-4 py-2 overflow-hidden min-h-0">
+      {/* Image area — Cmd/Ctrl + wheel to zoom, scroll to pan when zoomed */}
+      <div
+        ref={imageAreaRef}
+        className="flex-1 relative flex items-center justify-center px-4 py-2 overflow-hidden min-h-0"
+      >
         {current.file_path && (
-          <PixelatedImage
-            src={fileSrc}
-            masks={masks}
-            revealedMaskIds={revealedMaskIds}
-            onMaskClick={revealMask}
+          <div
+            ref={imageWrapRef}
             className="w-full h-full"
-          />
+            style={{
+              transform: `scale(${imgScale}) translate(${imgTranslate.x / imgScale}px, ${imgTranslate.y / imgScale}px)`,
+              transformOrigin: 'center center',
+              cursor: imgScale > 1 ? 'grab' : 'default',
+            }}
+          >
+            <PixelatedImage
+              src={fileSrc}
+              masks={masks}
+              revealedMaskIds={revealedMaskIds}
+              onMaskClick={revealMask}
+              className="w-full h-full"
+            />
+          </div>
+        )}
+        {imgScale > 1 && (
+          <div className="absolute top-3 right-3 bg-black/60 text-white/80 text-xs px-2 py-1 rounded-full pointer-events-none">
+            {Math.round(imgScale * 100)}%
+          </div>
         )}
       </div>
 
@@ -331,39 +488,75 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
           </div>
         )}
 
-        {/* Reflective note panel — the "what did I think / what did I miss" log */}
-        {allRevealed && (
+        {/* Reflective note panel — the "what did I think / what did I miss" log.
+            Study-only; hidden in Peek mode. */}
+        {!readOnly && allRevealed && (
           <div className="flex flex-col gap-2">
             {!showNotePanel ? (
               <button
                 onClick={() => setShowNotePanel(true)}
                 className="self-start text-gray-500 hover:text-gray-300 text-xs transition-colors flex items-center gap-1"
               >
-                ✍️ Add a review note{(note || missedPoints) ? ' •' : ''}
+                ✍️ Add a review note
+                {draftNotes.length > 0
+                  ? ` • ${draftNotes.length}`
+                  : (note || missedPoints) ? ' •' : ''}
               </button>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <textarea
-                  value={note}
-                  onChange={e => setNote(e.target.value)}
-                  placeholder="What did you think? How did it feel?"
-                  rows={2}
-                  className="w-full resize-none rounded-lg bg-gray-900 border border-gray-800 text-gray-200 text-sm px-3 py-2 placeholder-gray-600 focus:outline-none focus:border-gray-600"
-                />
-                <textarea
-                  value={missedPoints}
-                  onChange={e => setMissedPoints(e.target.value)}
-                  placeholder="What did you miss / keep forgetting?"
-                  rows={2}
-                  className="w-full resize-none rounded-lg bg-gray-900 border border-gray-800 text-gray-200 text-sm px-3 py-2 placeholder-gray-600 focus:outline-none focus:border-gray-600"
-                />
+                {NOTE_COLUMNS.map(col => {
+                  const logged = draftNotes.filter(n => n.kind === col.kind);
+                  const value = col.kind === 'note' ? note : missedPoints;
+                  const setValue = col.kind === 'note' ? setNote : setMissedPoints;
+                  return (
+                    <div key={col.kind} className="flex flex-col gap-1.5">
+                      {logged.map((n, i) => (
+                        <div
+                          key={n.id}
+                          className="group flex flex-col gap-1.5 rounded-lg bg-gray-800/60 border border-gray-700 px-3 py-1.5"
+                        >
+                          <div className="flex items-start gap-2">
+                            <span className="text-[10px] text-gray-500 tabular-nums pt-0.5 shrink-0">{i + 1}</span>
+                            <p className="flex-1 text-sm text-gray-300 whitespace-pre-wrap break-words">{n.body}</p>
+                            <button
+                              onClick={() => removeNote(n.id)}
+                              title="Delete this note"
+                              className="shrink-0 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none pt-1"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div className="pl-5">
+                            <ReviewNoteImages
+                              noteId={n.id}
+                              images={n.images ?? []}
+                              onChange={imgs => setDraftNotes(prev =>
+                                prev.map(x => x.id === n.id ? { ...x, images: imgs } : x)
+                              )}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                      <textarea
+                        value={value}
+                        onChange={e => setValue(e.target.value)}
+                        onKeyDown={handleNoteKeyDown(col.kind)}
+                        onAnimationEnd={e => e.currentTarget.classList.remove('animate-input-glow')}
+                        placeholder={logged.length > 0 ? col.nextPlaceholder : col.placeholder}
+                        rows={2}
+                        className="w-full resize-none rounded-lg bg-gray-900 border border-gray-800 text-gray-200 text-sm px-3 py-2 placeholder-gray-600 focus:outline-none focus:border-gray-600"
+                      />
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         )}
 
-        {/* Rating buttons — shown only after revealing */}
-        {allRevealed && !showManualSchedule && (
+        {/* Rating buttons — shown only after revealing. Hidden in Peek mode (these are the
+            only controls that write FSRS state / a review_events row). */}
+        {!readOnly && allRevealed && !showManualSchedule && (
           <div className="flex flex-col gap-2">
             <div className="flex gap-2">
               {RATING_CONFIG.map(({ rating, label, color, hint }) => {
@@ -391,8 +584,8 @@ export default function ReviewSession({ items, onSessionEnd }: ReviewSessionProp
           </div>
         )}
 
-        {/* Manual schedule */}
-        {allRevealed && showManualSchedule && (
+        {/* Manual schedule — study-only; hidden in Peek mode. */}
+        {!readOnly && allRevealed && showManualSchedule && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-gray-300 text-sm">Schedule for:</span>

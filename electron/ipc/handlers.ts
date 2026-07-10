@@ -1,7 +1,4 @@
-import { ipcMain, dialog, shell, nativeTheme, clipboard, desktopCapturer, app } from 'electron';
-import https from 'https';
-import path from 'path';
-import fs from 'fs';
+import { ipcMain, dialog, shell, nativeTheme, clipboard, desktopCapturer } from 'electron';
 import {
   TopicsOperations,
   RecordingsOperations,
@@ -36,6 +33,8 @@ import {
   ReviewOperations,
   ReviewMaskOperations,
   ReviewEventOperations,
+  ReviewNoteOperations,
+  ReviewNoteImageOperations,
   ReviewPresetOperations,
   HtmlNodesOperations,
   DurationHtmlNodesOperations,
@@ -70,11 +69,13 @@ import {
   getFileUrl,
   savePdfFile,
   saveQuickCaptureImage,
+  saveReviewNoteImage,
   saveQuickCaptureAudio,
   deleteQuickCaptureFiles,
-  saveHtmlNodeFile,
-  saveDurationHtmlNodeFile,
 } from '../services/fileStorage';
+import fs from 'fs';
+import fsp from 'fs/promises';
+import path from 'path';
 import { createBackup, getBackupDir } from '../services/backupService';
 import { mergeAudioFiles } from '../services/audioMerger';
 import { convertWebmToM4a, convertWebmBufferToM4a } from '../services/audioConverter';
@@ -97,7 +98,6 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     if (sessionId) ObsGhostMarksOperations.closeActive(sessionId, data.timecode);
     notifyObsStatusWindow('obs:ghostMarksUpdated', null);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:paused', data);
-    notifyObsStatusWindow('obs:paused', data);
     // Overlay is NOT auto-shown on pause — user presses F9 to open it explicitly
   });
 
@@ -107,7 +107,6 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     if (sessionId) ObsGhostMarksOperations.create(sessionId, data.startTime);
     notifyObsStatusWindow('obs:ghostMarksUpdated', null);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:resumed');
-    notifyObsStatusWindow('obs:resumed');
     hideObsMarkOverlay();
   });
 
@@ -125,7 +124,6 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
       console.log('[OBS] Saved pending mark on stop:', data.pendingMark);
     }
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:stopped', data);
-    notifyObsStatusWindow('obs:stopped', data);
     hideObsMarkOverlay();
 
     // Once OBS finishes writing the video, notify the renderer.
@@ -201,12 +199,10 @@ export async function setupObsEventBridge(mainWindow: import('electron').Browser
     ObsGhostMarksOperations.create(data.sessionId, 0);
     notifyObsStatusWindow('obs:ghostMarksUpdated', null);
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:started', data);
-    notifyObsStatusWindow('obs:started', data);
   });
 
   obsService.on('statusChange', (status: any) => {
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('obs:statusChange', status);
-    notifyObsStatusWindow('obs:statusChange', status);
     if (!status.isConnected) {
       hideObsMarkOverlay(); // hide stale overlay when OBS drops connection
     }
@@ -756,8 +752,8 @@ export function setupIpcHandlers(): void {
       .filter((duration): duration is (typeof durations)[number] => duration !== null);
   });
 
-  ipcMain.handle('durations:getWithAudio', async () => {
-    return DurationsOperations.getWithAudio();
+  ipcMain.handle('durations:getWithAudio', async (_, topicIds?: number[]) => {
+    return DurationsOperations.getWithAudio(topicIds);
   });
 
   ipcMain.handle('durations:create', async (_, duration: CreateDuration) => {
@@ -934,7 +930,7 @@ export function setupIpcHandlers(): void {
       file_path: filePath,
       caption: null,
       duration: duration,
-      sort_order: 0,
+      sort_order: DurationAudiosOperations.getMaxSortOrder(durationId) + 1,
     });
     scheduleSearchReindex();
     return result;
@@ -1881,10 +1877,11 @@ export function setupIpcHandlers(): void {
     const localDb = path.join(userDataPath, 'NotesWithAudioAndVideo.db');
     const localMedia = path.join(userDataPath, 'media');
 
-    const vpsUser = 'root'; // your SSH user
-    const vpsHost = 'yourvps.com'; // your VPS hostname or IP
-    const vpsDataDir = '/var/www/notes/data'; // data directory on your VPS
-    const vpsKey = path.join(process.env.HOME || '~', '.ssh', 'your_vps_key'); // path to your SSH private key
+    const vpsUser = 'root';
+    const vpsHost = 'mahmutsalman.cloud';
+    const vpsKey = path.join(process.env.HOME || '~', '.ssh', 'vps1_key');
+    const vpsDataDir = '/var/www/notes/data';
+    const vpsUploadsDir = `${vpsDataDir}/uploads`;
 
     const sshOpts = `-i "${vpsKey}" -o StrictHostKeyChecking=accept-new`;
 
@@ -1921,18 +1918,64 @@ export function setupIpcHandlers(): void {
           { timeout: 60000 }
         );
 
-        // Process each staging JSON
+        // Process each staging JSON (two-pass: duration_create first, then media)
         const jsonFiles = fs.readdirSync(localPending).filter((f: string) => f.endsWith('.json'));
         const db = new Database(localDb);
 
+        // Parse all staging JSONs upfront
+        const allMetas: Array<{ file: string; meta: any }> = [];
         for (const jsonFile of jsonFiles) {
           try {
             const raw = fs.readFileSync(path.join(localPending, jsonFile), 'utf-8');
-            const meta = JSON.parse(raw);
+            allMetas.push({ file: jsonFile, meta: JSON.parse(raw) });
+          } catch (parseErr) {
+            console.error(`[IPC] Failed to parse ${jsonFile}:`, (parseErr as Error).message);
+          }
+        }
+
+        // Pass 1: Process duration_create types first, build VPS->local ID map
+        const durationIdMap: Record<number, number> = {};
+        const pass1Files = allMetas.filter((m) => m.meta.type === 'duration_create');
+        for (const { file: jsonFile, meta } of pass1Files) {
+          try {
+            const { duration_id: vpsDurId, recording_id, page_number, note, sort_order, created_at } = meta;
+
+            const cursor = db.prepare(
+              `INSERT INTO durations (recording_id, start_time, end_time, note, page_number, sort_order, created_at)
+               VALUES (?, 0, 0, ?, ?, ?, ?)`
+            ).run(recording_id, note || null, page_number, sort_order, created_at);
+
+            const localDurId = cursor.lastInsertRowid as number;
+            durationIdMap[vpsDurId] = localDurId;
+            console.log(`[IPC] Created duration: VPS id=${vpsDurId} -> local id=${localDurId} (page ${page_number})`);
+
+            // Delete staging JSON on VPS
+            await execAsync(
+              `ssh ${sshOpts} ${vpsUser}@${vpsHost} "rm -f ${vpsUploadsDir}/${jsonFile}"`,
+              { timeout: 15000 }
+            );
+          } catch (err) {
+            console.error(`[IPC] Failed to process duration_create ${jsonFile}:`, (err as Error).message);
+          }
+        }
+
+        // Pass 2: Process media types and metadata updates
+        const durationImageIdMap: Record<number, number> = {};
+        const pass2Files = allMetas.filter((m) => m.meta.type !== 'duration_create');
+        for (const { file: jsonFile, meta } of pass2Files) {
+          try {
             const { type } = meta;
 
+            // Remap duration_id if it was created in the same sync cycle
+            if (meta.duration_id != null && durationIdMap[meta.duration_id] != null) {
+              meta.duration_id = durationIdMap[meta.duration_id];
+            }
+            if (meta.duration_image_id != null && durationImageIdMap[meta.duration_image_id] != null) {
+              meta.duration_image_id = durationImageIdMap[meta.duration_image_id];
+            }
+
             if (type === 'image') {
-              const { duration_id, file_path: vpsFilePath, caption, sort_order, created_at } = meta;
+              const { record_id: vpsImageId, duration_id, file_path: vpsFilePath, caption, sort_order, created_at } = meta;
               const filename = path.basename(vpsFilePath);
 
               // Check if file still exists on VPS (may have been deleted)
@@ -1954,14 +1997,18 @@ export function setupIpcHandlers(): void {
               const localFile = path.join(localDir, filename);
 
               await execAsync(
-                `scp ${sshOpts} ${vpsUser}@${vpsHost}:"${vpsFilePath}" "${localFile}"`,
+                `rsync -avz -e "ssh ${sshOpts}" ${vpsUser}@${vpsHost}:"${vpsFilePath}" "${localFile}"`,
                 { timeout: 60000 }
               );
 
-              db.prepare(
+              const cursor = db.prepare(
                 `INSERT INTO duration_images (duration_id, file_path, caption, sort_order, created_at)
                  VALUES (?, ?, ?, ?, ?)`
               ).run(duration_id, localFile, caption || null, sort_order, created_at);
+              const localImageId = cursor.lastInsertRowid as number;
+              if (typeof vpsImageId === 'number') {
+                durationImageIdMap[vpsImageId] = localImageId;
+              }
 
               console.log(`[IPC] Pulled image: ${filename} -> duration ${duration_id}`);
 
@@ -1988,26 +2035,118 @@ export function setupIpcHandlers(): void {
               const localFile = path.join(localDir, filename);
 
               await execAsync(
-                `scp ${sshOpts} ${vpsUser}@${vpsHost}:"${vpsFilePath}" "${localFile}"`,
+                `rsync -avz -e "ssh ${sshOpts}" ${vpsUser}@${vpsHost}:"${vpsFilePath}" "${localFile}"`,
                 { timeout: 60000 }
               );
 
-              db.prepare(
+              const audioCursor = db.prepare(
                 `INSERT INTO duration_audios (duration_id, file_path, caption, duration, sort_order, created_at)
                  VALUES (?, ?, ?, ?, ?, ?)`
               ).run(duration_id, localFile, caption || null, meta.duration || null, sort_order, created_at);
+              const audioId = audioCursor.lastInsertRowid as number;
+
+              // Insert markers if present
+              if (Array.isArray(meta.markers) && meta.markers.length > 0) {
+                const insertMarker = db.prepare(
+                  `INSERT INTO audio_markers (audio_id, audio_type, marker_type, start_time, end_time) VALUES (?, 'duration', ?, ?, ?)`
+                );
+                for (const m of meta.markers) {
+                  if (m.marker_type && m.start_time != null) {
+                    insertMarker.run(audioId, m.marker_type, m.start_time, m.end_time ?? null);
+                  }
+                }
+              }
 
               console.log(`[IPC] Pulled audio: ${filename} -> duration ${duration_id}`);
 
+            } else if (type === 'image_audio') {
+              let { duration_image_id } = meta;
+              const { duration_image_file_uuid, duration_id, file_path: vpsFilePath, caption, sort_order, created_at } = meta;
+              const filename = path.basename(vpsFilePath);
+
+              if (duration_image_file_uuid && durationImageIdMap[duration_image_id] == null) {
+                const localImageRow = db.prepare(
+                  `SELECT id FROM duration_images WHERE file_path LIKE ? LIMIT 1`
+                ).get(`%${duration_image_file_uuid}%`) as { id: number } | undefined;
+                if (localImageRow) {
+                  duration_image_id = localImageRow.id;
+                }
+              }
+
+              const { stdout: existsOut } = await execAsync(
+                `ssh ${sshOpts} ${vpsUser}@${vpsHost} "test -f '${vpsFilePath}' && echo yes || echo no"`,
+                { timeout: 15000 }
+              );
+              if (existsOut.trim() === 'no') {
+                console.log(`[IPC] SKIP: File deleted on VPS, cleaning stale staging JSON: ${filename}`);
+                await execAsync(
+                  `ssh ${sshOpts} ${vpsUser}@${vpsHost} "rm -f ${vpsUploadsDir}/${jsonFile}"`,
+                  { timeout: 15000 }
+                );
+                continue;
+              }
+
+              const localDir = path.join(localMedia, 'duration_image_audios', String(duration_image_id));
+              fs.mkdirSync(localDir, { recursive: true });
+              const localFile = path.join(localDir, filename);
+
+              await execAsync(
+                `rsync -avz -e "ssh ${sshOpts}" ${vpsUser}@${vpsHost}:"${vpsFilePath}" "${localFile}"`,
+                { timeout: 60000 }
+              );
+
+              const imgAudioCursor = db.prepare(
+                `INSERT INTO duration_image_audios (duration_image_id, duration_id, file_path, caption, duration, sort_order, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`
+              ).run(duration_image_id, duration_id, localFile, caption || null, meta.duration || null, sort_order, created_at);
+              const imgAudioId = imgAudioCursor.lastInsertRowid as number;
+
+              // Insert markers if present
+              if (Array.isArray(meta.markers) && meta.markers.length > 0) {
+                const insertImgMarker = db.prepare(
+                  `INSERT INTO audio_markers (audio_id, audio_type, marker_type, start_time, end_time) VALUES (?, 'duration_image', ?, ?, ?)`
+                );
+                for (const m of meta.markers) {
+                  if (m.marker_type && m.start_time != null) {
+                    insertImgMarker.run(imgAudioId, m.marker_type, m.start_time, m.end_time ?? null);
+                  }
+                }
+              }
+
+              console.log(`[IPC] Pulled image audio: ${filename} -> image ${duration_image_id}`);
+
             } else if (type === 'audio_delete') {
-              const { item_id, file_path: vpsFilePath } = meta;
-              db.prepare('DELETE FROM duration_audios WHERE id = ?').run(item_id);
+              const { table = 'duration_audios', item_id, file_path: vpsFilePath } = meta;
+              const mediaTableMap: Record<string, string> = {
+                duration_audios: 'duration_audios',
+                duration_image_audios: 'duration_image_audios',
+                audios: 'audios',
+              };
+              const mediaDir = mediaTableMap[table];
+              if (!mediaDir) {
+                console.warn(`[IPC] audio_delete: unknown table '${table}', skipping`);
+                continue;
+              }
+
+              // Resolve local ID via file UUID embedded in the path
+              let localId: number = item_id;
+              if (vpsFilePath) {
+                const filename = path.basename(vpsFilePath);
+                const fileUuid = path.basename(filename, path.extname(filename));
+                const localRow = db.prepare(
+                  `SELECT id FROM ${table} WHERE file_path LIKE ? LIMIT 1`
+                ).get(`%${fileUuid}%`) as { id: number } | undefined;
+                if (localRow) localId = localRow.id;
+                else console.warn(`[IPC] audio_delete: no local row for table=${table} uuid=${fileUuid}, falling back to item_id=${item_id}`);
+              }
+
+              db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(localId);
 
               // Delete local media file
               if (vpsFilePath) {
                 const filename = path.basename(vpsFilePath);
                 const parentDir = path.basename(path.dirname(vpsFilePath));
-                const localFile = path.join(localMedia, 'duration_audios', parentDir, filename);
+                const localFile = path.join(localMedia, mediaDir, parentDir, filename);
                 try {
                   if (fs.existsSync(localFile)) fs.unlinkSync(localFile);
                 } catch {
@@ -2015,14 +2154,113 @@ export function setupIpcHandlers(): void {
                 }
               }
 
-              console.log(`[IPC] Deleted audio: id=${item_id}`);
+              console.log(`[IPC] Deleted audio: table=${table} vps_id=${item_id} local_id=${localId}`);
+
+            } else if (type === 'recording_image') {
+              const { record_id: vpsImageId, recording_id, file_path: vpsFilePath, caption, sort_order, created_at } = meta;
+              const filename = path.basename(vpsFilePath);
+
+              const { stdout: existsOut } = await execAsync(
+                `ssh ${sshOpts} ${vpsUser}@${vpsHost} "test -f '${vpsFilePath}' && echo yes || echo no"`,
+                { timeout: 15000 }
+              );
+              if (existsOut.trim() !== 'yes') {
+                console.warn(`[IPC] recording_image file not found on VPS: ${vpsFilePath}`);
+                await execAsync(
+                  `ssh ${sshOpts} ${vpsUser}@${vpsHost} "rm -f ${vpsUploadsDir}/${jsonFile}"`,
+                  { timeout: 15000 }
+                );
+                continue;
+              }
+
+              const localDir = path.join(localMedia, 'images', String(recording_id));
+              fs.mkdirSync(localDir, { recursive: true });
+              const localFile = path.join(localDir, filename);
+
+              await execAsync(
+                `rsync -avz -e "ssh ${sshOpts}" ${vpsUser}@${vpsHost}:"${vpsFilePath}" "${localFile}"`,
+                { timeout: 60000 }
+              );
+
+              db.prepare(
+                `INSERT INTO images (recording_id, file_path, caption, sort_order, created_at)
+                 VALUES (?, ?, ?, ?, ?)`
+              ).run(recording_id, localFile, caption || null, sort_order, created_at);
+
+              console.log(`[IPC] Pulled recording image: ${filename} -> recording ${recording_id}`);
+
+            } else if (type === 'recording_audio') {
+              const { recording_id, file_path: vpsFilePath, caption, sort_order, created_at } = meta;
+              const filename = path.basename(vpsFilePath);
+
+              const { stdout: existsOut } = await execAsync(
+                `ssh ${sshOpts} ${vpsUser}@${vpsHost} "test -f '${vpsFilePath}' && echo yes || echo no"`,
+                { timeout: 15000 }
+              );
+              if (existsOut.trim() !== 'yes') {
+                console.warn(`[IPC] recording_audio file not found on VPS: ${vpsFilePath}`);
+                await execAsync(
+                  `ssh ${sshOpts} ${vpsUser}@${vpsHost} "rm -f ${vpsUploadsDir}/${jsonFile}"`,
+                  { timeout: 15000 }
+                );
+                continue;
+              }
+
+              const localDir = path.join(localMedia, 'audios', String(recording_id));
+              fs.mkdirSync(localDir, { recursive: true });
+              const localFile = path.join(localDir, filename);
+
+              await execAsync(
+                `rsync -avz -e "ssh ${sshOpts}" ${vpsUser}@${vpsHost}:"${vpsFilePath}" "${localFile}"`,
+                { timeout: 60000 }
+              );
+
+              const audioCursor = db.prepare(
+                `INSERT INTO audios (recording_id, file_path, caption, duration, sort_order, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?)`
+              ).run(recording_id, localFile, caption || null, meta.duration || null, sort_order, created_at);
+              const audioId = audioCursor.lastInsertRowid as number;
+
+              // Insert markers if present
+              if (Array.isArray(meta.markers) && meta.markers.length > 0) {
+                const insertMarker = db.prepare(
+                  `INSERT INTO audio_markers (audio_id, audio_type, marker_type, start_time, end_time) VALUES (?, 'recording', ?, ?, ?)`
+                );
+                for (const m of meta.markers) {
+                  if (m.marker_type && m.start_time != null) {
+                    insertMarker.run(audioId, m.marker_type, m.start_time, m.end_time ?? null);
+                  }
+                }
+              }
+
+              console.log(`[IPC] Pulled recording audio: ${filename} -> recording ${recording_id}`);
+
+            } else if (type === 'reading_progress_update') {
+              const { recording_id, character_offset, reading_progress } = meta;
+              db.prepare(
+                'UPDATE recordings SET character_offset = ?, reading_progress = ? WHERE id = ?'
+              ).run(character_offset, reading_progress, recording_id);
+              console.log(`[IPC] Updated reading progress: recording=${recording_id} offset=${character_offset}`);
 
             } else if (type === 'caption_update') {
-              const { table, item_id, caption: newCaption } = meta;
-              const allowedTables = ['duration_images', 'duration_audios'];
+              const { table, item_id, caption: newCaption, file_uuid } = meta;
+              const allowedTables = ['duration_images', 'duration_audios', 'duration_image_audios', 'audio_markers', 'images', 'audios'];
               if (allowedTables.includes(table)) {
-                db.prepare(`UPDATE ${table} SET caption = ? WHERE id = ?`).run(newCaption, item_id);
-                console.log(`[IPC] Updated caption: ${table} id=${item_id}`);
+                let localId: number | null = null;
+                if (file_uuid) {
+                  const row = db.prepare(
+                    `SELECT id FROM ${table} WHERE file_path LIKE ? LIMIT 1`
+                  ).get(`%${file_uuid}%`) as { id: number } | undefined;
+                  localId = row?.id ?? null;
+                }
+                if (localId != null) {
+                  db.prepare(`UPDATE ${table} SET caption = ? WHERE id = ?`).run(newCaption, localId);
+                  console.log(`[IPC] Updated caption: ${table} id=${localId}`);
+                } else {
+                  // fallback: VPS item_id (cross-DB IDs may differ)
+                  db.prepare(`UPDATE ${table} SET caption = ? WHERE id = ?`).run(newCaption, item_id);
+                  console.warn(`[IPC] caption_update fallback by item_id=${item_id} (no file_uuid)`);
+                }
               } else {
                 console.warn(`[IPC] Unknown table '${table}' in caption_update, skipping`);
               }
@@ -2047,6 +2285,118 @@ export function setupIpcHandlers(): void {
         console.log('[IPC] No pending uploads');
       }
 
+      // ── Phase 1.5: Drain mobile push queue (new /api/sync protocol) ──
+      // The phone now pushes via /api/sync: rows land in the VPS
+      // `sync_mobile_queue` table and media in the content-addressed store
+      // (media/_cas/<sha256>). We MUST apply those into the local DB here,
+      // BEFORE the Phase-2 full-DB overwrite would otherwise wipe them.
+      // Read the queue directly over SSH (reuses ssh auth — no API token).
+      // Mirrors sync/desktop_sync.py (idempotent via sync_push_applied,
+      // desktop-wins conflicts). If this throws, the outer catch aborts the
+      // whole sync so Phase 2 never runs on un-drained data.
+      console.log('[IPC] Phase 1.5: draining mobile push queue...');
+      {
+        const SUBDIR_PARENT: Record<string, string> = {
+          duration_images: 'duration_id',
+          duration_audios: 'duration_id',
+          duration_image_audios: 'duration_id',
+          images: 'recording_id',
+          audios: 'recording_id',
+        };
+        const { stdout: queueJson } = await execAsync(
+          `ssh ${sshOpts} ${vpsUser}@${vpsHost} "sqlite3 -json -readonly ${vpsDataDir}/NotesWithAudioAndVideo.db \\"SELECT id, client_change_id, op, table_name, row_id, fields, base FROM sync_mobile_queue ORDER BY id\\""`,
+          { timeout: 30000 }
+        );
+        type QueueItem = { id: number; client_change_id: string; op: string; table_name: string; row_id: number | null; fields: string | null; base: string | null };
+        const queueItems: QueueItem[] = queueJson.trim() ? JSON.parse(queueJson) : [];
+        console.log(`[IPC] mobile-queue items: ${queueItems.length}`);
+
+        if (queueItems.length > 0) {
+          const drainDb = new Database(localDb);
+          drainDb.pragma('foreign_keys = ON');
+          drainDb.exec('CREATE TABLE IF NOT EXISTS sync_push_applied (client_change_id TEXT PRIMARY KEY, applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+          try {
+            const isApplied = drainDb.prepare('SELECT 1 FROM sync_push_applied WHERE client_change_id = ?');
+            const pending = queueItems.filter(it => !isApplied.get(it.client_change_id));
+
+            // Prefetch CAS blobs into the local media tree (async) BEFORE the
+            // synchronous better-sqlite3 transaction — txns can't await.
+            const prepared: Record<string, string> = {}; // client_change_id -> dest file path
+            for (const it of pending) {
+              if (it.op !== 'insert') continue;
+              const fields = it.fields ? JSON.parse(it.fields) : {};
+              if (!('content_hash' in fields)) continue;
+              const h = String(fields.content_hash);
+              const fn = fields.filename || `${h}.bin`;
+              const parentField = SUBDIR_PARENT[it.table_name];
+              if (!parentField || !(parentField in fields)) {
+                throw new Error(`drain: cannot place media for ${it.table_name} (missing ${parentField})`);
+              }
+              const destDir = path.join(localMedia, it.table_name, String(fields[parentField]));
+              fs.mkdirSync(destDir, { recursive: true });
+              const dest = path.join(destDir, fn);
+              if (!fs.existsSync(dest)) {
+                await execAsync(
+                  `rsync -az -e "ssh ${sshOpts}" ${vpsUser}@${vpsHost}:"${vpsDataDir}/media/_cas/${h}" "${dest}"`,
+                  { timeout: 120000 }
+                );
+              }
+              prepared[it.client_change_id] = dest;
+            }
+
+            // Apply everything in one synchronous transaction (auto-rollback on throw).
+            let applied = 0, conflicts = 0;
+            const applyAll = drainDb.transaction(() => {
+              try { drainDb.prepare("UPDATE sync_session SET origin='mobile' WHERE id=1").run(); } catch { /* table optional */ }
+              for (const it of pending) {
+                // Re-check inside the txn (sees its own writes) so a duplicate
+                // client_change_id within one batch is applied only once.
+                if (isApplied.get(it.client_change_id)) continue;
+                const table = it.table_name;
+                const fields = it.fields ? JSON.parse(it.fields) : {};
+                const base = it.base ? JSON.parse(it.base) : {};
+                if (it.op === 'insert') {
+                  if ('content_hash' in fields) {
+                    delete fields.content_hash;
+                    delete fields.filename;
+                    fields.file_path = prepared[it.client_change_id];
+                  }
+                  const cols = Object.keys(fields);
+                  drainDb.prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...cols.map(c => fields[c]));
+                } else if (it.op === 'update' && it.row_id != null) {
+                  const row = drainDb.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(it.row_id) as Record<string, unknown> | undefined;
+                  if (row) {
+                    const toApply: Record<string, unknown> = {};
+                    for (const [fld, newv] of Object.entries(fields)) {
+                      const curv = row[fld];
+                      if (fld in base && curv !== base[fld] && newv !== base[fld]) {
+                        conflicts++;
+                        try { drainDb.prepare("INSERT INTO sync_conflicts(table_name,row_id,field,desktop_value,mobile_value,winner) VALUES(?,?,?,?,?, 'desktop')").run(table, it.row_id, fld, String(curv), String(newv)); } catch { /* table optional */ }
+                      } else {
+                        toApply[fld] = newv;
+                      }
+                    }
+                    const setCols = Object.keys(toApply);
+                    if (setCols.length) {
+                      drainDb.prepare(`UPDATE ${table} SET ${setCols.map(c => `${c}=?`).join(', ')} WHERE id = ?`).run(...setCols.map(c => toApply[c]), it.row_id);
+                    }
+                  }
+                } else if (it.op === 'delete' && it.row_id != null) {
+                  drainDb.prepare(`DELETE FROM ${table} WHERE id = ?`).run(it.row_id);
+                }
+                drainDb.prepare('INSERT INTO sync_push_applied(client_change_id) VALUES(?)').run(it.client_change_id);
+                applied++;
+              }
+              try { drainDb.prepare("UPDATE sync_session SET origin='desktop' WHERE id=1").run(); } catch { /* table optional */ }
+            });
+            applyAll();
+            console.log(`[IPC] drained: applied=${applied} conflicts=${conflicts}`);
+          } finally {
+            drainDb.close();
+          }
+        }
+      }
+
       // ── Phase 2: Push to VPS ──
       console.log('[IPC] Phase 2: Pushing to VPS...');
 
@@ -2056,16 +2406,20 @@ export function setupIpcHandlers(): void {
       checkpointDb.close();
       console.log('[IPC] WAL checkpointed');
 
-      // Sync database (full copy)
+      // Sync database — use rsync (NOT scp). On OpenSSH 10 + this VPS's network
+      // path, scp (SFTP subsystem, and even scp -O) stalls on bulk transfer
+      // (MTU/packet-size). rsync -z compresses + chunks, avoiding the stall.
       await execAsync(
-        `scp ${sshOpts} "${localDb}" ${vpsUser}@${vpsHost}:${vpsDataDir}/NotesWithAudioAndVideo.db`,
-        { timeout: 60000 }
+        `rsync -avz -e "ssh ${sshOpts}" "${localDb}" ${vpsUser}@${vpsHost}:${vpsDataDir}/NotesWithAudioAndVideo.db`,
+        { timeout: 120000 }
       );
       console.log('[IPC] Database synced');
 
-      // Sync media (delta)
+      // Sync media (delta). NO --delete: the VPS holds files the desktop
+      // doesn't (the content-addressed media/_cas/ store written by mobile
+      // pushes); --delete would erase them. Extra VPS files are harmless.
       const { stdout } = await execAsync(
-        `rsync -avz --delete -e "ssh ${sshOpts}" "${localMedia}/" ${vpsUser}@${vpsHost}:${vpsDataDir}/media/`,
+        `rsync -avz -e "ssh ${sshOpts}" "${localMedia}/" ${vpsUser}@${vpsHost}:${vpsDataDir}/media/`,
         { timeout: 300000 }
       );
       console.log('[IPC] Media synced');
@@ -2152,6 +2506,18 @@ export function setupIpcHandlers(): void {
     return QuickCaptureOperations.getRecent();
   });
 
+  ipcMain.handle('quickCaptures:getArchived', async () => {
+    return QuickCaptureOperations.getArchived();
+  });
+
+  ipcMain.handle('quickCaptures:archiveAll', async () => {
+    return QuickCaptureOperations.archiveAll();
+  });
+
+  ipcMain.handle('quickCaptures:unarchive', async (_, ids: number[]) => {
+    return QuickCaptureOperations.unarchive(ids);
+  });
+
   ipcMain.handle('quickCaptures:addImage', async (_, captureId: number, imageBuffer: ArrayBuffer, extension?: string) => {
     const { filePath, thumbnailPath } = await saveQuickCaptureImage(imageBuffer, extension);
     return QuickCaptureOperations.addImage(captureId, filePath, thumbnailPath);
@@ -2184,8 +2550,11 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('quickCaptures:deleteImage', async (_, imageId: number) => {
     const { filePath, thumbnailPath } = QuickCaptureOperations.deleteImage(imageId);
-    if (filePath) await fs.unlink(filePath).catch(() => {});
-    if (thumbnailPath && thumbnailPath !== filePath) await fs.unlink(thumbnailPath).catch(() => {});
+    // fsp, not fs: the callback-style `fs.unlink(p)` threw ERR_INVALID_ARG_TYPE before the
+    // .catch() could run, so the handler rejected after the row was already deleted — the file
+    // orphaned on disk and scheduleSearchReindex() below never fired (stale FTS entry).
+    if (filePath) await fsp.unlink(filePath).catch(() => {});
+    if (thumbnailPath && thumbnailPath !== filePath) await fsp.unlink(thumbnailPath).catch(() => {});
     scheduleSearchReindex();
   });
 
@@ -2870,16 +3239,6 @@ export function setupIpcHandlers(): void {
     hideObsMarkOverlay();
   });
 
-  ipcMain.on('obs:hideStatusWindow', async () => {
-    const { hideObsStatusWindow } = await import('../windows/obsStatusWindow');
-    hideObsStatusWindow();
-  });
-
-  ipcMain.on('obs:showStatusWindow', async () => {
-    const { showObsStatusWindow } = await import('../windows/obsStatusWindow');
-    showObsStatusWindow();
-  });
-
   // Toggle OBS enable/disable and re-register F10 shortcut accordingly
   ipcMain.handle('settings:toggleObs', async (_, enabled: boolean) => {
     SettingsOperations.set('obs_enabled', enabled ? 'true' : 'false');
@@ -2912,25 +3271,71 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('review:getById', (_, id: number) => ReviewOperations.getById(id));
   ipcMain.handle('review:getByRecording', (_, recordingId: number) => ReviewOperations.getByRecording(recordingId));
   ipcMain.handle('review:getAllEnrolledByRecording', (_, recordingId: number) => ReviewOperations.getAllEnrolledByRecording(recordingId));
+  ipcMain.handle('review:getByTags', (_, tagNames: string[]) => ReviewOperations.getByTags(tagNames));
+  ipcMain.handle('review:getByRecordingAndTags', (_, recordingId: number, tagNames: string[]) => ReviewOperations.getByRecordingAndTags(recordingId, tagNames));
+  ipcMain.handle('review:getAllEnrolledByTags', (_, tagNames: string[]) => ReviewOperations.getAllEnrolledByTags(tagNames));
+  ipcMain.handle('review:getAllEnrolledByRecordingAndTags', (_, recordingId: number, tagNames: string[]) => ReviewOperations.getAllEnrolledByRecordingAndTags(recordingId, tagNames));
+  ipcMain.handle('review:getEnrolledTags', () => ReviewOperations.getEnrolledTags());
+  ipcMain.handle('review:getEnrolledTagsByRecording', (_, recordingId: number) => ReviewOperations.getEnrolledTagsByRecording(recordingId));
   ipcMain.handle('review:enroll', (_,
     mediaType: string, mediaId: number,
     filePath: string | null, thumbnailPath: string | null, caption: string | null,
     recordingId: number | null, captureId: number | null
   ) => ReviewOperations.enroll(mediaType, mediaId, filePath, thumbnailPath, caption, recordingId, captureId));
-  ipcMain.handle('review:delete', (_, id: number) => ReviewOperations.delete(id));
-  ipcMain.handle('review:rate', (_, id: number, fields: ReviewCardFields, event?: ReviewEventInput) =>
-    ReviewOperations.rate(id, fields, event));
-  ipcMain.handle('review:schedule', (_, id: number, fields: ReviewCardFields, event?: ReviewEventInput) =>
-    ReviewOperations.schedule(id, fields, event));
+  ipcMain.handle('review:delete', async (_, id: number) => {
+    const { imagePaths } = ReviewOperations.delete(id);
+    await unlinkAll(imagePaths);
+  });
+  // Rows cascade with the note; the FILES do not. Every review delete path unlinks what the
+  // ops layer collected, or each deleted note silently leaks its pictures onto disk.
+  const unlinkAll = async (paths: string[]) => {
+    // fsp, not fs: `fs.unlink(p)` without a callback throws ERR_INVALID_ARG_TYPE
+    // synchronously, so the .catch() would never run.
+    await Promise.all(paths.map(p => fsp.unlink(p).catch(() => {})));
+  };
+
+  ipcMain.handle('reviewNoteImages:add', async (_, reviewNoteId: number, imageBuffer: ArrayBuffer, extension?: string) => {
+    const { filePath, thumbnailPath } = await saveReviewNoteImage(imageBuffer, extension);
+    return ReviewNoteImageOperations.add(reviewNoteId, filePath, thumbnailPath);
+  });
+  ipcMain.handle('reviewNoteImages:getByNote', (_, reviewNoteId: number) =>
+    ReviewNoteImageOperations.getByNote(reviewNoteId));
+  ipcMain.handle('reviewNoteImages:delete', async (_, imageId: number) => {
+    const { filePath, thumbnailPath } = ReviewNoteImageOperations.delete(imageId);
+    if (filePath) await fsp.unlink(filePath).catch(() => {});
+    if (thumbnailPath && thumbnailPath !== filePath) await fsp.unlink(thumbnailPath).catch(() => {});
+  });
+  ipcMain.handle('reviewNoteImages:updateCaption', (_, imageId: number, caption: string | null) =>
+    ReviewNoteImageOperations.updateCaption(imageId, caption));
+
+  ipcMain.handle('reviewNotes:add', (_, reviewItemId: number, kind: 'note' | 'missed', body: string, reviewEventId?: number | null) =>
+    ReviewNoteOperations.add(reviewItemId, kind, body, reviewEventId));
+  ipcMain.handle('reviewNotes:getDraftsByItem', (_, reviewItemId: number) =>
+    ReviewNoteOperations.getDraftsByItem(reviewItemId));
+  ipcMain.handle('reviewNotes:getByEvent', (_, reviewEventId: number) =>
+    ReviewNoteOperations.getByEvent(reviewEventId));
+  ipcMain.handle('reviewNotes:getByItem', (_, reviewItemId: number) =>
+    ReviewNoteOperations.getByItem(reviewItemId));
+  ipcMain.handle('reviewNotes:update', (_, id: number, body: string) =>
+    ReviewNoteOperations.update(id, body));
+  ipcMain.handle('reviewNotes:delete', async (_, id: number) => {
+    const { imagePaths } = ReviewNoteOperations.delete(id);
+    await unlinkAll(imagePaths);
+  });
+
+  ipcMain.handle('review:rate', (_, id: number, fields: ReviewCardFields, event?: ReviewEventInput, noteIds?: number[]) =>
+    ReviewOperations.rate(id, fields, event, noteIds));
+  ipcMain.handle('review:schedule', (_, id: number, fields: ReviewCardFields, event?: ReviewEventInput, noteIds?: number[]) =>
+    ReviewOperations.schedule(id, fields, event, noteIds));
 
   ipcMain.handle('reviewEvents:getByItem', (_, reviewItemId: number) =>
     ReviewEventOperations.getByItem(reviewItemId));
   ipcMain.handle('reviewEvents:log', (_, reviewItemId: number, event: ReviewEventInput) =>
     ReviewEventOperations.log(reviewItemId, event));
-  ipcMain.handle('reviewEvents:updateNote', (_, eventId: number, note: string | null, missedPoints: string | null) =>
-    ReviewEventOperations.updateNote(eventId, note, missedPoints));
-  ipcMain.handle('reviewEvents:delete', (_, eventId: number) =>
-    ReviewEventOperations.delete(eventId));
+  ipcMain.handle('reviewEvents:delete', async (_, eventId: number) => {
+    const { imagePaths } = ReviewEventOperations.delete(eventId);
+    await unlinkAll(imagePaths);
+  });
   ipcMain.handle('reviewEvents:getHeatmap', (_, reviewItemId: number | null, fromDate: string, toDate: string) =>
     ReviewEventOperations.getHeatmap(reviewItemId, fromDate, toDate));
   ipcMain.handle('reviewEvents:getDayEvents', (_, reviewItemId: number | null, date: string) =>

@@ -801,16 +801,6 @@ export async function saveDurationImageAudioFromBuffer(
   return { filePath, duration: null };
 }
 
-export async function deleteDurationAudios(durationId: number): Promise<void> {
-  const dir = path.join(getMediaDir(), 'duration_audios', String(durationId));
-  try {
-    await fs.rm(dir, { recursive: true, force: true });
-    console.log('Deleted duration audios directory:', dir);
-  } catch {
-    // Directory may not exist, ignore
-  }
-}
-
 export async function saveImageAudioFromBuffer(
   imageId: number,
   audioBuffer: ArrayBuffer,
@@ -826,6 +816,16 @@ export async function saveImageAudioFromBuffer(
   console.log('Image audio saved to:', filePath);
 
   return { filePath, duration: null };
+}
+
+export async function deleteDurationAudios(durationId: number): Promise<void> {
+  const dir = path.join(getMediaDir(), 'duration_audios', String(durationId));
+  try {
+    await fs.rm(dir, { recursive: true, force: true });
+    console.log('Deleted duration audios directory:', dir);
+  } catch {
+    // Directory may not exist, ignore
+  }
 }
 
 // Recording-level Audio Attachment functions
@@ -960,6 +960,20 @@ export async function saveQuickCaptureImage(
   extension: string = 'png'
 ): Promise<{ filePath: string; thumbnailPath: string | null }> {
   const dir = path.join(getMediaDir(), 'quick_captures', 'images');
+  await fs.mkdir(dir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+  await fs.writeFile(filePath, Buffer.from(imageBuffer));
+
+  return { filePath, thumbnailPath: filePath };
+}
+
+export async function saveReviewNoteImage(
+  imageBuffer: ArrayBuffer,
+  extension: string = 'png'
+): Promise<{ filePath: string; thumbnailPath: string | null }> {
+  const dir = path.join(getMediaDir(), 'review_notes', 'images');
   await fs.mkdir(dir, { recursive: true });
 
   const uuid = uuidv4();

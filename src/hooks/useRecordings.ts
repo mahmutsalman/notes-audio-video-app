@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Recording, CreateRecording, UpdateRecording, Image, Video } from '../types';
-import { RECORDING_UPDATED_EVENT } from '../utils/events';
+import { RECORDING_UPDATED_EVENT, SYNC_COMPLETED_EVENT } from '../utils/events';
 
 export function useRecordings(topicId: number | null) {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchRecordings = useCallback(async () => {
+  const fetchRecordings = useCallback(async (silent = false) => {
     if (topicId === null) {
       setRecordings([]);
       setLoading(false);
@@ -15,7 +15,7 @@ export function useRecordings(topicId: number | null) {
     }
 
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
       const data = await window.electronAPI.recordings.getByTopic(topicId);
       setRecordings(data);
@@ -49,6 +49,15 @@ export function useRecordings(topicId: number | null) {
       window.removeEventListener(RECORDING_UPDATED_EVENT, handleRecordingUpdated);
     };
   }, []);
+
+  // Re-fetch after cloud sync completes (silent — no loading spinner)
+  useEffect(() => {
+    const handleSyncCompleted = () => {
+      fetchRecordings(true);
+    };
+    window.addEventListener(SYNC_COMPLETED_EVENT, handleSyncCompleted);
+    return () => window.removeEventListener(SYNC_COMPLETED_EVENT, handleSyncCompleted);
+  }, [fetchRecordings]);
 
   const createRecording = async (recording: CreateRecording): Promise<Recording> => {
     const newRecording = await window.electronAPI.recordings.create(recording);

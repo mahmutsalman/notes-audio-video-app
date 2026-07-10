@@ -6,6 +6,9 @@ interface Props {
   mediaId: number;
   className?: string;
   ocrSuggestion?: { text: string; slug: string };
+  // When false, the input does not grab focus on mount, so the suggestions panel stays closed
+  // until the user clicks the field. Defaults to focusing (unless an OCR suggestion is shown).
+  autoFocus?: boolean;
 }
 
 const MAX_SECTION = 6;
@@ -270,7 +273,7 @@ function OcrSection({
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export function TagAutocomplete({ mediaType, mediaId, className, ocrSuggestion }: Props) {
+export function TagAutocomplete({ mediaType, mediaId, className, ocrSuggestion, autoFocus }: Props) {
   const [tags, setTags] = useState<string[]>([]);
   // typedValue = what the user actually typed (preserved across navigation)
   const [typedValue, setTypedValue] = useState('');
@@ -468,7 +471,7 @@ export function TagAutocomplete({ mediaType, mediaId, className, ocrSuggestion }
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           onFocus={() => setShowPanel(true)}
-          autoFocus={!ocrSuggestion}
+          autoFocus={autoFocus ?? !ocrSuggestion}
         />
       </div>
 
