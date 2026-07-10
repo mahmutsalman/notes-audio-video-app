@@ -84,7 +84,7 @@ export default function ReviewCodePane({ reviewItemId, readOnly = false }: Revie
   const onLanguageChange = (next: string) => { setLanguage(next); schedule(code, next); };
 
   return (
-    <div className="flex flex-col h-full min-h-0 border-l border-gray-800 bg-gray-950">
+    <div className="flex flex-col h-full min-h-0 border-b border-gray-800 bg-gray-950">
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800 shrink-0">
         <span className="text-xs text-gray-400">Scratch code</span>
         <span className="text-[11px] text-gray-600 tabular-nums">

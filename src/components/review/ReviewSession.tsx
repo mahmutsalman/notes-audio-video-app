@@ -497,8 +497,16 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
       )}
 
       {/* Image area — Cmd/Ctrl + wheel to zoom, scroll to pan when zoomed */}
-      {/* Card + optional scratch code pad, side by side. The card keeps its own zoom/pan refs. */}
-      <div className="flex-1 flex min-h-0">
+      {/* Scratch code pad above the card. The card keeps its own zoom/pan refs. */}
+      <div className="flex-1 flex flex-col min-h-0">
+        {showCodePane && (
+          <div className="h-[42%] min-h-[180px] max-h-[70%] shrink-0">
+            {/* Keyed on the card: remounting is what guarantees the pad reloads and the previous
+                card's pending autosave flushes before the next one loads. */}
+            <ReviewCodePane key={current.id} reviewItemId={current.id} readOnly={readOnly} />
+          </div>
+        )}
+
         <div
           ref={imageAreaRef}
           className="flex-1 relative flex items-center justify-center px-4 py-2 overflow-hidden min-h-0"
@@ -528,14 +536,6 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
             </div>
           )}
         </div>
-
-        {showCodePane && (
-          <div className="w-[42%] min-w-[320px] max-w-[760px] min-h-0 shrink-0">
-            {/* Keyed on the card: remounting is what guarantees the pad reloads and the previous
-                card's pending autosave flushes before the next one loads. */}
-            <ReviewCodePane key={current.id} reviewItemId={current.id} readOnly={readOnly} />
-          </div>
-        )}
       </div>
 
       {/* Bottom controls */}
