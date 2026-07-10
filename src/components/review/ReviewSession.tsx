@@ -194,14 +194,14 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
       if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopImmediatePropagation(); goPrev(); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); e.stopImmediatePropagation(); goNext(); }
       else if (e.code === 'Space') {
-        // Show the grading controls, masks still blurred. Peek mode grades nothing.
+        // Toggle the grading controls, masks still blurred. Peek mode grades nothing.
         if (readOnly) return;
         // A focused button owns Space — swallowing it here would stop the keyboard from
         // activating Reveal All, or the rating buttons themselves.
         if (tag === 'BUTTON' || tag === 'A') return;
         e.preventDefault();
         e.stopImmediatePropagation();
-        setRatingsRequested(true);
+        setRatingsRequested(v => !v);
       }
     };
     window.addEventListener('keydown', onKey, { capture: true });
@@ -626,6 +626,10 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                   const setValue = col.kind === 'note' ? setNote : setMissedPoints;
                   return (
                     <div key={col.kind} className="flex flex-col gap-1.5">
+                      {/* Logged notes scroll inside a bounded box. Without the cap, each note is
+                          another stacked card and the whole bottom block grows, squeezing the card
+                          image above it smaller with every note. */}
+                      <div className={logged.length > 0 ? 'flex flex-col gap-1.5 max-h-[24vh] overflow-y-auto pr-0.5' : 'contents'}>
                       {logged.map((n, i) => (
                         <div
                           key={n.id}
@@ -676,6 +680,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                           </div>
                         </div>
                       ))}
+                      </div>
                       <textarea
                         value={value}
                         onChange={e => setValue(e.target.value)}
