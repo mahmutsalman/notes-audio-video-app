@@ -7,9 +7,17 @@ interface PixelatedImageProps {
   revealedMaskIds: Set<number>;
   onMaskClick?: (maskId: number) => void;
   className?: string;
+  /**
+   * Zoom + pan folded INTO the canvas, not applied as a CSS transform on an ancestor (ADR-0010).
+   * A CSS transform magnifies the finished bitmap and blurs; drawing the source image at the
+   * zoomed size re-samples from the original, so the revealed image stays sharp. `pan` is in
+   * screen (CSS) pixels; the net transform is `screen = center + zoom*(p - center) + pan`.
+   */
+  zoom?: number;
+  pan?: { x: number; y: number };
 }
 
-/** Block sizes per pixelation level (1=nearly readable, 5=very hard) */
+/** Block sizes per pixelation level (1=nearly readable, 5=very hard), in zoom-1 CSS pixels. */
 const BLOCK_SIZES = [4, 6, 9, 14, 22] as const;
 
 export default function PixelatedImage({
@@ -18,6 +26,8 @@ export default function PixelatedImage({
   revealedMaskIds,
   onMaskClick,
   className = '',
+  zoom = 1,
+  pan = { x: 0, y: 0 },
 }: PixelatedImageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -36,7 +46,7 @@ export default function PixelatedImage({
     img.src = src;
   }, [src]);
 
-  // Observe container size to know the display dimensions
+  // Observe container size to know the display dimensions (CSS pixels)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -50,110 +60,117 @@ export default function PixelatedImage({
     return () => ro.disconnect();
   }, []);
 
-  // Render to canvas whenever anything changes
+  // The zoom-1 contain-fit rectangle of the image within the display box. Every coordinate below
+  // is expressed against this rect, then run through the zoom/pan transform.
+  const fitRect = (dw: number, dh: number, nat: { w: number; h: number }) => {
+    const scale = Math.min(dw / nat.w, dh / nat.h);
+    const fitW = nat.w * scale;
+    const fitH = nat.h * scale;
+    return { offsetX: (dw - fitW) / 2, offsetY: (dh - fitH) / 2, fitW, fitH };
+  };
+
+  // Render to canvas whenever anything changes, including zoom/pan — the whole point is that
+  // zooming re-runs the draw and re-samples the source, rather than magnifying a stale bitmap.
   useEffect(() => {
     const canvas = canvasRef.current;
     const img = imgRef.current;
     if (!canvas || !img || !naturalSize || !displaySize) return;
 
     const { w: dw, h: dh } = displaySize;
-    canvas.width = dw;
-    canvas.height = dh;
+    const dpr = window.devicePixelRatio || 1;
+
+    // Backing store at device resolution × nothing-extra: the zoom lives in the draw math, not in
+    // the canvas size, so a fixed backing store stays 1:1 with device pixels and never soft-scales.
+    canvas.width = Math.round(dw * dpr);
+    canvas.height = Math.round(dh * dpr);
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Compute contain-fit dimensions (same as CSS object-fit: contain)
-    const scale = Math.min(dw / naturalSize.w, dh / naturalSize.h);
-    const fitW = naturalSize.w * scale;
-    const fitH = naturalSize.h * scale;
-    const offsetX = (dw - fitW) / 2;
-    const offsetY = (dh - fitH) / 2;
+    const cxc = dw / 2, cyc = dh / 2;
+    // Fit-space point -> device backing-store pixel.
+    const sx = (px: number) => (cxc + zoom * (px - cxc) + pan.x) * dpr;
+    const sy = (py: number) => (cyc + zoom * (py - cyc) + pan.y) * dpr;
 
-    // Draw base image
-    ctx.clearRect(0, 0, dw, dh);
-    ctx.drawImage(img, offsetX, offsetY, fitW, fitH);
+    const { offsetX, offsetY, fitW, fitH } = fitRect(dw, dh, naturalSize);
 
-    // Apply pixelation for unrevealed masks
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = true;
+    // Base image: drawn at the zoomed size straight from the source, so detail is source-limited,
+    // not bitmap-limited.
+    ctx.drawImage(img, sx(offsetX), sy(offsetY), fitW * zoom * dpr, fitH * zoom * dpr);
+
+    // Pixelate the unrevealed masks. Block sizes are computed against the zoom-1 CSS size so a mask
+    // looks identical to before at zoom 1, and its blocks magnify with zoom just as the old CSS
+    // transform made them.
     for (const mask of masks) {
       if (revealedMaskIds.has(mask.id)) continue;
 
-      // Convert normalized coords to canvas pixel coords (round to avoid float issues)
-      const mx = Math.round(offsetX + mask.x * fitW);
-      const my = Math.round(offsetY + mask.y * fitH);
-      const mw = Math.round(mask.w * fitW);
-      const mh = Math.round(mask.h * fitH);
-
-      if (mw < 2 || mh < 2) continue;
+      const mx0 = offsetX + mask.x * fitW;
+      const my0 = offsetY + mask.y * fitH;
+      const mw0 = mask.w * fitW;
+      const mh0 = mask.h * fitH;
+      if (mw0 < 2 || mh0 < 2) continue;
 
       const blockSize = BLOCK_SIZES[(mask.pixelation_level - 1) as 0 | 1 | 2 | 3 | 4] ?? 16;
+      const cols = Math.max(2, Math.ceil(mw0 / blockSize));
+      const rows = Math.max(2, Math.ceil(mh0 / blockSize));
 
-      // Map mask coords back to image natural pixel space
-      const imgScaleX = naturalSize.w / fitW;
-      const imgScaleY = naturalSize.h / fitH;
-      const srcX = (mx - offsetX) * imgScaleX;
-      const srcY = (my - offsetY) * imgScaleY;
-      const srcW = mw * imgScaleX;
-      const srcH = mh * imgScaleY;
-
-      // Pixelate: downscale into cols×rows, then upscale with nearest-neighbor
-      const cols = Math.max(2, Math.ceil(mw / blockSize));
-      const rows = Math.max(2, Math.ceil(mh / blockSize));
+      // Read the mask region from the ORIGINAL image (natural pixel space) — independent of zoom.
+      const srcX = mask.x * naturalSize.w;
+      const srcY = mask.y * naturalSize.h;
+      const srcW = mask.w * naturalSize.w;
+      const srcH = mask.h * naturalSize.h;
 
       const offCanvas = document.createElement('canvas');
       offCanvas.width = cols;
       offCanvas.height = rows;
       const offCtx = offCanvas.getContext('2d');
       if (!offCtx) continue;
-
-      // Read directly from original image (not from potentially-mutated canvas)
       offCtx.imageSmoothingEnabled = true;
       offCtx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, cols, rows);
 
-      // Scale back up with nearest-neighbor so block edges are hard
+      // Nearest-neighbour upscale into the zoomed destination rect → hard block edges.
+      const dstX = sx(mx0), dstY = sy(my0);
+      const dstW = mw0 * zoom * dpr, dstH = mh0 * zoom * dpr;
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(offCanvas, 0, 0, cols, rows, mx, my, mw, mh);
+      ctx.drawImage(offCanvas, 0, 0, cols, rows, dstX, dstY, dstW, dstH);
       ctx.imageSmoothingEnabled = true;
     }
-  }, [naturalSize, displaySize, masks, revealedMaskIds, src]);
+  }, [naturalSize, displaySize, masks, revealedMaskIds, src, zoom, pan.x, pan.y]);
 
-  // Find which unrevealed mask (if any) sits under a client-space point.
-  // Derive the on-screen scale from the rendered rect vs. the canvas's intrinsic size, so
-  // hit-testing stays correct even when an ancestor applies a CSS zoom transform.
+  // Map a client point to fit-space, inverting the zoom/pan transform, so hit-testing stays correct
+  // now that the zoom lives in the canvas rather than a CSS transform on an ancestor.
   const maskAtPoint = (clientX: number, clientY: number): ReviewMask | null => {
     if (!naturalSize || !displaySize) return null;
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    const sx = canvas.width ? rect.width / canvas.width : 1;
-    const sy = canvas.height ? rect.height / canvas.height : 1;
-    const cx = (clientX - rect.left) / (sx || 1);
-    const cy = (clientY - rect.top) / (sy || 1);
-
     const { w: dw, h: dh } = displaySize;
-    const scale = Math.min(dw / naturalSize.w, dh / naturalSize.h);
-    const fitW = naturalSize.w * scale;
-    const fitH = naturalSize.h * scale;
-    const offsetX = (dw - fitW) / 2;
-    const offsetY = (dh - fitH) / 2;
+    // client -> canvas CSS space (rect may differ from dw/dh by sub-pixel rounding)
+    const csx = (clientX - rect.left) * (rect.width ? dw / rect.width : 1);
+    const csy = (clientY - rect.top) * (rect.height ? dh / rect.height : 1);
+    // canvas CSS space -> fit space (inverse transform)
+    const cxc = dw / 2, cyc = dh / 2;
+    const fx = cxc + (csx - cxc - pan.x) / zoom;
+    const fy = cyc + (csy - cyc - pan.y) / zoom;
 
+    const { offsetX, offsetY, fitW, fitH } = fitRect(dw, dh, naturalSize);
     for (const mask of masks) {
       if (revealedMaskIds.has(mask.id)) continue;
       const mx = offsetX + mask.x * fitW;
       const my = offsetY + mask.y * fitH;
       const mw = mask.w * fitW;
       const mh = mask.h * fitH;
-      if (cx >= mx && cx <= mx + mw && cy >= my && cy <= my + mh) return mask;
+      if (fx >= mx && fx <= mx + mw && fy >= my && fy <= my + mh) return mask;
     }
     return null;
   };
 
-  // Handle canvas click — reveal the mask under the cursor
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onMaskClick) return;
     const mask = maskAtPoint(e.clientX, e.clientY);
     if (mask) onMaskClick(mask.id);
   };
 
-  // Track the hovered mask so its hint is shown only while the cursor is over it
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const mask = maskAtPoint(e.clientX, e.clientY);
     const id = mask && mask.hint_text ? mask.id : null;
@@ -165,28 +182,26 @@ export default function PixelatedImage({
       <canvas
         ref={canvasRef}
         className="w-full h-full"
-        style={{ imageRendering: 'pixelated' }}
         onClick={handleCanvasClick}
         onMouseMove={handleCanvasMouseMove}
         onMouseLeave={() => setHoveredMaskId(null)}
       />
-      {/* Hint text overlays — shown only for the mask currently hovered */}
+      {/* Hint text overlays — shown only for the mask currently hovered, positioned through the
+          same zoom/pan transform as the canvas so they track the mask. */}
       {naturalSize && displaySize && masks.map(mask => {
         if (revealedMaskIds.has(mask.id) || !mask.hint_text || hoveredMaskId !== mask.id) return null;
         const { w: dw, h: dh } = displaySize;
-        const scale = Math.min(dw / naturalSize.w, dh / naturalSize.h);
-        const fitW = naturalSize.w * scale;
-        const fitH = naturalSize.h * scale;
-        const offsetX = (dw - fitW) / 2;
-        const offsetY = (dh - fitH) / 2;
-        const mx = offsetX + mask.x * fitW;
-        const my = offsetY + mask.y * fitH;
-        const mw = mask.w * fitW;
+        const { offsetX, offsetY, fitW, fitH } = fitRect(dw, dh, naturalSize);
+        const cxc = dw / 2, cyc = dh / 2;
+        const mx0 = offsetX + mask.x * fitW;
+        const my0 = offsetY + mask.y * fitH;
+        const left = cxc + zoom * (mx0 - cxc) + pan.x;
+        const top = cyc + zoom * (my0 - cyc) + pan.y;
         return (
           <div
             key={mask.id}
             className="absolute pointer-events-none px-1.5 py-0.5 rounded bg-black/70 text-white text-[11px] max-w-[200px] truncate"
-            style={{ left: mx, top: my - 22, maxWidth: mw }}
+            style={{ left, top: top - 22, maxWidth: mask.w * fitW * zoom }}
           >
             {mask.hint_text}
           </div>

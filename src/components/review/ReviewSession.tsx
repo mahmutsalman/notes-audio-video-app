@@ -547,18 +547,18 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
             <div
               ref={imageWrapRef}
               className="w-full h-full"
-              style={{
-                transform: `scale(${imgScale}) translate(${imgTranslate.x / imgScale}px, ${imgTranslate.y / imgScale}px)`,
-                transformOrigin: 'center center',
-                cursor: imgScale > 1 ? 'grab' : 'default',
-              }}
+              style={{ cursor: imgScale > 1 ? 'grab' : 'default' }}
             >
+              {/* Zoom/pan are handed to the canvas, which re-samples the source at the zoomed
+                  size — no CSS transform, so no bitmap blur. See ADR-0010. */}
               <PixelatedImage
                 src={fileSrc}
                 masks={masks}
                 revealedMaskIds={revealedMaskIds}
                 onMaskClick={revealMask}
                 className="w-full h-full"
+                zoom={imgScale}
+                pan={imgTranslate}
               />
             </div>
           )}
