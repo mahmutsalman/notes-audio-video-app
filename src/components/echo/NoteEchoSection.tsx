@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ReviewItem, ReviewMask, BrowseReviewItem, MediaTagType } from '../../types';
+import type { ReviewItem, ReviewMask, BrowseReviewItem, ReviewedTodayItem, MediaTagType } from '../../types';
 import { REVIEW_CHANGED_EVENT, emitReviewChanged } from '../../utils/events';
 import ReviewSession from '../review/ReviewSession';
 import MaskEditor from '../review/MaskEditor';
 import EchoImageDetailPage from '../../pages/EchoImageDetailPage';
-import { ReviewItemGridCard, BrowseCard } from './EchoCards';
+import { ReviewItemGridCard, BrowseCard, ReviewedTodayCard } from './EchoCards';
 import EchoTagFilter from './EchoTagFilter';
 
-type FilterTab = 'due' | 'all' | 'upcoming' | 'browse';
+type FilterTab = 'due' | 'today' | 'all' | 'upcoming' | 'browse';
 
 /**
  * Inline, note-scoped Echo panel. Reuses the global Echo stack (cards, ReviewSession,
@@ -16,6 +16,8 @@ type FilterTab = 'due' | 'all' | 'upcoming' | 'browse';
 export default function NoteEchoSection({ recordingId }: { recordingId: number }) {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [browseItems, setBrowseItems] = useState<BrowseReviewItem[]>([]);
+  // This note's echoes graded today — loaded eagerly so the count is right without opening the tab.
+  const [todayItems, setTodayItems] = useState<ReviewedTodayItem[]>([]);
   const [filter, setFilter] = useState<FilterTab>('due');
   const [expanded, setExpanded] = useState(false);
   const [sessionItems, setSessionItems] = useState<ReviewItem[] | null>(null);
@@ -42,7 +44,13 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
       : await window.electronAPI.review.getAllEnrolledByRecording(recordingId));
   }, [recordingId, activeTags]);
 
+  const loadToday = useCallback(async () => {
+    // null = today, resolved as a local day in SQL so the boundary matches the heatmap's.
+    setTodayItems(await window.electronAPI.review.getReviewedOn(null, activeTags, recordingId));
+  }, [recordingId, activeTags]);
+
   useEffect(() => { loadItems(); }, [loadItems]);
+  useEffect(() => { loadToday(); }, [loadToday]);
 
   useEffect(() => {
     if (expanded && filter === 'browse') loadBrowse();
@@ -52,11 +60,12 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
   useEffect(() => {
     const onChanged = () => {
       loadItems();
+      loadToday();
       if (filter === 'browse') loadBrowse();
     };
     window.addEventListener(REVIEW_CHANGED_EVENT, onChanged);
     return () => window.removeEventListener(REVIEW_CHANGED_EVENT, onChanged);
-  }, [loadItems, loadBrowse, filter]);
+  }, [loadItems, loadBrowse, loadToday, filter]);
 
   // When no filter is active, `items` is the full enrolled set → remember its size.
   useEffect(() => {
@@ -70,7 +79,7 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
 
   // Open the inline analytics overlay, capturing the current grid's order for ←/→ nav.
   const openDetail = (id: number) => {
-    const list = (filter === 'browse' ? browseItems : displayedItems).map(i => i.id);
+    const list = (filter === 'browse' ? browseItems : filter === 'today' ? todayItems : displayedItems).map(i => i.id);
     setDetail({ id, list });
   };
 
@@ -78,13 +87,17 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
 
   // Peek — browse this note's masked questions (whatever tab is active) without saving progress.
   const startPeek = () => {
-    const source: ReviewItem[] = filter === 'browse' ? browseItems : displayedItems;
+    const source: ReviewItem[] =
+      filter === 'browse' ? browseItems :
+      filter === 'today' ? todayItems :
+      displayedItems;
     if (source.length > 0) setPeekItems(source);
   };
 
   const handleSessionEnd = () => {
     setSessionItems(null);
     loadItems();
+    loadToday();
     if (filter === 'browse') loadBrowse();
     emitReviewChanged();
   };
@@ -149,7 +162,7 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
           <span className="text-xs text-gray-500 dark:text-gray-400">
             {totalEnrolled === 0
               ? 'nothing enrolled'
-              : `${totalEnrolled} enrolled · ${dueItems.length} due now`}
+              : `${totalEnrolled} enrolled · ${dueItems.length} due now · ${todayItems.length} reviewed today`}
           </span>
         </button>
 
@@ -212,9 +225,10 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
                 <>
               {/* Filter tabs */}
               <div className="flex gap-1 mb-3 flex-wrap">
-                {(['due', 'all', 'upcoming', 'browse'] as FilterTab[]).map(tab => {
+                {(['due', 'today', 'all', 'upcoming', 'browse'] as FilterTab[]).map(tab => {
                   const count =
                     tab === 'due' ? dueItems.length :
+                    tab === 'today' ? todayItems.length :
                     tab === 'upcoming' ? upcomingItems.length :
                     tab === 'browse' ? (browseItems.length || items.length) :
                     items.length;
@@ -228,7 +242,7 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
                           : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
                       }`}
                     >
-                      {tab === 'due' ? 'Due Now' : tab === 'upcoming' ? 'Upcoming' : tab === 'browse' ? '▦ Browse' : 'All'}
+                      {tab === 'due' ? 'Due Now' : tab === 'today' ? '✓ Reviewed Today' : tab === 'upcoming' ? 'Upcoming' : tab === 'browse' ? '▦ Browse' : 'All'}
                       {' '}
                       <span className={`text-xs ${filter === tab ? 'text-blue-500' : 'text-gray-400'}`}>{count}</span>
                     </button>
@@ -243,6 +257,18 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
                     <BrowseCard key={item.id} item={item} onOpen={() => openDetail(item.id)} />
                   ))}
                 </div>
+              ) : filter === 'today' ? (
+                todayItems.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">
+                    Nothing from this note graded today yet.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+                    {todayItems.map(item => (
+                      <ReviewedTodayCard key={item.id} item={item} onOpen={() => openDetail(item.id)} />
+                    ))}
+                  </div>
+                )
               ) : displayedItems.length === 0 ? (
                 <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">
                   {filter === 'due' ? 'Nothing due right now. 🎉' : 'No items in this view.'}

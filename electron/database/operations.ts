@@ -3066,10 +3066,10 @@ export const ReviewOperations = {
    * Echoes actually GRADED on a local calendar day, newest review first — the "Today" tab.
    * Only events carrying a rating count: a manual reschedule or a standalone note log writes a
    * review_events row with rating NULL, and neither is a review. `date` is 'YYYY-MM-DD' local;
-   * pass null for today. Optional tagNames narrows by the image's tags (ANY/OR), like the
-   * other Echo views.
+   * pass null for today. Optional tagNames narrows by the image's tags (ANY/OR), and recordingId
+   * scopes it to a single note — both like the other Echo views.
    */
-  getReviewedOn(date: string | null, tagNames: string[] = []): any[] {
+  getReviewedOn(date: string | null, tagNames: string[] = [], recordingId: number | null = null): any[] {
     const db = getDatabase();
     const day = date ?? null;
     // date('now','localtime') when no day is given — keeps the "today" boundary in the same
@@ -3087,8 +3087,12 @@ export const ReviewOperations = {
          )`
       : '';
 
-    // The day param repeats once per correlated subquery + once in the EXISTS filter.
+    const recordingClause = recordingId != null ? 'AND ri.recording_id = ?' : '';
+
+    // The day param repeats once per correlated subquery + once in the EXISTS filter. Params bind
+    // in order of appearance: the five day slots, then the tag names, then the recording id.
     const dayParams = day ? [day, day, day, day, day] : [];
+    const recordingParams = recordingId != null ? [recordingId] : [];
 
     return db.prepare(`
       SELECT ri.*,
@@ -3105,8 +3109,9 @@ export const ReviewOperations = {
       LEFT   JOIN topics     t ON r.topic_id = t.id
       WHERE  EXISTS (SELECT 1 FROM review_events re WHERE ${graded})
       ${tagClause}
+      ${recordingClause}
       ORDER  BY last_reviewed_at DESC
-    `).all(...dayParams, ...tagNames);
+    `).all(...dayParams, ...tagNames, ...recordingParams);
   },
 
   /** Distinct tag names actually present on enrolled echoes, with a usage count (for the

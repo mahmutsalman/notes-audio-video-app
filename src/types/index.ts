@@ -928,7 +928,7 @@ export interface ElectronAPI {
     getByRecordingAndTags: (recordingId: number, tagNames: string[]) => Promise<ReviewItem[]>;
     getAllEnrolledByTags: (tagNames: string[]) => Promise<BrowseReviewItem[]>;
     getAllEnrolledByRecordingAndTags: (recordingId: number, tagNames: string[]) => Promise<BrowseReviewItem[]>;
-    getReviewedOn: (date: string | null, tagNames?: string[]) => Promise<ReviewedTodayItem[]>;
+    getReviewedOn: (date: string | null, tagNames?: string[], recordingId?: number | null) => Promise<ReviewedTodayItem[]>;
     getEnrolledTags: () => Promise<{ name: string; count: number }[]>;
     getEnrolledTagsByRecording: (recordingId: number) => Promise<{ name: string; count: number }[]>;
     enroll: (mediaType: string, mediaId: number, filePath: string | null, thumbnailPath: string | null, caption: string | null, recordingId: number | null, captureId: number | null) => Promise<ReviewItem>;
