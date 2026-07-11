@@ -1020,6 +1020,7 @@ const electronAPI = {
     getByRecordingAndTags: (recordingId: number, tagNames: string[]) => ipcRenderer.invoke('review:getByRecordingAndTags', recordingId, tagNames),
     getAllEnrolledByTags: (tagNames: string[]) => ipcRenderer.invoke('review:getAllEnrolledByTags', tagNames),
     getAllEnrolledByRecordingAndTags: (recordingId: number, tagNames: string[]) => ipcRenderer.invoke('review:getAllEnrolledByRecordingAndTags', recordingId, tagNames),
+    getReviewedOn: (date: string | null, tagNames: string[] = []) => ipcRenderer.invoke('review:getReviewedOn', date, tagNames),
     getEnrolledTags: () => ipcRenderer.invoke('review:getEnrolledTags'),
     getEnrolledTagsByRecording: (recordingId: number) => ipcRenderer.invoke('review:getEnrolledTagsByRecording', recordingId),
     enroll: (

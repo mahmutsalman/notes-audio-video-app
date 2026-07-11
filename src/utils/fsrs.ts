@@ -54,6 +54,14 @@ const scheduler = fsrs(params);
 /** Ordered list of the four grades we expose in the UI. */
 export const RATING_ORDER: ReviewRating[] = ['again', 'hard', 'good', 'easy'];
 
+/** How a stored numeric rating (1–4) is labelled and coloured everywhere it's shown. */
+export const RATING_META: Record<number, { label: string; cls: string }> = {
+  1: { label: 'Again', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+  2: { label: 'Hard', cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
+  3: { label: 'Good', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  4: { label: 'Easy', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+};
+
 const RATING_TO_GRADE: Record<ReviewRating, Grade> = {
   again: Rating.Again,
   hard: Rating.Hard,

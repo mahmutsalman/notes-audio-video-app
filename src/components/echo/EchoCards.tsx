@@ -1,5 +1,6 @@
-import type { ReviewItem, BrowseReviewItem } from '../../types';
+import type { ReviewItem, BrowseReviewItem, ReviewedTodayItem } from '../../types';
 import { formatDueLabel } from '../../utils/srsAlgorithm';
+import { RATING_META } from '../../utils/fsrs';
 
 // Shared presentational cards for the Echo queue/browse views. Used by both the global
 // EchoPage and the note-scoped NoteEchoSection so the two stay visually identical.
@@ -141,6 +142,59 @@ export function ReviewItemListRow({
         >
           ×
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** A card in the Today tab: what you graded on that day, how you graded it, and when. */
+export function ReviewedTodayCard({ item, onOpen }: { item: ReviewedTodayItem; onOpen: () => void }) {
+  const src = item.thumbnail_path
+    ? window.electronAPI.paths.getFileUrl(item.thumbnail_path)
+    : item.file_path
+      ? window.electronAPI.paths.getFileUrl(item.file_path)
+      : null;
+  const times = item.reviews_today ?? 0;
+  const rating = item.last_rating != null ? RATING_META[item.last_rating] : null;
+  const at = new Date(item.last_reviewed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <div
+      onClick={onOpen}
+      className="relative rounded-xl overflow-hidden bg-gray-100 dark:bg-dark-surface group border border-gray-200 dark:border-dark-border cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+      title="Open Echo history"
+    >
+      <div className="aspect-square relative overflow-hidden">
+        {src ? (
+          <img src={src} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full bg-gray-200 dark:bg-dark-hover flex items-center justify-center">
+            <span className="text-gray-400 text-2xl">🖼️</span>
+          </div>
+        )}
+        {times > 1 && (
+          <div
+            className="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+            title={`Reviewed ${times} times`}
+          >
+            ×{times}
+          </div>
+        )}
+        {rating && (
+          <div
+            className={`absolute top-1.5 right-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${rating.cls}`}
+            title={times > 1 ? 'Your last grade of the day' : 'How you graded it'}
+          >
+            {rating.label}
+          </div>
+        )}
+      </div>
+      <div className="p-2">
+        {item.caption && (
+          <p className="text-gray-700 dark:text-gray-300 text-xs truncate" title={item.caption}>{item.caption}</p>
+        )}
+        <p className="text-gray-400 text-[10px] truncate mt-0.5">Reviewed {at}</p>
+        <p className="text-[11px] mt-0.5 text-gray-400">{formatDueLabel(item.next_review_at)}</p>
       </div>
     </div>
   );

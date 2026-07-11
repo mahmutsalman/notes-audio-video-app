@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { ReviewItem, ReviewEvent, ReviewItemStats, ReviewHeatmapDay, ReviewNote, ReviewNoteKind, ReviewNoteImage } from '../types';
 import { formatDueLabel } from '../utils/srsAlgorithm';
-import { currentRetrievability, stateLabel } from '../utils/fsrs';
+import { currentRetrievability, stateLabel, RATING_META } from '../utils/fsrs';
 import HeatmapCalendar, { HEATMAP_WINDOWS, type HeatmapWindow } from '../components/echo/HeatmapCalendar';
 import ReviewNoteImages from '../components/review/ReviewNoteImages';
 
@@ -14,13 +14,6 @@ function localDayKey(iso: string): string {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
-
-const RATING_META: Record<number, { label: string; cls: string }> = {
-  1: { label: 'Again', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
-  2: { label: 'Hard', cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
-  3: { label: 'Good', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  4: { label: 'Easy', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-};
 
 function ratingBadge(e: ReviewEvent) {
   if (e.rating == null) {

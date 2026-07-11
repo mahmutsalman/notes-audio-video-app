@@ -3277,6 +3277,7 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('review:getByRecordingAndTags', (_, recordingId: number, tagNames: string[]) => ReviewOperations.getByRecordingAndTags(recordingId, tagNames));
   ipcMain.handle('review:getAllEnrolledByTags', (_, tagNames: string[]) => ReviewOperations.getAllEnrolledByTags(tagNames));
   ipcMain.handle('review:getAllEnrolledByRecordingAndTags', (_, recordingId: number, tagNames: string[]) => ReviewOperations.getAllEnrolledByRecordingAndTags(recordingId, tagNames));
+  ipcMain.handle('review:getReviewedOn', (_, date: string | null, tagNames: string[] = []) => ReviewOperations.getReviewedOn(date, tagNames));
   ipcMain.handle('review:getEnrolledTags', () => ReviewOperations.getEnrolledTags());
   ipcMain.handle('review:getEnrolledTagsByRecording', (_, recordingId: number) => ReviewOperations.getEnrolledTagsByRecording(recordingId));
   ipcMain.handle('review:enroll', (_,

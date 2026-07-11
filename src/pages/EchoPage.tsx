@@ -1,19 +1,22 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { ReviewItem, ReviewMask, BrowseReviewItem, MediaTagType } from '../types';
+import type { ReviewItem, ReviewMask, BrowseReviewItem, ReviewedTodayItem, MediaTagType } from '../types';
 import { REVIEW_CHANGED_EVENT, emitReviewChanged } from '../utils/events';
 import ReviewSession from '../components/review/ReviewSession';
 import MaskEditor from '../components/review/MaskEditor';
-import { ReviewItemGridCard, ReviewItemListRow, BrowseCard } from '../components/echo/EchoCards';
+import { ReviewItemGridCard, ReviewItemListRow, BrowseCard, ReviewedTodayCard } from '../components/echo/EchoCards';
 import EchoTagFilter from '../components/echo/EchoTagFilter';
 
-type FilterTab = 'due' | 'all' | 'upcoming' | 'browse';
+type FilterTab = 'due' | 'today' | 'all' | 'upcoming' | 'browse';
 type ViewMode = 'grid' | 'list';
 
 export default function EchoPage() {
   const navigate = useNavigate();
   const [allItems, setAllItems] = useState<ReviewItem[]>([]);
   const [browseItems, setBrowseItems] = useState<BrowseReviewItem[]>([]);
+  // Graded today (rating-carrying review_events only) — loaded eagerly so the tab count and the
+  // header line stay honest without opening the tab.
+  const [todayItems, setTodayItems] = useState<ReviewedTodayItem[]>([]);
   const [filter, setFilter] = useState<FilterTab>('due');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [sessionItems, setSessionItems] = useState<ReviewItem[] | null>(null);
@@ -40,7 +43,13 @@ export default function EchoPage() {
     setBrowseItems(items);
   }, [activeTags]);
 
+  const loadToday = useCallback(async () => {
+    // null = today, resolved as a local day in SQL so the boundary matches the heatmap's.
+    setTodayItems(await window.electronAPI.review.getReviewedOn(null, activeTags));
+  }, [activeTags]);
+
   useEffect(() => { loadItems(); }, [loadItems]);
+  useEffect(() => { loadToday(); }, [loadToday]);
 
   // Load the richer Browse aggregates when that tab is opened.
   useEffect(() => {
@@ -53,11 +62,12 @@ export default function EchoPage() {
   useEffect(() => {
     const onChanged = () => {
       loadItems();
+      loadToday();
       if (filter === 'browse') loadBrowse();
     };
     window.addEventListener(REVIEW_CHANGED_EVENT, onChanged);
     return () => window.removeEventListener(REVIEW_CHANGED_EVENT, onChanged);
-  }, [loadItems, loadBrowse, filter]);
+  }, [loadItems, loadBrowse, loadToday, filter]);
 
   // When no filter is active, allItems is the full enrolled set → remember its size.
   useEffect(() => {
@@ -83,9 +93,12 @@ export default function EchoPage() {
   };
 
   // Peek — browse the masked "front" of the currently-shown set (whatever tab is active),
-  // reveal blur, ←/→ navigate, without saving any progress. Browse uses its own aggregate list.
+  // reveal blur, ←/→ navigate, without saving any progress. Browse and Today use their own lists.
   const startPeek = () => {
-    const source: ReviewItem[] = filter === 'browse' ? browseItems : displayedItems;
+    const source: ReviewItem[] =
+      filter === 'browse' ? browseItems :
+      filter === 'today' ? todayItems :
+      displayedItems;
     if (source.length === 0) return;
     setPeekItems(source);
   };
@@ -93,6 +106,7 @@ export default function EchoPage() {
   const handleSessionEnd = () => {
     setSessionItems(null);
     loadItems();
+    loadToday();
     if (filter === 'browse') loadBrowse();
     emitReviewChanged(); // keep any other open Echo tab in sync
   };
@@ -127,7 +141,7 @@ export default function EchoPage() {
         <div className="flex-1">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Echo</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            {totalEnrolled} enrolled · {dueItems.length} due now
+            {totalEnrolled} enrolled · {dueItems.length} due now · {todayItems.length} reviewed today
           </p>
         </div>
 
@@ -185,9 +199,10 @@ export default function EchoPage() {
 
       {/* Filter tabs */}
       <div className="flex gap-1 px-5 py-2 border-b border-gray-200 dark:border-dark-border flex-shrink-0">
-        {(['due', 'all', 'upcoming', 'browse'] as FilterTab[]).map(tab => {
+        {(['due', 'today', 'all', 'upcoming', 'browse'] as FilterTab[]).map(tab => {
           const count =
             tab === 'due' ? dueItems.length :
+            tab === 'today' ? todayItems.length :
             tab === 'upcoming' ? upcomingItems.length :
             tab === 'browse' ? (browseItems.length || allItems.length) :
             allItems.length;
@@ -201,7 +216,7 @@ export default function EchoPage() {
                   : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
               }`}
             >
-              {tab === 'due' ? 'Due Now' : tab === 'upcoming' ? 'Upcoming' : tab === 'browse' ? '▦ Browse' : 'All'}
+              {tab === 'due' ? 'Due Now' : tab === 'today' ? '✓ Reviewed Today' : tab === 'upcoming' ? 'Upcoming' : tab === 'browse' ? '▦ Browse' : 'All'}
               {' '}
               <span className={`text-xs ${filter === tab ? 'text-blue-500' : 'text-gray-400'}`}>
                 {count}
@@ -242,6 +257,35 @@ export default function EchoPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
               {browseItems.map(item => (
                 <BrowseCard key={item.id} item={item} onOpen={() => openDetail(item.id)} />
+              ))}
+            </div>
+          )
+        ) : filter === 'today' ? (
+          todayItems.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-center">
+              <div className="text-4xl mb-3">{filterActive ? '🏷️' : '🌙'}</div>
+              {filterActive ? (
+                <>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">
+                    Nothing reviewed today matches the selected tag{activeTags.length > 1 ? 's' : ''}.
+                  </p>
+                  <button onClick={() => setActiveTags([])} className="text-blue-600 dark:text-blue-400 hover:underline text-xs mt-2">Clear filter</button>
+                </>
+              ) : (
+                <>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">No reviews graded today yet.</p>
+                  {dueItems.length > 0 && (
+                    <button onClick={startSession} className="text-blue-600 dark:text-blue-400 hover:underline text-xs mt-2">
+                      Start a session ({dueItems.length} due)
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              {todayItems.map(item => (
+                <ReviewedTodayCard key={item.id} item={item} onOpen={() => openDetail(item.id)} />
               ))}
             </div>
           )

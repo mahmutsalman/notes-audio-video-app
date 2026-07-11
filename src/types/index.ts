@@ -928,6 +928,7 @@ export interface ElectronAPI {
     getByRecordingAndTags: (recordingId: number, tagNames: string[]) => Promise<ReviewItem[]>;
     getAllEnrolledByTags: (tagNames: string[]) => Promise<BrowseReviewItem[]>;
     getAllEnrolledByRecordingAndTags: (recordingId: number, tagNames: string[]) => Promise<BrowseReviewItem[]>;
+    getReviewedOn: (date: string | null, tagNames?: string[]) => Promise<ReviewedTodayItem[]>;
     getEnrolledTags: () => Promise<{ name: string; count: number }[]>;
     getEnrolledTagsByRecording: (recordingId: number) => Promise<{ name: string; count: number }[]>;
     enroll: (mediaType: string, mediaId: number, filePath: string | null, thumbnailPath: string | null, caption: string | null, recordingId: number | null, captureId: number | null) => Promise<ReviewItem>;
@@ -1379,6 +1380,15 @@ export interface BrowseReviewItem extends ReviewItem {
   total_reviews: number;
   again_count: number | null;
   last_reviewed_at: string | null;
+}
+
+/** Enrolled image graded on a given local day, with that day's aggregates. For the Today tab. */
+export interface ReviewedTodayItem extends ReviewItem {
+  reviews_today: number;
+  again_today: number | null;
+  last_reviewed_at: string;
+  /** Rating of the most recent grading that day: 1 Again · 2 Hard · 3 Good · 4 Easy. */
+  last_rating: number | null;
 }
 
 /** Full FSRS card snapshot persisted by review:rate / review:schedule. */

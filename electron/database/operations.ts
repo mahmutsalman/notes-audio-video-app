@@ -3062,6 +3062,53 @@ export const ReviewOperations = {
     `).all(recordingId, ...tagNames);
   },
 
+  /**
+   * Echoes actually GRADED on a local calendar day, newest review first — the "Today" tab.
+   * Only events carrying a rating count: a manual reschedule or a standalone note log writes a
+   * review_events row with rating NULL, and neither is a review. `date` is 'YYYY-MM-DD' local;
+   * pass null for today. Optional tagNames narrows by the image's tags (ANY/OR), like the
+   * other Echo views.
+   */
+  getReviewedOn(date: string | null, tagNames: string[] = []): any[] {
+    const db = getDatabase();
+    const day = date ?? null;
+    // date('now','localtime') when no day is given — keeps the "today" boundary in the same
+    // local-day space as the heatmap.
+    const dayExpr = day ? '?' : "date('now', 'localtime')";
+    const graded = `re.review_item_id = ri.id AND re.rating IS NOT NULL
+                    AND date(re.reviewed_at, 'localtime') = ${dayExpr}`;
+
+    const tagClause = tagNames.length > 0
+      ? `AND EXISTS (
+           SELECT 1 FROM media_tags mt
+           JOIN   tags tg ON tg.id = mt.tag_id
+           WHERE  mt.media_type = ri.media_type AND mt.media_id = ri.media_id
+             AND  tg.name IN (${tagNames.map(() => '?').join(', ')})
+         )`
+      : '';
+
+    // The day param repeats once per correlated subquery + once in the EXISTS filter.
+    const dayParams = day ? [day, day, day, day, day] : [];
+
+    return db.prepare(`
+      SELECT ri.*,
+             r.name AS recording_name,
+             t.name AS topic_name,
+             (SELECT COUNT(*) FROM review_events re WHERE ${graded}) AS reviews_today,
+             (SELECT SUM(CASE WHEN re.rating = 1 THEN 1 ELSE 0 END)
+                FROM review_events re WHERE ${graded}) AS again_today,
+             (SELECT MAX(re.reviewed_at) FROM review_events re WHERE ${graded}) AS last_reviewed_at,
+             (SELECT re.rating FROM review_events re WHERE ${graded}
+               ORDER BY re.reviewed_at DESC, re.id DESC LIMIT 1) AS last_rating
+      FROM   review_items ri
+      LEFT   JOIN recordings r ON ri.recording_id = r.id
+      LEFT   JOIN topics     t ON r.topic_id = t.id
+      WHERE  EXISTS (SELECT 1 FROM review_events re WHERE ${graded})
+      ${tagClause}
+      ORDER  BY last_reviewed_at DESC
+    `).all(...dayParams, ...tagNames);
+  },
+
   /** Distinct tag names actually present on enrolled echoes, with a usage count (for the
       filter pill row). Only surfaces tags that will match at least one echo. */
   getEnrolledTags(): { name: string; count: number }[] {
