@@ -3535,7 +3535,7 @@ function withNotes(db: ReturnType<typeof getDatabase>, events: any[]): any[] {
   const stmt = db.prepare(
     'SELECT * FROM review_notes WHERE review_event_id = ? ORDER BY kind, sort_order, id'
   );
-  return events.map(e => ({ ...e, notes: attachImagesToNotes(db, stmt.all(e.id)) }));
+  return events.map(e => ({ ...e, notes: attachMediaToNotes(db, stmt.all(e.id)) }));
 }
 
 export const ReviewEventOperations = {
