@@ -983,6 +983,21 @@ export async function saveReviewNoteImage(
   return { filePath, thumbnailPath: filePath };
 }
 
+/** Voice note attached to a reflective review note. Mirrors saveReviewNoteImage's layout. */
+export async function saveReviewNoteAudio(
+  audioBuffer: ArrayBuffer,
+  extension: string = 'webm'
+): Promise<{ filePath: string }> {
+  const dir = path.join(getMediaDir(), 'review_notes', 'audios');
+  await fs.mkdir(dir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+  await fs.writeFile(filePath, Buffer.from(audioBuffer));
+
+  return { filePath };
+}
+
 export async function saveQuickCaptureAudio(
   audioBuffer: ArrayBuffer,
   extension: string = 'webm'

@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { ReviewItem, ReviewEvent, ReviewItemStats, ReviewHeatmapDay, ReviewNote, ReviewNoteKind, ReviewNoteImage } from '../types';
+import type { ReviewItem, ReviewEvent, ReviewItemStats, ReviewHeatmapDay, ReviewNote, ReviewNoteKind, ReviewNoteImage, ReviewNoteAudio } from '../types';
 import { formatDueLabel } from '../utils/srsAlgorithm';
 import { currentRetrievability, stateLabel, RATING_META } from '../utils/fsrs';
 import HeatmapCalendar, { HEATMAP_WINDOWS, type HeatmapWindow } from '../components/echo/HeatmapCalendar';
 import ReviewNoteImages from '../components/review/ReviewNoteImages';
+import ReviewNoteAudios from '../components/review/ReviewNoteAudios';
 
 /** Local 'YYYY-MM-DD' key for an ISO timestamp (matches the heatmap + SQLite localtime). */
 function localDayKey(iso: string): string {
@@ -377,6 +378,44 @@ const NOTE_KINDS: { kind: ReviewNoteKind; placeholder: string }[] = [
   { kind: 'missed', placeholder: 'What did you miss? (Enter to log)' },
 ];
 
+/** Play a note's voice notes without entering edit mode. Recording lives in ReviewNoteAudios. */
+function NoteVoicePlayback({ audios }: { audios: ReviewNoteAudio[] }) {
+  const [playingId, setPlayingId] = useState<number | null>(null);
+  const elRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => () => { elRef.current?.pause(); elRef.current = null; }, []);
+  if (audios.length === 0) return null;
+
+  const play = (a: ReviewNoteAudio) => {
+    elRef.current?.pause();
+    if (playingId === a.id) { setPlayingId(null); return; }
+    const el = new Audio(window.electronAPI.paths.getFileUrl(a.file_path));
+    el.onended = () => setPlayingId(null);
+    elRef.current = el;
+    setPlayingId(a.id);
+    void el.play();
+  };
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {audios.map((a, i) => (
+        <button
+          key={a.id}
+          onClick={() => play(a)}
+          title={playingId === a.id ? 'Stop' : 'Play this voice note'}
+          className="flex items-center gap-1.5 rounded-full px-2.5 py-1 border border-gray-200 dark:border-dark-border
+                     bg-gray-50 dark:bg-dark-bg text-gray-600 dark:text-gray-300 text-[11px]
+                     hover:border-primary-400 transition-colors"
+        >
+          <span className="leading-none">{playingId === a.id ? '⏹' : '▶'}</span>
+          <span className="tabular-nums">
+            🎙 {a.duration != null ? `${Math.floor(a.duration / 60)}:${String(Math.floor(a.duration % 60)).padStart(2, '0')}` : `#${i + 1}`}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Read-only thumbnail strip for a note's pictures. Editing lives in ReviewNoteImages. */
 function NoteThumbs({ images }: { images: ReviewNoteImage[] }) {
   if (images.length === 0) return null;
@@ -420,6 +459,9 @@ function EventRow({ event, onSaved }: { event: ReviewEvent; onSaved: () => void 
   const setNoteImages = (noteId: number, images: ReviewNoteImage[]) =>
     setNotes(prev => prev.map(n => n.id === noteId ? { ...n, images } : n));
 
+  const setNoteAudios = (noteId: number, audios: ReviewNoteAudio[]) =>
+    setNotes(prev => prev.map(n => n.id === noteId ? { ...n, audios } : n));
+
   const onKeyDown = (kind: ReviewNoteKind) => (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== 'Enter' || e.shiftKey) return;
     e.preventDefault();
@@ -461,17 +503,21 @@ function EventRow({ event, onSaved }: { event: ReviewEvent; onSaved: () => void 
         <div className="mt-2 flex flex-col gap-1.5">
           {byKind('note').map(n => (
             <div key={n.id} className="flex flex-col gap-1">
-              <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{n.body}</p>
+              {n.body && <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{n.body}</p>}
               <NoteThumbs images={n.images ?? []} />
+              <NoteVoicePlayback audios={n.audios ?? []} />
             </div>
           ))}
           {byKind('missed').map(n => (
             <div key={n.id} className="flex flex-col gap-1">
-              <p className="text-sm text-amber-700 dark:text-amber-400 whitespace-pre-wrap">
-                <span className="text-[11px] uppercase tracking-wide text-amber-500/70 mr-1">Missed</span>
-                {n.body}
-              </p>
+              {n.body && (
+                <p className="text-sm text-amber-700 dark:text-amber-400 whitespace-pre-wrap">
+                  <span className="text-[11px] uppercase tracking-wide text-amber-500/70 mr-1">Missed</span>
+                  {n.body}
+                </p>
+              )}
               <NoteThumbs images={n.images ?? []} />
+              <NoteVoicePlayback audios={n.audios ?? []} />
             </div>
           ))}
         </div>
@@ -506,6 +552,12 @@ function EventRow({ event, onSaved }: { event: ReviewEvent; onSaved: () => void 
                     noteId={n.id}
                     images={n.images ?? []}
                     onChange={imgs => { setNoteImages(n.id, imgs); onSaved(); }}
+                    variant="light"
+                  />
+                  <ReviewNoteAudios
+                    noteId={n.id}
+                    audios={n.audios ?? []}
+                    onChange={auds => { setNoteAudios(n.id, auds); onSaved(); }}
                     variant="light"
                   />
                 </div>

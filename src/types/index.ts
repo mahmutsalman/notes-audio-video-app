@@ -937,7 +937,7 @@ export interface ElectronAPI {
     schedule: (id: number, fields: ReviewCardFields, event?: ReviewEventInput, noteIds?: number[]) => Promise<void>;
   };
   reviewNotes: {
-    add: (reviewItemId: number, kind: ReviewNoteKind, body: string, reviewEventId?: number | null) => Promise<ReviewNote>;
+    add: (reviewItemId: number, kind: ReviewNoteKind, body: string, reviewEventId?: number | null, allowEmpty?: boolean) => Promise<ReviewNote>;
     getDraftsByItem: (reviewItemId: number) => Promise<ReviewNote[]>;
     getByEvent: (reviewEventId: number) => Promise<ReviewNote[]>;
     getByItem: (reviewItemId: number) => Promise<ReviewNote[]>;
@@ -949,6 +949,11 @@ export interface ElectronAPI {
     getByNote: (reviewNoteId: number) => Promise<ReviewNoteImage[]>;
     delete: (imageId: number) => Promise<void>;
     updateCaption: (imageId: number, caption: string | null) => Promise<void>;
+  };
+  reviewNoteAudios: {
+    add: (reviewNoteId: number, audioBuffer: ArrayBuffer, duration: number | null, extension?: string) => Promise<ReviewNoteAudio>;
+    getByNote: (reviewNoteId: number) => Promise<ReviewNoteAudio[]>;
+    delete: (audioId: number) => Promise<void>;
   };
   reviewCodeSnippets: {
     getByItem: (reviewItemId: number) => Promise<ReviewCodeSnippet | null>;
@@ -1452,9 +1457,22 @@ export interface ReviewNoteImage {
   created_at: string;
 }
 
+/** A voice note attached to a reflective note. `duration` is seconds, null if unknown. */
+export interface ReviewNoteAudio {
+  id: number;
+  review_note_id: number;
+  file_path: string;
+  duration: number | null;
+  sort_order: number;
+  created_at: string;
+}
+
 /**
  * One reflective note. Written the moment the user presses Enter, so `review_event_id`
  * is null until the card is rated. Many notes per kind per review.
+ *
+ * A note whose `body` is empty is a VOICE-ONLY note — the user recorded without typing, and its
+ * content lives in `audios`.
  */
 export interface ReviewNote {
   id: number;
@@ -1466,6 +1484,7 @@ export interface ReviewNote {
   created_at: string;
   /** Attached by the note readers (getDraftsByItem / getByEvent / getByItem). */
   images?: ReviewNoteImage[];
+  audios?: ReviewNoteAudio[];
 }
 
 /** A persisted review_events row. */

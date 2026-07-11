@@ -8,6 +8,7 @@ import {
 } from '../../utils/fsrs';
 import PixelatedImage from './PixelatedImage';
 import ReviewNoteImages from './ReviewNoteImages';
+import ReviewNoteAudios from './ReviewNoteAudios';
 import ReviewCodePane from './ReviewCodePane';
 
 interface ReviewSessionProps {
@@ -196,9 +197,12 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
       else if (e.code === 'Space') {
         // Toggle the grading controls, masks still blurred. Peek mode grades nothing.
         if (readOnly) return;
-        // A focused button owns Space — swallowing it here would stop the keyboard from
-        // activating Reveal All, or the rating buttons themselves.
-        if (tag === 'BUTTON' || tag === 'A') return;
+        // A button focused BY KEYBOARD owns Space, so Tab-then-Space still activates it. A button
+        // focused by a MOUSE CLICK does not: clicking Reveal All left it focused, and every later
+        // Space press re-fired that dead button instead of toggling the grading controls — which
+        // read as "Space stops working once the card is revealed". :focus-visible is exactly the
+        // "focused via keyboard" distinction, so ask that rather than "is a button focused".
+        if ((tag === 'BUTTON' || tag === 'A') && el?.matches(':focus-visible')) return;
         e.preventDefault();
         e.stopImmediatePropagation();
         setRatingsRequested(v => !v);
@@ -222,6 +226,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     setTimerRunning(false);
     setEditingNoteId(null);
     setEditingBody('');
+    setAutoRecordNoteId(null);
     timerTouched.current = false;
     window.electronAPI.reviewMasks.getByItem(current.id).then(setMasks);
     // Re-hydrate any notes logged for this card but not yet tied to a rating — e.g. typed,
@@ -263,6 +268,12 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   /** Grading controls are up once you've either seen the answer or explicitly asked to grade. */
   const canRate = allRevealed || ratingsRequested;
 
+  /**
+   * The note whose mic should start the moment it renders. Set by the "Voice note" button, which
+   * creates the row first (audio hangs off a note, exactly like a picture does).
+   */
+  const [autoRecordNoteId, setAutoRecordNoteId] = useState<number | null>(null);
+
   /** Persist one note now and clear its box, ready for the next. No-op on empty text. */
   const commitNote = useCallback(async (kind: ReviewNoteKind, body: string): Promise<ReviewNote | null> => {
     if (!current || !body.trim()) return null;
@@ -270,6 +281,20 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     setDraftNotes(prev => [...prev, saved]);
     return saved;
   }, [current?.id]);
+
+  /**
+   * Start a voice note. Anything already typed in the box is committed as this note's text, so a
+   * half-typed thought isn't lost; with an empty box the note is created empty (allowEmpty) and is
+   * voice-only. Either way the new row mounts with its mic already recording.
+   */
+  const startVoiceNote = async (kind: ReviewNoteKind) => {
+    if (!current) return;
+    const typed = kind === 'note' ? note : missedPoints;
+    if (kind === 'note') setNote(''); else setMissedPoints('');
+    const saved = await window.electronAPI.reviewNotes.add(current.id, kind, typed, null, true);
+    setDraftNotes(prev => [...prev, saved]);
+    setAutoRecordNoteId(saved.id);
+  };
 
   const removeNote = async (id: number) => {
     await window.electronAPI.reviewNotes.delete(id);
@@ -655,10 +680,10 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                               <p
                                 onClick={() => beginEditNote(n)}
                                 title="Click to edit • Enter saves, Shift+Enter for a newline, Esc cancels"
-                                className="flex-1 text-sm text-gray-300 whitespace-pre-wrap break-words cursor-text
-                                           rounded px-1 -mx-1 hover:bg-gray-700/40 transition-colors"
+                                className={`flex-1 text-sm whitespace-pre-wrap break-words cursor-text rounded px-1 -mx-1
+                                           hover:bg-gray-700/40 transition-colors ${n.body ? 'text-gray-300' : 'text-gray-600 italic'}`}
                               >
-                                {n.body}
+                                {n.body || 'Voice note'}
                               </p>
                             )}
                             <button
@@ -669,12 +694,20 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                               ✕
                             </button>
                           </div>
-                          <div className="pl-5">
+                          <div className="pl-5 flex flex-col gap-1.5">
                             <ReviewNoteImages
                               noteId={n.id}
                               images={n.images ?? []}
                               onChange={imgs => setDraftNotes(prev =>
                                 prev.map(x => x.id === n.id ? { ...x, images: imgs } : x)
+                              )}
+                            />
+                            <ReviewNoteAudios
+                              noteId={n.id}
+                              audios={n.audios ?? []}
+                              autoStart={autoRecordNoteId === n.id}
+                              onChange={auds => setDraftNotes(prev =>
+                                prev.map(x => x.id === n.id ? { ...x, audios: auds } : x)
                               )}
                             />
                           </div>
@@ -690,6 +723,13 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                         rows={2}
                         className="w-full resize-none rounded-lg bg-gray-900 border border-gray-800 text-gray-200 text-sm px-3 py-2 placeholder-gray-600 focus:outline-none focus:border-gray-600"
                       />
+                      <button
+                        onClick={() => void startVoiceNote(col.kind)}
+                        title="Say it instead of typing it — the recording is saved with this review"
+                        className="self-start text-[11px] text-gray-500 hover:text-primary-400 transition-colors"
+                      >
+                        🎙 Voice note
+                      </button>
                     </div>
                   );
                 })}

@@ -1035,9 +1035,15 @@ const electronAPI = {
       ipcRenderer.invoke('review:schedule', id, fields, event, noteIds),
   },
 
+  reviewNoteAudios: {
+    add: (reviewNoteId: number, audioBuffer: ArrayBuffer, duration: number | null, extension?: string) =>
+      ipcRenderer.invoke('reviewNoteAudios:add', reviewNoteId, audioBuffer, duration, extension),
+    getByNote: (reviewNoteId: number) => ipcRenderer.invoke('reviewNoteAudios:getByNote', reviewNoteId),
+    delete: (audioId: number) => ipcRenderer.invoke('reviewNoteAudios:delete', audioId),
+  },
   reviewNotes: {
-    add: (reviewItemId: number, kind: 'note' | 'missed', body: string, reviewEventId?: number | null) =>
-      ipcRenderer.invoke('reviewNotes:add', reviewItemId, kind, body, reviewEventId),
+    add: (reviewItemId: number, kind: 'note' | 'missed', body: string, reviewEventId?: number | null, allowEmpty?: boolean) =>
+      ipcRenderer.invoke('reviewNotes:add', reviewItemId, kind, body, reviewEventId, allowEmpty),
     getDraftsByItem: (reviewItemId: number) =>
       ipcRenderer.invoke('reviewNotes:getDraftsByItem', reviewItemId),
     getByEvent: (reviewEventId: number) =>

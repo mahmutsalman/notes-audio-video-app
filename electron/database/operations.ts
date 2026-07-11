@@ -3159,18 +3159,19 @@ export const ReviewOperations = {
   },
 
   /**
-   * Deleting a review item cascades events -> notes -> note images (rows), but not the files.
-   * Collect every image path under the item first so the handler can unlink them.
+   * Deleting a review item cascades events -> notes -> note images + voice notes (rows), but not
+   * the files. Collect every path under the item first so the handler can unlink them.
    */
-  delete(id: number): { imagePaths: string[] } {
+  delete(id: number): { imagePaths: string[]; audioPaths: string[] } {
     const db = getDatabase();
     const noteIds = (db.prepare(
       'SELECT id FROM review_notes WHERE review_item_id = ?'
     ).all(id) as { id: number }[]).map(r => r.id);
 
     const imagePaths = imagePathsForNotes(db, noteIds);
+    const audioPaths = audioPathsForNotes(db, noteIds);
     db.prepare('DELETE FROM review_items WHERE id = ?').run(id);
-    return { imagePaths };
+    return { imagePaths, audioPaths };
   },
 
   // Persist a full FSRS card snapshot. Used by both algorithm-driven ratings and
@@ -3218,13 +3219,16 @@ function linkNotesToEvent(
 
 export type ReviewNoteKind = 'note' | 'missed';
 
-/** Attach each note's images, so callers render them without a second round-trip. */
-function attachImagesToNotes(db: ReturnType<typeof getDatabase>, notes: any[]): any[] {
+/** Attach each note's images and voice notes, so callers render them without a second round-trip. */
+function attachMediaToNotes(db: ReturnType<typeof getDatabase>, notes: any[]): any[] {
   if (notes.length === 0) return notes;
-  const stmt = db.prepare(
+  const images = db.prepare(
     'SELECT * FROM review_note_images WHERE review_note_id = ? ORDER BY sort_order, id'
   );
-  return notes.map(n => ({ ...n, images: stmt.all(n.id) }));
+  const audios = db.prepare(
+    'SELECT * FROM review_note_audios WHERE review_note_id = ? ORDER BY sort_order, id'
+  );
+  return notes.map(n => ({ ...n, images: images.all(n.id), audios: audios.all(n.id) }));
 }
 
 /**
@@ -3254,6 +3258,52 @@ function imagePathsForNotes(db: ReturnType<typeof getDatabase>, noteIds: number[
   }
   return [...paths];
 }
+
+/**
+ * Every voice-note file under a set of notes, collected BEFORE the rows are deleted — the same
+ * contract as imagePathsForNotes: ON DELETE CASCADE removes the audio rows, never the files.
+ * No media_tags purge here: audio notes are untagged (see the review_note_audios migration).
+ */
+function audioPathsForNotes(db: ReturnType<typeof getDatabase>, noteIds: number[]): string[] {
+  if (noteIds.length === 0) return [];
+  const placeholders = noteIds.map(() => '?').join(', ');
+  const rows = db.prepare(
+    `SELECT file_path FROM review_note_audios WHERE review_note_id IN (${placeholders})`
+  ).all(...noteIds) as { file_path: string }[];
+  return [...new Set(rows.map(r => r.file_path).filter(Boolean))];
+}
+
+export const ReviewNoteAudioOperations = {
+  add(reviewNoteId: number, filePath: string, duration: number | null): any {
+    const db = getDatabase();
+    const sortOrder = (db.prepare(
+      'SELECT COUNT(*) AS cnt FROM review_note_audios WHERE review_note_id = ?'
+    ).get(reviewNoteId) as { cnt: number }).cnt;
+
+    const result = db.prepare(
+      `INSERT INTO review_note_audios (review_note_id, file_path, duration, sort_order)
+       VALUES (?, ?, ?, ?)`
+    ).run(reviewNoteId, filePath, duration, sortOrder);
+
+    return db.prepare('SELECT * FROM review_note_audios WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  getByNote(reviewNoteId: number): any[] {
+    return getDatabase().prepare(
+      'SELECT * FROM review_note_audios WHERE review_note_id = ? ORDER BY sort_order, id'
+    ).all(reviewNoteId);
+  },
+
+  /** Returns the path so the caller can unlink the file. */
+  delete(audioId: number): { filePath: string | null } {
+    const db = getDatabase();
+    const row = db.prepare(
+      'SELECT file_path FROM review_note_audios WHERE id = ?'
+    ).get(audioId) as { file_path: string } | undefined;
+    db.prepare('DELETE FROM review_note_audios WHERE id = ?').run(audioId);
+    return { filePath: row?.file_path ?? null };
+  },
+};
 
 export const ReviewNoteImageOperations = {
   add(reviewNoteId: number, filePath: string, thumbnailPath: string | null): any {
@@ -3338,11 +3388,15 @@ export const ReviewNoteOperations = {
    * During a review the event does not exist yet, so `reviewEventId` is omitted and the row
    * stays a draft (`review_event_id IS NULL`) until the card is rated. When adding a note to a
    * past review from the detail page, the event already exists — pass its id.
+   *
+   * `allowEmpty` exists for VOICE-only notes: the user records without typing, so the row carries
+   * an empty body and its content lives in review_note_audios. Every other caller still gets the
+   * empty-body guard, so a stray Enter can't create a blank note.
    */
-  add(reviewItemId: number, kind: ReviewNoteKind, body: string, reviewEventId?: number | null): any {
+  add(reviewItemId: number, kind: ReviewNoteKind, body: string, reviewEventId?: number | null, allowEmpty = false): any {
     const db = getDatabase();
     const trimmed = body.trim();
-    if (!trimmed) throw new Error('review note body is empty');
+    if (!trimmed && !allowEmpty) throw new Error('review note body is empty');
     const eventId = reviewEventId ?? null;
 
     // Order within the group this note joins: the card's drafts, or one event's notes.
@@ -3372,7 +3426,7 @@ export const ReviewNoteOperations = {
        WHERE review_item_id = ? AND review_event_id IS NULL
        ORDER BY kind, sort_order, id`
     ).all(reviewItemId);
-    return attachImagesToNotes(db, notes);
+    return attachMediaToNotes(db, notes);
   },
 
   /** Notes belonging to one past review. */
@@ -3381,7 +3435,7 @@ export const ReviewNoteOperations = {
     const notes = db.prepare(
       `SELECT * FROM review_notes WHERE review_event_id = ? ORDER BY kind, sort_order, id`
     ).all(reviewEventId);
-    return attachImagesToNotes(db, notes);
+    return attachMediaToNotes(db, notes);
   },
 
   /** Every note ever written for a card, drafts included. */
@@ -3390,7 +3444,7 @@ export const ReviewNoteOperations = {
     const notes = db.prepare(
       `SELECT * FROM review_notes WHERE review_item_id = ? ORDER BY created_at DESC, id DESC`
     ).all(reviewItemId);
-    return attachImagesToNotes(db, notes);
+    return attachMediaToNotes(db, notes);
   },
 
   update(id: number, body: string): void {
@@ -3403,11 +3457,12 @@ export const ReviewNoteOperations = {
    * Deleting a note cascades its image ROWS but not the files. Collect the paths first
    * so the IPC handler can unlink them; otherwise every deleted note leaks its pictures.
    */
-  delete(id: number): { imagePaths: string[] } {
+  delete(id: number): { imagePaths: string[]; audioPaths: string[] } {
     const db = getDatabase();
     const imagePaths = imagePathsForNotes(db, [id]);
+    const audioPaths = audioPathsForNotes(db, [id]);
     db.prepare('DELETE FROM review_notes WHERE id = ?').run(id);
-    return { imagePaths };
+    return { imagePaths, audioPaths };
   },
 };
 
@@ -3499,18 +3554,19 @@ export const ReviewEventOperations = {
   },
 
   /**
-   * Deleting an event cascades review_notes -> review_note_images (rows), but not the files.
-   * Collect the image paths first so the handler can unlink them.
+   * Deleting an event cascades review_notes -> note images + voice notes (rows), but not the
+   * files. Collect both sets of paths first so the handler can unlink them.
    */
-  delete(eventId: number): { imagePaths: string[] } {
+  delete(eventId: number): { imagePaths: string[]; audioPaths: string[] } {
     const db = getDatabase();
     const noteIds = (db.prepare(
       'SELECT id FROM review_notes WHERE review_event_id = ?'
     ).all(eventId) as { id: number }[]).map(r => r.id);
 
     const imagePaths = imagePathsForNotes(db, noteIds);
+    const audioPaths = audioPathsForNotes(db, noteIds);
     db.prepare('DELETE FROM review_events WHERE id = ?').run(eventId);
-    return { imagePaths };
+    return { imagePaths, audioPaths };
   },
 
   /**

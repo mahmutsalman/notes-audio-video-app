@@ -1557,6 +1557,29 @@ function runMigrations(db: Database.Database): void {
     console.log('Added caption2 column to review_note_images table');
   }
 
+  // Migration: review_note_audios — voice notes attached to a reflective review note.
+  // Same shape and same contract as review_note_images: rows cascade with the note, the FILES on
+  // disk do NOT, so every delete path (note / event / review item) must collect file_path first
+  // and unlink — see audioPathsForNotes in operations.ts and unlinkAll in handlers.ts.
+  // No media_tags / OCR / FTS: audio carries no text to index (contrast review_note_images).
+  const reviewNoteAudiosExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='review_note_audios'"
+  ).get();
+  if (!reviewNoteAudiosExists) {
+    db.exec(`
+      CREATE TABLE review_note_audios (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_note_id INTEGER NOT NULL REFERENCES review_notes(id) ON DELETE CASCADE,
+        file_path      TEXT NOT NULL,
+        duration       REAL,
+        sort_order     INTEGER NOT NULL DEFAULT 0,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_review_note_audios_note ON review_note_audios(review_note_id);
+    `);
+    console.log('Created review_note_audios table');
+  }
+
   // Migration: review_code_snippets — one scratch code pad per enrolled card (ADR-0009).
   // Anchored to review_item_id, not review_note_id: a review_note row only exists once the user
   // presses Enter, and there are many per card, so there is no single note to hang code off.

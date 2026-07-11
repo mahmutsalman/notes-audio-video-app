@@ -35,6 +35,7 @@ import {
   ReviewEventOperations,
   ReviewNoteOperations,
   ReviewNoteImageOperations,
+  ReviewNoteAudioOperations,
   ReviewCodeSnippetOperations,
   ReviewPresetOperations,
   HtmlNodesOperations,
@@ -71,6 +72,7 @@ import {
   savePdfFile,
   saveQuickCaptureImage,
   saveReviewNoteImage,
+  saveReviewNoteAudio,
   saveQuickCaptureAudio,
   deleteQuickCaptureFiles,
 } from '../services/fileStorage';
@@ -3286,8 +3288,8 @@ export function setupIpcHandlers(): void {
     recordingId: number | null, captureId: number | null
   ) => ReviewOperations.enroll(mediaType, mediaId, filePath, thumbnailPath, caption, recordingId, captureId));
   ipcMain.handle('review:delete', async (_, id: number) => {
-    const { imagePaths } = ReviewOperations.delete(id);
-    await unlinkAll(imagePaths);
+    const { imagePaths, audioPaths } = ReviewOperations.delete(id);
+    await unlinkAll([...imagePaths, ...audioPaths]);
     scheduleSearchReindex();
   });
   // Rows cascade with the note; the FILES do not. Every review delete path unlinks what the
@@ -3319,14 +3321,26 @@ export function setupIpcHandlers(): void {
     scheduleSearchReindex();
   });
 
+  // Voice notes on a review note. No scheduleSearchReindex: audio carries no text for FTS.
+  ipcMain.handle('reviewNoteAudios:add', async (_, reviewNoteId: number, audioBuffer: ArrayBuffer, duration: number | null, extension: string = 'webm') => {
+    const { filePath } = await saveReviewNoteAudio(audioBuffer, extension);
+    return ReviewNoteAudioOperations.add(reviewNoteId, filePath, duration);
+  });
+  ipcMain.handle('reviewNoteAudios:getByNote', (_, reviewNoteId: number) =>
+    ReviewNoteAudioOperations.getByNote(reviewNoteId));
+  ipcMain.handle('reviewNoteAudios:delete', async (_, audioId: number) => {
+    const { filePath } = ReviewNoteAudioOperations.delete(audioId);
+    if (filePath) await fsp.unlink(filePath).catch(() => {});
+  });
+
   // One scratch code pad per card. No reindex: review code is not in FTS yet (ADR-0009).
   ipcMain.handle('reviewCodeSnippets:getByItem', (_, reviewItemId: number) =>
     ReviewCodeSnippetOperations.getByItem(reviewItemId));
   ipcMain.handle('reviewCodeSnippets:save', (_, reviewItemId: number, code: string, language: string) =>
     ReviewCodeSnippetOperations.save(reviewItemId, code, language));
 
-  ipcMain.handle('reviewNotes:add', (_, reviewItemId: number, kind: 'note' | 'missed', body: string, reviewEventId?: number | null) =>
-    ReviewNoteOperations.add(reviewItemId, kind, body, reviewEventId));
+  ipcMain.handle('reviewNotes:add', (_, reviewItemId: number, kind: 'note' | 'missed', body: string, reviewEventId?: number | null, allowEmpty?: boolean) =>
+    ReviewNoteOperations.add(reviewItemId, kind, body, reviewEventId, allowEmpty ?? false));
   ipcMain.handle('reviewNotes:getDraftsByItem', (_, reviewItemId: number) =>
     ReviewNoteOperations.getDraftsByItem(reviewItemId));
   ipcMain.handle('reviewNotes:getByEvent', (_, reviewEventId: number) =>
@@ -3336,8 +3350,8 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('reviewNotes:update', (_, id: number, body: string) =>
     ReviewNoteOperations.update(id, body));
   ipcMain.handle('reviewNotes:delete', async (_, id: number) => {
-    const { imagePaths } = ReviewNoteOperations.delete(id);
-    await unlinkAll(imagePaths);
+    const { imagePaths, audioPaths } = ReviewNoteOperations.delete(id);
+    await unlinkAll([...imagePaths, ...audioPaths]);
     scheduleSearchReindex();
   });
 
@@ -3351,8 +3365,8 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('reviewEvents:log', (_, reviewItemId: number, event: ReviewEventInput) =>
     ReviewEventOperations.log(reviewItemId, event));
   ipcMain.handle('reviewEvents:delete', async (_, eventId: number) => {
-    const { imagePaths } = ReviewEventOperations.delete(eventId);
-    await unlinkAll(imagePaths);
+    const { imagePaths, audioPaths } = ReviewEventOperations.delete(eventId);
+    await unlinkAll([...imagePaths, ...audioPaths]);
     scheduleSearchReindex();
   });
   ipcMain.handle('reviewEvents:getHeatmap', (_, reviewItemId: number | null, fromDate: string, toDate: string) =>
