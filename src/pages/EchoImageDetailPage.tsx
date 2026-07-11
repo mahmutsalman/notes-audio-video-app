@@ -48,6 +48,9 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
   const [events, setEvents] = useState<ReviewEvent[]>([]);
   const [windowKey, setWindowKey] = useState<HeatmapWindow>('1yr');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  // Full-screen viewer for the image. The 320px column is too small to read a code screenshot in.
+  // null = closed; 'fit' = scaled to the window; 'actual' = 1:1 pixels, scrollable.
+  const [viewer, setViewer] = useState<null | 'fit' | 'actual'>(null);
 
   // ← / → navigate to prev/next echo when shown as an embedded overlay (onBack set).
   // Runs in the CAPTURE phase and stops propagation so it beats the host page's own
@@ -67,6 +70,20 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [onBack, onPrev, onNext]);
+
+  // Escape closes the full-screen viewer — and only the viewer. Capture + stopImmediatePropagation
+  // so it never reaches the host page underneath (which would close the whole overlay behind it).
+  useEffect(() => {
+    if (!viewer) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setViewer(null);
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [viewer]);
 
   // Derive heatmap buckets from the already-loaded events (grouped by local day).
   const heatmapData = useMemo<ReviewHeatmapDay[]>(() => {
@@ -176,7 +193,18 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
           <div className="flex flex-col gap-4">
             <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-dark-border bg-gray-100 dark:bg-dark-surface">
               {src ? (
-                <img src={src} alt="" className="w-full object-contain max-h-80" />
+                <button
+                  onClick={() => setViewer('fit')}
+                  className="relative block w-full group cursor-zoom-in"
+                  title="Open full screen (Esc to close)"
+                >
+                  <img src={src} alt="" className="w-full object-contain max-h-80" />
+                  <span className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                    <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs font-medium px-2 py-1 rounded-md bg-black/60">
+                      Click to enlarge
+                    </span>
+                  </span>
+                </button>
               ) : (
                 <div className="aspect-video flex items-center justify-center text-gray-400 text-3xl">🖼️</div>
               )}
@@ -289,6 +317,36 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
           </div>
         </div>
       </div>
+
+      {/* Full-screen image viewer. Backdrop or × closes it; clicking the image itself toggles
+          fit-to-window ⇄ 1:1 pixels, which is what makes a dense code screenshot legible. */}
+      {viewer && src && (
+        <div
+          onClick={() => setViewer(null)}
+          className="fixed inset-0 z-[60] bg-black/90 overflow-auto cursor-zoom-out"
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setViewer(null); }}
+            className="fixed top-4 right-5 z-10 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 text-white/80 hover:text-white text-xl leading-none flex items-center justify-center transition-colors"
+            title="Close (Esc)"
+          >
+            ×
+          </button>
+          <span className="fixed bottom-4 left-1/2 -translate-x-1/2 z-10 text-white/50 text-xs pointer-events-none">
+            {viewer === 'fit' ? 'Click the image for actual size · Esc to close' : 'Click the image to fit · Esc to close'}
+          </span>
+          <div className={`min-h-full flex ${viewer === 'fit' ? 'items-center justify-center p-6' : 'items-start justify-start p-6'}`}>
+            <img
+              src={src}
+              alt=""
+              onClick={(e) => { e.stopPropagation(); setViewer(v => (v === 'fit' ? 'actual' : 'fit')); }}
+              className={viewer === 'fit'
+                ? 'max-w-full max-h-[calc(100vh-3rem)] object-contain cursor-zoom-in'
+                : 'max-w-none cursor-zoom-out'}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
