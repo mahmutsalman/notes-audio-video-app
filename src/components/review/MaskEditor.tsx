@@ -22,13 +22,20 @@ interface MaskEditorProps {
   /** Underlying image identity, so tags can be assigned (they live on the image, not the echo). */
   mediaTagType?: MediaTagType;
   mediaTagId?: number;
+  /**
+   * "Mark 20 · Minimum Window Substring" — the question this echo will be filed under, shown
+   * read-only. It is derived from the image's own mark on the way in and re-derived server-side on
+   * enroll, so there is nothing to fill in and nothing that can drift; this is here purely so you
+   * can SEE what the card will be attached to before committing to it.
+   */
+  sourceLabel?: string | null;
   /** Draft-only: create the review item on Save and return it (null ⇒ enroll failed, keep editor open). */
   onCommit?: () => Promise<ReviewItem | null>;
 }
 
 const LEVEL_LABELS = ['Level 1 — nearly readable', 'Level 2', 'Level 3 (default)', 'Level 4', 'Level 5 — very hard'];
 
-export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksChanged, onClose, mediaTagType, mediaTagId, onCommit }: MaskEditorProps) {
+export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksChanged, onClose, mediaTagType, mediaTagId, sourceLabel, onCommit }: MaskEditorProps) {
   // Draft mode = brand-new "Add to Echo": buffer everything, persist only on Save.
   const draft = reviewItemId == null;
   const [masks, setMasks] = useState<ReviewMask[]>(existingMasks);
@@ -260,6 +267,19 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
             ×
           </button>
         </div>
+
+        {/* Source — which question this card belongs to. Filled in automatically from the mark the
+            image lives on; you never type it. Shown because an echo without its question is
+            unreviewable, and you should be able to see it is set BEFORE you hit Save. */}
+        {sourceLabel && (
+          <div className="px-4 py-3 border-b border-gray-700">
+            <p className="text-gray-400 text-xs mb-2">Source</p>
+            <div className="flex items-start gap-1.5 text-xs text-amber-300/90">
+              <span aria-hidden className="leading-4">📌</span>
+              <span className="leading-4">{sourceLabel}</span>
+            </div>
+          </div>
+        )}
 
         {/* Tags — assigned to the underlying image (shared with the image's own tags and
             Browse-by-Tag). Autosaves immediately via tags.setForMedia; works even in draft

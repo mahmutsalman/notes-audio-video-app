@@ -1612,6 +1612,94 @@ function runMigrations(db: Database.Database): void {
     console.log('Added archived_at column to quick_captures table');
   }
 
+  // Migration: Echo source context — which QUESTION an echo card came from (ADR-0010).
+  //
+  // An echo is a masked screenshot of one insight. Stripped of its origin it is unreviewable:
+  // "growing the window only ever helps" means nothing if you can't remember it was about
+  // Minimum Window Substring. review_items already carried a coarse recording_id, but the MARK
+  // (a `durations` row — the unit that actually holds one question) was never stored, even though
+  // the enroll call site had it in scope and dropped it.
+  //
+  //   review_items.duration_id     — the mark this echo came from.
+  //   durations.question_image_id  — ONE image on a mark designated as its question/prompt, so
+  //                                  every echo from that mark inherits the context for free.
+  //
+  // question_image_id is a plain INTEGER, deliberately NOT a declared FK: every reader LEFT JOINs
+  // duration_images, so an image deleted out from under it degrades to "no question image" rather
+  // than depending on the foreign_keys pragma being on to avoid a dangling reference.
+  {
+    const riCols = (db.prepare("PRAGMA table_info(review_items)").all() as { name: string }[]).map(c => c.name);
+    if (!riCols.includes('duration_id')) {
+      db.exec('ALTER TABLE review_items ADD COLUMN duration_id INTEGER');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_review_items_duration ON review_items(duration_id)');
+
+      // Backfill 1 — a duration_image echo IS an image on a mark. The link was always derivable
+      // through duration_images.duration_id; Echo simply never made the join. This recovers the
+      // mark for every echo enrolled before this migration, so nothing needs re-enrolling.
+      db.exec(`
+        UPDATE review_items
+        SET    duration_id = (
+                 SELECT di.duration_id FROM duration_images di WHERE di.id = review_items.media_id
+               )
+        WHERE  media_type = 'duration_image'
+      `);
+
+      // Backfill 2 — an image_child echo whose PARENT is a mark image ("Related images" in the
+      // lightbox). These were the worst case: enrolled with recording_id AND capture_id both NULL,
+      // so they showed no breadcrumb and no "Go to original" button at all.
+      db.exec(`
+        UPDATE review_items
+        SET    duration_id = (
+                 SELECT di.duration_id
+                 FROM   image_children ic
+                 JOIN   duration_images di ON di.id = ic.parent_id
+                 WHERE  ic.id = review_items.media_id AND ic.parent_type = 'duration_image'
+               )
+        WHERE  media_type = 'image_child'
+      `);
+
+      // Backfill 3 — repair the recording_id those orphans never got, now that the mark is known.
+      db.exec(`
+        UPDATE review_items
+        SET    recording_id = (SELECT d.recording_id FROM durations d WHERE d.id = review_items.duration_id)
+        WHERE  recording_id IS NULL AND duration_id IS NOT NULL
+      `);
+
+      // Backfill 4 — child echoes hanging off a RECORDING-level image have no mark, but they do
+      // have a recording. Partial origin beats none.
+      db.exec(`
+        UPDATE review_items
+        SET    recording_id = (
+                 SELECT i.recording_id
+                 FROM   image_children ic
+                 JOIN   images i ON i.id = ic.parent_id
+                 WHERE  ic.id = review_items.media_id AND ic.parent_type = 'image'
+               )
+        WHERE  recording_id IS NULL AND media_type = 'image_child'
+      `);
+
+      // Backfill 5 — a recording-level image echo enrolled without its recording_id. No mark to
+      // find (these images don't live on one), but the recording is recoverable from the image.
+      db.exec(`
+        UPDATE review_items
+        SET    recording_id = (SELECT i.recording_id FROM images i WHERE i.id = review_items.media_id)
+        WHERE  recording_id IS NULL AND media_type = 'image'
+      `);
+
+      const linked = db.prepare(
+        'SELECT COUNT(*) AS n FROM review_items WHERE duration_id IS NOT NULL'
+      ).get() as { n: number };
+      const total = db.prepare('SELECT COUNT(*) AS n FROM review_items').get() as { n: number };
+      console.log(`Added duration_id to review_items — backfilled ${linked.n}/${total.n} echo(es) to their mark`);
+    }
+
+    const durCols = (db.prepare("PRAGMA table_info(durations)").all() as { name: string }[]).map(c => c.name);
+    if (!durCols.includes('question_image_id')) {
+      db.exec('ALTER TABLE durations ADD COLUMN question_image_id INTEGER');
+      console.log('Added question_image_id column to durations table');
+    }
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

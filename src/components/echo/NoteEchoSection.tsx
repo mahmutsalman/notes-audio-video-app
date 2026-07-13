@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { ReviewItem, ReviewMask, BrowseReviewItem, ReviewedTodayItem, MediaTagType } from '../../types';
 import { REVIEW_CHANGED_EVENT, emitReviewChanged } from '../../utils/events';
+import { formatMarkSource } from '../../utils/marks';
 import ReviewSession from '../review/ReviewSession';
 import MaskEditor from '../review/MaskEditor';
 import EchoImageDetailPage from '../../pages/EchoImageDetailPage';
@@ -303,6 +304,7 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
             onMasksChanged={setMaskEditorMasks}
             mediaTagType={maskEditorItem.media_type as MediaTagType}
             mediaTagId={maskEditorItem.media_id}
+            sourceLabel={formatMarkSource(maskEditorItem.mark_number, maskEditorItem.duration_note)}
             onClose={() => { setMaskEditorItem(null); setMaskEditorMasks([]); }}
           />
         </div>

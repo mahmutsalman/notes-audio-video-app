@@ -672,6 +672,18 @@ export const DurationsOperations = {
     db.prepare('UPDATE durations SET canvas_file_path = ? WHERE id = ?').run(filePath, id);
   },
 
+  /**
+   * Designate ONE of a mark's images as its question/prompt — the screenshot that says WHAT the
+   * mark is asking (the LeetCode problem statement, say). Every echo enrolled from this mark shows
+   * it as context during review, so the cost is one action per question rather than one per card.
+   * Pass null to clear. `imageId` is not validated against duration_images on purpose: readers
+   * LEFT JOIN, so a stale id degrades to "no question image" rather than breaking the mark.
+   */
+  setQuestionImage(id: number, imageId: number | null): void {
+    const db = getDatabase();
+    db.prepare('UPDATE durations SET question_image_id = ? WHERE id = ?').run(imageId, id);
+  },
+
   reorder(recordingId: number, orderedIds: number[]): Duration[] {
     const db = getDatabase();
     const stmt = db.prepare('UPDATE durations SET sort_order = ? WHERE id = ? AND recording_id = ?');
@@ -2897,16 +2909,55 @@ export const ObsGhostMarksOperations = {
 
 // ── Review (Spaced Repetition) ────────────────────────────────────────────────
 
+/**
+ * "Mark 20" is NOT a stored value. It is the 1-based rank of a duration inside its recording,
+ * in the same (sort_order, start_time) order MarkList renders and with the same video-mark
+ * exclusion as DurationOperations.getByRecording. Recomputing it on every read is what keeps the
+ * number on an echo card identical to the chip the user actually clicks; persisting it would go
+ * stale the first time a mark is reordered or deleted.
+ */
+const MARK_POSITION_CTE = `
+  WITH mark_pos AS (
+    SELECT id,
+           ROW_NUMBER() OVER (PARTITION BY recording_id ORDER BY sort_order, start_time) AS mark_number
+    FROM   durations
+    WHERE  (is_video_mark IS NULL OR is_video_mark != 1)
+  )
+`;
+
+/**
+ * The origin every Echo read exposes. A mark has no title column, so `duration_note` is returned
+ * raw and the renderer derives the label from its first line (see src/utils/marks.ts).
+ * The question image is LEFT JOINed, so a mark that has none — or one whose designated image was
+ * deleted — simply yields NULLs rather than dropping the echo from the result.
+ */
+const ECHO_SOURCE_COLUMNS = `
+             d.note            AS duration_note,
+             mp.mark_number    AS mark_number,
+             qi.id             AS question_image_id,
+             qi.file_path      AS question_image_path,
+             qi.thumbnail_path AS question_image_thumbnail
+`;
+
+const ECHO_SOURCE_JOINS = `
+      LEFT   JOIN durations       d  ON d.id  = ri.duration_id
+      LEFT   JOIN mark_pos        mp ON mp.id = ri.duration_id
+      LEFT   JOIN duration_images qi ON qi.id = d.question_image_id
+`;
+
 export const ReviewOperations = {
   getAll(): any[] {
     const db = getDatabase();
     return db.prepare(`
+      ${MARK_POSITION_CTE}
       SELECT ri.*,
              r.name  AS recording_name,
-             t.name  AS topic_name
+             t.name  AS topic_name,
+             ${ECHO_SOURCE_COLUMNS}
       FROM   review_items ri
       LEFT   JOIN recordings r ON ri.recording_id = r.id
       LEFT   JOIN topics     t ON r.topic_id = t.id
+      ${ECHO_SOURCE_JOINS}
       ORDER  BY ri.next_review_at ASC
     `).all();
   },
@@ -2915,15 +2966,18 @@ export const ReviewOperations = {
   getAllEnrolled(): any[] {
     const db = getDatabase();
     return db.prepare(`
+      ${MARK_POSITION_CTE}
       SELECT ri.*,
              r.name AS recording_name,
              t.name AS topic_name,
+             ${ECHO_SOURCE_COLUMNS},
              (SELECT COUNT(*) FROM review_events re WHERE re.review_item_id = ri.id) AS total_reviews,
              (SELECT SUM(CASE WHEN re.rating = 1 THEN 1 ELSE 0 END) FROM review_events re WHERE re.review_item_id = ri.id) AS again_count,
              (SELECT MAX(re.reviewed_at) FROM review_events re WHERE re.review_item_id = ri.id) AS last_reviewed_at
       FROM   review_items ri
       LEFT   JOIN recordings r ON ri.recording_id = r.id
       LEFT   JOIN topics     t ON r.topic_id = t.id
+      ${ECHO_SOURCE_JOINS}
       ORDER  BY total_reviews DESC, ri.created_at DESC
     `).all();
   },
@@ -2931,12 +2985,15 @@ export const ReviewOperations = {
   getById(id: number): any {
     const db = getDatabase();
     return db.prepare(`
+      ${MARK_POSITION_CTE}
       SELECT ri.*,
              r.name AS recording_name,
-             t.name AS topic_name
+             t.name AS topic_name,
+             ${ECHO_SOURCE_COLUMNS}
       FROM   review_items ri
       LEFT   JOIN recordings r ON ri.recording_id = r.id
       LEFT   JOIN topics     t ON r.topic_id = t.id
+      ${ECHO_SOURCE_JOINS}
       WHERE  ri.id = ?
     `).get(id);
   },
@@ -2945,12 +3002,15 @@ export const ReviewOperations = {
   getByRecording(recordingId: number): any[] {
     const db = getDatabase();
     return db.prepare(`
+      ${MARK_POSITION_CTE}
       SELECT ri.*,
              r.name  AS recording_name,
-             t.name  AS topic_name
+             t.name  AS topic_name,
+             ${ECHO_SOURCE_COLUMNS}
       FROM   review_items ri
       LEFT   JOIN recordings r ON ri.recording_id = r.id
       LEFT   JOIN topics     t ON r.topic_id = t.id
+      ${ECHO_SOURCE_JOINS}
       WHERE  ri.recording_id = ?
       ORDER  BY ri.next_review_at ASC
     `).all(recordingId);
@@ -2960,15 +3020,18 @@ export const ReviewOperations = {
   getAllEnrolledByRecording(recordingId: number): any[] {
     const db = getDatabase();
     return db.prepare(`
+      ${MARK_POSITION_CTE}
       SELECT ri.*,
              r.name AS recording_name,
              t.name AS topic_name,
+             ${ECHO_SOURCE_COLUMNS},
              (SELECT COUNT(*) FROM review_events re WHERE re.review_item_id = ri.id) AS total_reviews,
              (SELECT SUM(CASE WHEN re.rating = 1 THEN 1 ELSE 0 END) FROM review_events re WHERE re.review_item_id = ri.id) AS again_count,
              (SELECT MAX(re.reviewed_at) FROM review_events re WHERE re.review_item_id = ri.id) AS last_reviewed_at
       FROM   review_items ri
       LEFT   JOIN recordings r ON ri.recording_id = r.id
       LEFT   JOIN topics     t ON r.topic_id = t.id
+      ${ECHO_SOURCE_JOINS}
       WHERE  ri.recording_id = ?
       ORDER  BY total_reviews DESC, ri.created_at DESC
     `).all(recordingId);
@@ -2986,14 +3049,17 @@ export const ReviewOperations = {
     const db = getDatabase();
     const placeholders = tagNames.map(() => '?').join(', ');
     return db.prepare(`
+      ${MARK_POSITION_CTE}
       SELECT DISTINCT ri.*,
              r.name AS recording_name,
-             t.name AS topic_name
+             t.name AS topic_name,
+             ${ECHO_SOURCE_COLUMNS}
       FROM   review_items ri
       JOIN   media_tags mt ON mt.media_type = ri.media_type AND mt.media_id = ri.media_id
       JOIN   tags tg ON tg.id = mt.tag_id
       LEFT   JOIN recordings r ON ri.recording_id = r.id
       LEFT   JOIN topics     t ON r.topic_id = t.id
+      ${ECHO_SOURCE_JOINS}
       WHERE  tg.name IN (${placeholders})
       ORDER  BY ri.next_review_at ASC
     `).all(...tagNames);
@@ -3005,14 +3071,17 @@ export const ReviewOperations = {
     const db = getDatabase();
     const placeholders = tagNames.map(() => '?').join(', ');
     return db.prepare(`
+      ${MARK_POSITION_CTE}
       SELECT DISTINCT ri.*,
              r.name AS recording_name,
-             t.name AS topic_name
+             t.name AS topic_name,
+             ${ECHO_SOURCE_COLUMNS}
       FROM   review_items ri
       JOIN   media_tags mt ON mt.media_type = ri.media_type AND mt.media_id = ri.media_id
       JOIN   tags tg ON tg.id = mt.tag_id
       LEFT   JOIN recordings r ON ri.recording_id = r.id
       LEFT   JOIN topics     t ON r.topic_id = t.id
+      ${ECHO_SOURCE_JOINS}
       WHERE  ri.recording_id = ? AND tg.name IN (${placeholders})
       ORDER  BY ri.next_review_at ASC
     `).all(recordingId, ...tagNames);
@@ -3024,9 +3093,11 @@ export const ReviewOperations = {
     const db = getDatabase();
     const placeholders = tagNames.map(() => '?').join(', ');
     return db.prepare(`
+      ${MARK_POSITION_CTE}
       SELECT DISTINCT ri.*,
              r.name AS recording_name,
              t.name AS topic_name,
+             ${ECHO_SOURCE_COLUMNS},
              (SELECT COUNT(*) FROM review_events re WHERE re.review_item_id = ri.id) AS total_reviews,
              (SELECT SUM(CASE WHEN re.rating = 1 THEN 1 ELSE 0 END) FROM review_events re WHERE re.review_item_id = ri.id) AS again_count,
              (SELECT MAX(re.reviewed_at) FROM review_events re WHERE re.review_item_id = ri.id) AS last_reviewed_at
@@ -3035,6 +3106,7 @@ export const ReviewOperations = {
       JOIN   tags tg ON tg.id = mt.tag_id
       LEFT   JOIN recordings r ON ri.recording_id = r.id
       LEFT   JOIN topics     t ON r.topic_id = t.id
+      ${ECHO_SOURCE_JOINS}
       WHERE  tg.name IN (${placeholders})
       ORDER  BY total_reviews DESC, ri.created_at DESC
     `).all(...tagNames);
@@ -3046,9 +3118,11 @@ export const ReviewOperations = {
     const db = getDatabase();
     const placeholders = tagNames.map(() => '?').join(', ');
     return db.prepare(`
+      ${MARK_POSITION_CTE}
       SELECT DISTINCT ri.*,
              r.name AS recording_name,
              t.name AS topic_name,
+             ${ECHO_SOURCE_COLUMNS},
              (SELECT COUNT(*) FROM review_events re WHERE re.review_item_id = ri.id) AS total_reviews,
              (SELECT SUM(CASE WHEN re.rating = 1 THEN 1 ELSE 0 END) FROM review_events re WHERE re.review_item_id = ri.id) AS again_count,
              (SELECT MAX(re.reviewed_at) FROM review_events re WHERE re.review_item_id = ri.id) AS last_reviewed_at
@@ -3057,6 +3131,7 @@ export const ReviewOperations = {
       JOIN   tags tg ON tg.id = mt.tag_id
       LEFT   JOIN recordings r ON ri.recording_id = r.id
       LEFT   JOIN topics     t ON r.topic_id = t.id
+      ${ECHO_SOURCE_JOINS}
       WHERE  ri.recording_id = ? AND tg.name IN (${placeholders})
       ORDER  BY total_reviews DESC, ri.created_at DESC
     `).all(recordingId, ...tagNames);
@@ -3095,9 +3170,11 @@ export const ReviewOperations = {
     const recordingParams = recordingId != null ? [recordingId] : [];
 
     return db.prepare(`
+      ${MARK_POSITION_CTE}
       SELECT ri.*,
              r.name AS recording_name,
              t.name AS topic_name,
+             ${ECHO_SOURCE_COLUMNS},
              (SELECT COUNT(*) FROM review_events re WHERE ${graded}) AS reviews_today,
              (SELECT SUM(CASE WHEN re.rating = 1 THEN 1 ELSE 0 END)
                 FROM review_events re WHERE ${graded}) AS again_today,
@@ -3107,6 +3184,7 @@ export const ReviewOperations = {
       FROM   review_items ri
       LEFT   JOIN recordings r ON ri.recording_id = r.id
       LEFT   JOIN topics     t ON r.topic_id = t.id
+      ${ECHO_SOURCE_JOINS}
       WHERE  EXISTS (SELECT 1 FROM review_events re WHERE ${graded})
       ${tagClause}
       ${recordingClause}
@@ -3142,6 +3220,36 @@ export const ReviewOperations = {
     `).all(recordingId) as { name: string; count: number }[];
   },
 
+  /**
+   * The mark an image belongs to, derived from the image itself. This is the single definition of
+   * "which question is this echo about", shared by enroll and the duration_id backfill migration —
+   * deriving it here rather than trusting each call site to pass it is what makes the two agree,
+   * and is why the `image_child` enroll in ImageLightbox (which has no idea what a mark is) still
+   * lands on the right one.
+   *
+   * duration_image  → the mark it hangs on.
+   * image_child     → the mark of its PARENT, when that parent is itself a mark image.
+   * everything else → null (a recording-level or quick-capture image has no mark).
+   */
+  resolveDurationId(mediaType: string, mediaId: number): number | null {
+    const db = getDatabase();
+    if (mediaType === 'duration_image') {
+      const row = db.prepare('SELECT duration_id FROM duration_images WHERE id = ?')
+        .get(mediaId) as { duration_id: number } | undefined;
+      return row?.duration_id ?? null;
+    }
+    if (mediaType === 'image_child') {
+      const row = db.prepare(`
+        SELECT di.duration_id AS duration_id
+        FROM   image_children ic
+        JOIN   duration_images di ON di.id = ic.parent_id
+        WHERE  ic.id = ? AND ic.parent_type = 'duration_image'
+      `).get(mediaId) as { duration_id: number } | undefined;
+      return row?.duration_id ?? null;
+    }
+    return null;
+  },
+
   enroll(
     mediaType: string, mediaId: number,
     filePath: string | null, thumbnailPath: string | null, caption: string | null,
@@ -3149,13 +3257,35 @@ export const ReviewOperations = {
   ): any {
     const db = getDatabase();
     const now = new Date().toISOString();
+
+    const durationId = ReviewOperations.resolveDurationId(mediaType, mediaId);
+
+    // Callers that don't know their own origin (the image_child enroll passes null for both ids)
+    // get it filled in from the mark. Without this a "Related image" echo is unreachable: no
+    // breadcrumb, no "Go to original", nothing to tell you what it was about.
+    let resolvedRecordingId = recordingId;
+    if (resolvedRecordingId == null && durationId != null) {
+      const row = db.prepare('SELECT recording_id FROM durations WHERE id = ?')
+        .get(durationId) as { recording_id: number } | undefined;
+      resolvedRecordingId = row?.recording_id ?? null;
+    }
+    if (resolvedRecordingId == null && mediaType === 'image_child') {
+      const row = db.prepare(`
+        SELECT i.recording_id AS recording_id
+        FROM   image_children ic
+        JOIN   images i ON i.id = ic.parent_id
+        WHERE  ic.id = ? AND ic.parent_type = 'image'
+      `).get(mediaId) as { recording_id: number } | undefined;
+      resolvedRecordingId = row?.recording_id ?? null;
+    }
+
     const result = db.prepare(`
       INSERT INTO review_items
-        (media_type, media_id, file_path, thumbnail_path, caption, recording_id, capture_id,
+        (media_type, media_id, file_path, thumbnail_path, caption, recording_id, capture_id, duration_id,
          interval_days, ease_factor, repetitions, next_review_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 2.5, 0, ?, ?, ?)
-    `).run(mediaType, mediaId, filePath, thumbnailPath, caption, recordingId, captureId, now, now, now);
-    return db.prepare('SELECT * FROM review_items WHERE id = ?').get(result.lastInsertRowid);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 2.5, 0, ?, ?, ?)
+    `).run(mediaType, mediaId, filePath, thumbnailPath, caption, resolvedRecordingId, captureId, durationId, now, now, now);
+    return ReviewOperations.getById(Number(result.lastInsertRowid));
   },
 
   /**

@@ -104,6 +104,7 @@ export interface Duration {
   source_duration_video_id: number | null; // links to duration_videos.id when created via OBS mark assignment
   is_video_mark: number | null; // 1 if created via OBS video mark assignment; survives video deletion
   is_ghost_mark: number | null; // 1 if assigned from OBS ghost marks (recording intervals between pauses)
+  question_image_id: number | null; // one duration_images.id designated as this mark's question/prompt
   created_at: string;
   // Media loaded separately
   images?: DurationImage[];
@@ -397,7 +398,9 @@ export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
 export type CreateVideo = Omit<Video, 'id' | 'created_at'>;
-export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color' | 'sort_order' | 'page_number' | 'source_video_id' | 'source_duration_video_id' | 'is_video_mark' | 'is_ghost_mark'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor; page_number?: number | null; source_video_id?: number | null; source_duration_video_id?: number | null; is_video_mark?: number | null; is_ghost_mark?: number | null };
+// question_image_id is never set at creation — a brand-new mark has no images to designate yet.
+// It is assigned later via durations:setQuestionImage.
+export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color' | 'sort_order' | 'page_number' | 'source_video_id' | 'source_duration_video_id' | 'is_video_mark' | 'is_ghost_mark' | 'question_image_id'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor; page_number?: number | null; source_video_id?: number | null; source_duration_video_id?: number | null; is_video_mark?: number | null; is_ghost_mark?: number | null };
 
 // Video Compression Types
 export interface VideoCompressionOptions {
@@ -518,6 +521,8 @@ export interface ElectronAPI {
     reorder: (recordingId: number, orderedIds: number[]) => Promise<Duration[]>;
     loadCanvas: (durationId: number) => Promise<string | null>;
     saveCanvas: (durationId: number, data: string) => Promise<void>;
+    /** Designate one of the mark's images as its question/prompt (null clears it). */
+    setQuestionImage: (durationId: number, imageId: number | null) => Promise<void>;
   };
   durationImages: {
     getByDuration: (durationId: number) => Promise<DurationImage[]>;
@@ -1362,6 +1367,8 @@ export interface ReviewItem {
   caption: string | null;
   recording_id: number | null;
   capture_id: number | null;
+  /** The mark (durations row) this echo came from — i.e. WHICH QUESTION it is about. */
+  duration_id: number | null;
   interval_days: number;
   ease_factor: number;
   repetitions: number;
@@ -1378,6 +1385,14 @@ export interface ReviewItem {
   // Joined
   topic_name: string | null;
   recording_name: string | null;
+  // Joined source context — the mark this echo came from. A mark has no title column, so
+  // `duration_note` is the raw HTML note and the label is its first line (see utils/marks.ts).
+  // `mark_number` is recomputed per query (positional), never stored.
+  duration_note: string | null;
+  mark_number: number | null;
+  question_image_id: number | null;
+  question_image_path: string | null;
+  question_image_thumbnail: string | null;
 }
 
 /** Enrolled image with review aggregates, for the Browse grid. */

@@ -17,7 +17,7 @@ import { SYNC_COMPLETED_EVENT } from '../utils/events';
 import DurationList from '../components/recordings/DurationList';
 import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
 import MarkList from '../components/recordings/MarkList';
-import { isBookNote, isReaderNote, isMarkBasedNote, isWrittenNote, createMarkTimes, getNextMarkIndex } from '../utils/marks';
+import { isBookNote, isReaderNote, isMarkBasedNote, isWrittenNote, createMarkTimes, getNextMarkIndex, formatMarkSource } from '../utils/marks';
 import NoteEchoSection from '../components/echo/NoteEchoSection';
 import PdfViewer, { PdfViewerHandle } from '../components/pdf/PdfViewer';
 import BookReaderView, { BookReaderViewHandle } from '../components/reader/BookReaderView';
@@ -50,6 +50,10 @@ export default function RecordingPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const searchNav = (location.state as { searchNav?: SearchNavState } | null)?.searchNav ?? null;
+  // "Go to original" from an Echo review carries the mark it came from, so the jump lands on the
+  // question instead of dumping you at the top of a 50-mark recording.
+  const echoNavDurationId =
+    (location.state as { echoNav?: { durationId: number } } | null)?.echoNav?.durationId ?? null;
   const id = recordingId ? parseInt(recordingId, 10) : null;
 
   const isActiveTab = useIsActiveTab();
@@ -58,6 +62,7 @@ export default function RecordingPage() {
   useTabTitle(recording?.name ?? 'Recording');
   const {
     durations,
+    fetchDurations,
     createDuration,
     deleteDuration,
     updateDuration,
@@ -379,6 +384,16 @@ export default function RecordingPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchNav]);
+
+  // Same two-stage handoff as searchNav above: stage 1 records the target, and the effect below
+  // fires it once `durations` (and any media) have actually loaded. Reuses the same refs, so the
+  // activation + scroll-to-mark behaviour is shared rather than reimplemented.
+  useEffect(() => {
+    if (echoNavDurationId == null) return;
+    searchNavFiredRef.current = false;
+    pendingDurationActivationRef.current = echoNavDurationId;
+    pendingScrollTargetRef.current = null;
+  }, [echoNavDurationId]);
 
   // Fire pending search nav activation when conditions are ready
   useEffect(() => {
@@ -1675,6 +1690,25 @@ export default function RecordingPage() {
 
   const activeDurationImages = activeDurationId ? durationImagesCache[activeDurationId] ?? [] : [];
 
+  // The mark currently open, its designated question image, and the one-line label an echo from it
+  // will carry ("Mark 20 · Minimum Window Substring"). The label is shown in the Add-to-Echo modal
+  // so it's obvious, before saving, what the card will be filed under.
+  const activeDuration = activeDurationId != null
+    ? durations.find(d => d.id === activeDurationId) ?? null
+    : null;
+  const activeQuestionImageId = activeDuration?.question_image_id ?? null;
+  // Positional, exactly like MarkList's `index + 1`. A video mark isn't in this list (indexOf -1),
+  // so it gets no number and falls back to its note title alone.
+  const activeMarkIndex = activeDuration ? durationsForList.indexOf(activeDuration) : -1;
+  const activeMarkLabel = activeDuration
+    ? formatMarkSource(activeMarkIndex >= 0 ? activeMarkIndex + 1 : null, activeDuration.note)
+    : null;
+
+  const setQuestionImage = async (durationId: number, imageId: number | null) => {
+    await window.electronAPI.durations.setQuestionImage(durationId, imageId);
+    await fetchDurations();
+  };
+
   // Derive OCR maps directly from image data (caption2 is non-null when OCR has been extracted)
   const recordingImageOcrMap: Record<number, boolean> = {};
   for (const img of images) recordingImageOcrMap[img.id] = !!img.caption2;
@@ -2804,6 +2838,7 @@ export default function RecordingPage() {
             groupColorOverrides={mediaGroupColorOverrides}
             colorKeyPrefix="durationImage"
             captionColorClass="text-blue-600 dark:text-blue-400"
+            questionImageId={activeQuestionImageId}
             highlightedId={
               searchNav?.results[searchNav.currentIndex]?.content_type === 'duration_image'
                 ? searchNav.results[searchNav.currentIndex].source_id
@@ -4039,6 +4074,7 @@ export default function RecordingPage() {
               img.caption ?? null, recordingId ? parseInt(recordingId) : null, null
             );
           } : undefined}
+          echoSourceLabel={activeMarkLabel}
           mediaType="duration_image"
           imageType="duration_image"
           imageColors={selectedDurationImageIndex !== null && activeDurationImages[selectedDurationImageIndex]?.id ? durationImageColorsCache[activeDurationImages[selectedDurationImageIndex].id!] ?? [] : []}
@@ -4668,6 +4704,24 @@ export default function RecordingPage() {
             >
               <span>🔍</span>
               Extract OCR text
+            </button>
+          )}
+          {/* Designate this image as the mark's question — the prompt every echo from this mark
+              shows during review. One action per question, not per card. */}
+          {contextMenu.type === 'durationImage' && activeDurationId != null && (
+            <button
+              className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
+              onClick={async () => {
+                const imageId = contextMenu.item.id;
+                const isCurrent = activeQuestionImageId === imageId;
+                setContextMenu(null);
+                await setQuestionImage(activeDurationId, isCurrent ? null : imageId);
+              }}
+            >
+              <span>⭐</span>
+              {activeQuestionImageId === contextMenu.item.id
+                ? 'Unset as question image'
+                : 'Set as question image'}
             </button>
           )}
           {(contextMenu.type === 'video' || contextMenu.type === 'durationVideo') &&

@@ -70,6 +70,8 @@ interface SortableImageGridProps {
   readOnly?: boolean;
   /** Map of imageId → ordered color key array; renders as stacked rings (first = innermost) */
   colorKeysMap?: Record<number, string[]>;
+  /** The mark's designated question image — gets a ⭐ badge. At most one per mark. */
+  questionImageId?: number | null;
 }
 
 /* ── Build stacked color ring box-shadow ──────────────────────── */
@@ -103,6 +105,7 @@ interface SortableImageProps {
   hasOcr?: boolean;
   isHighlighted?: boolean;
   colorKeys?: string[];
+  isQuestionImage?: boolean;
 }
 
 function SortableImage({
@@ -122,6 +125,7 @@ function SortableImage({
   hasOcr = false,
   isHighlighted = false,
   colorKeys = [],
+  isQuestionImage = false,
 }: SortableImageProps) {
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const colorRings = buildColorRings(colorKeys);
@@ -201,6 +205,19 @@ function SortableImage({
                           rounded-full w-4 h-4 flex items-center justify-center font-bold z-10
                           group-hover:opacity-0 transition-opacity">
             {tagCount > 9 ? '9+' : tagCount}
+          </div>
+        )}
+        {/* Question-image star. Bottom-left on purpose: the top-right corner already stacks the
+            audio/tag/child badges, and this must stay readable at a glance — it is the only thing
+            telling you which screenshot every echo from this mark will show as its prompt. */}
+        {isQuestionImage && (
+          <div
+            className="absolute bottom-1 left-1 bg-amber-500 text-white text-[10px]
+                       rounded-full w-4 h-4 flex items-center justify-center font-bold z-10
+                       group-hover:opacity-0 transition-opacity"
+            title="Question image — shown as context on every echo from this mark"
+          >
+            ★
           </div>
         )}
         {/* Child image count badge (red) */}
@@ -410,6 +427,7 @@ export default function SortableImageGrid({
   highlightedId,
   readOnly = false,
   colorKeysMap,
+  questionImageId,
 }: SortableImageGridProps) {
   const [activeId, setActiveId] = useState<number | null>(null);
 
@@ -513,6 +531,7 @@ export default function SortableImageGrid({
                 hasOcr={ocrMap?.[img.id] ?? false}
                 isHighlighted={highlightedId === img.id}
                 colorKeys={colorKeysMap?.[img.id] ?? []}
+                isQuestionImage={questionImageId != null && questionImageId === img.id}
               />
             );
           })}

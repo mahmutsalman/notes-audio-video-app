@@ -72,6 +72,13 @@ interface ImageLightboxProps {
   onAudioTagsChanged?: (audioId: number) => void;
   // Navigate to the recording/mark that contains this image (search context only)
   onGoToRecording?: () => void;
+  /**
+   * "Mark 20 · Minimum Window Substring" — the question an echo made from this image belongs to.
+   * Display-only (the link itself is derived server-side on enroll). Passed straight through to the
+   * Add-to-Echo editor, and down to the child lightbox so a "Related image" shows the same origin
+   * as its parent.
+   */
+  echoSourceLabel?: string | null;
 }
 
 function resolveAudioMediaType(imageType?: string): string {
@@ -196,6 +203,7 @@ export default function ImageLightbox({
   audioTagCountMap = {},
   onAudioTagsChanged,
   onGoToRecording,
+  echoSourceLabel,
 }: ImageLightboxProps) {
   // ── Study tracking ───────────────────────────────────────────────────────
   const { tabId } = useTabInstance();
@@ -1891,6 +1899,7 @@ export default function ImageLightbox({
             mediaType="image_child"
             imageType="image_child"
             disableChildImages={true}
+            echoSourceLabel={echoSourceLabel}
             imageAudiosMap={childAudiosMapForLightbox}
             onRecordForImage={onRecordForImage ? (imageId) => handleRecordForChild(imageId) : undefined}
             onDeleteImageAudio={(audioId, imageId) => handleDeleteChildAudio(audioId, imageId)}
@@ -2122,6 +2131,7 @@ export default function ImageLightbox({
           onCommit={onEnrollInReview}
           mediaTagType={draftEcho.mediaType}
           mediaTagId={draftEcho.mediaId}
+          sourceLabel={echoSourceLabel}
           onClose={() => setDraftEcho(null)}
         />
       )}

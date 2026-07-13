@@ -6,6 +6,7 @@ import {
   previewRatings, applyRating, applyManual, applyManualDate,
   buildRatingEvent, buildManualEvent, type ReviewNoteExtras,
 } from '../../utils/fsrs';
+import { formatMarkSource } from '../../utils/marks';
 import PixelatedImage from './PixelatedImage';
 import ReviewNoteImages from './ReviewNoteImages';
 import ReviewNoteAudios from './ReviewNoteAudios';
@@ -70,6 +71,10 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   useEffect(() => {
     localStorage.setItem('echo.showCodePane', showCodePane ? '1' : '0');
   }, [showCodePane]);
+  // The mark's question image, collapsed by default: the source LINE is always worth seeing (it
+  // tells you what the card is about), but the question IMAGE is a hint — expanding it is a choice,
+  // and it re-collapses on every card so a peek at one never carries into the next.
+  const [showQuestion, setShowQuestion] = useState(false);
   const [showManualSchedule, setShowManualSchedule] = useState(false);
   const [isRating, setIsRating] = useState(false);
 
@@ -219,6 +224,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     setAllRevealed(false);
     setRatingsRequested(false);
     setShowManualSchedule(false);
+    setShowQuestion(false);
     setNote('');
     setMissedPoints('');
     setShowNotePanel(false);
@@ -429,7 +435,12 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   const handleNavigateToOriginal = () => {
     if (!current) return;
     if (current.recording_id) {
-      navigate(`/recording/${current.recording_id}`);
+      // Land on the MARK, not just the recording. RecordingPage already knows how to activate and
+      // scroll to a duration from router state (the same path SearchPage uses); without the mark
+      // you arrive at a wall of "Mark 1 … Mark 50" and have to hunt for the question by hand.
+      navigate(`/recording/${current.recording_id}`, {
+        state: current.duration_id ? { echoNav: { durationId: current.duration_id } } : undefined,
+      });
     } else if (current.capture_id) {
       navigate('/capture');
     }
@@ -439,6 +450,12 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
 
   const fileSrc = window.electronAPI.paths.getFileUrl(current.file_path ?? '');
   const progress = `${currentIndex + 1} / ${items.length}`;
+
+  // "Mark 20 · Minimum Window Substring" — the answer to "what question is this card even about?"
+  const markSource = formatMarkSource(current.mark_number, current.duration_note);
+  const questionSrc = current.question_image_path
+    ? window.electronAPI.paths.getFileUrl(current.question_image_path)
+    : null;
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col">
@@ -543,13 +560,54 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
         />
       </div>
 
-      {/* Source context */}
-      {(current.topic_name || current.recording_name) && (
-        <div className="flex items-center gap-2 px-5 py-2 text-xs text-gray-500">
-          {current.topic_name && <span>{current.topic_name}</span>}
-          {current.topic_name && current.recording_name && <span>›</span>}
-          {current.recording_name && <span>{current.recording_name}</span>}
-          {current.caption && <span className="text-gray-400 ml-2">— {current.caption}</span>}
+      {/* Source context — topic › recording, then the MARK (the actual question) on its own line.
+          Without the mark line a card like "growing the window only ever helps" is unreviewable:
+          you cannot recall an answer when you can't remember the question. */}
+      {(current.topic_name || current.recording_name || markSource) && (
+        <div className="px-5 py-2 space-y-1">
+          {(current.topic_name || current.recording_name) && (
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              {current.topic_name && <span>{current.topic_name}</span>}
+              {current.topic_name && current.recording_name && <span>›</span>}
+              {current.recording_name && <span>{current.recording_name}</span>}
+              {current.caption && <span className="text-gray-400 ml-2">— {current.caption}</span>}
+            </div>
+          )}
+
+          {markSource && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300/90 text-xs font-medium border border-amber-500/20">
+                <span aria-hidden>📌</span>
+                {markSource}
+              </span>
+
+              {questionSrc && (
+                <button
+                  onClick={() => setShowQuestion(v => !v)}
+                  className="text-xs text-gray-500 hover:text-blue-400 transition-colors flex items-center gap-1"
+                  title="The question image set on this mark"
+                >
+                  <svg
+                    className={`w-3 h-3 transition-transform ${showQuestion ? 'rotate-90' : ''}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  {showQuestion ? 'Hide question' : 'Show question'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {showQuestion && questionSrc && (
+            <div className="pt-1">
+              <img
+                src={questionSrc}
+                alt="The question this card came from"
+                className="max-h-64 w-auto rounded-lg border border-gray-700 object-contain"
+              />
+            </div>
+          )}
         </div>
       )}
 

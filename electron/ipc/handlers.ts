@@ -790,6 +790,12 @@ export function setupIpcHandlers(): void {
     return DurationsOperations.reorder(recordingId, orderedIds);
   });
 
+  // Mark ONE of this mark's images as the question/prompt every echo from it shows during review.
+  // imageId = null clears it.
+  ipcMain.handle('durations:setQuestionImage', async (_, durationId: number, imageId: number | null) => {
+    DurationsOperations.setQuestionImage(durationId, imageId);
+  });
+
   // ============ Duration Images ============
   ipcMain.handle('durationImages:getByDuration', async (_, durationId: number) => {
     return DurationImagesOperations.getByDuration(durationId);
