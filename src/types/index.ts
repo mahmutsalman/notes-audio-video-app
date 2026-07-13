@@ -830,6 +830,16 @@ export interface ElectronAPI {
     getOrCreate: (note: string, tags: string[]) => Promise<{ id: number }>;
     getRecent: () => Promise<QuickCapture[]>;
     getArchived: () => Promise<QuickCapture[]>;
+    /** Every capture (board + cleared), optionally filtered by tag / colour / local-day range. */
+    getAll: (filters?: CaptureFilters) => Promise<QuickCapture[]>;
+    /** Tags present on captures (via their images/audios, plus legacy JSON tags), with counts. */
+    getCaptureTags: () => Promise<{ name: string; count: number }[]>;
+    /** Colour keys present on captures (via their images/audios), with counts. */
+    getCaptureColors: () => Promise<{ color_key: string; count: number }[]>;
+    /** Every captured IMAGE (the grain an archive view actually wants), same filters. */
+    getAllImages: (filters?: CaptureFilters) => Promise<CaptureImageWithContext[]>;
+    getCaptureImageTags: () => Promise<{ name: string; count: number }[]>;
+    getCaptureImageColors: () => Promise<{ color_key: string; count: number }[]>;
     archiveAll: () => Promise<{ ids: number[] }>;
     unarchive: (ids: number[]) => Promise<void>;
     addImage: (captureId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<QuickCaptureImage>;
@@ -1326,6 +1336,33 @@ export interface QuickCapture {
   archived_at: string | null;
   images: QuickCaptureImage[];
   audios: QuickCaptureAudio[];
+}
+
+/**
+ * Filters for the "All captures" view. Facets combine as tags(ANY) AND colours(ANY) AND date AND
+ * scope. Tags and colours are matched by rolling up through a capture's CHILDREN — a capture itself
+ * carries no media_tags or colours; its images and audios do.
+ */
+/**
+ * A captured image plus the state of the capture session it belongs to. Quick Capture reuses one
+ * capture row per board session, so `created_at` (the image) and `capture_created_at` routinely
+ * differ by days — always group and filter on the IMAGE's date.
+ */
+export interface CaptureImageWithContext extends QuickCaptureImage {
+  capture_archived_at: string | null;
+  capture_created_at: string;
+}
+
+export interface CaptureFilters {
+  /** Match a capture if ANY of its children carries ANY of these tags. */
+  tagNames?: string[];
+  /** Match a capture if ANY of its children carries ANY of these colour keys. */
+  colorKeys?: string[];
+  /** Local 'YYYY-MM-DD', inclusive. */
+  from?: string | null;
+  to?: string | null;
+  /** 'board' = still on the board, 'archived' = cleared off it, 'all' = both. */
+  scope?: 'all' | 'board' | 'archived';
 }
 
 export interface ImageAnnotation {

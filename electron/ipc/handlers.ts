@@ -2519,6 +2519,40 @@ export function setupIpcHandlers(): void {
     return QuickCaptureOperations.getArchived();
   });
 
+  // Every capture, board + cleared, with optional tag / colour / date filters.
+  ipcMain.handle('quickCaptures:getAll', async (_, filters?: {
+    tagNames?: string[]; colorKeys?: string[];
+    from?: string | null; to?: string | null;
+    scope?: 'all' | 'board' | 'archived';
+  }) => {
+    return QuickCaptureOperations.getAll(filters);
+  });
+
+  ipcMain.handle('quickCaptures:getCaptureTags', async () => {
+    return QuickCaptureOperations.getCaptureTags();
+  });
+
+  ipcMain.handle('quickCaptures:getCaptureColors', async () => {
+    return QuickCaptureOperations.getCaptureColors();
+  });
+
+  // Image-grain archive: every captured IMAGE, with the same filters.
+  ipcMain.handle('quickCaptures:getAllImages', async (_, filters?: {
+    tagNames?: string[]; colorKeys?: string[];
+    from?: string | null; to?: string | null;
+    scope?: 'all' | 'board' | 'archived';
+  }) => {
+    return QuickCaptureOperations.getAllCaptureImages(filters);
+  });
+
+  ipcMain.handle('quickCaptures:getCaptureImageTags', async () => {
+    return QuickCaptureOperations.getCaptureImageTags();
+  });
+
+  ipcMain.handle('quickCaptures:getCaptureImageColors', async () => {
+    return QuickCaptureOperations.getCaptureImageColors();
+  });
+
   ipcMain.handle('quickCaptures:archiveAll', async () => {
     return QuickCaptureOperations.archiveAll();
   });

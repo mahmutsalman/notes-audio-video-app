@@ -1718,6 +1718,16 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // The "All captures" archive view scans every capture and filters by local day, tag and colour.
+  // created_at had no index at all (the board view never needed one — it read the whole table), and
+  // media_color_assignments was only indexed on (media_type, media_id), which is the wrong
+  // direction for "which media carry colour X".
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_quick_captures_created  ON quick_captures(created_at);
+    CREATE INDEX IF NOT EXISTS idx_quick_captures_archived ON quick_captures(archived_at);
+    CREATE INDEX IF NOT EXISTS idx_media_color_key         ON media_color_assignments(color_key);
+  `);
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

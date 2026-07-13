@@ -846,6 +846,26 @@ const electronAPI = {
       ipcRenderer.invoke('quickCaptures:getRecent'),
     getArchived: (): Promise<import('../src/types').QuickCapture[]> =>
       ipcRenderer.invoke('quickCaptures:getArchived'),
+    getAll: (filters?: {
+      tagNames?: string[]; colorKeys?: string[];
+      from?: string | null; to?: string | null;
+      scope?: 'all' | 'board' | 'archived';
+    }): Promise<import('../src/types').QuickCapture[]> =>
+      ipcRenderer.invoke('quickCaptures:getAll', filters),
+    getCaptureTags: (): Promise<{ name: string; count: number }[]> =>
+      ipcRenderer.invoke('quickCaptures:getCaptureTags'),
+    getCaptureColors: (): Promise<{ color_key: string; count: number }[]> =>
+      ipcRenderer.invoke('quickCaptures:getCaptureColors'),
+    getAllImages: (filters?: {
+      tagNames?: string[]; colorKeys?: string[];
+      from?: string | null; to?: string | null;
+      scope?: 'all' | 'board' | 'archived';
+    }): Promise<import('../src/types').CaptureImageWithContext[]> =>
+      ipcRenderer.invoke('quickCaptures:getAllImages', filters),
+    getCaptureImageTags: (): Promise<{ name: string; count: number }[]> =>
+      ipcRenderer.invoke('quickCaptures:getCaptureImageTags'),
+    getCaptureImageColors: (): Promise<{ color_key: string; count: number }[]> =>
+      ipcRenderer.invoke('quickCaptures:getCaptureImageColors'),
     archiveAll: (): Promise<{ ids: number[] }> =>
       ipcRenderer.invoke('quickCaptures:archiveAll'),
     unarchive: (ids: number[]): Promise<void> =>

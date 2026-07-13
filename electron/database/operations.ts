@@ -2086,6 +2086,253 @@ export const QuickCaptureOperations = {
   },
 
   /**
+   * EVERY capture — on the board and cleared off it — for the "All" archive view, with optional
+   * tag / colour / date filters.
+   *
+   * ── Why the tag and colour filters are EXISTS roll-ups ──────────────────────────────────────
+   * A capture carries no tags or colours of its own. The tag modal and the colour picker write to
+   * `media_tags` / `media_color_assignments` against the capture's CHILDREN — its images, its
+   * audios, and the audios attached to those images. So "captures tagged X" really means "captures
+   * with a child tagged X", and the only way to ask that is a roll-up. It also has to be EXISTS
+   * rather than a JOIN: a capture with four images tagged X would otherwise come back four times.
+   *
+   * `quick_captures.tags` (a JSON column, written only by CaptureInput) is a separate, legacy tag
+   * system that never reaches `media_tags`. It's folded in with an OR so captures tagged that way
+   * before this view existed still match.
+   *
+   * Facets combine as: tags(ANY) AND colours(ANY) AND date-range AND scope — matching the
+   * ANY-within-facet semantics the Echo filters already use.
+   */
+  getAll(filters?: {
+    tagNames?: string[];
+    colorKeys?: string[];
+    /** Local 'YYYY-MM-DD', inclusive. */
+    from?: string | null;
+    to?: string | null;
+    scope?: 'all' | 'board' | 'archived';
+  }): import('../../src/types').QuickCapture[] {
+    const db = getDatabase();
+    const tagNames = filters?.tagNames ?? [];
+    const colorKeys = filters?.colorKeys ?? [];
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+
+    const scope = filters?.scope ?? 'all';
+    if (scope === 'board') clauses.push('qc.archived_at IS NULL');
+    else if (scope === 'archived') clauses.push('qc.archived_at IS NOT NULL');
+
+    // Compare in LOCAL days, the same space the UI groups by — otherwise a capture made at 1am
+    // lands in the previous day's bucket for filtering but today's for grouping.
+    if (filters?.from) {
+      clauses.push("date(qc.created_at, 'localtime') >= ?");
+      params.push(filters.from);
+    }
+    if (filters?.to) {
+      clauses.push("date(qc.created_at, 'localtime') <= ?");
+      params.push(filters.to);
+    }
+
+    if (tagNames.length > 0) {
+      const ph = tagNames.map(() => '?').join(', ');
+      clauses.push(`(
+        EXISTS (SELECT 1 FROM quick_capture_images qci
+                JOIN media_tags mt ON mt.media_type = 'quick_capture_image' AND mt.media_id = qci.id
+                JOIN tags tg ON tg.id = mt.tag_id
+                WHERE qci.capture_id = qc.id AND tg.name IN (${ph}))
+        OR EXISTS (SELECT 1 FROM quick_capture_audios qca
+                JOIN media_tags mt ON mt.media_type = 'quick_capture_audio' AND mt.media_id = qca.id
+                JOIN tags tg ON tg.id = mt.tag_id
+                WHERE qca.capture_id = qc.id AND tg.name IN (${ph}))
+        OR EXISTS (SELECT 1 FROM quick_capture_images qci
+                JOIN quick_capture_image_audios qcia ON qcia.capture_image_id = qci.id
+                JOIN media_tags mt ON mt.media_type = 'quick_capture_image_audio' AND mt.media_id = qcia.id
+                JOIN tags tg ON tg.id = mt.tag_id
+                WHERE qci.capture_id = qc.id AND tg.name IN (${ph}))
+        OR EXISTS (SELECT 1 FROM json_each(qc.tags) WHERE json_each.value IN (${ph}))
+      )`);
+      params.push(...tagNames, ...tagNames, ...tagNames, ...tagNames);
+    }
+
+    if (colorKeys.length > 0) {
+      const ph = colorKeys.map(() => '?').join(', ');
+      clauses.push(`(
+        EXISTS (SELECT 1 FROM quick_capture_images qci
+                JOIN media_color_assignments mc ON mc.media_type = 'quick_capture_image' AND mc.media_id = qci.id
+                WHERE qci.capture_id = qc.id AND mc.color_key IN (${ph}))
+        OR EXISTS (SELECT 1 FROM quick_capture_audios qca
+                JOIN media_color_assignments mc ON mc.media_type = 'quick_capture_audio' AND mc.media_id = qca.id
+                WHERE qca.capture_id = qc.id AND mc.color_key IN (${ph}))
+        OR EXISTS (SELECT 1 FROM quick_capture_images qci
+                JOIN quick_capture_image_audios qcia ON qcia.capture_image_id = qci.id
+                JOIN media_color_assignments mc ON mc.media_type = 'quick_capture_image_audio' AND mc.media_id = qcia.id
+                WHERE qci.capture_id = qc.id AND mc.color_key IN (${ph}))
+      )`);
+      params.push(...colorKeys, ...colorKeys, ...colorKeys);
+    }
+
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = db.prepare(`
+      SELECT qc.* FROM quick_captures qc
+      ${where}
+      ORDER BY qc.created_at DESC
+    `).all(...params) as { id: number; note: string | null; tags: string; created_at: string; archived_at: string | null }[];
+    return this._hydrate(rows);
+  },
+
+  /**
+   * Tag names actually present on captures (via any child), with how many captures carry each —
+   * so every option in the filter dropdown is guaranteed to yield at least one result. Includes
+   * the legacy `quick_captures.tags` JSON names, which is where older captures' tags live.
+   */
+  getCaptureTags(): { name: string; count: number }[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT name, COUNT(DISTINCT capture_id) AS count FROM (
+        SELECT tg.name AS name, qci.capture_id AS capture_id
+        FROM   quick_capture_images qci
+        JOIN   media_tags mt ON mt.media_type = 'quick_capture_image' AND mt.media_id = qci.id
+        JOIN   tags tg ON tg.id = mt.tag_id
+        UNION ALL
+        SELECT tg.name, qca.capture_id
+        FROM   quick_capture_audios qca
+        JOIN   media_tags mt ON mt.media_type = 'quick_capture_audio' AND mt.media_id = qca.id
+        JOIN   tags tg ON tg.id = mt.tag_id
+        UNION ALL
+        SELECT tg.name, qci.capture_id
+        FROM   quick_capture_images qci
+        JOIN   quick_capture_image_audios qcia ON qcia.capture_image_id = qci.id
+        JOIN   media_tags mt ON mt.media_type = 'quick_capture_image_audio' AND mt.media_id = qcia.id
+        JOIN   tags tg ON tg.id = mt.tag_id
+        UNION ALL
+        SELECT json_each.value, qc.id
+        FROM   quick_captures qc, json_each(qc.tags)
+      )
+      GROUP BY name
+      ORDER BY count DESC, name ASC
+    `).all() as { name: string; count: number }[];
+  },
+
+  /**
+   * Every captured IMAGE, newest first, with the same tag / colour / date / scope filters.
+   *
+   * This is the grain that actually matters for an archive view. Quick Capture reuses ONE
+   * `quick_captures` row for a whole board session (`getOrCreate` above returns the newest
+   * un-archived capture), so a single capture row can hold months of images: grouping by the
+   * capture's `created_at` would file today's paste under the day the session started. The image's
+   * own `created_at` is when it was actually captured.
+   *
+   * Tags and colours need no roll-up here — they live directly on `quick_capture_image`, which is
+   * exactly what the tag modal and the colour picker write to.
+   */
+  getAllCaptureImages(filters?: {
+    tagNames?: string[];
+    colorKeys?: string[];
+    from?: string | null;
+    to?: string | null;
+    scope?: 'all' | 'board' | 'archived';
+  }): import('../../src/types').CaptureImageWithContext[] {
+    const db = getDatabase();
+    const tagNames = filters?.tagNames ?? [];
+    const colorKeys = filters?.colorKeys ?? [];
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+
+    const scope = filters?.scope ?? 'all';
+    if (scope === 'board') clauses.push('qc.archived_at IS NULL');
+    else if (scope === 'archived') clauses.push('qc.archived_at IS NOT NULL');
+
+    // Local days, matching how the UI groups. Filter on the IMAGE's date, not the capture's.
+    if (filters?.from) {
+      clauses.push("date(qci.created_at, 'localtime') >= ?");
+      params.push(filters.from);
+    }
+    if (filters?.to) {
+      clauses.push("date(qci.created_at, 'localtime') <= ?");
+      params.push(filters.to);
+    }
+
+    if (tagNames.length > 0) {
+      const ph = tagNames.map(() => '?').join(', ');
+      clauses.push(`EXISTS (
+        SELECT 1 FROM media_tags mt
+        JOIN   tags tg ON tg.id = mt.tag_id
+        WHERE  mt.media_type = 'quick_capture_image' AND mt.media_id = qci.id
+          AND  tg.name IN (${ph})
+      )`);
+      params.push(...tagNames);
+    }
+
+    if (colorKeys.length > 0) {
+      const ph = colorKeys.map(() => '?').join(', ');
+      clauses.push(`EXISTS (
+        SELECT 1 FROM media_color_assignments mc
+        WHERE  mc.media_type = 'quick_capture_image' AND mc.media_id = qci.id
+          AND  mc.color_key IN (${ph})
+      )`);
+      params.push(...colorKeys);
+    }
+
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    return db.prepare(`
+      SELECT qci.*,
+             qc.archived_at AS capture_archived_at,
+             qc.created_at  AS capture_created_at
+      FROM   quick_capture_images qci
+      JOIN   quick_captures qc ON qc.id = qci.capture_id
+      ${where}
+      ORDER  BY qci.created_at DESC, qci.id DESC
+    `).all(...params) as import('../../src/types').CaptureImageWithContext[];
+  },
+
+  /** Tags on captured IMAGES, with image counts — the option list for the gallery's tag filter. */
+  getCaptureImageTags(): { name: string; count: number }[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT tg.name AS name, COUNT(DISTINCT qci.id) AS count
+      FROM   quick_capture_images qci
+      JOIN   media_tags mt ON mt.media_type = 'quick_capture_image' AND mt.media_id = qci.id
+      JOIN   tags tg ON tg.id = mt.tag_id
+      GROUP  BY tg.name
+      ORDER  BY count DESC, tg.name ASC
+    `).all() as { name: string; count: number }[];
+  },
+
+  /** Colour keys on captured IMAGES, with image counts. */
+  getCaptureImageColors(): { color_key: string; count: number }[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT mc.color_key AS color_key, COUNT(DISTINCT qci.id) AS count
+      FROM   quick_capture_images qci
+      JOIN   media_color_assignments mc ON mc.media_type = 'quick_capture_image' AND mc.media_id = qci.id
+      GROUP  BY mc.color_key
+      ORDER  BY count DESC, mc.color_key ASC
+    `).all() as { color_key: string; count: number }[];
+  },
+
+  /** Colour keys actually present on captures (via any child), with per-capture counts. */
+  getCaptureColors(): { color_key: string; count: number }[] {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT color_key, COUNT(DISTINCT capture_id) AS count FROM (
+        SELECT mc.color_key AS color_key, qci.capture_id AS capture_id
+        FROM   quick_capture_images qci
+        JOIN   media_color_assignments mc ON mc.media_type = 'quick_capture_image' AND mc.media_id = qci.id
+        UNION ALL
+        SELECT mc.color_key, qca.capture_id
+        FROM   quick_capture_audios qca
+        JOIN   media_color_assignments mc ON mc.media_type = 'quick_capture_audio' AND mc.media_id = qca.id
+        UNION ALL
+        SELECT mc.color_key, qci.capture_id
+        FROM   quick_capture_images qci
+        JOIN   quick_capture_image_audios qcia ON qcia.capture_image_id = qci.id
+        JOIN   media_color_assignments mc ON mc.media_type = 'quick_capture_image_audio' AND mc.media_id = qcia.id
+      )
+      GROUP BY color_key
+      ORDER BY count DESC, color_key ASC
+    `).all() as { color_key: string; count: number }[];
+  },
+
+  /**
    * Clear the board: mark every un-archived capture as archived.
    * Deletes NOTHING — no rows, no files, no tags, no FTS entries.
    * Returns the affected ids so the UI can offer an immediate Undo.
