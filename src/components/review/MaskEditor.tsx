@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ReviewMask, ReviewItem, MediaTagType } from '../../types';
 import { TagAutocomplete } from '../common/TagAutocomplete';
+import { IMAGE_COLORS, IMAGE_COLOR_KEYS } from '../../utils/imageColors';
 import { emitReviewChanged } from '../../utils/events';
 
 interface DrawingRect {
@@ -29,13 +30,18 @@ interface MaskEditorProps {
    * can SEE what the card will be attached to before committing to it.
    */
   sourceLabel?: string | null;
+  /**
+   * The mark's question image (a `media://` url). The NAME of a question often isn't enough to
+   * recall it — seeing the problem statement is. Click to enlarge.
+   */
+  sourceImageSrc?: string | null;
   /** Draft-only: create the review item on Save and return it (null ⇒ enroll failed, keep editor open). */
   onCommit?: () => Promise<ReviewItem | null>;
 }
 
 const LEVEL_LABELS = ['Level 1 — nearly readable', 'Level 2', 'Level 3 (default)', 'Level 4', 'Level 5 — very hard'];
 
-export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksChanged, onClose, mediaTagType, mediaTagId, sourceLabel, onCommit }: MaskEditorProps) {
+export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksChanged, onClose, mediaTagType, mediaTagId, sourceLabel, sourceImageSrc, onCommit }: MaskEditorProps) {
   // Draft mode = brand-new "Add to Echo": buffer everything, persist only on Save.
   const draft = reviewItemId == null;
   const [masks, setMasks] = useState<ReviewMask[]>(existingMasks);
@@ -45,8 +51,30 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
   const [selectedMaskId, setSelectedMaskId] = useState<number | null>(null);
   const [defaultLevel, setDefaultLevel] = useState(3);
   const [saving, setSaving] = useState(false);
+  const [showQuestion, setShowQuestion] = useState(false);
+  // Colour labels on the underlying image. They live on the image (not the echo), same as tags —
+  // so they're the same labels the grid shows as rings, and toggling here shows up there.
+  const [colors, setColors] = useState<string[]>([]);
+  // Which hint input just got an Enter — drives a brief green "saved" glow. The hint is already
+  // persisted on every keystroke; this exists purely so the Enter has visible confirmation.
+  const [flashedMaskId, setFlashedMaskId] = useState<number | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!mediaTagType || mediaTagId == null) return;
+    window.electronAPI.mediaColors.getByMedia(mediaTagType, mediaTagId).then(setColors);
+  }, [mediaTagType, mediaTagId]);
+
+  const toggleColor = async (key: string) => {
+    if (!mediaTagType || mediaTagId == null) return;
+    setColors(await window.electronAPI.mediaColors.toggle(mediaTagType, mediaTagId, key));
+  };
+
+  const flashHintSaved = (maskId: number) => {
+    setFlashedMaskId(maskId);
+    window.setTimeout(() => setFlashedMaskId(cur => (cur === maskId ? null : cur)), 900);
+  };
 
   // Compute the displayed image rect within the container (object-fit: contain)
   const getImageRect = useCallback((): { x: number; y: number; w: number; h: number } | null => {
@@ -271,13 +299,26 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
         {/* Source — which question this card belongs to. Filled in automatically from the mark the
             image lives on; you never type it. Shown because an echo without its question is
             unreviewable, and you should be able to see it is set BEFORE you hit Save. */}
-        {sourceLabel && (
+        {(sourceLabel || sourceImageSrc) && (
           <div className="px-4 py-3 border-b border-gray-700">
             <p className="text-gray-400 text-xs mb-2">Source</p>
-            <div className="flex items-start gap-1.5 text-xs text-amber-300/90">
-              <span aria-hidden className="leading-4">📌</span>
-              <span className="leading-4">{sourceLabel}</span>
-            </div>
+            {sourceLabel && (
+              <div className="flex items-start gap-1.5 text-xs text-amber-300/90">
+                <span aria-hidden className="leading-4">📌</span>
+                <span className="leading-4">{sourceLabel}</span>
+              </div>
+            )}
+            {/* The question image. The mark's NAME is often not enough to bring the problem back —
+                seeing the statement is. Click to enlarge over the editor. */}
+            {sourceImageSrc && (
+              <button
+                onClick={() => setShowQuestion(true)}
+                className="mt-2 block w-full rounded-md overflow-hidden border border-amber-400/40 hover:border-amber-400 transition-colors cursor-zoom-in"
+                title="Click to enlarge the question"
+              >
+                <img src={sourceImageSrc} alt="The question this card came from" className="w-full max-h-28 object-cover" />
+              </button>
+            )}
           </div>
         )}
 
@@ -293,6 +334,34 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
               key={`${mediaTagType}-${mediaTagId}`}
               autoFocus={false}
             />
+          </div>
+        )}
+
+        {/* Colour labels — same labels the image grid draws as rings. Assigned to the IMAGE, so
+            they're visible and editable here instead of only in the lightbox. */}
+        {mediaTagType && mediaTagId != null && (
+          <div className="px-4 py-3 border-b border-gray-700">
+            <p className="text-gray-400 text-xs mb-2">
+              Colors{colors.length > 0 && <span className="text-gray-500"> · {colors.length}</span>}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {IMAGE_COLOR_KEYS.map(key => {
+                const active = colors.includes(key);
+                return (
+                  <button
+                    key={key}
+                    onClick={() => toggleColor(key)}
+                    title={`${IMAGE_COLORS[key].label}${active ? ' — assigned' : ''}`}
+                    style={{ backgroundColor: IMAGE_COLORS[key].hex }}
+                    className={`w-5 h-5 rounded-full transition-all ${
+                      active
+                        ? 'ring-2 ring-offset-2 ring-offset-gray-900 ring-white scale-110'
+                        : 'opacity-40 hover:opacity-80'
+                    }`}
+                  />
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -362,16 +431,34 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
                 </div>
               </div>
 
-              {/* Hint text */}
+              {/* Hint text. Persisted on every keystroke already (buffered in draft mode, written
+                  through otherwise) — Enter exists to CONFIRM that, with a green glow, because an
+                  input that saves silently gives you no reason to believe it did. */}
               <div>
-                <p className="text-gray-500 text-[10px] mb-1">Hint (optional)</p>
+                <p className="text-gray-500 text-[10px] mb-1 flex items-center gap-1.5">
+                  Hint (optional)
+                  {flashedMaskId === mask.id && (
+                    <span className="text-emerald-400 text-[10px]">✓ saved</span>
+                  )}
+                </p>
                 <input
                   type="text"
                   value={mask.hint_text ?? ''}
                   onChange={(e) => handleUpdateHint(mask, e.target.value)}
                   onClick={(e) => e.stopPropagation()}
-                  placeholder="e.g. 'Rust for loop syntax'"
-                  className="w-full text-xs bg-gray-700 text-white rounded px-2 py-1.5 border border-gray-600 focus:outline-none focus:border-blue-500"
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    flashHintSaved(mask.id);
+                    (e.currentTarget as HTMLInputElement).blur();
+                  }}
+                  placeholder="e.g. 'Rust for loop syntax' · Enter to save"
+                  className={`w-full text-xs bg-gray-700 text-white rounded px-2 py-1.5 border transition-all duration-300 focus:outline-none ${
+                    flashedMaskId === mask.id
+                      ? 'border-emerald-500 ring-2 ring-emerald-500/50 shadow-[0_0_12px_rgba(16,185,129,0.45)]'
+                      : 'border-gray-600 focus:border-blue-500'
+                  }`}
                 />
               </div>
             </div>
@@ -397,6 +484,24 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
           </button>
         </div>
       </div>
+
+      {/* Enlarged question image. Sits above the whole editor so the problem statement is readable
+          while you decide what to mask. */}
+      {showQuestion && sourceImageSrc && (
+        <div
+          onClick={() => setShowQuestion(false)}
+          className="fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-8 cursor-zoom-out"
+        >
+          <span className="fixed top-4 left-5 text-amber-300/90 text-xs px-2 py-1 rounded-md bg-black/60 pointer-events-none">
+            ★ {sourceLabel ?? 'Question'}
+          </span>
+          <img
+            src={sourceImageSrc}
+            alt="The question this card came from"
+            className="max-w-full max-h-full object-contain"
+          />
+        </div>
+      )}
     </div>
   );
 }

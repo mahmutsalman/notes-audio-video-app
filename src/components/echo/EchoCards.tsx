@@ -1,6 +1,43 @@
 import type { ReviewItem, BrowseReviewItem, ReviewedTodayItem } from '../../types';
 import { formatDueLabel } from '../../utils/srsAlgorithm';
+import { formatMarkSource } from '../../utils/marks';
 import { RATING_META } from '../../utils/fsrs';
+
+/**
+ * "📌 Mark 19 · Minimum Window Substring" — which QUESTION this card is about. Shown on every card
+ * type, because a masked screenshot on its own ("growing the window only ever helps") is
+ * unidentifiable, and Browse is exactly where you scan a wall of them looking for one.
+ */
+export function MarkLine({ item }: { item: ReviewItem }) {
+  const label = formatMarkSource(item.mark_number, item.duration_note);
+  if (!label) return null;
+  return (
+    <p
+      className="text-amber-600 dark:text-amber-300/90 text-[10px] truncate mt-0.5"
+      title={label}
+    >
+      📌 {label}
+    </p>
+  );
+}
+
+/**
+ * The mark's question image, as a corner thumbnail on the card. Resolved through the mark at read
+ * time, so re-designating a mark's question image instantly updates every card from it.
+ * Hidden on hover so it never sits on top of the card's hover controls.
+ */
+export function QuestionThumb({ item }: { item: ReviewItem }) {
+  const path = item.question_image_thumbnail ?? item.question_image_path;
+  if (!path) return null;
+  return (
+    <div
+      className="absolute bottom-1.5 left-1.5 w-10 h-10 rounded-md overflow-hidden border-2 border-amber-400/80 shadow-lg bg-gray-900 group-hover:opacity-0 transition-opacity"
+      title="The question this card came from"
+    >
+      <img src={window.electronAPI.paths.getFileUrl(path)} alt="" className="w-full h-full object-cover" />
+    </div>
+  );
+}
 
 // Shared presentational cards for the Echo queue/browse views. Used by both the global
 // EchoPage and the note-scoped NoteEchoSection so the two stay visually identical.
@@ -57,6 +94,7 @@ export function ReviewItemGridCard({
         >
           ▦ Masks
         </button>
+        <QuestionThumb item={item} />
       </div>
       <div className="p-2">
         {item.caption && (
@@ -65,6 +103,7 @@ export function ReviewItemGridCard({
         <p className={`text-[11px] mt-0.5 ${isDue ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-400'}`}>
           {dueLabel}
         </p>
+        <MarkLine item={item} />
         {item.topic_name && (
           <p className="text-gray-400 text-[10px] truncate mt-0.5">{item.topic_name}</p>
         )}
@@ -109,6 +148,7 @@ export function ReviewItemListRow({
         {item.caption && (
           <p className="text-gray-800 dark:text-gray-200 text-sm truncate">{item.caption}</p>
         )}
+        <MarkLine item={item} />
         <div className="flex items-center gap-2 mt-0.5">
           {item.topic_name && (
             <span className="text-gray-400 text-xs truncate max-w-[120px]">{item.topic_name}</span>
@@ -188,11 +228,13 @@ export function ReviewedTodayCard({ item, onOpen }: { item: ReviewedTodayItem; o
             {rating.label}
           </div>
         )}
+        <QuestionThumb item={item} />
       </div>
       <div className="p-2">
         {item.caption && (
           <p className="text-gray-700 dark:text-gray-300 text-xs truncate" title={item.caption}>{item.caption}</p>
         )}
+        <MarkLine item={item} />
         <p className="text-gray-400 text-[10px] truncate mt-0.5">Reviewed {at}</p>
         <p className="text-[11px] mt-0.5 text-gray-400">{formatDueLabel(item.next_review_at)}</p>
       </div>
@@ -239,11 +281,13 @@ export function BrowseCard({ item, onOpen }: { item: BrowseReviewItem; onOpen: (
             {againRate}% again
           </div>
         )}
+        <QuestionThumb item={item} />
       </div>
       <div className="p-2">
         {item.caption && (
           <p className="text-gray-700 dark:text-gray-300 text-xs truncate" title={item.caption}>{item.caption}</p>
         )}
+        <MarkLine item={item} />
         <p className="text-gray-400 text-[10px] truncate mt-0.5">Last: {lastReviewed}</p>
         <p className="text-[11px] mt-0.5 text-gray-400">{formatDueLabel(item.next_review_at)}</p>
       </div>

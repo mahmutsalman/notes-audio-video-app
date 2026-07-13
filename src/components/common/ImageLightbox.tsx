@@ -79,6 +79,8 @@ interface ImageLightboxProps {
    * as its parent.
    */
   echoSourceLabel?: string | null;
+  /** The mark's question image (media:// url) — shown in the Add-to-Echo editor. */
+  echoSourceImageSrc?: string | null;
 }
 
 function resolveAudioMediaType(imageType?: string): string {
@@ -204,6 +206,7 @@ export default function ImageLightbox({
   onAudioTagsChanged,
   onGoToRecording,
   echoSourceLabel,
+  echoSourceImageSrc,
 }: ImageLightboxProps) {
   // ── Study tracking ───────────────────────────────────────────────────────
   const { tabId } = useTabInstance();
@@ -1900,6 +1903,7 @@ export default function ImageLightbox({
             imageType="image_child"
             disableChildImages={true}
             echoSourceLabel={echoSourceLabel}
+            echoSourceImageSrc={echoSourceImageSrc}
             imageAudiosMap={childAudiosMapForLightbox}
             onRecordForImage={onRecordForImage ? (imageId) => handleRecordForChild(imageId) : undefined}
             onDeleteImageAudio={(audioId, imageId) => handleDeleteChildAudio(audioId, imageId)}
@@ -2132,6 +2136,7 @@ export default function ImageLightbox({
           mediaTagType={draftEcho.mediaType}
           mediaTagId={draftEcho.mediaId}
           sourceLabel={echoSourceLabel}
+          sourceImageSrc={echoSourceImageSrc}
           onClose={() => setDraftEcho(null)}
         />
       )}

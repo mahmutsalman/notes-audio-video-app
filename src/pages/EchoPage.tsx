@@ -350,6 +350,9 @@ export default function EchoPage() {
             mediaTagType={maskEditorItem.media_type as MediaTagType}
             mediaTagId={maskEditorItem.media_id}
             sourceLabel={formatMarkSource(maskEditorItem.mark_number, maskEditorItem.duration_note)}
+            sourceImageSrc={maskEditorItem.question_image_path
+              ? window.electronAPI.paths.getFileUrl(maskEditorItem.question_image_path)
+              : null}
             onClose={() => { setMaskEditorItem(null); setMaskEditorMasks([]); }}
           />
         </div>

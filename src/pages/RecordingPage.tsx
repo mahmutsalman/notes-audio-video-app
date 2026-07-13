@@ -1709,6 +1709,15 @@ export default function RecordingPage() {
     await fetchDurations();
   };
 
+  // The designated question image's file, for the Add-to-Echo editor. Looked up in the mark's own
+  // images, so it follows re-designation immediately with no extra fetch.
+  const activeQuestionImage = activeQuestionImageId != null
+    ? activeDurationImages.find(img => img.id === activeQuestionImageId) ?? null
+    : null;
+  const activeQuestionImageSrc = activeQuestionImage
+    ? window.electronAPI.paths.getFileUrl(activeQuestionImage.file_path)
+    : null;
+
   // Derive OCR maps directly from image data (caption2 is non-null when OCR has been extracted)
   const recordingImageOcrMap: Record<number, boolean> = {};
   for (const img of images) recordingImageOcrMap[img.id] = !!img.caption2;
@@ -4075,6 +4084,7 @@ export default function RecordingPage() {
             );
           } : undefined}
           echoSourceLabel={activeMarkLabel}
+          echoSourceImageSrc={activeQuestionImageSrc}
           mediaType="duration_image"
           imageType="duration_image"
           imageColors={selectedDurationImageIndex !== null && activeDurationImages[selectedDurationImageIndex]?.id ? durationImageColorsCache[activeDurationImages[selectedDurationImageIndex].id!] ?? [] : []}

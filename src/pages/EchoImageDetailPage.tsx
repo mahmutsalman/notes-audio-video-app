@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { ReviewItem, ReviewEvent, ReviewItemStats, ReviewHeatmapDay, ReviewNote, ReviewNoteKind, ReviewNoteImage, ReviewNoteAudio } from '../types';
 import { formatDueLabel } from '../utils/srsAlgorithm';
+import { formatMarkSource } from '../utils/marks';
 import { currentRetrievability, stateLabel, RATING_META } from '../utils/fsrs';
 import HeatmapCalendar, { HEATMAP_WINDOWS, type HeatmapWindow } from '../components/echo/HeatmapCalendar';
 import ReviewNoteImages from '../components/review/ReviewNoteImages';
@@ -49,9 +50,11 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
   const [events, setEvents] = useState<ReviewEvent[]>([]);
   const [windowKey, setWindowKey] = useState<HeatmapWindow>('1yr');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  // Full-screen viewer for the image. The 320px column is too small to read a code screenshot in.
-  // null = closed; 'fit' = scaled to the window; 'actual' = 1:1 pixels, scrollable.
-  const [viewer, setViewer] = useState<null | 'fit' | 'actual'>(null);
+  // Full-screen viewer. The 320px column is too small to read a code screenshot in.
+  // null = closed. `img` is WHICH image (the card, or the mark's question), `zoom` is 'fit'
+  // (scaled to the window) vs 'actual' (1:1 pixels, scrollable). The two are independent —
+  // clicking to zoom must not swap the image being viewed out from under you.
+  const [viewer, setViewer] = useState<null | { img: 'card' | 'question'; zoom: 'fit' | 'actual' }>(null);
 
   // ← / → navigate to prev/next echo when shown as an embedded overlay (onBack set).
   // Runs in the CAPTURE phase and stops propagation so it beats the host page's own
@@ -132,6 +135,14 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
   const src = item.file_path ? window.electronAPI.paths.getFileUrl(item.file_path) : null;
   const avg = stats?.avg_rating != null ? stats.avg_rating.toFixed(2) : '—';
 
+  // Which question this card is an answer to. Resolved through the mark on every read, so changing
+  // the mark's question image updates this card (and every other one from that mark) with no resync.
+  const markSource = formatMarkSource(item.mark_number, item.duration_note);
+  const questionSrc = item.question_image_path
+    ? window.electronAPI.paths.getFileUrl(item.question_image_path)
+    : null;
+  const viewerSrc = viewer?.img === 'question' ? questionSrc : src;
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-dark-bg overflow-hidden">
       {/* Header */}
@@ -177,10 +188,18 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
             {[item.topic_name, item.recording_name].filter(Boolean).join(' › ') || 'No source'}
           </p>
+          {markSource && (
+            <p className="text-xs text-amber-600 dark:text-amber-300/90 mt-0.5 truncate" title={markSource}>
+              📌 {markSource}
+            </p>
+          )}
         </div>
         {item.recording_id && (
           <button
-            onClick={() => navigate(`/recording/${item.recording_id}`)}
+            onClick={() => navigate(`/recording/${item.recording_id}`, {
+              // Land on the MARK, not the top of a 50-mark recording.
+              state: item.duration_id ? { echoNav: { durationId: item.duration_id } } : undefined,
+            })}
             className="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-dark-surface text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-dark-hover transition-colors"
           >
             Go to original
@@ -195,7 +214,7 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
             <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-dark-border bg-gray-100 dark:bg-dark-surface">
               {src ? (
                 <button
-                  onClick={() => setViewer('fit')}
+                  onClick={() => setViewer({ img: 'card', zoom: 'fit' })}
                   className="relative block w-full group cursor-zoom-in"
                   title="Open full screen (Esc to close)"
                 >
@@ -210,6 +229,24 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
                 <div className="aspect-video flex items-center justify-center text-gray-400 text-3xl">🖼️</div>
               )}
             </div>
+
+            {/* The mark's question image — the prompt this card is an answer to. Resolved through
+                the mark, so re-designating it on the mark updates this automatically. */}
+            {questionSrc && (
+              <div className="rounded-xl overflow-hidden border border-amber-400/40 bg-gray-100 dark:bg-dark-surface">
+                <p className="px-3 py-1.5 text-[11px] text-amber-600 dark:text-amber-300/90 border-b border-amber-400/20">
+                  ★ Question
+                </p>
+                <button
+                  onClick={() => setViewer({ img: 'question', zoom: 'fit' })}
+                  className="relative block w-full group cursor-zoom-in"
+                  title="Open full screen (Esc to close)"
+                >
+                  <img src={questionSrc} alt="" className="w-full object-contain max-h-60" />
+                  <span className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
+                </button>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <StatCard label="Total reviews" value={String(stats?.total_reviews ?? 0)} />
@@ -321,7 +358,7 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
 
       {/* Full-screen image viewer. Backdrop or × closes it; clicking the image itself toggles
           fit-to-window ⇄ 1:1 pixels, which is what makes a dense code screenshot legible. */}
-      {viewer && src && (
+      {viewer && viewerSrc && (
         <div
           onClick={() => setViewer(null)}
           className="fixed inset-0 z-[60] bg-black/90 overflow-auto cursor-zoom-out"
@@ -333,15 +370,24 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
           >
             ×
           </button>
+          {viewer.img === 'question' && (
+            <span className="fixed top-4 left-5 z-10 text-amber-300/90 text-xs px-2 py-1 rounded-md bg-black/60 pointer-events-none">
+              ★ Question
+            </span>
+          )}
           <span className="fixed bottom-4 left-1/2 -translate-x-1/2 z-10 text-white/50 text-xs pointer-events-none">
-            {viewer === 'fit' ? 'Click the image for actual size · Esc to close' : 'Click the image to fit · Esc to close'}
+            {viewer.zoom === 'fit' ? 'Click the image for actual size · Esc to close' : 'Click the image to fit · Esc to close'}
           </span>
-          <div className={`min-h-full flex ${viewer === 'fit' ? 'items-center justify-center p-6' : 'items-start justify-start p-6'}`}>
+          <div className={`min-h-full flex ${viewer.zoom === 'fit' ? 'items-center justify-center p-6' : 'items-start justify-start p-6'}`}>
             <img
-              src={src}
+              src={viewerSrc}
               alt=""
-              onClick={(e) => { e.stopPropagation(); setViewer(v => (v === 'fit' ? 'actual' : 'fit')); }}
-              className={viewer === 'fit'
+              onClick={(e) => {
+                e.stopPropagation();
+                // Toggle the ZOOM only — the image being viewed must not change underfoot.
+                setViewer(v => (v ? { ...v, zoom: v.zoom === 'fit' ? 'actual' : 'fit' } : v));
+              }}
+              className={viewer.zoom === 'fit'
                 ? 'max-w-full max-h-[calc(100vh-3rem)] object-contain cursor-zoom-in'
                 : 'max-w-none cursor-zoom-out'}
             />
