@@ -6,7 +6,7 @@ import {
   previewRatings, applyRating, applyManual, applyManualDate,
   buildRatingEvent, buildManualEvent, type ReviewNoteExtras,
 } from '../../utils/fsrs';
-import { formatMarkSource } from '../../utils/marks';
+import { formatMarkSource, parseQuestionImages } from '../../utils/marks';
 import PixelatedImage from './PixelatedImage';
 import ReviewNoteImages from './ReviewNoteImages';
 import ReviewNoteAudios from './ReviewNoteAudios';
@@ -453,9 +453,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
 
   // "Mark 20 · Minimum Window Substring" — the answer to "what question is this card even about?"
   const markSource = formatMarkSource(current.mark_number, current.duration_note);
-  const questionSrc = current.question_image_path
-    ? window.electronAPI.paths.getFileUrl(current.question_image_path)
-    : null;
+  const questions = parseQuestionImages(current.question_images_json);
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col">
@@ -581,11 +579,11 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                 {markSource}
               </span>
 
-              {questionSrc && (
+              {questions.length > 0 && (
                 <button
                   onClick={() => setShowQuestion(v => !v)}
                   className="text-xs text-gray-500 hover:text-blue-400 transition-colors flex items-center gap-1"
-                  title="The question image set on this mark"
+                  title="The question image(s) set on this mark"
                 >
                   <svg
                     className={`w-3 h-3 transition-transform ${showQuestion ? 'rotate-90' : ''}`}
@@ -594,18 +592,26 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                   {showQuestion ? 'Hide question' : 'Show question'}
+                  {questions.length > 1 && (
+                    <span className="text-gray-600"> ({questions.length})</span>
+                  )}
                 </button>
               )}
             </div>
           )}
 
-          {showQuestion && questionSrc && (
-            <div className="pt-1">
-              <img
-                src={questionSrc}
-                alt="The question this card came from"
-                className="max-h-64 w-auto rounded-lg border border-gray-700 object-contain"
-              />
+          {/* All of the mark's question images, side by side and horizontally scrollable — a long
+              prompt is often split across two screenshots, and you need to read them together. */}
+          {showQuestion && questions.length > 0 && (
+            <div className="pt-1 flex gap-2 overflow-x-auto">
+              {questions.map(q => (
+                <img
+                  key={q.id}
+                  src={window.electronAPI.paths.getFileUrl(q.file_path)}
+                  alt="The question this card came from"
+                  className="max-h-64 w-auto flex-shrink-0 rounded-lg border border-gray-700 object-contain"
+                />
+              ))}
             </div>
           )}
         </div>

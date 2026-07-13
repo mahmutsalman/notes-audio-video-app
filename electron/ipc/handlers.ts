@@ -790,10 +790,10 @@ export function setupIpcHandlers(): void {
     return DurationsOperations.reorder(recordingId, orderedIds);
   });
 
-  // Mark ONE of this mark's images as the question/prompt every echo from it shows during review.
-  // imageId = null clears it.
-  ipcMain.handle('durations:setQuestionImage', async (_, durationId: number, imageId: number | null) => {
-    DurationsOperations.setQuestionImage(durationId, imageId);
+  // Flag/unflag one of a mark's images as a QUESTION image — the prompt every echo from that mark
+  // shows during review. A mark may have several. Returns the mark's images with fresh flags.
+  ipcMain.handle('durationImages:setQuestion', async (_, imageId: number, isQuestion: boolean) => {
+    return DurationImagesOperations.setQuestion(imageId, isQuestion);
   });
 
   // ============ Duration Images ============

@@ -216,14 +216,14 @@ const electronAPI = {
       ipcRenderer.invoke('durations:loadCanvas', durationId),
     saveCanvas: (durationId: number, data: string): Promise<void> =>
       ipcRenderer.invoke('durations:saveCanvas', { durationId, data }),
-    setQuestionImage: (durationId: number, imageId: number | null): Promise<void> =>
-      ipcRenderer.invoke('durations:setQuestionImage', durationId, imageId),
   },
 
   // Duration Images (images attached to duration marks)
   durationImages: {
     getByDuration: (durationId: number): Promise<DurationImage[]> =>
       ipcRenderer.invoke('durationImages:getByDuration', durationId),
+    setQuestion: (imageId: number, isQuestion: boolean): Promise<DurationImage[]> =>
+      ipcRenderer.invoke('durationImages:setQuestion', imageId, isQuestion),
     addFromClipboard: (durationId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<DurationImage> =>
       ipcRenderer.invoke('durationImages:addFromClipboard', durationId, imageBuffer, extension),
     replaceFromClipboard: (imageId: number, durationId: number, imageBuffer: ArrayBuffer, extension?: string): Promise<DurationImage> =>

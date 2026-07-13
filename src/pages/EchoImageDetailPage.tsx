@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { ReviewItem, ReviewEvent, ReviewItemStats, ReviewHeatmapDay, ReviewNote, ReviewNoteKind, ReviewNoteImage, ReviewNoteAudio } from '../types';
 import { formatDueLabel } from '../utils/srsAlgorithm';
-import { formatMarkSource } from '../utils/marks';
+import { formatMarkSource, parseQuestionImages } from '../utils/marks';
 import { currentRetrievability, stateLabel, RATING_META } from '../utils/fsrs';
 import HeatmapCalendar, { HEATMAP_WINDOWS, type HeatmapWindow } from '../components/echo/HeatmapCalendar';
 import ReviewNoteImages from '../components/review/ReviewNoteImages';
@@ -54,7 +54,9 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
   // null = closed. `img` is WHICH image (the card, or the mark's question), `zoom` is 'fit'
   // (scaled to the window) vs 'actual' (1:1 pixels, scrollable). The two are independent —
   // clicking to zoom must not swap the image being viewed out from under you.
-  const [viewer, setViewer] = useState<null | { img: 'card' | 'question'; zoom: 'fit' | 'actual' }>(null);
+  const [viewer, setViewer] = useState<
+    null | { img: 'card' | 'question'; zoom: 'fit' | 'actual'; questionIndex?: number }
+  >(null);
 
   // ← / → navigate to prev/next echo when shown as an embedded overlay (onBack set).
   // Runs in the CAPTURE phase and stops propagation so it beats the host page's own
@@ -138,10 +140,12 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
   // Which question this card is an answer to. Resolved through the mark on every read, so changing
   // the mark's question image updates this card (and every other one from that mark) with no resync.
   const markSource = formatMarkSource(item.mark_number, item.duration_note);
-  const questionSrc = item.question_image_path
-    ? window.electronAPI.paths.getFileUrl(item.question_image_path)
-    : null;
-  const viewerSrc = viewer?.img === 'question' ? questionSrc : src;
+  const questions = parseQuestionImages(item.question_images_json);
+  const viewerSrc = viewer?.img === 'question'
+    ? (questions[viewer.questionIndex ?? 0]
+        ? window.electronAPI.paths.getFileUrl(questions[viewer.questionIndex ?? 0].file_path)
+        : null)
+    : src;
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-dark-bg overflow-hidden">
@@ -232,19 +236,26 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
 
             {/* The mark's question image — the prompt this card is an answer to. Resolved through
                 the mark, so re-designating it on the mark updates this automatically. */}
-            {questionSrc && (
+            {questions.length > 0 && (
               <div className="rounded-xl overflow-hidden border border-amber-400/40 bg-gray-100 dark:bg-dark-surface">
                 <p className="px-3 py-1.5 text-[11px] text-amber-600 dark:text-amber-300/90 border-b border-amber-400/20">
-                  ★ Question
+                  ★ Question{questions.length > 1 && `s · ${questions.length}`}
                 </p>
-                <button
-                  onClick={() => setViewer({ img: 'question', zoom: 'fit' })}
-                  className="relative block w-full group cursor-zoom-in"
-                  title="Open full screen (Esc to close)"
-                >
-                  <img src={questionSrc} alt="" className="w-full object-contain max-h-60" />
-                  <span className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
-                </button>
+                {questions.map((q, i) => (
+                  <button
+                    key={q.id}
+                    onClick={() => setViewer({ img: 'question', zoom: 'fit', questionIndex: i })}
+                    className="relative block w-full group cursor-zoom-in border-b border-amber-400/10 last:border-b-0"
+                    title="Open full screen (Esc to close)"
+                  >
+                    <img
+                      src={window.electronAPI.paths.getFileUrl(q.file_path)}
+                      alt=""
+                      className="w-full object-contain max-h-60"
+                    />
+                    <span className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
+                  </button>
+                ))}
               </div>
             )}
 

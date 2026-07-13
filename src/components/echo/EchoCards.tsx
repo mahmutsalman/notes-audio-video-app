@@ -1,6 +1,6 @@
 import type { ReviewItem, BrowseReviewItem, ReviewedTodayItem } from '../../types';
 import { formatDueLabel } from '../../utils/srsAlgorithm';
-import { formatMarkSource } from '../../utils/marks';
+import { formatMarkSource, parseQuestionImages } from '../../utils/marks';
 import { RATING_META } from '../../utils/fsrs';
 
 /**
@@ -27,14 +27,24 @@ export function MarkLine({ item }: { item: ReviewItem }) {
  * Hidden on hover so it never sits on top of the card's hover controls.
  */
 export function QuestionThumb({ item }: { item: ReviewItem }) {
-  const path = item.question_image_thumbnail ?? item.question_image_path;
-  if (!path) return null;
+  const questions = parseQuestionImages(item.question_images_json);
+  const first = questions[0];
+  if (!first) return null;
+  const path = first.thumbnail_path ?? first.file_path;
   return (
     <div
       className="absolute bottom-1.5 left-1.5 w-10 h-10 rounded-md overflow-hidden border-2 border-amber-400/80 shadow-lg bg-gray-900 group-hover:opacity-0 transition-opacity"
-      title="The question this card came from"
+      title={questions.length > 1
+        ? `The ${questions.length} question images this card came from`
+        : 'The question this card came from'}
     >
       <img src={window.electronAPI.paths.getFileUrl(path)} alt="" className="w-full h-full object-cover" />
+      {/* A mark can have several question images; the card only has room for one, so say so. */}
+      {questions.length > 1 && (
+        <span className="absolute bottom-0 right-0 bg-amber-500 text-white text-[9px] font-bold px-1 leading-tight rounded-tl">
+          +{questions.length - 1}
+        </span>
+      )}
     </div>
   );
 }

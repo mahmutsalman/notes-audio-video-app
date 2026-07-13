@@ -672,18 +672,6 @@ export const DurationsOperations = {
     db.prepare('UPDATE durations SET canvas_file_path = ? WHERE id = ?').run(filePath, id);
   },
 
-  /**
-   * Designate ONE of a mark's images as its question/prompt — the screenshot that says WHAT the
-   * mark is asking (the LeetCode problem statement, say). Every echo enrolled from this mark shows
-   * it as context during review, so the cost is one action per question rather than one per card.
-   * Pass null to clear. `imageId` is not validated against duration_images on purpose: readers
-   * LEFT JOIN, so a stale id degrades to "no question image" rather than breaking the mark.
-   */
-  setQuestionImage(id: number, imageId: number | null): void {
-    const db = getDatabase();
-    db.prepare('UPDATE durations SET question_image_id = ? WHERE id = ?').run(imageId, id);
-  },
-
   reorder(recordingId: number, orderedIds: number[]): Duration[] {
     const db = getDatabase();
     const stmt = db.prepare('UPDATE durations SET sort_order = ? WHERE id = ? AND recording_id = ?');
@@ -708,6 +696,32 @@ export const DurationImagesOperations = {
       WHERE duration_id = ?
       ORDER BY sort_order, created_at
     `).all(durationId) as DurationImage[];
+  },
+
+  /**
+   * Mark (or unmark) an image as one of its mark's QUESTION images — the screenshots that say what
+   * the mark is asking. A mark may have several; every echo enrolled from it shows all of them as
+   * context during review, so the cost is one action per question rather than one per card.
+   *
+   * Also keeps the legacy `durations.question_image_id` pointing at the FIRST question image, so an
+   * older build downgraded onto this DB still finds one instead of none.
+   */
+  setQuestion(imageId: number, isQuestion: boolean): DurationImage[] {
+    const db = getDatabase();
+    const row = db.prepare('SELECT duration_id FROM duration_images WHERE id = ?')
+      .get(imageId) as { duration_id: number } | undefined;
+    if (!row) return [];
+
+    db.prepare('UPDATE duration_images SET is_question = ? WHERE id = ?').run(isQuestion ? 1 : 0, imageId);
+    db.prepare(`
+      UPDATE durations SET question_image_id = (
+        SELECT id FROM duration_images
+        WHERE duration_id = ? AND is_question = 1
+        ORDER BY sort_order, id LIMIT 1
+      ) WHERE id = ?
+    `).run(row.duration_id, row.duration_id);
+
+    return DurationImagesOperations.getByDuration(row.duration_id);
   },
 
   getById(id: number): DurationImage | null {
@@ -2928,21 +2942,27 @@ const MARK_POSITION_CTE = `
 /**
  * The origin every Echo read exposes. A mark has no title column, so `duration_note` is returned
  * raw and the renderer derives the label from its first line (see src/utils/marks.ts).
- * The question image is LEFT JOINed, so a mark that has none — or one whose designated image was
- * deleted — simply yields NULLs rather than dropping the echo from the result.
+ *
+ * A mark can have SEVERAL question images (a problem statement plus its constraints, say), so they
+ * come back as a JSON array rather than a join — a join would multiply the echo row once per
+ * question image and quietly inflate every count in the Echo views. Correlated subquery ⇒ a mark
+ * with no question images yields '[]', and the echo still appears.
  */
 const ECHO_SOURCE_COLUMNS = `
-             d.note            AS duration_note,
-             mp.mark_number    AS mark_number,
-             qi.id             AS question_image_id,
-             qi.file_path      AS question_image_path,
-             qi.thumbnail_path AS question_image_thumbnail
+             d.note         AS duration_note,
+             mp.mark_number AS mark_number,
+             (SELECT json_group_array(json_object(
+                       'id', q.id, 'file_path', q.file_path, 'thumbnail_path', q.thumbnail_path))
+              FROM (SELECT id, file_path, thumbnail_path
+                    FROM   duration_images
+                    WHERE  duration_id = ri.duration_id AND is_question = 1
+                    ORDER  BY sort_order, id) q
+             ) AS question_images_json
 `;
 
 const ECHO_SOURCE_JOINS = `
-      LEFT   JOIN durations       d  ON d.id  = ri.duration_id
-      LEFT   JOIN mark_pos        mp ON mp.id = ri.duration_id
-      LEFT   JOIN duration_images qi ON qi.id = d.question_image_id
+      LEFT   JOIN durations d  ON d.id  = ri.duration_id
+      LEFT   JOIN mark_pos  mp ON mp.id = ri.duration_id
 `;
 
 export const ReviewOperations = {

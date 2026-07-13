@@ -70,8 +70,8 @@ interface SortableImageGridProps {
   readOnly?: boolean;
   /** Map of imageId → ordered color key array; renders as stacked rings (first = innermost) */
   colorKeysMap?: Record<number, string[]>;
-  /** The mark's designated question image — gets a ⭐ badge. At most one per mark. */
-  questionImageId?: number | null;
+  /** The mark's designated question images — each gets a ★ badge. A mark may have several. */
+  questionImageIds?: number[];
 }
 
 /* ── Build stacked color ring box-shadow ──────────────────────── */
@@ -427,7 +427,7 @@ export default function SortableImageGrid({
   highlightedId,
   readOnly = false,
   colorKeysMap,
-  questionImageId,
+  questionImageIds,
 }: SortableImageGridProps) {
   const [activeId, setActiveId] = useState<number | null>(null);
 
@@ -531,7 +531,7 @@ export default function SortableImageGrid({
                 hasOcr={ocrMap?.[img.id] ?? false}
                 isHighlighted={highlightedId === img.id}
                 colorKeys={colorKeysMap?.[img.id] ?? []}
-                isQuestionImage={questionImageId != null && questionImageId === img.id}
+                isQuestionImage={questionImageIds?.includes(img.id) ?? false}
               />
             );
           })}

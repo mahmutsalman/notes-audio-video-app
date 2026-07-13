@@ -136,6 +136,8 @@ export interface ObsGhostMark {
 export interface DurationImage {
   id: number;
   duration_id: number;
+  /** 1 ⇒ this is one of the mark's QUESTION images (the prompt echoes from it show as context). */
+  is_question: number | null;
   file_path: string;
   thumbnail_path: string | null;
   caption: string | null;
@@ -399,7 +401,7 @@ export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
 export type CreateVideo = Omit<Video, 'id' | 'created_at'>;
 // question_image_id is never set at creation — a brand-new mark has no images to designate yet.
-// It is assigned later via durations:setQuestionImage.
+// It is legacy anyway — question images are now flagged per image (duration_images.is_question).
 export type CreateDuration = Omit<Duration, 'id' | 'created_at' | 'color' | 'group_color' | 'sort_order' | 'page_number' | 'source_video_id' | 'source_duration_video_id' | 'is_video_mark' | 'is_ghost_mark' | 'question_image_id'> & { note?: string | null; color?: DurationColor; group_color?: DurationGroupColor; page_number?: number | null; source_video_id?: number | null; source_duration_video_id?: number | null; is_video_mark?: number | null; is_ghost_mark?: number | null };
 
 // Video Compression Types
@@ -521,11 +523,11 @@ export interface ElectronAPI {
     reorder: (recordingId: number, orderedIds: number[]) => Promise<Duration[]>;
     loadCanvas: (durationId: number) => Promise<string | null>;
     saveCanvas: (durationId: number, data: string) => Promise<void>;
-    /** Designate one of the mark's images as its question/prompt (null clears it). */
-    setQuestionImage: (durationId: number, imageId: number | null) => Promise<void>;
   };
   durationImages: {
     getByDuration: (durationId: number) => Promise<DurationImage[]>;
+    /** Flag/unflag an image as one of its mark's question images. Returns the mark's fresh images. */
+    setQuestion: (imageId: number, isQuestion: boolean) => Promise<DurationImage[]>;
     addFromClipboard: (durationId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<DurationImage>;
     replaceFromClipboard: (imageId: number, durationId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<DurationImage>;
     addScreenshot: (durationId: number, imageBuffer: ArrayBuffer, pageNumber: number, rect: { x: number; y: number; w: number; h: number }) => Promise<DurationImage>;
@@ -1390,9 +1392,19 @@ export interface ReviewItem {
   // `mark_number` is recomputed per query (positional), never stored.
   duration_note: string | null;
   mark_number: number | null;
-  question_image_id: number | null;
-  question_image_path: string | null;
-  question_image_thumbnail: string | null;
+  /**
+   * The mark's question images as a JSON array (a mark may have several). Parse with
+   * `parseQuestionImages()` from utils/marks — never JSON.parse it inline, so a null/'[]' from a
+   * mark with no question images is handled in exactly one place.
+   */
+  question_images_json: string | null;
+}
+
+/** One of a mark's question images, as it reaches the renderer. */
+export interface QuestionImage {
+  id: number;
+  file_path: string;
+  thumbnail_path: string | null;
 }
 
 /** Enrolled image with review aggregates, for the Browse grid. */

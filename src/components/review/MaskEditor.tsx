@@ -31,17 +31,18 @@ interface MaskEditorProps {
    */
   sourceLabel?: string | null;
   /**
-   * The mark's question image (a `media://` url). The NAME of a question often isn't enough to
-   * recall it — seeing the problem statement is. Click to enlarge.
+   * The mark's question images (`media://` urls). The NAME of a question often isn't enough to
+   * recall it — seeing the problem statement is. A mark may have several (a statement plus its
+   * constraints, say). Click any to enlarge; ←/→ move between them.
    */
-  sourceImageSrc?: string | null;
+  sourceImageSrcs?: string[];
   /** Draft-only: create the review item on Save and return it (null ⇒ enroll failed, keep editor open). */
   onCommit?: () => Promise<ReviewItem | null>;
 }
 
 const LEVEL_LABELS = ['Level 1 — nearly readable', 'Level 2', 'Level 3 (default)', 'Level 4', 'Level 5 — very hard'];
 
-export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksChanged, onClose, mediaTagType, mediaTagId, sourceLabel, sourceImageSrc, onCommit }: MaskEditorProps) {
+export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksChanged, onClose, mediaTagType, mediaTagId, sourceLabel, sourceImageSrcs = [], onCommit }: MaskEditorProps) {
   // Draft mode = brand-new "Add to Echo": buffer everything, persist only on Save.
   const draft = reviewItemId == null;
   const [masks, setMasks] = useState<ReviewMask[]>(existingMasks);
@@ -51,7 +52,8 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
   const [selectedMaskId, setSelectedMaskId] = useState<number | null>(null);
   const [defaultLevel, setDefaultLevel] = useState(3);
   const [saving, setSaving] = useState(false);
-  const [showQuestion, setShowQuestion] = useState(false);
+  // Index into sourceImageSrcs of the enlarged question image, or null when none is open.
+  const [questionIndex, setQuestionIndex] = useState<number | null>(null);
   // Colour labels on the underlying image. They live on the image (not the echo), same as tags —
   // so they're the same labels the grid shows as rings, and toggling here shows up there.
   const [colors, setColors] = useState<string[]>([]);
@@ -65,6 +67,23 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
     if (!mediaTagType || mediaTagId == null) return;
     window.electronAPI.mediaColors.getByMedia(mediaTagType, mediaTagId).then(setColors);
   }, [mediaTagType, mediaTagId]);
+
+  // Esc / ←→ while a question image is enlarged. Capture phase + stopImmediatePropagation so Esc
+  // closes only the enlarged image, never the editor underneath it.
+  useEffect(() => {
+    if (questionIndex == null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!['Escape', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const n = sourceImageSrcs.length;
+      if (e.key === 'Escape') setQuestionIndex(null);
+      else if (e.key === 'ArrowLeft') setQuestionIndex(i => ((i ?? 0) - 1 + n) % n);
+      else setQuestionIndex(i => ((i ?? 0) + 1) % n);
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [questionIndex, sourceImageSrcs.length]);
 
   const toggleColor = async (key: string) => {
     if (!mediaTagType || mediaTagId == null) return;
@@ -299,25 +318,39 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
         {/* Source — which question this card belongs to. Filled in automatically from the mark the
             image lives on; you never type it. Shown because an echo without its question is
             unreviewable, and you should be able to see it is set BEFORE you hit Save. */}
-        {(sourceLabel || sourceImageSrc) && (
+        {(sourceLabel || sourceImageSrcs.length > 0) && (
           <div className="px-4 py-3 border-b border-gray-700">
-            <p className="text-gray-400 text-xs mb-2">Source</p>
+            <p className="text-gray-400 text-xs mb-2">
+              Source
+              {sourceImageSrcs.length > 1 && (
+                <span className="text-gray-500"> · {sourceImageSrcs.length} question images</span>
+              )}
+            </p>
             {sourceLabel && (
               <div className="flex items-start gap-1.5 text-xs text-amber-300/90">
                 <span aria-hidden className="leading-4">📌</span>
                 <span className="leading-4">{sourceLabel}</span>
               </div>
             )}
-            {/* The question image. The mark's NAME is often not enough to bring the problem back —
-                seeing the statement is. Click to enlarge over the editor. */}
-            {sourceImageSrc && (
-              <button
-                onClick={() => setShowQuestion(true)}
-                className="mt-2 block w-full rounded-md overflow-hidden border border-amber-400/40 hover:border-amber-400 transition-colors cursor-zoom-in"
-                title="Click to enlarge the question"
-              >
-                <img src={sourceImageSrc} alt="The question this card came from" className="w-full max-h-28 object-cover" />
-              </button>
+            {/* The question images. The mark's NAME is often not enough to bring the problem back —
+                seeing the statement is. A mark can carry several; click any to enlarge. */}
+            {sourceImageSrcs.length > 0 && (
+              <div className={`mt-2 grid gap-1.5 ${sourceImageSrcs.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                {sourceImageSrcs.map((qsrc, i) => (
+                  <button
+                    key={qsrc}
+                    onClick={() => setQuestionIndex(i)}
+                    className="block rounded-md overflow-hidden border border-amber-400/40 hover:border-amber-400 transition-colors cursor-zoom-in"
+                    title="Click to enlarge the question"
+                  >
+                    <img
+                      src={qsrc}
+                      alt="The question this card came from"
+                      className={`w-full object-cover ${sourceImageSrcs.length === 1 ? 'max-h-28' : 'h-20'}`}
+                    />
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         )}
@@ -486,19 +519,47 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
       </div>
 
       {/* Enlarged question image. Sits above the whole editor so the problem statement is readable
-          while you decide what to mask. */}
-      {showQuestion && sourceImageSrc && (
+          while you decide what to mask. ←/→ move between a mark's question images. */}
+      {questionIndex != null && sourceImageSrcs[questionIndex] && (
         <div
-          onClick={() => setShowQuestion(false)}
+          onClick={() => setQuestionIndex(null)}
           className="fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-8 cursor-zoom-out"
         >
           <span className="fixed top-4 left-5 text-amber-300/90 text-xs px-2 py-1 rounded-md bg-black/60 pointer-events-none">
             ★ {sourceLabel ?? 'Question'}
+            {sourceImageSrcs.length > 1 && ` · ${questionIndex + 1}/${sourceImageSrcs.length}`}
           </span>
+
+          {sourceImageSrcs.length > 1 && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setQuestionIndex(i => ((i ?? 0) - 1 + sourceImageSrcs.length) % sourceImageSrcs.length);
+                }}
+                className="fixed left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 text-white/80 hover:text-white text-2xl leading-none flex items-center justify-center transition-colors cursor-pointer"
+                title="Previous question image"
+              >
+                ‹
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setQuestionIndex(i => ((i ?? 0) + 1) % sourceImageSrcs.length);
+                }}
+                className="fixed right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 text-white/80 hover:text-white text-2xl leading-none flex items-center justify-center transition-colors cursor-pointer"
+                title="Next question image"
+              >
+                ›
+              </button>
+            </>
+          )}
+
           <img
-            src={sourceImageSrc}
+            src={sourceImageSrcs[questionIndex]}
             alt="The question this card came from"
-            className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-full object-contain cursor-default"
           />
         </div>
       )}

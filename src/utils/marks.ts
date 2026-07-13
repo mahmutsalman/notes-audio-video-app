@@ -1,4 +1,19 @@
-import { Duration, Recording } from '../types';
+import { Duration, Recording, QuestionImage } from '../types';
+
+/**
+ * The mark's question images for an echo. SQL hands them over as a JSON array (a join would
+ * multiply the echo row once per question image and inflate every count in the Echo views), so
+ * every consumer goes through here — one place to absorb a null, an empty array, or malformed JSON.
+ */
+export function parseQuestionImages(json: string | null | undefined): QuestionImage[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? (parsed as QuestionImage[]).filter(q => q?.file_path) : [];
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Creates start_time and end_time values for a new mark.

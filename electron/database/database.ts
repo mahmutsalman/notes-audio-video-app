@@ -1698,6 +1698,24 @@ function runMigrations(db: Database.Database): void {
       db.exec('ALTER TABLE durations ADD COLUMN question_image_id INTEGER');
       console.log('Added question_image_id column to durations table');
     }
+
+    // A mark can have MORE THAN ONE question image — a problem statement plus its constraints, or
+    // two screenshots of one long prompt. So the designation moved from a single pointer on the
+    // mark (`durations.question_image_id`) to a flag on each image. That column is now LEGACY: it
+    // is backfilled from below and no longer read anywhere. Left in place rather than dropped so a
+    // downgrade to an older build still finds its question image.
+    const diCols = (db.prepare("PRAGMA table_info(duration_images)").all() as { name: string }[]).map(c => c.name);
+    if (!diCols.includes('is_question')) {
+      db.exec('ALTER TABLE duration_images ADD COLUMN is_question INTEGER DEFAULT 0');
+      db.exec(`
+        UPDATE duration_images
+        SET    is_question = 1
+        WHERE  id IN (SELECT question_image_id FROM durations WHERE question_image_id IS NOT NULL)
+      `);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_duration_images_question ON duration_images(duration_id, is_question)');
+      const n = db.prepare('SELECT COUNT(*) AS n FROM duration_images WHERE is_question = 1').get() as { n: number };
+      console.log(`Added is_question to duration_images — carried over ${n.n} question image(s)`);
+    }
   }
 
   console.log('Database migrations completed');

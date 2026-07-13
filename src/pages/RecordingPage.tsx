@@ -62,7 +62,6 @@ export default function RecordingPage() {
   useTabTitle(recording?.name ?? 'Recording');
   const {
     durations,
-    fetchDurations,
     createDuration,
     deleteDuration,
     updateDuration,
@@ -1696,7 +1695,6 @@ export default function RecordingPage() {
   const activeDuration = activeDurationId != null
     ? durations.find(d => d.id === activeDurationId) ?? null
     : null;
-  const activeQuestionImageId = activeDuration?.question_image_id ?? null;
   // Positional, exactly like MarkList's `index + 1`. A video mark isn't in this list (indexOf -1),
   // so it gets no number and falls back to its note title alone.
   const activeMarkIndex = activeDuration ? durationsForList.indexOf(activeDuration) : -1;
@@ -1704,19 +1702,18 @@ export default function RecordingPage() {
     ? formatMarkSource(activeMarkIndex >= 0 ? activeMarkIndex + 1 : null, activeDuration.note)
     : null;
 
-  const setQuestionImage = async (durationId: number, imageId: number | null) => {
-    await window.electronAPI.durations.setQuestionImage(durationId, imageId);
-    await fetchDurations();
-  };
+  // A mark can have SEVERAL question images. The flag lives on each image, so the set is just the
+  // mark's own images filtered — no extra fetch, and it follows a toggle immediately.
+  const activeQuestionImages = activeDurationImages.filter(img => img.is_question === 1);
+  const activeQuestionImageIds = activeQuestionImages.map(img => img.id);
+  const activeQuestionImageSrcs = activeQuestionImages.map(img =>
+    window.electronAPI.paths.getFileUrl(img.file_path)
+  );
 
-  // The designated question image's file, for the Add-to-Echo editor. Looked up in the mark's own
-  // images, so it follows re-designation immediately with no extra fetch.
-  const activeQuestionImage = activeQuestionImageId != null
-    ? activeDurationImages.find(img => img.id === activeQuestionImageId) ?? null
-    : null;
-  const activeQuestionImageSrc = activeQuestionImage
-    ? window.electronAPI.paths.getFileUrl(activeQuestionImage.file_path)
-    : null;
+  const toggleQuestionImage = async (imageId: number, isQuestion: boolean) => {
+    await window.electronAPI.durationImages.setQuestion(imageId, isQuestion);
+    if (activeDurationId != null) await getDurationImages(activeDurationId, true);
+  };
 
   // Derive OCR maps directly from image data (caption2 is non-null when OCR has been extracted)
   const recordingImageOcrMap: Record<number, boolean> = {};
@@ -2847,7 +2844,7 @@ export default function RecordingPage() {
             groupColorOverrides={mediaGroupColorOverrides}
             colorKeyPrefix="durationImage"
             captionColorClass="text-blue-600 dark:text-blue-400"
-            questionImageId={activeQuestionImageId}
+            questionImageIds={activeQuestionImageIds}
             highlightedId={
               searchNav?.results[searchNav.currentIndex]?.content_type === 'duration_image'
                 ? searchNav.results[searchNav.currentIndex].source_id
@@ -4084,7 +4081,7 @@ export default function RecordingPage() {
             );
           } : undefined}
           echoSourceLabel={activeMarkLabel}
-          echoSourceImageSrc={activeQuestionImageSrc}
+          echoSourceImageSrcs={activeQuestionImageSrcs}
           mediaType="duration_image"
           imageType="duration_image"
           imageColors={selectedDurationImageIndex !== null && activeDurationImages[selectedDurationImageIndex]?.id ? durationImageColorsCache[activeDurationImages[selectedDurationImageIndex].id!] ?? [] : []}
@@ -4723,15 +4720,15 @@ export default function RecordingPage() {
               className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
               onClick={async () => {
                 const imageId = contextMenu.item.id;
-                const isCurrent = activeQuestionImageId === imageId;
+                const already = activeQuestionImageIds.includes(imageId);
                 setContextMenu(null);
-                await setQuestionImage(activeDurationId, isCurrent ? null : imageId);
+                await toggleQuestionImage(imageId, !already);
               }}
             >
               <span>⭐</span>
-              {activeQuestionImageId === contextMenu.item.id
-                ? 'Unset as question image'
-                : 'Set as question image'}
+              {activeQuestionImageIds.includes(contextMenu.item.id)
+                ? 'Remove as question image'
+                : 'Add as question image'}
             </button>
           )}
           {(contextMenu.type === 'video' || contextMenu.type === 'durationVideo') &&

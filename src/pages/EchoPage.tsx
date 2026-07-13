@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ReviewItem, ReviewMask, BrowseReviewItem, ReviewedTodayItem, MediaTagType } from '../types';
 import { REVIEW_CHANGED_EVENT, emitReviewChanged } from '../utils/events';
-import { formatMarkSource } from '../utils/marks';
+import { formatMarkSource, parseQuestionImages } from '../utils/marks';
 import ReviewSession from '../components/review/ReviewSession';
 import MaskEditor from '../components/review/MaskEditor';
 import { ReviewItemGridCard, ReviewItemListRow, BrowseCard, ReviewedTodayCard } from '../components/echo/EchoCards';
@@ -350,9 +350,8 @@ export default function EchoPage() {
             mediaTagType={maskEditorItem.media_type as MediaTagType}
             mediaTagId={maskEditorItem.media_id}
             sourceLabel={formatMarkSource(maskEditorItem.mark_number, maskEditorItem.duration_note)}
-            sourceImageSrc={maskEditorItem.question_image_path
-              ? window.electronAPI.paths.getFileUrl(maskEditorItem.question_image_path)
-              : null}
+            sourceImageSrcs={parseQuestionImages(maskEditorItem.question_images_json)
+              .map(q => window.electronAPI.paths.getFileUrl(q.file_path))}
             onClose={() => { setMaskEditorItem(null); setMaskEditorMasks([]); }}
           />
         </div>
