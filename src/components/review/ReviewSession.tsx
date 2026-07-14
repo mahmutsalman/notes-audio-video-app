@@ -71,10 +71,11 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   useEffect(() => {
     localStorage.setItem('echo.showCodePane', showCodePane ? '1' : '0');
   }, [showCodePane]);
-  // The mark's question image, collapsed by default: the source LINE is always worth seeing (it
-  // tells you what the card is about), but the question IMAGE is a hint — expanding it is a choice,
-  // and it re-collapses on every card so a peek at one never carries into the next.
+  // The question popup. Closed by default: the source LINE is always visible (it tells you WHAT the
+  // card is about), but the question IMAGE is a hint — opening it is a deliberate choice, and it
+  // closes again on every card so a peek at one never carries into the next.
   const [showQuestion, setShowQuestion] = useState(false);
+  const [questionIndex, setQuestionIndex] = useState(0);
   const [showManualSchedule, setShowManualSchedule] = useState(false);
   const [isRating, setIsRating] = useState(false);
 
@@ -103,6 +104,13 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   const timerTouched = useRef(false);
 
   const current = items[currentIndex] ?? null;
+
+  // The mark's question images. Computed here (not after the early return below) so the popup's
+  // keyboard effect can size its ←/→ wrap-around from it.
+  const questions = useMemo(
+    () => parseQuestionImages(current?.question_images_json),
+    [current]
+  );
 
   const goPrev = useCallback(() => setCurrentIndex(i => Math.max(0, i - 1)), []);
   const goNext = useCallback(() => setCurrentIndex(i => Math.min(items.length - 1, i + 1)), [items.length]);
@@ -188,6 +196,11 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
         tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
         !!el?.isContentEditable || inMonaco;
 
+      // While the question popup is open it owns every key — Escape must close IT, not end the
+      // session, and the arrows must page the question images, not the cards. Its own effect
+      // (below) handles them; this handler stands down entirely.
+      if (showQuestion) return;
+
       if (e.key === 'Escape') {
         // The code editor and an in-progress note edit own their own Escape.
         if (inMonaco || editingNoteId !== null) return;
@@ -199,6 +212,12 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
 
       if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopImmediatePropagation(); goPrev(); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); e.stopImmediatePropagation(); goNext(); }
+      else if (e.key === 'q' || e.key === 'Q') {
+        // Q = "what was the question again?" — the whole point of the card having a mark.
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setShowQuestion(true);
+      }
       else if (e.code === 'Space') {
         // Toggle the grading controls, masks still blurred. Peek mode grades nothing.
         if (readOnly) return;
@@ -215,7 +234,30 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [onSessionEnd, goPrev, goNext, editingNoteId, readOnly]);
+  }, [onSessionEnd, goPrev, goNext, editingNoteId, readOnly, showQuestion]);
+
+  // The question popup owns the keyboard while it's open: Esc (and Q again) closes it rather than
+  // ending the session, and ←/→ page the mark's question images rather than the cards. Registered
+  // only while open, and the session handler above stands down on `showQuestion` — belt and braces,
+  // since both listen in the capture phase and order there is registration order, not z-index.
+  useEffect(() => {
+    if (!showQuestion) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!['Escape', 'ArrowLeft', 'ArrowRight', 'q', 'Q'].includes(e.key)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.key === 'Escape' || e.key === 'q' || e.key === 'Q') {
+        setShowQuestion(false);
+        return;
+      }
+      const n = questions.length;
+      if (n <= 1) return;
+      if (e.key === 'ArrowLeft') setQuestionIndex(i => (i - 1 + n) % n);
+      else setQuestionIndex(i => (i + 1) % n);
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [showQuestion, questions.length]);
 
   // Load masks + reset per-card state when the current item changes.
   useEffect(() => {
@@ -225,6 +267,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     setRatingsRequested(false);
     setShowManualSchedule(false);
     setShowQuestion(false);
+    setQuestionIndex(0);
     setNote('');
     setMissedPoints('');
     setShowNotePanel(false);
@@ -453,7 +496,6 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
 
   // "Mark 20 · Minimum Window Substring" — the answer to "what question is this card even about?"
   const markSource = formatMarkSource(current.mark_number, current.duration_note);
-  const questions = parseQuestionImages(current.question_images_json);
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col">
@@ -536,6 +578,28 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
             Code
           </button>
 
+          {/* Question. Rendered whenever the card HAS a mark — even if that mark has no question
+              image yet. An earlier version only rendered when a question image existed, so on the
+              36-of-38 cards without one the button simply vanished, which reads as "the feature
+              isn't there" rather than "nothing is set". Now it opens and says so. */}
+          {current.duration_id != null && (
+            <button
+              onClick={() => setShowQuestion(true)}
+              title="Show the question this card came from (Q)"
+              className={`titlebar-no-drag text-sm transition-colors flex items-center gap-1.5 ${
+                questions.length > 0
+                  ? 'text-amber-300/90 hover:text-amber-200'
+                  : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <span aria-hidden>★</span>
+              Question
+              {questions.length > 1 && (
+                <span className="text-amber-500/70">({questions.length})</span>
+              )}
+            </button>
+          )}
+
           {(current.recording_id || current.capture_id) && (
             <button
               onClick={handleNavigateToOriginal}
@@ -581,37 +645,14 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
 
               {questions.length > 0 && (
                 <button
-                  onClick={() => setShowQuestion(v => !v)}
-                  className="text-xs text-gray-500 hover:text-blue-400 transition-colors flex items-center gap-1"
-                  title="The question image(s) set on this mark"
+                  onClick={() => setShowQuestion(true)}
+                  className="text-xs text-amber-300/70 hover:text-amber-200 transition-colors flex items-center gap-1"
+                  title="Show the question (Q)"
                 >
-                  <svg
-                    className={`w-3 h-3 transition-transform ${showQuestion ? 'rotate-90' : ''}`}
-                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                  {showQuestion ? 'Hide question' : 'Show question'}
-                  {questions.length > 1 && (
-                    <span className="text-gray-600"> ({questions.length})</span>
-                  )}
+                  ★ Show question
+                  {questions.length > 1 && <span className="text-amber-500/60">({questions.length})</span>}
                 </button>
               )}
-            </div>
-          )}
-
-          {/* All of the mark's question images, side by side and horizontally scrollable — a long
-              prompt is often split across two screenshots, and you need to read them together. */}
-          {showQuestion && questions.length > 0 && (
-            <div className="pt-1 flex gap-2 overflow-x-auto">
-              {questions.map(q => (
-                <img
-                  key={q.id}
-                  src={window.electronAPI.paths.getFileUrl(q.file_path)}
-                  alt="The question this card came from"
-                  className="max-h-64 w-auto flex-shrink-0 rounded-lg border border-gray-700 object-contain"
-                />
-              ))}
             </div>
           )}
         </div>
@@ -906,6 +947,97 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
           </div>
         )}
       </div>
+
+      {/* ── The question popup ──────────────────────────────────────────────────────────────────
+          Sits above the whole session so the problem statement is readable while the card stays
+          exactly as it was — you look, you go back, nothing is graded or revealed. */}
+      {showQuestion && (
+        <div
+          onClick={() => setShowQuestion(false)}
+          className="fixed inset-0 z-[80] bg-black/92 flex items-center justify-center p-10 cursor-zoom-out"
+        >
+          <div className="fixed top-4 left-5 flex items-center gap-2 pointer-events-none">
+            <span className="text-amber-300/90 text-xs px-2 py-1 rounded-md bg-black/60">
+              ★ {markSource ?? 'Question'}
+            </span>
+            {questions.length > 1 && (
+              <span className="text-white/50 text-xs px-2 py-1 rounded-md bg-black/60 tabular-nums">
+                {questionIndex + 1} / {questions.length}
+              </span>
+            )}
+          </div>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowQuestion(false); }}
+            className="fixed top-4 right-5 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 text-white/80 hover:text-white text-xl leading-none flex items-center justify-center transition-colors"
+            title="Back to the card (Esc)"
+          >
+            ×
+          </button>
+
+          <span className="fixed bottom-4 left-1/2 -translate-x-1/2 text-white/40 text-xs pointer-events-none">
+            {questions.length > 1 ? '←/→ between questions · ' : ''}Esc or click anywhere to go back
+          </span>
+
+          {questions.length === 0 ? (
+            /* No question image on this mark. Say so, and say how to fix it — an empty popup, or a
+               button that silently doesn't render, is what made this feature look absent. */
+            <div className="max-w-md text-center cursor-default" onClick={(e) => e.stopPropagation()}>
+              <p className="text-4xl mb-3">★</p>
+              <p className="text-gray-300 text-sm">
+                No question image set on {markSource ?? 'this mark'}.
+              </p>
+              <p className="text-gray-500 text-xs mt-2 leading-relaxed">
+                Open the mark, right-click the screenshot that states the problem, and choose
+                <span className="text-gray-300"> “Add as question image”</span>. Every echo from
+                that mark will show it here — you only set it once per question.
+              </p>
+              <button
+                onClick={() => { setShowQuestion(false); handleNavigateToOriginal(); }}
+                className="mt-4 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs transition-colors"
+              >
+                Go to the mark →
+              </button>
+            </div>
+          ) : (
+            <>
+              {questions.length > 1 && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQuestionIndex(i => (i - 1 + questions.length) % questions.length);
+                    }}
+                    className="fixed left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 text-white/80 hover:text-white text-2xl leading-none flex items-center justify-center transition-colors"
+                    title="Previous question image (←)"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQuestionIndex(i => (i + 1) % questions.length);
+                    }}
+                    className="fixed right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 text-white/80 hover:text-white text-2xl leading-none flex items-center justify-center transition-colors"
+                    title="Next question image (→)"
+                  >
+                    ›
+                  </button>
+                </>
+              )}
+              <img
+                key={questions[questionIndex]?.id}
+                src={window.electronAPI.paths.getFileUrl(
+                  questions[questionIndex]?.file_path ?? questions[0].file_path
+                )}
+                alt="The question this card came from"
+                onClick={(e) => e.stopPropagation()}
+                className="max-w-full max-h-full object-contain cursor-default rounded-lg"
+              />
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
