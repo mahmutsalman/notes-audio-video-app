@@ -1375,7 +1375,7 @@ export const SettingsOperations = {
 
 // Audio Markers Operations
 export const AudioMarkersOperations = {
-  getByAudio(audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'quick_capture_audio'): AudioMarker[] {
+  getByAudio(audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'quick_capture_audio' | 'review_item'): AudioMarker[] {
     const db = getDatabase();
     return db.prepare(`
       SELECT * FROM audio_markers
@@ -1401,7 +1401,7 @@ export const AudioMarkersOperations = {
     return ids.map(id => db.prepare('SELECT * FROM audio_markers WHERE id = ?').get(id) as AudioMarker);
   },
 
-  deleteByAudio(audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'quick_capture_audio'): void {
+  deleteByAudio(audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'quick_capture_audio' | 'review_item'): void {
     const db = getDatabase();
     db.prepare('DELETE FROM audio_markers WHERE audio_id = ? AND audio_type = ?').run(audioId, audioType);
   },
@@ -3567,6 +3567,16 @@ export const ReviewOperations = {
 
     const imagePaths = imagePathsForNotes(db, noteIds);
     const audioPaths = audioPathsForNotes(db, noteIds);
+
+    // Item-level voice recordings: rows cascade, files and audio_markers do not.
+    const itemAudios = db.prepare(
+      'SELECT id, file_path FROM review_item_audios WHERE review_item_id = ?'
+    ).all(id) as { id: number; file_path: string }[];
+    for (const a of itemAudios) {
+      if (a.file_path) audioPaths.push(a.file_path);
+      db.prepare("DELETE FROM audio_markers WHERE audio_id = ? AND audio_type = 'review_item'").run(a.id);
+    }
+
     db.prepare('DELETE FROM review_items WHERE id = ?').run(id);
     return { imagePaths, audioPaths };
   },
@@ -3698,6 +3708,73 @@ export const ReviewNoteAudioOperations = {
       'SELECT file_path FROM review_note_audios WHERE id = ?'
     ).get(audioId) as { file_path: string } | undefined;
     db.prepare('DELETE FROM review_note_audios WHERE id = ?').run(audioId);
+    return { filePath: row?.file_path ?? null };
+  },
+};
+
+/**
+ * Free-text side notes on the echo ITSELF (hints, questions, ideas) — authored in "Add to Echo",
+ * shown on the review card front. Not to be confused with review_notes (per-review reflections).
+ */
+export const ReviewItemNoteOperations = {
+  getByItem(reviewItemId: number): any[] {
+    return getDatabase().prepare(
+      'SELECT * FROM review_item_notes WHERE review_item_id = ? ORDER BY sort_order, id'
+    ).all(reviewItemId);
+  },
+
+  add(reviewItemId: number, body: string): any {
+    const db = getDatabase();
+    const sortOrder = (db.prepare(
+      'SELECT COUNT(*) AS cnt FROM review_item_notes WHERE review_item_id = ?'
+    ).get(reviewItemId) as { cnt: number }).cnt;
+
+    const result = db.prepare(
+      'INSERT INTO review_item_notes (review_item_id, body, sort_order) VALUES (?, ?, ?)'
+    ).run(reviewItemId, body, sortOrder);
+
+    return db.prepare('SELECT * FROM review_item_notes WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  update(noteId: number, body: string): void {
+    getDatabase().prepare('UPDATE review_item_notes SET body = ? WHERE id = ?').run(body, noteId);
+  },
+
+  delete(noteId: number): void {
+    getDatabase().prepare('DELETE FROM review_item_notes WHERE id = ?').run(noteId);
+  },
+};
+
+/** Voice recordings on the echo itself. Same file-vs-row contract as ReviewNoteAudioOperations. */
+export const ReviewItemAudioOperations = {
+  getByItem(reviewItemId: number): any[] {
+    return getDatabase().prepare(
+      'SELECT * FROM review_item_audios WHERE review_item_id = ? ORDER BY sort_order, id'
+    ).all(reviewItemId);
+  },
+
+  add(reviewItemId: number, filePath: string, duration: number | null): any {
+    const db = getDatabase();
+    const sortOrder = (db.prepare(
+      'SELECT COUNT(*) AS cnt FROM review_item_audios WHERE review_item_id = ?'
+    ).get(reviewItemId) as { cnt: number }).cnt;
+
+    const result = db.prepare(
+      `INSERT INTO review_item_audios (review_item_id, file_path, duration, sort_order)
+       VALUES (?, ?, ?, ?)`
+    ).run(reviewItemId, filePath, duration, sortOrder);
+
+    return db.prepare('SELECT * FROM review_item_audios WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  /** Returns the path so the caller can unlink the file. Purges the audio's markers too. */
+  delete(audioId: number): { filePath: string | null } {
+    const db = getDatabase();
+    const row = db.prepare(
+      'SELECT file_path FROM review_item_audios WHERE id = ?'
+    ).get(audioId) as { file_path: string } | undefined;
+    db.prepare("DELETE FROM audio_markers WHERE audio_id = ? AND audio_type = 'review_item'").run(audioId);
+    db.prepare('DELETE FROM review_item_audios WHERE id = ?').run(audioId);
     return { filePath: row?.file_path ?? null };
   },
 };

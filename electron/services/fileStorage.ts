@@ -998,6 +998,21 @@ export async function saveReviewNoteAudio(
   return { filePath };
 }
 
+/** Voice recording attached to an echo (review item) itself, not to one of its reflective notes. */
+export async function saveReviewItemAudio(
+  audioBuffer: ArrayBuffer,
+  extension: string = 'webm'
+): Promise<{ filePath: string }> {
+  const dir = path.join(getMediaDir(), 'review_items', 'audios');
+  await fs.mkdir(dir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+  await fs.writeFile(filePath, Buffer.from(audioBuffer));
+
+  return { filePath };
+}
+
 export async function saveQuickCaptureAudio(
   audioBuffer: ArrayBuffer,
   extension: string = 'webm'

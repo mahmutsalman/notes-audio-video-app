@@ -115,8 +115,10 @@ export default function AudioRecordingBar() {
 
   if (!isRecording && !isSaving) return null;
 
+  // z-[80]: above the ImageLightbox (z-50) and MaskEditor (z-[70]) — recording can be started
+  // from inside those overlays, and the stop/marker controls must stay reachable.
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900 dark:bg-gray-950 border-t border-gray-700 dark:border-gray-800 shadow-2xl">
+    <div className="fixed bottom-0 left-0 right-0 z-[80] bg-gray-900 dark:bg-gray-950 border-t border-gray-700 dark:border-gray-800 shadow-2xl">
       {/* Voice command flash indicator */}
       {flashCmd && !silenceFlash && (
         <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded border text-xs font-medium whitespace-nowrap pointer-events-none ${VOICE_FLASH_COLORS[flashCmd.type]}`}>

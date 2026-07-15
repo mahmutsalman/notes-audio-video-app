@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { ReviewMask, ReviewItem, MediaTagType } from '../../types';
+import type { ReviewMask, ReviewItem, ReviewItemNote, ReviewItemAudio, MediaTagType } from '../../types';
 import { TagAutocomplete } from '../common/TagAutocomplete';
 import { IMAGE_COLORS, IMAGE_COLOR_KEYS } from '../../utils/imageColors';
 import { emitReviewChanged } from '../../utils/events';
+import { useAudioRecording, AUDIO_SAVED_EVENT, type PendingMarker } from '../../context/AudioRecordingContext';
 
 interface DrawingRect {
   x: number; y: number; w: number; h: number; // normalized 0–1
@@ -60,6 +61,15 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
   // Which hint input just got an Enter — drives a brief green "saved" glow. The hint is already
   // persisted on every keystroke; this exists purely so the Enter has visible confirmation.
   const [flashedMaskId, setFlashedMaskId] = useState<number | null>(null);
+  // Side content on the echo ITSELF (not per-review): free-text notes + voice recordings, shown
+  // on the review card front. Draft mode buffers both (temp negative ids / blobs) until Save.
+  const [itemNotes, setItemNotes] = useState<ReviewItemNote[]>([]);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [itemAudios, setItemAudios] = useState<ReviewItemAudio[]>([]);
+  const [draftAudios, setDraftAudios] = useState<{ blob: Blob; durationSec: number; markers: PendingMarker[] }[]>([]);
+  const [playingAudioKey, setPlayingAudioKey] = useState<string | null>(null);
+  const playbackElRef = useRef<HTMLAudioElement | null>(null);
+  const { startRecording, isRecording, target, pendingEchoAudio, clearPendingEchoAudio } = useAudioRecording();
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -84,6 +94,95 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [questionIndex, sourceImageSrcs.length]);
+
+  // Existing item: load its side notes + audios once.
+  useEffect(() => {
+    if (draft || reviewItemId == null) return;
+    window.electronAPI.reviewItemNotes.getByItem(reviewItemId).then(setItemNotes);
+    window.electronAPI.reviewItemAudios.getByItem(reviewItemId).then(setItemAudios);
+  }, [draft, reviewItemId]);
+
+  // Draft mode: the recording bar parks the finished blob in pendingEchoAudio — adopt it here.
+  useEffect(() => {
+    if (!draft || !pendingEchoAudio) return;
+    setDraftAudios(prev => [...prev, pendingEchoAudio]);
+    clearPendingEchoAudio();
+  }, [draft, pendingEchoAudio, clearPendingEchoAudio]);
+
+  // Existing item: refresh the audio list when the recording bar finishes saving to this echo.
+  useEffect(() => {
+    if (draft || reviewItemId == null) return;
+    const handler = (e: Event) => {
+      const t = (e as CustomEvent).detail?.target;
+      if (t?.type === 'review_item' && t.reviewItemId === reviewItemId) {
+        window.electronAPI.reviewItemAudios.getByItem(reviewItemId).then(setItemAudios);
+      }
+    };
+    window.addEventListener(AUDIO_SAVED_EVENT, handler);
+    return () => window.removeEventListener(AUDIO_SAVED_EVENT, handler);
+  }, [draft, reviewItemId]);
+
+  // Stop playback when the editor unmounts — an orphaned element keeps playing.
+  useEffect(() => () => { playbackElRef.current?.pause(); playbackElRef.current = null; }, []);
+
+  const recordingHere = isRecording && (target?.type === 'review_item' || target?.type === 'review_item_draft');
+
+  const handleStartRecording = () => {
+    if (isRecording) return;
+    if (draft) void startRecording({ type: 'review_item_draft', label: 'New echo' });
+    else void startRecording({ type: 'review_item', reviewItemId: reviewItemId!, label: 'Echo' });
+  };
+
+  const handleAddNote = async () => {
+    const body = newNoteText.trim();
+    if (!body) return;
+    if (draft) {
+      setItemNotes(prev => [...prev, {
+        id: -(prev.length + 1), review_item_id: -1, body, sort_order: prev.length, created_at: '',
+      }]);
+    } else {
+      const saved = await window.electronAPI.reviewItemNotes.add(reviewItemId!, body);
+      setItemNotes(prev => [...prev, saved]);
+    }
+    setNewNoteText('');
+  };
+
+  const handleUpdateNote = async (note: ReviewItemNote, body: string) => {
+    if (!draft) await window.electronAPI.reviewItemNotes.update(note.id, body);
+    setItemNotes(prev => prev.map(n => n.id === note.id ? { ...n, body } : n));
+  };
+
+  const handleDeleteNote = async (noteId: number) => {
+    if (!draft) await window.electronAPI.reviewItemNotes.delete(noteId);
+    setItemNotes(prev => prev.filter(n => n.id !== noteId));
+  };
+
+  const stopPlayback = () => {
+    playbackElRef.current?.pause();
+    playbackElRef.current = null;
+    setPlayingAudioKey(null);
+  };
+
+  const playAudio = (key: string, url: string) => {
+    if (playingAudioKey === key) { stopPlayback(); return; }
+    playbackElRef.current?.pause();
+    const el = new Audio(url);
+    el.onended = () => setPlayingAudioKey(cur => (cur === key ? null : cur));
+    playbackElRef.current = el;
+    setPlayingAudioKey(key);
+    void el.play();
+  };
+
+  const handleDeleteAudio = async (audioId: number) => {
+    if (playingAudioKey === `saved-${audioId}`) stopPlayback();
+    await window.electronAPI.reviewItemAudios.delete(audioId);
+    setItemAudios(prev => prev.filter(a => a.id !== audioId));
+  };
+
+  const handleDeleteDraftAudio = (index: number) => {
+    if (playingAudioKey === `draft-${index}`) stopPlayback();
+    setDraftAudios(prev => prev.filter((_, i) => i !== index));
+  };
 
   const toggleColor = async (key: string) => {
     if (!mediaTagType || mediaTagId == null) return;
@@ -228,6 +327,26 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
     for (let i = 0; i < masks.length; i++) {
       const m = masks[i];
       await window.electronAPI.reviewMasks.create(item.id, m.x, m.y, m.w, m.h, m.pixelation_level, m.hint_text, i);
+    }
+    for (const n of itemNotes) {
+      if (n.body.trim()) await window.electronAPI.reviewItemNotes.add(item.id, n.body.trim());
+    }
+    // Text typed into the add-box but never Entered still counts — losing it on Save would be cruel.
+    if (newNoteText.trim()) await window.electronAPI.reviewItemNotes.add(item.id, newNoteText.trim());
+    for (const a of draftAudios) {
+      const buf = await a.blob.arrayBuffer();
+      const savedAudio = await window.electronAPI.reviewItemAudios.add(item.id, buf, a.durationSec || null, 'webm');
+      const markers = a.markers
+        .filter(m => m.start_time !== undefined)
+        .map(m => ({
+          audio_id: savedAudio.id,
+          audio_type: 'review_item' as const,
+          marker_type: m.marker_type,
+          start_time: m.start_time,
+          end_time: m.end_time,
+          caption: null,
+        }));
+      if (markers.length > 0) await window.electronAPI.audioMarkers.addBatch(markers);
     }
     emitReviewChanged();
     onClose();
@@ -418,8 +537,114 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
           </div>
         </div>
 
-        {/* Mask list */}
+        {/* Scrollable: notes + voice on the echo itself, then the mask list */}
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+          {/* Notes — extra prompts beyond the mask rectangles: hints, questions, ideas. Shown on
+              the review card front. As many as you like. */}
+          <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-3 flex flex-col gap-2">
+            <p className="text-gray-400 text-xs">
+              Notes{itemNotes.length > 0 && <span className="text-gray-500"> · {itemNotes.length}</span>}
+            </p>
+            {itemNotes.map(note => (
+              <div key={note.id} className="group/note relative">
+                <input
+                  type="text"
+                  value={note.body}
+                  onChange={(e) => handleUpdateNote(note, e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full text-xs bg-gray-700 text-white rounded px-2 py-1.5 pr-6 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                />
+                <button
+                  onClick={() => handleDeleteNote(note.id)}
+                  title="Delete this note"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-red-400 text-xs
+                             opacity-0 group-hover/note:opacity-100 transition-opacity"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <input
+              type="text"
+              value={newNoteText}
+              onChange={(e) => setNewNoteText(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                e.stopPropagation();
+                void handleAddNote();
+              }}
+              placeholder="Add a note (hint, question, idea) · Enter"
+              className="w-full text-xs bg-gray-700/60 text-white rounded px-2 py-1.5 border border-dashed border-gray-600 focus:border-blue-500 focus:border-solid focus:outline-none placeholder:text-gray-500"
+            />
+          </div>
+
+          {/* Voice — recorded through the SAME bottom recording bar as everywhere else, so the
+              important / question / similar-question marker toggles (and voice commands) work here
+              too. Draft recordings are buffered and written on Save. */}
+          <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-3 flex flex-col gap-2">
+            <p className="text-gray-400 text-xs">
+              Voice{(itemAudios.length + draftAudios.length) > 0 && (
+                <span className="text-gray-500"> · {itemAudios.length + draftAudios.length}</span>
+              )}
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {itemAudios.map(a => (
+                <div key={a.id} className="group/aud relative flex items-center gap-1.5 rounded-full pl-2 pr-2.5 py-1 border border-gray-700 bg-gray-900/60 text-gray-300 hover:border-gray-600 text-[11px]">
+                  <button
+                    onClick={() => playAudio(`saved-${a.id}`, window.electronAPI.paths.getFileUrl(a.file_path))}
+                    title={playingAudioKey === `saved-${a.id}` ? 'Stop' : 'Play'}
+                    className="flex items-center gap-1.5"
+                  >
+                    <span className="text-xs leading-none">{playingAudioKey === `saved-${a.id}` ? '⏹' : '▶'}</span>
+                    <span className="tabular-nums">🎙 {a.duration != null ? `${Math.floor(a.duration / 60)}:${String(Math.floor(a.duration % 60)).padStart(2, '0')}` : ''}</span>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteAudio(a.id)}
+                    title="Delete this recording"
+                    className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-600 text-white text-[10px] leading-none
+                               opacity-0 group-hover/aud:opacity-100 transition-opacity flex items-center justify-center"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {draftAudios.map((a, i) => (
+                <div key={`draft-${i}`} className="group/aud relative flex items-center gap-1.5 rounded-full pl-2 pr-2.5 py-1 border border-blue-700/60 bg-blue-900/30 text-blue-200 text-[11px]" title="Saved with the echo">
+                  <button
+                    onClick={() => playAudio(`draft-${i}`, URL.createObjectURL(a.blob))}
+                    className="flex items-center gap-1.5"
+                  >
+                    <span className="text-xs leading-none">{playingAudioKey === `draft-${i}` ? '⏹' : '▶'}</span>
+                    <span className="tabular-nums">🎙 {`${Math.floor(a.durationSec / 60)}:${String(Math.floor(a.durationSec % 60)).padStart(2, '0')}`}</span>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteDraftAudio(i)}
+                    title="Discard this recording"
+                    className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-600 text-white text-[10px] leading-none
+                               opacity-0 group-hover/aud:opacity-100 transition-opacity flex items-center justify-center"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {recordingHere ? (
+                <span className="text-[11px] text-red-400 animate-pulse">● recording — stop in the bottom bar</span>
+              ) : (
+                <button
+                  onClick={handleStartRecording}
+                  disabled={isRecording}
+                  title={isRecording ? 'Another recording is in progress' : 'Record a voice note — marker toggles work in the bottom bar'}
+                  className="flex items-center gap-1.5 rounded-full px-2.5 py-1 border border-dashed border-gray-600 text-gray-400 hover:text-white hover:border-gray-400 disabled:opacity-40 text-[11px] transition-colors"
+                >
+                  🎙 Record
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Mask list */}
           {masks.length === 0 && (
             <p className="text-gray-500 text-xs text-center mt-4">No masks yet. Draw on the image.</p>
           )}

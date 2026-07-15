@@ -1063,6 +1063,18 @@ const electronAPI = {
     getByNote: (reviewNoteId: number) => ipcRenderer.invoke('reviewNoteAudios:getByNote', reviewNoteId),
     delete: (audioId: number) => ipcRenderer.invoke('reviewNoteAudios:delete', audioId),
   },
+  reviewItemNotes: {
+    getByItem: (reviewItemId: number) => ipcRenderer.invoke('reviewItemNotes:getByItem', reviewItemId),
+    add: (reviewItemId: number, body: string) => ipcRenderer.invoke('reviewItemNotes:add', reviewItemId, body),
+    update: (noteId: number, body: string) => ipcRenderer.invoke('reviewItemNotes:update', noteId, body),
+    delete: (noteId: number) => ipcRenderer.invoke('reviewItemNotes:delete', noteId),
+  },
+  reviewItemAudios: {
+    getByItem: (reviewItemId: number) => ipcRenderer.invoke('reviewItemAudios:getByItem', reviewItemId),
+    add: (reviewItemId: number, audioBuffer: ArrayBuffer, duration: number | null, extension?: string) =>
+      ipcRenderer.invoke('reviewItemAudios:add', reviewItemId, audioBuffer, duration, extension),
+    delete: (audioId: number) => ipcRenderer.invoke('reviewItemAudios:delete', audioId),
+  },
   reviewNotes: {
     add: (reviewItemId: number, kind: 'note' | 'missed', body: string, reviewEventId?: number | null, allowEmpty?: boolean) =>
       ipcRenderer.invoke('reviewNotes:add', reviewItemId, kind, body, reviewEventId, allowEmpty),

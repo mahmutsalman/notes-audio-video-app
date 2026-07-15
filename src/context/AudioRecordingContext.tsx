@@ -12,7 +12,11 @@ export type RecordingTarget =
   | { type: 'recording_image'; imageId: number; recordingId: number; label: string }
   | { type: 'capture_image'; captureImageId: number; label: string }
   | { type: 'capture'; label: string }
-  | { type: 'image_child'; imageChildId: number; label: string };
+  | { type: 'image_child'; imageChildId: number; label: string }
+  | { type: 'review_item'; reviewItemId: number; label: string }
+  // Draft "Add to Echo": the review_items row doesn't exist yet — the blob + markers are
+  // parked in pendingEchoAudio (same contract as 'capture') and saved by MaskEditor on Save.
+  | { type: 'review_item_draft'; label: string };
 
 export interface PendingMarker {
   marker_type: AudioMarkerType;
@@ -31,6 +35,7 @@ interface AudioRecordingContextValue {
   isSaving: boolean;
   activeToggles: Set<AudioMarkerType>;
   pendingCaptureAudio: { blob: Blob; durationSec: number; markers: PendingMarker[] } | null;
+  pendingEchoAudio: { blob: Blob; durationSec: number; markers: PendingMarker[] } | null;
   voiceCommandsEnabled: boolean;
   lastVoiceCommand: { type: AudioMarkerType; on: boolean; ts: number } | null;
   autoSilencePauseEnabled: boolean;
@@ -44,6 +49,7 @@ interface AudioRecordingContextValue {
   cancelRecording: () => void;
   addMarkerToggle: (type: AudioMarkerType) => void;
   clearPendingCaptureAudio: () => void;
+  clearPendingEchoAudio: () => void;
   toggleVoiceCommands: () => void;
   toggleAutoSilencePause: () => void;
 }
@@ -68,6 +74,7 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
   const [activeToggles, setActiveToggles] = useState<Set<AudioMarkerType>>(new Set());
   const [pendingMarkers, setPendingMarkers] = useState<PendingMarker[]>([]);
   const [pendingCaptureAudio, setPendingCaptureAudio] = useState<{ blob: Blob; durationSec: number; markers: PendingMarker[] } | null>(null);
+  const [pendingEchoAudio, setPendingEchoAudio] = useState<{ blob: Blob; durationSec: number; markers: PendingMarker[] } | null>(null);
   const [voiceCommandsEnabled, setVoiceCommandsEnabled] = useState<boolean>(() => {
     try { return localStorage.getItem('voiceCommandsEnabled') === 'true'; } catch { return false; }
   });
@@ -248,6 +255,12 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (target.type === 'review_item_draft') {
+        const durationSec = recorder.duration;
+        setPendingEchoAudio({ blob, durationSec, markers: pendingMarkers });
+        return;
+      }
+
       const buffer = await blob.arrayBuffer();
 
       let savedAudio: { id: number } | null = null;
@@ -283,6 +296,13 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
           buffer,
           'webm'
         );
+      } else if (target.type === 'review_item') {
+        savedAudio = await window.electronAPI.reviewItemAudios.add(
+          target.reviewItemId,
+          buffer,
+          recorder.duration || null,
+          'webm'
+        );
       } else if (target.type === 'recording') {
         savedAudio = await window.electronAPI.audios.addFromBuffer(
           target.recordingId,
@@ -297,12 +317,13 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
           : target.type === 'recording_image' ? 'recording_image'
           : target.type === 'capture_image' ? 'capture_image'
           : target.type === 'recording' ? 'recording'
+          : target.type === 'review_item' ? 'review_item'
           : 'duration';
         const markersToSave = pendingMarkers
           .filter(m => m.start_time !== undefined)
           .map(m => ({
             audio_id: savedAudio!.id,
-            audio_type: audioType as 'duration' | 'duration_image' | 'recording' | 'recording_image',
+            audio_type: audioType as 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'review_item',
             marker_type: m.marker_type,
             start_time: m.start_time,
             end_time: m.end_time,
@@ -340,6 +361,7 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
   }, [recorder]);
 
   const clearPendingCaptureAudio = useCallback(() => setPendingCaptureAudio(null), []);
+  const clearPendingEchoAudio = useCallback(() => setPendingEchoAudio(null), []);
 
   return (
     <AudioRecordingContext.Provider
@@ -353,12 +375,14 @@ export function AudioRecordingProvider({ children }: { children: ReactNode }) {
         isSaving,
         activeToggles,
         pendingCaptureAudio,
+        pendingEchoAudio,
         voiceCommandsEnabled,
         lastVoiceCommand,
         autoSilencePauseEnabled,
         isPausedBySilence,
         lastSilenceEvent,
         clearPendingCaptureAudio,
+        clearPendingEchoAudio,
         startRecording,
         pauseRecording,
         resumeRecording,

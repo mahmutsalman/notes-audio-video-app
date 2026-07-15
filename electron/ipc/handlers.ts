@@ -36,6 +36,8 @@ import {
   ReviewNoteOperations,
   ReviewNoteImageOperations,
   ReviewNoteAudioOperations,
+  ReviewItemNoteOperations,
+  ReviewItemAudioOperations,
   ReviewCodeSnippetOperations,
   ReviewPresetOperations,
   HtmlNodesOperations,
@@ -73,6 +75,7 @@ import {
   saveQuickCaptureImage,
   saveReviewNoteImage,
   saveReviewNoteAudio,
+  saveReviewItemAudio,
   saveQuickCaptureAudio,
   deleteQuickCaptureFiles,
 } from '../services/fileStorage';
@@ -1792,11 +1795,11 @@ export function setupIpcHandlers(): void {
   });
 
   // ============ Audio Markers ============
-  ipcMain.handle('audioMarkers:getByAudio', async (_, audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'quick_capture_audio') => {
+  ipcMain.handle('audioMarkers:getByAudio', async (_, audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'quick_capture_audio' | 'review_item') => {
     return AudioMarkersOperations.getByAudio(audioId, audioType);
   });
 
-  ipcMain.handle('audioMarkers:addBatch', async (_, markers: { audio_id: number; audio_type: 'duration' | 'duration_image' | 'recording' | 'quick_capture_audio'; marker_type: string; start_time: number; end_time: number | null }[]) => {
+  ipcMain.handle('audioMarkers:addBatch', async (_, markers: { audio_id: number; audio_type: 'duration' | 'duration_image' | 'recording' | 'quick_capture_audio' | 'review_item'; marker_type: string; start_time: number; end_time: number | null }[]) => {
     if (!markers || markers.length === 0) return [];
     return AudioMarkersOperations.addBatch(markers as any);
   });
@@ -3370,6 +3373,28 @@ export function setupIpcHandlers(): void {
     ReviewNoteAudioOperations.getByNote(reviewNoteId));
   ipcMain.handle('reviewNoteAudios:delete', async (_, audioId: number) => {
     const { filePath } = ReviewNoteAudioOperations.delete(audioId);
+    if (filePath) await fsp.unlink(filePath).catch(() => {});
+  });
+
+  // Item-level Echo side content: texts + voice recordings on the card itself.
+  // Not in FTS (same stance as review_notes/review code — ADR-0009), so no reindex here.
+  ipcMain.handle('reviewItemNotes:getByItem', (_, reviewItemId: number) =>
+    ReviewItemNoteOperations.getByItem(reviewItemId));
+  ipcMain.handle('reviewItemNotes:add', (_, reviewItemId: number, body: string) =>
+    ReviewItemNoteOperations.add(reviewItemId, body));
+  ipcMain.handle('reviewItemNotes:update', (_, noteId: number, body: string) =>
+    ReviewItemNoteOperations.update(noteId, body));
+  ipcMain.handle('reviewItemNotes:delete', (_, noteId: number) =>
+    ReviewItemNoteOperations.delete(noteId));
+
+  ipcMain.handle('reviewItemAudios:getByItem', (_, reviewItemId: number) =>
+    ReviewItemAudioOperations.getByItem(reviewItemId));
+  ipcMain.handle('reviewItemAudios:add', async (_, reviewItemId: number, audioBuffer: ArrayBuffer, duration: number | null, extension: string = 'webm') => {
+    const { filePath } = await saveReviewItemAudio(audioBuffer, extension);
+    return ReviewItemAudioOperations.add(reviewItemId, filePath, duration);
+  });
+  ipcMain.handle('reviewItemAudios:delete', async (_, audioId: number) => {
+    const { filePath } = ReviewItemAudioOperations.delete(audioId);
     if (filePath) await fsp.unlink(filePath).catch(() => {});
   });
 

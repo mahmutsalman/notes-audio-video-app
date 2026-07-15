@@ -1718,6 +1718,47 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // Migration: item-level Echo side content — texts + voice recordings on the CARD itself,
+  // authored in "Add to Echo" and shown on the review card front. Distinct from review_notes
+  // (per-REVIEW reflections written while grading): these belong to the echo, not to a review.
+  const reviewItemNotesExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='review_item_notes'"
+  ).get();
+  if (!reviewItemNotesExists) {
+    db.exec(`
+      CREATE TABLE review_item_notes (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_item_id INTEGER NOT NULL REFERENCES review_items(id) ON DELETE CASCADE,
+        body           TEXT NOT NULL,
+        sort_order     INTEGER NOT NULL DEFAULT 0,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_review_item_notes_item ON review_item_notes(review_item_id);
+    `);
+    console.log('Created review_item_notes table');
+  }
+
+  // Voice recordings on the echo itself. Recorded through the global AudioRecordingBar, so they
+  // carry audio_markers (audio_type='review_item') like every other recording in the app.
+  // audio_markers has no FK — every delete path must purge markers itself.
+  const reviewItemAudiosExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='review_item_audios'"
+  ).get();
+  if (!reviewItemAudiosExists) {
+    db.exec(`
+      CREATE TABLE review_item_audios (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_item_id INTEGER NOT NULL REFERENCES review_items(id) ON DELETE CASCADE,
+        file_path      TEXT NOT NULL,
+        duration       REAL,
+        sort_order     INTEGER NOT NULL DEFAULT 0,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_review_item_audios_item ON review_item_audios(review_item_id);
+    `);
+    console.log('Created review_item_audios table');
+  }
+
   // The "All captures" archive view scans every capture and filters by local day, tag and colour.
   // created_at had no index at all (the board view never needed one — it read the whole table), and
   // media_color_assignments was only indexed on (media_type, media_id), which is the wrong

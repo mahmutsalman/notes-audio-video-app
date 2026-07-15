@@ -348,7 +348,7 @@ export type AudioMarkerType = 'important' | 'question' | 'similar_question';
 export interface AudioMarker {
   id: number;
   audio_id: number;
-  audio_type: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'capture_image' | 'quick_capture_audio';
+  audio_type: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'capture_image' | 'quick_capture_audio' | 'review_item';
   marker_type: AudioMarkerType;
   start_time: number;
   end_time: number | null;
@@ -805,7 +805,7 @@ export interface ElectronAPI {
     upload: () => Promise<{ success: boolean; output?: string; error?: string; stderr?: string }>;
   };
   audioMarkers: {
-    getByAudio: (audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'capture_image' | 'quick_capture_audio' | 'image_child') => Promise<AudioMarker[]>;
+    getByAudio: (audioId: number, audioType: 'duration' | 'duration_image' | 'recording' | 'recording_image' | 'capture_image' | 'quick_capture_audio' | 'image_child' | 'review_item') => Promise<AudioMarker[]>;
     addBatch: (markers: Omit<AudioMarker, 'id' | 'created_at'>[]) => Promise<AudioMarker[]>;
     updateCaption: (markerId: number, caption: string | null) => Promise<AudioMarker>;
   };
@@ -970,6 +970,17 @@ export interface ElectronAPI {
   reviewNoteAudios: {
     add: (reviewNoteId: number, audioBuffer: ArrayBuffer, duration: number | null, extension?: string) => Promise<ReviewNoteAudio>;
     getByNote: (reviewNoteId: number) => Promise<ReviewNoteAudio[]>;
+    delete: (audioId: number) => Promise<void>;
+  };
+  reviewItemNotes: {
+    getByItem: (reviewItemId: number) => Promise<ReviewItemNote[]>;
+    add: (reviewItemId: number, body: string) => Promise<ReviewItemNote>;
+    update: (noteId: number, body: string) => Promise<void>;
+    delete: (noteId: number) => Promise<void>;
+  };
+  reviewItemAudios: {
+    getByItem: (reviewItemId: number) => Promise<ReviewItemAudio[]>;
+    add: (reviewItemId: number, audioBuffer: ArrayBuffer, duration: number | null, extension?: string) => Promise<ReviewItemAudio>;
     delete: (audioId: number) => Promise<void>;
   };
   reviewCodeSnippets: {
@@ -1525,6 +1536,25 @@ export interface ReviewNoteImage {
 export interface ReviewNoteAudio {
   id: number;
   review_note_id: number;
+  file_path: string;
+  duration: number | null;
+  sort_order: number;
+  created_at: string;
+}
+
+/** Free-text side note on the echo itself (hint / question / idea) — shown on the review card front. */
+export interface ReviewItemNote {
+  id: number;
+  review_item_id: number;
+  body: string;
+  sort_order: number;
+  created_at: string;
+}
+
+/** Voice recording on the echo itself. Carries audio_markers with audio_type 'review_item'. */
+export interface ReviewItemAudio {
+  id: number;
+  review_item_id: number;
   file_path: string;
   duration: number | null;
   sort_order: number;

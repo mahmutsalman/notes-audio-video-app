@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { ReviewItem, ReviewMask, ReviewRating, ReviewPreset, ReviewNote, ReviewNoteKind } from '../../types';
+import type { ReviewItem, ReviewMask, ReviewRating, ReviewPreset, ReviewNote, ReviewNoteKind, ReviewItemNote, ReviewItemAudio, AudioMarker } from '../../types';
 import { formatDueExact } from '../../utils/srsAlgorithm';
 import {
   previewRatings, applyRating, applyManual, applyManualDate,
@@ -11,6 +11,7 @@ import PixelatedImage from './PixelatedImage';
 import ReviewNoteImages from './ReviewNoteImages';
 import ReviewNoteAudios from './ReviewNoteAudios';
 import ReviewCodePane from './ReviewCodePane';
+import ThemedAudioPlayer from '../audio/ThemedAudioPlayer';
 
 interface ReviewSessionProps {
   items: ReviewItem[];
@@ -58,6 +59,9 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   const navigate = useNavigate();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [masks, setMasks] = useState<ReviewMask[]>([]);
+  // Side content authored on the echo itself in "Add to Echo" — extra prompts beyond the masks.
+  const [itemNotes, setItemNotes] = useState<ReviewItemNote[]>([]);
+  const [itemAudios, setItemAudios] = useState<(ReviewItemAudio & { markers: AudioMarker[] })[]>([]);
   const [revealedMaskIds, setRevealedMaskIds] = useState<Set<number>>(new Set());
   const [allRevealed, setAllRevealed] = useState(false);
   // "Rate this card" shows the grading controls while leaving the masks blurred, so grading
@@ -278,6 +282,14 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     setAutoRecordNoteId(null);
     timerTouched.current = false;
     window.electronAPI.reviewMasks.getByItem(current.id).then(setMasks);
+    window.electronAPI.reviewItemNotes.getByItem(current.id).then(setItemNotes);
+    window.electronAPI.reviewItemAudios.getByItem(current.id).then(async (audios: ReviewItemAudio[]) => {
+      const withMarkers = await Promise.all(audios.map(async a => ({
+        ...a,
+        markers: await window.electronAPI.audioMarkers.getByAudio(a.id, 'review_item'),
+      })));
+      setItemAudios(withMarkers);
+    });
     // Re-hydrate any notes logged for this card but not yet tied to a rating — e.g. typed,
     // then navigated away with the arrow keys, or logged in an abandoned session.
     window.electronAPI.reviewNotes.getDraftsByItem(current.id).then(setDraftNotes);
@@ -702,6 +714,34 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
 
       {/* Bottom controls */}
       <div className="px-5 py-4 border-t border-gray-800 flex flex-col gap-3">
+        {/* The echo's own side notes + voice — the prompts that live on the card, not on a review.
+            Always visible: they exist precisely so recall doesn't depend on the masks alone. */}
+        {(itemNotes.length > 0 || itemAudios.length > 0) && (
+          <div className="flex flex-col gap-2">
+            {itemNotes.length > 0 && (
+              <div className="flex items-start gap-2 flex-wrap">
+                {itemNotes.map(n => (
+                  <span
+                    key={n.id}
+                    className="text-xs text-sky-200 bg-sky-950/60 border border-sky-800/60 px-2 py-1 rounded"
+                  >
+                    📝 {n.body}
+                  </span>
+                ))}
+              </div>
+            )}
+            {itemAudios.map(a => (
+              <ThemedAudioPlayer
+                key={a.id}
+                src={window.electronAPI.paths.getFileUrl(a.file_path)}
+                theme="blue"
+                markers={a.markers}
+                className="max-w-xl"
+              />
+            ))}
+          </div>
+        )}
+
         {/* Reveal All + "Rate this card" + hint list */}
         {!allRevealed && masks.length > 0 && (
           <div className="flex items-center gap-3 flex-wrap">
