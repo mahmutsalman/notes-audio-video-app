@@ -13,7 +13,7 @@ import { useAudioRecording, AUDIO_SAVED_EVENT } from '../context/AudioRecordingC
 import { useImageAudioPlayer } from '../context/ImageAudioPlayerContext';
 import { useDurationAudioPlayer } from '../context/DurationAudioPlayerContext';
 import { useRecordingAudioPlayer } from '../context/RecordingAudioPlayerContext';
-import { SYNC_COMPLETED_EVENT } from '../utils/events';
+import { SYNC_COMPLETED_EVENT, REVIEW_CHANGED_EVENT } from '../utils/events';
 import DurationList from '../components/recordings/DurationList';
 import DurationNotesSidebar from '../components/recordings/DurationNotesSidebar';
 import MarkList from '../components/recordings/MarkList';
@@ -129,6 +129,11 @@ export default function RecordingPage() {
   const [durationImageTagsCache, setDurationImageTagsCache] = useState<Record<number, string[]>>({});
   const [recordingImageColorsCache, setRecordingImageColorsCache] = useState<Record<number, string[]>>({});
   const [durationImageColorsCache, setDurationImageColorsCache] = useState<Record<number, string[]>>({});
+  // Which of the ACTIVE mark's images are enrolled as echoes (≋ badge + the browse toggle).
+  const [durationEchoImageIds, setDurationEchoImageIds] = useState<number[]>([]);
+  // Browse mode: filter the mark's image grid down to its echo cards. Read-only — reorder and
+  // delete are disabled while it's on, and nothing here touches FSRS state.
+  const [showEchoImagesOnly, setShowEchoImagesOnly] = useState(false);
   const [recordingImageChildCountMap, setRecordingImageChildCountMap] = useState<Record<number, number>>({});
   const [durationImageChildCountMap, setDurationImageChildCountMap] = useState<Record<number, number>>({});
   const [recordingAudioColorsCache, setRecordingAudioColorsCache] = useState<Record<number, string[]>>({});
@@ -1763,6 +1768,27 @@ export default function RecordingPage() {
       .then(setDurationImageColorsCache);
   }, [activeDurationId, durationImagesCache]);
 
+  // Which of this mark's images are enrolled in Echo. Refreshed when enrolls/deletes happen
+  // anywhere (review-changed), so the badge count never goes stale.
+  useEffect(() => {
+    setShowEchoImagesOnly(false);
+    if (!recording?.id || !activeDurationId || activeDurationImages.length === 0) {
+      setDurationEchoImageIds([]);
+      return;
+    }
+    const imageIds = new Set(activeDurationImages.map(i => i.id));
+    const load = () => {
+      window.electronAPI.review.getAllEnrolledByRecording(recording.id).then(items => {
+        setDurationEchoImageIds(items
+          .filter(it => it.media_type === 'duration_image' && imageIds.has(it.media_id))
+          .map(it => it.media_id));
+      });
+    };
+    load();
+    window.addEventListener(REVIEW_CHANGED_EVENT, load);
+    return () => window.removeEventListener(REVIEW_CHANGED_EVENT, load);
+  }, [recording?.id, activeDurationId, durationImagesCache]);
+
   // Pre-fetch audios for all recording-level images so badges render in the grid
   useEffect(() => {
     for (const img of images) {
@@ -2830,37 +2856,66 @@ export default function RecordingPage() {
                 return total > 0 ? <span className="ml-1.5 text-[10px] font-normal text-blue-400 dark:text-blue-500">· {formatFileSize(total)}</span> : null;
               })()}
             </h3>
-            <button
-              onClick={handleAddDurationImage}
-              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
-            >
-              📋 Paste
-            </button>
+            <div className="flex items-center gap-3">
+              {durationEchoImageIds.length > 0 && (
+                <button
+                  onClick={() => setShowEchoImagesOnly(v => !v)}
+                  title={showEchoImagesOnly
+                    ? 'Show all images again'
+                    : 'Browse only the images enrolled in Echo — read-only, does not affect study'}
+                  className={`flex items-center gap-1.5 text-xs rounded-full px-2 py-0.5 transition-colors ${
+                    showEchoImagesOnly
+                      ? 'bg-sky-600 text-white'
+                      : 'text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300'
+                  }`}
+                >
+                  ≋ Echoes
+                  <span className={`text-[10px] rounded-full min-w-4 h-4 px-1 flex items-center justify-center font-bold ${
+                    showEchoImagesOnly ? 'bg-white/25 text-white' : 'bg-sky-500 text-white'
+                  }`}>
+                    {durationEchoImageIds.length}
+                  </span>
+                </button>
+              )}
+              <button
+                onClick={handleAddDurationImage}
+                className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+              >
+                📋 Paste
+              </button>
+            </div>
           </div>
           <SortableImageGrid
-            images={activeDurationImages}
+            images={showEchoImagesOnly
+              ? activeDurationImages.filter(i => durationEchoImageIds.includes(i.id))
+              : activeDurationImages}
             gridClassName="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2"
             colorOverrides={mediaColorOverrides}
             groupColorOverrides={mediaGroupColorOverrides}
             colorKeyPrefix="durationImage"
             captionColorClass="text-blue-600 dark:text-blue-400"
             questionImageIds={activeQuestionImageIds}
+            echoImageIds={durationEchoImageIds}
             highlightedId={
               searchNav?.results[searchNav.currentIndex]?.content_type === 'duration_image'
                 ? searchNav.results[searchNav.currentIndex].source_id
                 : undefined
             }
             onImageClick={(index) => {
-              const img = activeDurationImages[index];
+              const shown = showEchoImagesOnly
+                ? activeDurationImages.filter(i => durationEchoImageIds.includes(i.id))
+                : activeDurationImages;
+              const img = shown[index];
               if (isBookNote(recording) && img?.page_number && pdfViewerRef.current) {
                 pdfViewerRef.current.goToPage(img.page_number);
-              } else {
-                setSelectedDurationImageIndex(index);
+              } else if (img) {
+                // The lightbox always indexes the FULL list, so browse mode maps id → real index.
+                setSelectedDurationImageIndex(activeDurationImages.findIndex(i => i.id === img.id));
               }
             }}
             onContextMenu={(e, img) => handleContextMenu(e, 'durationImage', img as DurationImage)}
-            onDelete={handleDeleteDurationImage}
-            onReorder={handleReorderDurationImages}
+            onDelete={showEchoImagesOnly ? undefined : handleDeleteDurationImage}
+            onReorder={showEchoImagesOnly ? undefined : handleReorderDurationImages}
             audioCountMap={audioCountMap}
             tagCountMap={tagCountMap}
             tagNamesMap={tagNamesMap}

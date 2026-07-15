@@ -50,8 +50,10 @@ interface SortableImageGridProps {
   captionColorClass: string;
   onImageClick: (index: number) => void;
   onContextMenu?: (e: React.MouseEvent, image: SortableImageItem) => void;
-  onDelete: (id: number) => void;
-  onReorder: (orderedIds: number[]) => void;
+  /** Omit to hide the ✕ delete button (read-only browse). */
+  onDelete?: (id: number) => void;
+  /** Omit to disable drag-reordering (read-only browse, or a filtered subset). */
+  onReorder?: (orderedIds: number[]) => void;
   /** Paste placeholder rendered at the end of the grid (not draggable) */
   pastePlaceholder?: React.ReactNode;
   /** Map of imageId → audio count for showing badge */
@@ -72,6 +74,8 @@ interface SortableImageGridProps {
   colorKeysMap?: Record<number, string[]>;
   /** The mark's designated question images — each gets a ★ badge. A mark may have several. */
   questionImageIds?: number[];
+  /** Images enrolled in Echo — each gets a ≋ badge so you can tell which thumbnails are cards. */
+  echoImageIds?: number[];
 }
 
 /* ── Sortable wrapper for a single image cell ─────────────────── */
@@ -85,7 +89,7 @@ interface SortableImageProps {
   captionColorClass: string;
   onImageClick: (index: number) => void;
   onContextMenu?: (e: React.MouseEvent, image: SortableImageItem) => void;
-  onDelete: (id: number) => void;
+  onDelete?: (id: number) => void;
   audioCount?: number;
   tagCount?: number;
   tags?: string[];
@@ -94,6 +98,7 @@ interface SortableImageProps {
   isHighlighted?: boolean;
   colorKeys?: string[];
   isQuestionImage?: boolean;
+  isEchoImage?: boolean;
 }
 
 function SortableImage({
@@ -114,6 +119,7 @@ function SortableImage({
   isHighlighted = false,
   colorKeys = [],
   isQuestionImage = false,
+  isEchoImage = false,
 }: SortableImageProps) {
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const colorRings = buildColorRings(colorKeys);
@@ -208,6 +214,17 @@ function SortableImage({
             ★
           </div>
         )}
+        {/* Echo badge — bottom-right: this image is enrolled as a review card. */}
+        {isEchoImage && (
+          <div
+            className="absolute bottom-1 right-1 bg-sky-500 text-white text-[10px]
+                       rounded-full w-4 h-4 flex items-center justify-center font-bold z-10
+                       group-hover:opacity-0 transition-opacity"
+            title="Enrolled in Echo — this image is a review card"
+          >
+            ≋
+          </div>
+        )}
         {/* Child image count badge (red) */}
         {childCount > 0 && (
           <div className={`absolute right-1 bg-red-500 text-white text-[10px]
@@ -257,7 +274,7 @@ function SortableImage({
             style={{ backgroundColor: colorConfig.borderColor }}
           />
         )}
-        <button
+        {onDelete && <button
           onClick={(e) => {
             e.stopPropagation();
             onDelete(image.id);
@@ -268,7 +285,7 @@ function SortableImage({
                      flex items-center justify-center text-sm z-20"
         >
           ×
-        </button>
+        </button>}
       </div>
       {/* Caption — always rendered for consistent vertical spacing */}
       <p
@@ -416,6 +433,7 @@ export default function SortableImageGrid({
   readOnly = false,
   colorKeysMap,
   questionImageIds,
+  echoImageIds,
 }: SortableImageGridProps) {
   const [activeId, setActiveId] = useState<number | null>(null);
 
@@ -473,7 +491,7 @@ export default function SortableImageGrid({
       const oldIndex = images.findIndex(img => img.id === active.id);
       const newIndex = images.findIndex(img => img.id === over.id);
       const newOrder = arrayMove(images, oldIndex, newIndex);
-      onReorder(newOrder.map(img => img.id));
+      onReorder?.(newOrder.map(img => img.id));
     }
   };
 
@@ -520,6 +538,7 @@ export default function SortableImageGrid({
                 isHighlighted={highlightedId === img.id}
                 colorKeys={colorKeysMap?.[img.id] ?? []}
                 isQuestionImage={questionImageIds?.includes(img.id) ?? false}
+                isEchoImage={echoImageIds?.includes(img.id) ?? false}
               />
             );
           })}
