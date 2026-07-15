@@ -21,7 +21,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { DurationColor, DurationGroupColor } from '../../types';
 import { DURATION_COLORS } from '../../utils/durationColors';
 import { DURATION_GROUP_COLORS } from '../../utils/durationGroupColors';
-import { IMAGE_COLORS, type ImageColorKey } from '../../utils/imageColors';
+import { buildColorRings } from '../../utils/imageColors';
 
 /** Minimal image shape shared by Image and DurationImage */
 export interface SortableImageItem {
@@ -72,18 +72,6 @@ interface SortableImageGridProps {
   colorKeysMap?: Record<number, string[]>;
   /** The mark's designated question images — each gets a ★ badge. A mark may have several. */
   questionImageIds?: number[];
-}
-
-/* ── Build stacked color ring box-shadow ──────────────────────── */
-
-function buildColorRings(colorKeys: string[]): string | undefined {
-  if (!colorKeys.length) return undefined;
-  return colorKeys
-    .map((key, i) => {
-      const hex = IMAGE_COLORS[key as ImageColorKey]?.hex ?? '#888';
-      return `0 0 0 ${(i + 1) * 3}px ${hex}`;
-    })
-    .join(', ');
 }
 
 /* ── Sortable wrapper for a single image cell ─────────────────── */

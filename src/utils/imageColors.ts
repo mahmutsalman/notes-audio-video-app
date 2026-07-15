@@ -20,6 +20,17 @@ export const IMAGE_COLOR_KEYS: ImageColorKey[] = [
   'teal', 'sky', 'violet', 'pink', 'slate',
 ];
 
+/** Stacked box-shadow rings for an image's assigned colors (first key = innermost ring) */
+export function buildColorRings(colorKeys: string[], ringWidth = 3): string | undefined {
+  if (!colorKeys.length) return undefined;
+  return colorKeys
+    .map((key, i) => {
+      const hex = IMAGE_COLORS[key as ImageColorKey]?.hex ?? '#888';
+      return `0 0 0 ${(i + 1) * ringWidth}px ${hex}`;
+    })
+    .join(', ');
+}
+
 export const IMAGE_COLORS: Record<ImageColorKey, ImageColorDef> = {
   red:     { hex: '#ef4444', label: 'Red' },
   orange:  { hex: '#f97316', label: 'Orange' },

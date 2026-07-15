@@ -3,7 +3,7 @@ import { useTabInstance } from '../../context/TabsContext';
 import { useStudyTracker } from '../../context/StudyTrackerContext';
 import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation, ReviewItem } from '../../types';
 import MaskEditor from '../review/MaskEditor';
-import { IMAGE_COLORS, IMAGE_COLOR_KEYS } from '../../utils/imageColors';
+import { IMAGE_COLORS, IMAGE_COLOR_KEYS, buildColorRings } from '../../utils/imageColors';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
 import WaveformVisualizer from '../audio/WaveformVisualizer';
@@ -1191,6 +1191,9 @@ export default function ImageLightbox({
     userSelect: 'none' as const,
   };
 
+  // Same stacked color-ring frame as the SortableImageGrid thumbnails
+  const colorRings = buildColorRings(imageColors, 4);
+
   return (
     <div className={`fixed inset-0 z-50 bg-black/90 flex flex-col titlebar-no-drag${(playerBarVisible || showRecordingBar) ? ' pb-14' : ''}`}>
 
@@ -1279,7 +1282,7 @@ export default function ImageLightbox({
           src={window.electronAPI.paths.getFileUrl(image.file_path)}
           alt=""
           className="max-w-full max-h-full object-contain"
-          style={imgTransformStyle}
+          style={colorRings ? { ...imgTransformStyle, boxShadow: colorRings } : imgTransformStyle}
           draggable={false}
           onClick={handleImageClick}
           onMouseDown={drawMode ? undefined : (e) => { handleOcrMouseDown(e); if (!e.shiftKey) handleMouseDown(e); }}
