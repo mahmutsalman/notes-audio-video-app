@@ -7,6 +7,7 @@ import { currentRetrievability, stateLabel, RATING_META } from '../utils/fsrs';
 import HeatmapCalendar, { HEATMAP_WINDOWS, type HeatmapWindow } from '../components/echo/HeatmapCalendar';
 import ReviewNoteImages from '../components/review/ReviewNoteImages';
 import ReviewNoteAudios from '../components/review/ReviewNoteAudios';
+import ReviewSession from '../components/review/ReviewSession';
 
 /** Local 'YYYY-MM-DD' key for an ISO timestamp (matches the heatmap + SQLite localtime). */
 function localDayKey(iso: string): string {
@@ -50,6 +51,9 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
   const [events, setEvents] = useState<ReviewEvent[]>([]);
   const [windowKey, setWindowKey] = useState<HeatmapWindow>('1yr');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  // Peek at the card FRONT — the masked image with its hints, exactly as a review shows it.
+  // Rendered via ReviewSession readOnly, so nothing is graded or logged.
+  const [peek, setPeek] = useState(false);
   // Full-screen viewer. The 320px column is too small to read a code screenshot in.
   // null = closed. `img` is WHICH image (the card, or the mark's question), `zoom` is 'fit'
   // (scaled to the window) vs 'actual' (1:1 pixels, scrollable). The two are independent —
@@ -114,6 +118,7 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
   const load = useCallback(async () => {
     if (!id) return;
     setSelectedDay(null); // reset day filter when switching between echoes
+    setPeek(false);
     const [it, st, ev] = await Promise.all([
       window.electronAPI.review.getById(id),
       window.electronAPI.reviewEvents.getItemStats(id),
@@ -132,6 +137,10 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
         <p className="text-sm">Loading Echo history…</p>
       </div>
     );
+  }
+
+  if (peek) {
+    return <ReviewSession items={[item]} readOnly onSessionEnd={() => setPeek(false)} />;
   }
 
   const src = item.file_path ? window.electronAPI.paths.getFileUrl(item.file_path) : null;
@@ -198,6 +207,13 @@ export default function EchoImageDetailPage({ reviewItemId: idProp, onBack, onPr
             </p>
           )}
         </div>
+        <button
+          onClick={() => setPeek(true)}
+          title="See the card front as it appears in review — masks, blur, hints, notes. Read-only: nothing is graded or logged."
+          className="px-3 py-1.5 text-sm rounded-lg bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300 hover:bg-sky-200 dark:hover:bg-sky-900/70 transition-colors"
+        >
+          👁 Card front
+        </button>
         {item.recording_id && (
           <button
             onClick={() => navigate(`/recording/${item.recording_id}`, {

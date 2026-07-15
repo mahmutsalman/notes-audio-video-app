@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useIsActiveTab, useTabInstance } from '../context/TabsContext';
 import { useStudyTracker } from '../context/StudyTrackerContext';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -129,8 +129,13 @@ export default function RecordingPage() {
   const [durationImageTagsCache, setDurationImageTagsCache] = useState<Record<number, string[]>>({});
   const [recordingImageColorsCache, setRecordingImageColorsCache] = useState<Record<number, string[]>>({});
   const [durationImageColorsCache, setDurationImageColorsCache] = useState<Record<number, string[]>>({});
-  // Which of the ACTIVE mark's images are enrolled as echoes (≋ badge + the browse toggle).
-  const [durationEchoImageIds, setDurationEchoImageIds] = useState<number[]>([]);
+  // Which of the ACTIVE mark's images are enrolled as echoes (≋ badge + the browse toggle),
+  // as image id → review item id so browse-mode clicks can open the echo detail page.
+  const [durationEchoImageMap, setDurationEchoImageMap] = useState<Record<number, number>>({});
+  const durationEchoImageIds = useMemo(
+    () => Object.keys(durationEchoImageMap).map(Number),
+    [durationEchoImageMap]
+  );
   // Browse mode: filter the mark's image grid down to its echo cards. Read-only — reorder and
   // delete are disabled while it's on, and nothing here touches FSRS state.
   const [showEchoImagesOnly, setShowEchoImagesOnly] = useState(false);
@@ -1773,15 +1778,15 @@ export default function RecordingPage() {
   useEffect(() => {
     setShowEchoImagesOnly(false);
     if (!recording?.id || !activeDurationId || activeDurationImages.length === 0) {
-      setDurationEchoImageIds([]);
+      setDurationEchoImageMap({});
       return;
     }
     const imageIds = new Set(activeDurationImages.map(i => i.id));
     const load = () => {
       window.electronAPI.review.getAllEnrolledByRecording(recording.id).then(items => {
-        setDurationEchoImageIds(items
+        setDurationEchoImageMap(Object.fromEntries(items
           .filter(it => it.media_type === 'duration_image' && imageIds.has(it.media_id))
-          .map(it => it.media_id));
+          .map(it => [it.media_id, it.id])));
       });
     };
     load();
@@ -2906,10 +2911,13 @@ export default function RecordingPage() {
                 ? activeDurationImages.filter(i => durationEchoImageIds.includes(i.id))
                 : activeDurationImages;
               const img = shown[index];
-              if (isBookNote(recording) && img?.page_number && pdfViewerRef.current) {
+              if (showEchoImagesOnly && img && durationEchoImageMap[img.id] != null) {
+                // Browse mode = the Echo Browse tab in miniature: open the card's detail page
+                // (stats, history, notes), not the plain lightbox.
+                navigate(`/echo/${durationEchoImageMap[img.id]}`);
+              } else if (isBookNote(recording) && img?.page_number && pdfViewerRef.current) {
                 pdfViewerRef.current.goToPage(img.page_number);
               } else if (img) {
-                // The lightbox always indexes the FULL list, so browse mode maps id → real index.
                 setSelectedDurationImageIndex(activeDurationImages.findIndex(i => i.id === img.id));
               }
             }}
