@@ -7,6 +7,7 @@ import ReviewSession from '../components/review/ReviewSession';
 import MaskEditor from '../components/review/MaskEditor';
 import { ReviewItemGridCard, ReviewItemListRow, BrowseCard, ReviewedTodayCard } from '../components/echo/EchoCards';
 import EchoTagFilter from '../components/echo/EchoTagFilter';
+import { EchoSortSelect, sortEchoItems, loadEchoSort, saveEchoSort, type EchoSortKey } from '../components/echo/EchoSort';
 
 type FilterTab = 'due' | 'today' | 'all' | 'upcoming' | 'browse';
 type ViewMode = 'grid' | 'list';
@@ -29,6 +30,9 @@ export default function EchoPage() {
   // Enrolled count IGNORING the tag filter — so the header reads right when a filter matches
   // nothing. Captured whenever no filter is active.
   const [totalEnrolled, setTotalEnrolled] = useState(0);
+  // Sort applies to every tab; persisted so it survives restarts.
+  const [sortKey, setSortKeyState] = useState<EchoSortKey>(() => loadEchoSort('page'));
+  const setSortKey = (k: EchoSortKey) => { setSortKeyState(k); saveEchoSort('page', k); };
 
   const loadItems = useCallback(async () => {
     const items = activeTags.length > 0
@@ -83,10 +87,12 @@ export default function EchoPage() {
   const dueItems = allItems.filter(item => new Date(item.next_review_at) <= now);
   const upcomingItems = allItems.filter(item => new Date(item.next_review_at) > now);
 
-  const displayedItems: ReviewItem[] =
+  const displayedItems: ReviewItem[] = sortEchoItems(
     filter === 'due' ? dueItems :
     filter === 'upcoming' ? upcomingItems :
-    allItems;
+    allItems, sortKey);
+  const sortedBrowseItems = sortEchoItems(browseItems, sortKey);
+  const sortedTodayItems = sortEchoItems(todayItems, sortKey);
 
   const startSession = () => {
     if (dueItems.length === 0) return;
@@ -97,8 +103,8 @@ export default function EchoPage() {
   // reveal blur, ←/→ navigate, without saving any progress. Browse and Today use their own lists.
   const startPeek = () => {
     const source: ReviewItem[] =
-      filter === 'browse' ? browseItems :
-      filter === 'today' ? todayItems :
+      filter === 'browse' ? sortedBrowseItems :
+      filter === 'today' ? sortedTodayItems :
       displayedItems;
     if (source.length === 0) return;
     setPeekItems(source);
@@ -225,6 +231,7 @@ export default function EchoPage() {
             </button>
           );
         })}
+        <EchoSortSelect value={sortKey} onChange={setSortKey} className="ml-auto" />
       </div>
 
       {/* Tag filter — narrows every tab (ANY/OR) to echoes whose image carries a selected tag. */}
@@ -256,7 +263,7 @@ export default function EchoPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {browseItems.map(item => (
+              {sortedBrowseItems.map(item => (
                 <BrowseCard key={item.id} item={item} onOpen={() => openDetail(item.id)} />
               ))}
             </div>
@@ -285,7 +292,7 @@ export default function EchoPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {todayItems.map(item => (
+              {sortedTodayItems.map(item => (
                 <ReviewedTodayCard key={item.id} item={item} onOpen={() => openDetail(item.id)} />
               ))}
             </div>

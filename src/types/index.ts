@@ -1424,6 +1424,8 @@ export interface ReviewItem {
   repetitions: number;
   next_review_at: string;
   created_at: string;
+  /** When the card's CONTENT last changed (masks, hints, side notes, audios) — not when rated. */
+  updated_at: string;
   // FSRS scheduler fields (nullable ⇒ item predates FSRS → treat as a fresh card)
   stability: number | null;
   difficulty: number | null;
@@ -1446,6 +1448,8 @@ export interface ReviewItem {
    * mark with no question images is handled in exactly one place.
    */
   question_images_json: string | null;
+  /** Rating-carrying review_events count — same rule as Reviewed Today. Drives the Reviews sort. */
+  review_count?: number;
 }
 
 /** One of a mark's question images, as it reaches the renderer. */

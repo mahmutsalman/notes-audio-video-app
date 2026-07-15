@@ -3204,7 +3204,9 @@ const ECHO_SOURCE_COLUMNS = `
                     FROM   duration_images
                     WHERE  duration_id = ri.duration_id AND is_question = 1
                     ORDER  BY sort_order, id) q
-             ) AS question_images_json
+             ) AS question_images_json,
+             (SELECT COUNT(*) FROM review_events rev
+              WHERE  rev.review_item_id = ri.id AND rev.rating IS NOT NULL) AS review_count
 `;
 
 const ECHO_SOURCE_JOINS = `
@@ -3732,16 +3734,21 @@ export const ReviewItemNoteOperations = {
     const result = db.prepare(
       'INSERT INTO review_item_notes (review_item_id, body, sort_order) VALUES (?, ?, ?)'
     ).run(reviewItemId, body, sortOrder);
+    touchReviewItem(db, reviewItemId);
 
     return db.prepare('SELECT * FROM review_item_notes WHERE id = ?').get(result.lastInsertRowid);
   },
 
   update(noteId: number, body: string): void {
-    getDatabase().prepare('UPDATE review_item_notes SET body = ? WHERE id = ?').run(body, noteId);
+    const db = getDatabase();
+    db.prepare('UPDATE review_item_notes SET body = ? WHERE id = ?').run(body, noteId);
+    touchReviewItemVia(db, 'review_item_notes', noteId);
   },
 
   delete(noteId: number): void {
-    getDatabase().prepare('DELETE FROM review_item_notes WHERE id = ?').run(noteId);
+    const db = getDatabase();
+    touchReviewItemVia(db, 'review_item_notes', noteId);
+    db.prepare('DELETE FROM review_item_notes WHERE id = ?').run(noteId);
   },
 };
 
@@ -3763,6 +3770,7 @@ export const ReviewItemAudioOperations = {
       `INSERT INTO review_item_audios (review_item_id, file_path, duration, sort_order)
        VALUES (?, ?, ?, ?)`
     ).run(reviewItemId, filePath, duration, sortOrder);
+    touchReviewItem(db, reviewItemId);
 
     return db.prepare('SELECT * FROM review_item_audios WHERE id = ?').get(result.lastInsertRowid);
   },
@@ -3773,6 +3781,7 @@ export const ReviewItemAudioOperations = {
     const row = db.prepare(
       'SELECT file_path FROM review_item_audios WHERE id = ?'
     ).get(audioId) as { file_path: string } | undefined;
+    touchReviewItemVia(db, 'review_item_audios', audioId);
     db.prepare("DELETE FROM audio_markers WHERE audio_id = ? AND audio_type = 'review_item'").run(audioId);
     db.prepare('DELETE FROM review_item_audios WHERE id = ?').run(audioId);
     return { filePath: row?.file_path ?? null };
@@ -3973,12 +3982,26 @@ export interface ReviewEventInput {
   duration_seconds: number | null;
 }
 
+/**
+ * review_items.updated_at = when the CARD'S CONTENT last changed (masks, hints, side notes,
+ * voice recordings) — NOT when it was last rated; that is last_review_at. The "Edited" sort
+ * key reads this, so every content mutation below must call it.
+ */
+function touchReviewItem(db: ReturnType<typeof getDatabase>, reviewItemId: number): void {
+  db.prepare("UPDATE review_items SET updated_at = datetime('now') WHERE id = ?").run(reviewItemId);
+}
+
+/** Touch via a child row that knows its review_item_id — for update/delete paths. */
+function touchReviewItemVia(db: ReturnType<typeof getDatabase>, table: string, childId: number): void {
+  db.prepare(`UPDATE review_items SET updated_at = datetime('now')
+              WHERE id = (SELECT review_item_id FROM ${table} WHERE id = ?)`).run(childId);
+}
+
 function writeReviewCardFields(db: ReturnType<typeof getDatabase>, id: number, f: ReviewCardFields): void {
   db.prepare(`
     UPDATE review_items
     SET stability = ?, difficulty = ?, state = ?, scheduled_days = ?, learning_steps = ?,
-        repetitions = ?, lapses = ?, last_review_at = ?, next_review_at = ?, interval_days = ?,
-        updated_at = datetime('now')
+        repetitions = ?, lapses = ?, last_review_at = ?, next_review_at = ?, interval_days = ?
     WHERE id = ?
   `).run(
     f.stability, f.difficulty, f.state, f.scheduled_days, f.learning_steps,
@@ -4143,6 +4166,7 @@ export const ReviewMaskOperations = {
       INSERT INTO review_masks (review_item_id, x, y, w, h, pixelation_level, hint_text, sort_order)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(reviewItemId, x, y, w, h, pixelationLevel, hintText, sortOrder);
+    touchReviewItem(db, reviewItemId);
     return db.prepare('SELECT * FROM review_masks WHERE id = ?').get(result.lastInsertRowid);
   },
 
@@ -4153,11 +4177,13 @@ export const ReviewMaskOperations = {
       SET x = ?, y = ?, w = ?, h = ?, pixelation_level = ?, hint_text = ?
       WHERE id = ?
     `).run(x, y, w, h, pixelationLevel, hintText, id);
+    touchReviewItemVia(db, 'review_masks', id);
     return db.prepare('SELECT * FROM review_masks WHERE id = ?').get(id);
   },
 
   delete(id: number): void {
     const db = getDatabase();
+    touchReviewItemVia(db, 'review_masks', id);  // before the row (and its item link) is gone
     db.prepare('DELETE FROM review_masks WHERE id = ?').run(id);
   },
 };

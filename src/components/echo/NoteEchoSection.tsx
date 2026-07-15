@@ -7,6 +7,7 @@ import MaskEditor from '../review/MaskEditor';
 import EchoImageDetailPage from '../../pages/EchoImageDetailPage';
 import { ReviewItemGridCard, BrowseCard, ReviewedTodayCard } from './EchoCards';
 import EchoTagFilter from './EchoTagFilter';
+import { EchoSortSelect, sortEchoItems, loadEchoSort, saveEchoSort, type EchoSortKey } from './EchoSort';
 
 type FilterTab = 'due' | 'today' | 'all' | 'upcoming' | 'browse';
 
@@ -32,6 +33,9 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
   // Enrolled count IGNORING the tag filter, so a filter that matches nothing doesn't make the
   // section look empty (and trap the filter). Captured whenever no filter is active.
   const [totalEnrolled, setTotalEnrolled] = useState(0);
+  // Sort applies to every tab; persisted (shared by all note sections) so it survives restarts.
+  const [sortKey, setSortKeyState] = useState<EchoSortKey>(() => loadEchoSort('note'));
+  const setSortKey = (k: EchoSortKey) => { setSortKeyState(k); saveEchoSort('note', k); };
 
   const loadItems = useCallback(async () => {
     setItems(activeTags.length > 0
@@ -76,11 +80,14 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
   const now = new Date();
   const dueItems = items.filter(i => new Date(i.next_review_at) <= now);
   const upcomingItems = items.filter(i => new Date(i.next_review_at) > now);
-  const displayedItems = filter === 'due' ? dueItems : filter === 'upcoming' ? upcomingItems : items;
+  const displayedItems = sortEchoItems(
+    filter === 'due' ? dueItems : filter === 'upcoming' ? upcomingItems : items, sortKey);
+  const sortedBrowseItems = sortEchoItems(browseItems, sortKey);
+  const sortedTodayItems = sortEchoItems(todayItems, sortKey);
 
   // Open the inline analytics overlay, capturing the current grid's order for ←/→ nav.
   const openDetail = (id: number) => {
-    const list = (filter === 'browse' ? browseItems : filter === 'today' ? todayItems : displayedItems).map(i => i.id);
+    const list = (filter === 'browse' ? sortedBrowseItems : filter === 'today' ? sortedTodayItems : displayedItems).map(i => i.id);
     setDetail({ id, list });
   };
 
@@ -89,8 +96,8 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
   // Peek — browse this note's masked questions (whatever tab is active) without saving progress.
   const startPeek = () => {
     const source: ReviewItem[] =
-      filter === 'browse' ? browseItems :
-      filter === 'today' ? todayItems :
+      filter === 'browse' ? sortedBrowseItems :
+      filter === 'today' ? sortedTodayItems :
       displayedItems;
     if (source.length > 0) setPeekItems(source);
   };
@@ -249,12 +256,13 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
                     </button>
                   );
                 })}
+                <EchoSortSelect value={sortKey} onChange={setSortKey} className="ml-auto" />
               </div>
 
               {/* Grid */}
               {filter === 'browse' ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
-                  {browseItems.map(item => (
+                  {sortedBrowseItems.map(item => (
                     <BrowseCard key={item.id} item={item} onOpen={() => openDetail(item.id)} />
                   ))}
                 </div>
@@ -265,7 +273,7 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
                   </p>
                 ) : (
                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
-                    {todayItems.map(item => (
+                    {sortedTodayItems.map(item => (
                       <ReviewedTodayCard key={item.id} item={item} onOpen={() => openDetail(item.id)} />
                     ))}
                   </div>
