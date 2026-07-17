@@ -939,6 +939,7 @@ export interface ElectronAPI {
     getAll: () => Promise<ReviewItem[]>;
     getAllEnrolled: () => Promise<BrowseReviewItem[]>;
     getById: (id: number) => Promise<ReviewItem | null>;
+    getByMedia: (mediaType: string, mediaId: number) => Promise<ReviewItem[]>;
     getByRecording: (recordingId: number) => Promise<ReviewItem[]>;
     getAllEnrolledByRecording: (recordingId: number) => Promise<BrowseReviewItem[]>;
     getByTags: (tagNames: string[]) => Promise<ReviewItem[]>;

@@ -1036,6 +1036,7 @@ const electronAPI = {
     getAll: () => ipcRenderer.invoke('review:getAll'),
     getAllEnrolled: () => ipcRenderer.invoke('review:getAllEnrolled'),
     getById: (id: number) => ipcRenderer.invoke('review:getById', id),
+    getByMedia: (mediaType: string, mediaId: number) => ipcRenderer.invoke('review:getByMedia', mediaType, mediaId),
     getByRecording: (recordingId: number) => ipcRenderer.invoke('review:getByRecording', recordingId),
     getAllEnrolledByRecording: (recordingId: number) => ipcRenderer.invoke('review:getAllEnrolledByRecording', recordingId),
     getByTags: (tagNames: string[]) => ipcRenderer.invoke('review:getByTags', tagNames),

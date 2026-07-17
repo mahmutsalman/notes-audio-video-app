@@ -3267,6 +3267,27 @@ export const ReviewOperations = {
     `).get(id);
   },
 
+  /**
+   * The echoes enrolled from ONE image (nothing enforces a single enrollment per image, so this
+   * is a list). Powers the lightbox's "≋ Echo" entry point into the read/update editor.
+   */
+  getByMedia(mediaType: string, mediaId: number): any[] {
+    const db = getDatabase();
+    return db.prepare(`
+      ${MARK_POSITION_CTE}
+      SELECT ri.*,
+             r.name AS recording_name,
+             t.name AS topic_name,
+             ${ECHO_SOURCE_COLUMNS}
+      FROM   review_items ri
+      LEFT   JOIN recordings r ON ri.recording_id = r.id
+      LEFT   JOIN topics     t ON r.topic_id = t.id
+      ${ECHO_SOURCE_JOINS}
+      WHERE  ri.media_type = ? AND ri.media_id = ?
+      ORDER  BY ri.created_at ASC
+    `).all(mediaType, mediaId);
+  },
+
   /** Queue scoped to one recording (note) — enrolled images whose recording_id matches. */
   getByRecording(recordingId: number): any[] {
     const db = getDatabase();

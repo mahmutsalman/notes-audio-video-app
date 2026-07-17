@@ -1,8 +1,10 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useTabInstance } from '../../context/TabsContext';
 import { useStudyTracker } from '../../context/StudyTrackerContext';
-import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation, ReviewItem } from '../../types';
+import type { AnyImageAudio, MediaTagType, ImageChild, ImageChildAudio, ImageAnnotation, ReviewItem, ReviewMask } from '../../types';
 import MaskEditor from '../review/MaskEditor';
+import { formatMarkSource, parseQuestionImages } from '../../utils/marks';
+import { REVIEW_CHANGED_EVENT } from '../../utils/events';
 import { IMAGE_COLORS, IMAGE_COLOR_KEYS, buildColorRings } from '../../utils/imageColors';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../../context/ImageAudioPlayerContext';
@@ -248,6 +250,12 @@ export default function ImageLightbox({
   // "Add to Echo" opens the Mask Editor in DRAFT mode — nothing is enrolled until the user
   // clicks Save inside the editor (closing/× discards). Holds just the image identity.
   const [draftEcho, setDraftEcho] = useState<{ src: string; mediaType: MediaTagType; mediaId: number } | null>(null);
+  // Echoes already enrolled from THIS image — powers the "≋" chip. Clicking a row opens the
+  // same editor as "Add to Echo" but bound to the existing item, whose live autosave makes it
+  // the read/update view: masks, hints, side notes, images and voice are all editable there.
+  const [echoItems, setEchoItems] = useState<ReviewItem[]>([]);
+  const [showEchoList, setShowEchoList] = useState(false);
+  const [editEcho, setEditEcho] = useState<{ item: ReviewItem; masks: ReviewMask[] } | null>(null);
 
   // OCR region selection state
   const [ocrSelectStart, setOcrSelectStart] = useState<{ x: number; y: number } | null>(null);
@@ -925,6 +933,10 @@ export default function ImageLightbox({
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // While an echo editor overlay is open it owns the keyboard — Escape must not close the
+      // lightbox underneath it (discarding a draft), and arrows must not flip the image beneath.
+      if (draftEcho || editEcho) return;
+      if (showEchoList && e.key === 'Escape') { setShowEchoList(false); return; }
       if (imageContextMenu) {
         if (e.key === 'Escape') { setImageContextMenu(null); setShowColorPicker(false); }
         return;
@@ -980,7 +992,7 @@ export default function ImageLightbox({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIndex, images.length, onNavigate, onClose, imageContextMenu, selectedChildId, drawMode, selectedAnnId, imageChildren, disableChildImages]);
+  }, [selectedIndex, images.length, onNavigate, onClose, imageContextMenu, selectedChildId, drawMode, selectedAnnId, imageChildren, disableChildImages, draftEcho, editEcho, showEchoList]);
 
   // Track Shift key for OCR cursor hint
   useEffect(() => {
@@ -991,8 +1003,34 @@ export default function ImageLightbox({
     return () => { window.removeEventListener('keydown', onDown); window.removeEventListener('keyup', onUp); };
   }, []);
 
-  // Backdrop click: close at 1x, reset zoom at >1x, or dismiss context menu
+  // Which echoes were enrolled from this image. Refreshed on review-changed so a draft Save
+  // (or a delete on the Echo page) shows up here without reopening the lightbox.
+  useEffect(() => {
+    setShowEchoList(false);
+    if (!mediaType || !image?.id) { setEchoItems([]); return; }
+    const imageId = image.id;
+    const load = () => {
+      window.electronAPI.review.getByMedia(mediaType, imageId).then(setEchoItems);
+    };
+    load();
+    window.addEventListener(REVIEW_CHANGED_EVENT, load);
+    return () => window.removeEventListener(REVIEW_CHANGED_EVENT, load);
+  }, [mediaType, image?.id]);
+
+  // Open the read/update editor for an existing echo — same MaskEditor as "Add to Echo",
+  // but with reviewItemId set, so every change autosaves live.
+  const openEchoEditor = useCallback(async (item: ReviewItem) => {
+    const masks = await window.electronAPI.reviewMasks.getByItem(item.id);
+    setShowEchoList(false);
+    setEditEcho({ item, masks });
+  }, []);
+
+  // Backdrop click: close at 1x, reset zoom at >1x, or dismiss context menu / echo list
   const handleBackdropClick = useCallback(() => {
+    if (showEchoList) {
+      setShowEchoList(false);
+      return;
+    }
     if (imageContextMenu) {
       setImageContextMenu(null);
       setShowColorPicker(false);
@@ -1004,7 +1042,7 @@ export default function ImageLightbox({
     } else {
       onClose();
     }
-  }, [scale, onClose, imageContextMenu]);
+  }, [scale, onClose, imageContextMenu, showEchoList]);
 
   // Image click: stop propagation only if not dragging
   const handleImageClick = useCallback((e: React.MouseEvent) => {
@@ -1220,6 +1258,46 @@ export default function ImageLightbox({
           >
             🎙️
           </button>
+        )}
+
+        {/* ≋ Echo chip — this image is enrolled. Click to list its echoes and open one for
+            reading/updating (same editor as "Add to Echo", live autosave). */}
+        {echoItems.length > 0 && (
+          <button
+            className="absolute top-4 right-24 z-10 flex items-center gap-1.5 bg-purple-600/70 hover:bg-purple-500/80 text-white px-2.5 py-1 rounded-full text-xs font-medium transition-colors"
+            onClick={(e) => { e.stopPropagation(); setShowEchoList(v => !v); }}
+            title={`Enrolled in Echo — click to view / edit ${echoItems.length === 1 ? 'the echo' : `${echoItems.length} echoes`}`}
+          >
+            ≋ Echo{echoItems.length > 1 ? ` · ${echoItems.length}` : ''}
+          </button>
+        )}
+
+        {/* The echo list. One row per enrollment; clicking opens the read/update editor. */}
+        {showEchoList && echoItems.length > 0 && (
+          <div
+            className="absolute top-12 right-4 z-20 w-80 max-h-96 overflow-y-auto rounded-lg border border-gray-700 bg-gray-900/95 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="px-3 py-2 text-[11px] text-gray-400 border-b border-gray-700">
+              Echoes from this image — click to view / edit
+            </p>
+            {echoItems.map(it => (
+              <button
+                key={it.id}
+                onClick={() => void openEchoEditor(it)}
+                className="w-full text-left px-3 py-2 hover:bg-gray-800 transition-colors flex flex-col gap-0.5 border-b border-gray-800 last:border-b-0"
+              >
+                <span className="text-xs text-amber-300/90 truncate">
+                  📌 {formatMarkSource(it.mark_number, it.duration_note) ?? it.recording_name ?? 'Echo'}
+                </span>
+                <span className="text-[11px] text-gray-500 tabular-nums">
+                  {it.review_count ?? 0} review{(it.review_count ?? 0) === 1 ? '' : 's'}
+                  {' · '}enrolled {it.created_at?.slice(0, 10)}
+                  {' · '}due {it.next_review_at?.slice(0, 10)}
+                </span>
+              </button>
+            ))}
+          </div>
         )}
 
         {/* Go to recording — shown only when navigating from search results */}
@@ -2141,6 +2219,23 @@ export default function ImageLightbox({
           sourceLabel={echoSourceLabel}
           sourceImageSrcs={echoSourceImageSrcs}
           onClose={() => setDraftEcho(null)}
+        />
+      )}
+
+      {/* ── Review Mask Editor — EDIT an existing echo: live autosave, so this IS the
+          read/update view. Source label + question images derive from the item itself. ── */}
+      {editEcho && (
+        <MaskEditor
+          src={window.electronAPI.paths.getFileUrl(editEcho.item.file_path ?? image!.file_path)}
+          reviewItemId={editEcho.item.id}
+          existingMasks={editEcho.masks}
+          onMasksChanged={(m) => setEditEcho(prev => (prev ? { ...prev, masks: m } : prev))}
+          mediaTagType={editEcho.item.media_type as MediaTagType}
+          mediaTagId={editEcho.item.media_id}
+          sourceLabel={formatMarkSource(editEcho.item.mark_number, editEcho.item.duration_note)}
+          sourceImageSrcs={parseQuestionImages(editEcho.item.question_images_json)
+            .map(q => window.electronAPI.paths.getFileUrl(q.file_path))}
+          onClose={() => setEditEcho(null)}
         />
       )}
 

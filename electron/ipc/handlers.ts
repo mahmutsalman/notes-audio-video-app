@@ -3318,6 +3318,8 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('review:getAll', () => ReviewOperations.getAll());
   ipcMain.handle('review:getAllEnrolled', () => ReviewOperations.getAllEnrolled());
   ipcMain.handle('review:getById', (_, id: number) => ReviewOperations.getById(id));
+  ipcMain.handle('review:getByMedia', (_, mediaType: string, mediaId: number) =>
+    ReviewOperations.getByMedia(mediaType, mediaId));
   ipcMain.handle('review:getByRecording', (_, recordingId: number) => ReviewOperations.getByRecording(recordingId));
   ipcMain.handle('review:getAllEnrolledByRecording', (_, recordingId: number) => ReviewOperations.getAllEnrolledByRecording(recordingId));
   ipcMain.handle('review:getByTags', (_, tagNames: string[]) => ReviewOperations.getByTags(tagNames));
