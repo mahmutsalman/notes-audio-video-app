@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { ReviewItem, ReviewMask, ReviewRating, ReviewPreset, ReviewNote, ReviewNoteKind, ReviewItemNote, ReviewItemAudio, ReviewItemImage, AudioMarker } from '../../types';
+import type { ReviewItem, ReviewMask, ReviewRating, ReviewPreset, ReviewNote, ReviewNoteKind, ReviewItemNote, ReviewItemAudio, ReviewItemImage, AudioMarker, MediaTagType } from '../../types';
 import { formatDueExact } from '../../utils/srsAlgorithm';
 import {
   previewRatings, applyRating, applyManual, applyManualDate,
@@ -8,6 +8,7 @@ import {
 } from '../../utils/fsrs';
 import { formatMarkSource, parseQuestionImages } from '../../utils/marks';
 import PixelatedImage from './PixelatedImage';
+import MaskEditor from './MaskEditor';
 import ReviewNoteImages from './ReviewNoteImages';
 import ReviewNoteAudios from './ReviewNoteAudios';
 import ReviewCodePane from './ReviewCodePane';
@@ -65,6 +66,9 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   const [itemImages, setItemImages] = useState<ReviewItemImage[]>([]);
   // Enlarged side image (media:// url), or null when none is open.
   const [enlargedItemImage, setEnlargedItemImage] = useState<string | null>(null);
+  // The read/update editor for the CURRENT card — the same MaskEditor the lightbox's ≋ chip
+  // opens. Live autosave; the session's masks stay in sync via onMasksChanged.
+  const [showEditor, setShowEditor] = useState(false);
   const [revealedMaskIds, setRevealedMaskIds] = useState<Set<number>>(new Set());
   const [allRevealed, setAllRevealed] = useState(false);
   // "Rate this card" shows the grading controls while leaving the masks blurred, so grading
@@ -205,8 +209,9 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
 
       // While the question popup is open it owns every key — Escape must close IT, not end the
       // session, and the arrows must page the question images, not the cards. Its own effect
-      // (below) handles them; this handler stands down entirely. Same for an enlarged side image.
-      if (showQuestion || enlargedItemImage) return;
+      // (below) handles them; this handler stands down entirely. Same for an enlarged side
+      // image, and for the edit overlay (Escape must not end the session under the editor).
+      if (showQuestion || enlargedItemImage || showEditor) return;
 
       if (e.key === 'Escape') {
         // The code editor and an in-progress note edit own their own Escape.
@@ -241,7 +246,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [onSessionEnd, goPrev, goNext, editingNoteId, readOnly, showQuestion, enlargedItemImage]);
+  }, [onSessionEnd, goPrev, goNext, editingNoteId, readOnly, showQuestion, enlargedItemImage, showEditor]);
 
   // Esc closes an enlarged side image rather than ending the session.
   useEffect(() => {
@@ -300,6 +305,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     window.electronAPI.reviewMasks.getByItem(current.id).then(setMasks);
     window.electronAPI.reviewItemNotes.getByItem(current.id).then(setItemNotes);
     setEnlargedItemImage(null);
+    setShowEditor(false);
     window.electronAPI.reviewItemImages.getByItem(current.id).then(setItemImages);
     window.electronAPI.reviewItemAudios.getByItem(current.id).then(async (audios: ReviewItemAudio[]) => {
       const withMarkers = await Promise.all(audios.map(async a => ({
@@ -595,6 +601,19 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Edit this card — same read/update editor the lightbox's ≋ chip opens. Live
+              autosave; masks, hints, side notes, images and voice are all editable there. */}
+          <button
+            onClick={() => setShowEditor(true)}
+            title="Edit this echo — masks, hints, notes, images, voice"
+            className="titlebar-no-drag text-gray-400 hover:text-blue-400 text-sm transition-colors flex items-center gap-1.5"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Edit
+          </button>
+
           <button
             onClick={() => setShowCodePane(v => !v)}
             title={showCodePane ? 'Hide the scratch code pad' : 'Show the scratch code pad'}
@@ -1109,6 +1128,34 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
             </>
           )}
         </div>
+      )}
+
+      {/* Edit overlay — the read/update editor for the current card. Everything autosaves;
+          closing re-fetches the side content so edits show on the card front immediately.
+          (Masks stay in sync live via onMasksChanged; new ones arrive unrevealed.) */}
+      {showEditor && current.file_path && (
+        <MaskEditor
+          src={fileSrc}
+          reviewItemId={current.id}
+          existingMasks={masks}
+          onMasksChanged={setMasks}
+          mediaTagType={current.media_type as MediaTagType}
+          mediaTagId={current.media_id}
+          sourceLabel={markSource}
+          sourceImageSrcs={questions.map(q => window.electronAPI.paths.getFileUrl(q.file_path))}
+          onClose={() => {
+            setShowEditor(false);
+            window.electronAPI.reviewItemNotes.getByItem(current.id).then(setItemNotes);
+            window.electronAPI.reviewItemImages.getByItem(current.id).then(setItemImages);
+            window.electronAPI.reviewItemAudios.getByItem(current.id).then(async (audios: ReviewItemAudio[]) => {
+              const withMarkers = await Promise.all(audios.map(async a => ({
+                ...a,
+                markers: await window.electronAPI.audioMarkers.getByAudio(a.id, 'review_item'),
+              })));
+              setItemAudios(withMarkers);
+            });
+          }}
+        />
       )}
 
       {/* Enlarged side image (pasted onto the echo in "Add to Echo"). Esc / click outside closes. */}
