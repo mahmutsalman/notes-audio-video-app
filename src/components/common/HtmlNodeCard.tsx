@@ -14,7 +14,17 @@ export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle, on
   const [isHovered, setIsHovered] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(node.title ?? '');
+  const [copied, setCopied] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // The app stores its OWN copy of every imported file (media/html_nodes/…), and this is that
+  // copy's absolute path — the one to hand an AI so an edit lands where the app actually reads.
+  async function copyPath(e: React.MouseEvent) {
+    e.stopPropagation();
+    await navigator.clipboard.writeText(node.file_path);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  }
 
   function startEdit(e: React.MouseEvent) {
     e.stopPropagation();
@@ -98,6 +108,17 @@ export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle, on
               🏷
             </button>
           )}
+          <button
+            onClick={copyPath}
+            className={`text-xs px-1 transition-colors ${
+              copied
+                ? 'text-green-500 dark:text-green-400'
+                : 'text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200'
+            }`}
+            title={copied ? 'Copied!' : 'Copy file path'}
+          >
+            {copied ? '✓' : '⧉'}
+          </button>
           <button
             onClick={startEdit}
             className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 px-1"
