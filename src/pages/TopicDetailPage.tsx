@@ -27,6 +27,28 @@ export default function TopicDetailPage() {
   useTabTitle(topic?.name ?? 'Topic');
   const { recordings, loading: recordingsLoading, fetchRecordings, deleteRecording, updateRecording } = useRecordings(id);
 
+  // "Recently opened" sort toggle — floats the last-opened note to the top. Persisted per
+  // machine (not per topic) so the preference sticks across topics and sessions.
+  const [sortByRecency, setSortByRecency] = useState(
+    () => localStorage.getItem('topic.sortByRecency') === '1'
+  );
+  useEffect(() => {
+    localStorage.setItem('topic.sortByRecency', sortByRecency ? '1' : '0');
+  }, [sortByRecency]);
+
+  // getByTopic already returns created_at DESC; when the toggle is on, re-order by last_opened_at
+  // DESC with never-opened notes last, tie-broken by created_at DESC (a stable, sensible fallback).
+  const displayedRecordings = useMemo(() => {
+    if (!sortByRecency) return recordings;
+    return [...recordings].sort((a, b) => {
+      const ao = a.last_opened_at, bo = b.last_opened_at;
+      if (ao && bo) return ao < bo ? 1 : ao > bo ? -1 : 0;
+      if (ao) return -1;              // a opened, b never → a first
+      if (bo) return 1;               // b opened, a never → b first
+      return a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0;
+    });
+  }, [recordings, sortByRecency]);
+
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -181,11 +203,30 @@ export default function TopicDetailPage() {
 
       {/* Recordings section */}
       <div className="mb-20">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-          Recordings ({recordings.length})
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            Recordings ({recordings.length})
+          </h2>
+          {/* Recently-opened toggle. On → last-opened note floats to the top. */}
+          <button
+            onClick={() => setSortByRecency(v => !v)}
+            title={sortByRecency
+              ? 'Sorting by recently opened — click for default order'
+              : 'Sort by recently opened (last opened at top)'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              sortByRecency
+                ? 'bg-primary-600 text-white hover:bg-primary-500'
+                : 'bg-gray-100 dark:bg-dark-border text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Recently opened
+          </button>
+        </div>
         <RecordingList
-          recordings={recordings}
+          recordings={displayedRecordings}
           loading={recordingsLoading}
           onDeleteRecording={handleDeleteRecording}
           onUpdateRecording={handleUpdateRecording}

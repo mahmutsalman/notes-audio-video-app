@@ -59,6 +59,14 @@ export default function RecordingPage() {
   const isActiveTab = useIsActiveTab();
   const { recording, loading, refetch, setRecording } = useRecording(id);
   const { topic } = useTopic(recording?.topic_id ?? null);
+
+  // Stamp "last opened" once per note view, so the topic page's "Recently opened" toggle can
+  // float it to the top. emitRecordingUpdated makes useRecordings re-merge the row with its new
+  // last_opened_at, so the toggle reorders the moment you return — no manual refresh.
+  useEffect(() => {
+    if (id === null) return;
+    window.electronAPI.recordings.markOpened(id).then(() => emitRecordingUpdated(id)).catch(() => {});
+  }, [id]);
   useTabTitle(recording?.name ?? 'Recording');
   const {
     durations,

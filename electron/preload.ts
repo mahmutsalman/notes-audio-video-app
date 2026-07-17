@@ -37,6 +37,7 @@ const electronAPI = {
   recordings: {
     getByTopic: (topicId: number): Promise<Recording[]> => ipcRenderer.invoke('recordings:getByTopic', topicId),
     getById: (id: number): Promise<Recording | null> => ipcRenderer.invoke('recordings:getById', id),
+    markOpened: (id: number): Promise<void> => ipcRenderer.invoke('recordings:markOpened', id),
     create: (recording: CreateRecording): Promise<Recording> => ipcRenderer.invoke('recordings:create', recording),
     update: (id: number, updates: UpdateRecording): Promise<Recording> => ipcRenderer.invoke('recordings:update', id, updates),
     delete: (id: number): Promise<void> => ipcRenderer.invoke('recordings:delete', id),

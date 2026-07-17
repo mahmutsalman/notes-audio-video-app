@@ -46,6 +46,8 @@ export interface Recording {
   group_toggle_active: boolean;
   created_at: string;
   updated_at: string;
+  /** When the note was last opened for viewing (null = never since the feature shipped). */
+  last_opened_at: string | null;
   // Relations (loaded separately)
   images?: Image[];
   videos?: Video[];
@@ -395,7 +397,7 @@ export interface BackupResult {
 export type CreateTopic = Omit<Topic, 'id' | 'created_at' | 'updated_at' | 'total_recordings' | 'total_images' | 'total_videos'>;
 export type UpdateTopic = Partial<CreateTopic>;
 
-export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'images' | 'videos' | 'importance_color' | 'name' | 'last_group_color' | 'group_toggle_active' | 'recording_type' | 'main_notes_content' | 'pdf_path' | 'page_offset' | 'book_data_path' | 'reading_progress' | 'character_offset' | 'total_pages' | 'total_words'> & { importance_color?: ImportanceColor; name?: string | null; recording_type?: RecordingType; main_notes_content?: string | null; pdf_path?: string | null; page_offset?: number; book_data_path?: string | null; reading_progress?: number; character_offset?: number; total_pages?: number | null; total_words?: number | null };
+export type CreateRecording = Omit<Recording, 'id' | 'created_at' | 'updated_at' | 'last_opened_at' | 'images' | 'videos' | 'importance_color' | 'name' | 'last_group_color' | 'group_toggle_active' | 'recording_type' | 'main_notes_content' | 'pdf_path' | 'page_offset' | 'book_data_path' | 'reading_progress' | 'character_offset' | 'total_pages' | 'total_words'> & { importance_color?: ImportanceColor; name?: string | null; recording_type?: RecordingType; main_notes_content?: string | null; pdf_path?: string | null; page_offset?: number; book_data_path?: string | null; reading_progress?: number; character_offset?: number; total_pages?: number | null; total_words?: number | null };
 export type UpdateRecording = Partial<Omit<CreateRecording, 'topic_id'>>;
 
 export type CreateImage = Omit<Image, 'id' | 'created_at'>;
@@ -447,6 +449,7 @@ export interface ElectronAPI {
   recordings: {
     getByTopic: (topicId: number) => Promise<Recording[]>;
     getById: (id: number) => Promise<Recording | null>;
+    markOpened: (id: number) => Promise<void>;
     create: (recording: CreateRecording) => Promise<Recording>;
     update: (id: number, updates: UpdateRecording) => Promise<Recording>;
     delete: (id: number) => Promise<void>;

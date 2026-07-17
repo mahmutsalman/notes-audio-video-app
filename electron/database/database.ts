@@ -1791,6 +1791,15 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_media_color_key         ON media_color_assignments(color_key);
   `);
 
+  // When a note (recording) was last OPENED for viewing — distinct from updated_at (last edited).
+  // Powers the "Recently opened" sort toggle on the topic page. Nullable: an existing recording
+  // that has never been opened since this shipped sorts last under that toggle.
+  const recOpenedCols = db.prepare("PRAGMA table_info(recordings)").all() as { name: string }[];
+  if (!recOpenedCols.some(c => c.name === 'last_opened_at')) {
+    db.exec('ALTER TABLE recordings ADD COLUMN last_opened_at DATETIME');
+    console.log('Added last_opened_at column to recordings table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index

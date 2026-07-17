@@ -169,6 +169,15 @@ export const RecordingsOperations = {
     };
   },
 
+  /**
+   * Stamp last_opened_at when a note is viewed. Deliberately does NOT touch updated_at — opening
+   * is not editing, and the two are different sorts on the topic page. Idempotent and cheap.
+   */
+  markOpened(id: number): void {
+    const db = getDatabase();
+    db.prepare("UPDATE recordings SET last_opened_at = datetime('now') WHERE id = ?").run(id);
+  },
+
   create(recording: CreateRecording): Recording {
     const db = getDatabase();
     const stmt = db.prepare(`

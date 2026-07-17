@@ -259,6 +259,11 @@ export function setupIpcHandlers(): void {
     return RecordingsOperations.getById(id);
   });
 
+  // Stamp last_opened_at (view time, not edit time). No search reindex — nothing searchable changed.
+  ipcMain.handle('recordings:markOpened', async (_, id: number) => {
+    RecordingsOperations.markOpened(id);
+  });
+
   ipcMain.handle('recordings:create', async (_, recording: CreateRecording) => {
     const result = RecordingsOperations.create(recording);
     scheduleSearchReindex();
