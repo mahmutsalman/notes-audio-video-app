@@ -73,6 +73,8 @@ import {
   getMediaDir,
   getFileUrl,
   savePdfFile,
+  saveHtmlNodeFile,
+  saveDurationHtmlNodeFile,
   saveQuickCaptureImage,
   saveReviewNoteImage,
   saveReviewNoteAudio,
