@@ -1020,14 +1020,14 @@ export interface ElectronAPI {
     onProgress: (cb: (data: { progress: number; downloaded: number; total: number }) => void) => () => void;
   };
   htmlNodes: {
-    pickAndAdd: (recordingId: number) => Promise<HtmlNode | null>;
+    pickAndAdd: (recordingId: number) => Promise<HtmlNode | { error: string } | null>;
     list: (recordingId: number) => Promise<HtmlNode[]>;
     updateTitle: (id: number, title: string | null) => Promise<void>;
     delete: (id: number) => Promise<void>;
     open: (id: number) => Promise<void>;
   };
   durationHtmlNodes: {
-    pickAndAdd: (durationId: number) => Promise<DurationHtmlNode | null>;
+    pickAndAdd: (durationId: number) => Promise<DurationHtmlNode | { error: string } | null>;
     list: (durationId: number) => Promise<DurationHtmlNode[]>;
     updateTitle: (id: number, title: string | null) => Promise<void>;
     delete: (id: number) => Promise<void>;

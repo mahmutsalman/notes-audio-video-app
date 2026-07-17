@@ -1516,6 +1516,7 @@ export default function RecordingPage() {
   const handleAddHtmlNode = async () => {
     if (id === null) return;
     const node = await window.electronAPI.htmlNodes.pickAndAdd(id);
+    if (node && 'error' in node) { alert(node.error); return; }
     if (node) setHtmlNodes(prev => [...prev, node]);
   };
 
@@ -1531,6 +1532,7 @@ export default function RecordingPage() {
   // HTML node handlers — duration-level
   const handleAddDurationHtmlNode = async (durationId: number) => {
     const node = await window.electronAPI.durationHtmlNodes.pickAndAdd(durationId);
+    if (node && 'error' in node) { alert(node.error); return; }
     if (node) setActiveDurationHtmlNodes(prev => [...prev, node]);
   };
 

@@ -3533,29 +3533,51 @@ export function setupIpcHandlers(): void {
   // Returns the path of an HTML/PDF file from the clipboard, or null if none.
   const getHtmlFileFromClipboard = (): string | null => {
     const HTML_EXTENSIONS = new Set(['.html', '.htm', '.pdf']);
+    // The clipboard is checked BEFORE the file dialog, so a bad candidate hijacks the whole
+    // flow. Two ways a candidate is bad: the URI is stale (file moved/deleted since it was
+    // copied), or the path sits in a TCC-protected folder (Downloads/Desktop) the app has no
+    // grant for — existsSync fails for both, and falling through to the dialog fixes both,
+    // because a dialog pick carries the user's consent and needs no folder grant.
+    const usable = (p: string) =>
+      HTML_EXTENSIONS.has(path.extname(p).toLowerCase()) && fs.existsSync(p);
     if (process.platform === 'darwin') {
       const uriList = clipboard.read('text/uri-list');
       if (uriList) {
         const uri = uriList.split('\n').map((l: string) => l.trim()).find((l: string) => l.startsWith('file://') && !l.startsWith('file:///.file/'));
         if (uri) {
           const p = decodeURIComponent(uri.replace('file://', ''));
-          if (HTML_EXTENSIONS.has(path.extname(p).toLowerCase())) return p;
+          if (usable(p)) return p;
         }
       }
       const fileUrl = clipboard.read('public.file-url');
       if (fileUrl && !fileUrl.includes('/.file/id=')) {
         const p = decodeURIComponent(fileUrl.replace('file://', ''));
-        if (HTML_EXTENSIONS.has(path.extname(p).toLowerCase())) return p;
+        if (usable(p)) return p;
       }
       try {
         const plist = clipboard.read('NSFilenamesPboardType');
         if (plist) {
           const match = plist.match(/<string>([^<]+)<\/string>/);
-          if (match?.[1] && HTML_EXTENSIONS.has(path.extname(match[1]).toLowerCase())) return match[1];
+          if (match?.[1] && usable(match[1])) return match[1];
         }
       } catch {}
     }
     return null;
+  };
+
+  // A rejected pickAndAdd promise dies silently in the renderer (`if (node)` sees undefined),
+  // which reads as "I selected a file and nothing happened". Translate failures into a
+  // human-actionable message the renderer can actually show.
+  const htmlNodeAddError = (sourcePath: string, err: unknown): { error: string } => {
+    console.error('HTML node add failed for', sourcePath, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/EPERM|EACCES|not permitted/i.test(msg)) {
+      return { error: `macOS blocked reading "${path.basename(sourcePath)}". Grant Notes With Audio And Video access in System Settings → Privacy & Security → Files and Folders (or Full Disk Access), or move the file out of Downloads/Desktop and try again.` };
+    }
+    if (/ENOENT/i.test(msg)) {
+      return { error: `The file no longer exists:\n${sourcePath}` };
+    }
+    return { error: `Could not add the file: ${msg}` };
   };
 
   // ── HTML Nodes (recording-level) ──────────────────────────────────────────
@@ -3570,14 +3592,18 @@ export function setupIpcHandlers(): void {
       if (result.canceled || !result.filePaths.length) return null;
       sourcePath = result.filePaths[0];
     }
-    const ext = path.extname(sourcePath).toLowerCase();
-    const fileType = ext === '.pdf' ? 'pdf' : 'html';
-    const title = path.basename(sourcePath, path.extname(sourcePath));
-    const filePath = await saveHtmlNodeFile(recordingId, sourcePath);
-    const sortOrder = HtmlNodesOperations.getMaxSortOrder(recordingId) + 1;
-    const node = HtmlNodesOperations.create({ recording_id: recordingId, file_path: filePath, title, file_type: fileType, sort_order: sortOrder });
-    scheduleSearchReindex();
-    return node;
+    try {
+      const ext = path.extname(sourcePath).toLowerCase();
+      const fileType = ext === '.pdf' ? 'pdf' : 'html';
+      const title = path.basename(sourcePath, path.extname(sourcePath));
+      const filePath = await saveHtmlNodeFile(recordingId, sourcePath);
+      const sortOrder = HtmlNodesOperations.getMaxSortOrder(recordingId) + 1;
+      const node = HtmlNodesOperations.create({ recording_id: recordingId, file_path: filePath, title, file_type: fileType, sort_order: sortOrder });
+      scheduleSearchReindex();
+      return node;
+    } catch (err) {
+      return htmlNodeAddError(sourcePath, err);
+    }
   });
 
   ipcMain.handle('htmlNodes:list', async (_, recordingId: number) => {
@@ -3614,14 +3640,18 @@ export function setupIpcHandlers(): void {
       if (result.canceled || !result.filePaths.length) return null;
       sourcePath = result.filePaths[0];
     }
-    const ext = path.extname(sourcePath).toLowerCase();
-    const fileType = ext === '.pdf' ? 'pdf' : 'html';
-    const title = path.basename(sourcePath, path.extname(sourcePath));
-    const filePath = await saveDurationHtmlNodeFile(durationId, sourcePath);
-    const sortOrder = DurationHtmlNodesOperations.getMaxSortOrder(durationId) + 1;
-    const node = DurationHtmlNodesOperations.create({ duration_id: durationId, file_path: filePath, title, file_type: fileType, sort_order: sortOrder });
-    scheduleSearchReindex();
-    return node;
+    try {
+      const ext = path.extname(sourcePath).toLowerCase();
+      const fileType = ext === '.pdf' ? 'pdf' : 'html';
+      const title = path.basename(sourcePath, path.extname(sourcePath));
+      const filePath = await saveDurationHtmlNodeFile(durationId, sourcePath);
+      const sortOrder = DurationHtmlNodesOperations.getMaxSortOrder(durationId) + 1;
+      const node = DurationHtmlNodesOperations.create({ duration_id: durationId, file_path: filePath, title, file_type: fileType, sort_order: sortOrder });
+      scheduleSearchReindex();
+      return node;
+    } catch (err) {
+      return htmlNodeAddError(sourcePath, err);
+    }
   });
 
   ipcMain.handle('durationHtmlNodes:list', async (_, durationId: number) => {
