@@ -3579,6 +3579,15 @@ export const ReviewOperations = {
       db.prepare("DELETE FROM audio_markers WHERE audio_id = ? AND audio_type = 'review_item'").run(a.id);
     }
 
+    // Item-level pasted images: same rows-cascade-files-don't contract.
+    const itemImages = db.prepare(
+      'SELECT file_path, thumbnail_path FROM review_item_images WHERE review_item_id = ?'
+    ).all(id) as { file_path: string; thumbnail_path: string | null }[];
+    for (const img of itemImages) {
+      if (img.file_path) imagePaths.push(img.file_path);
+      if (img.thumbnail_path && img.thumbnail_path !== img.file_path) imagePaths.push(img.thumbnail_path);
+    }
+
     db.prepare('DELETE FROM review_items WHERE id = ?').run(id);
     return { imagePaths, audioPaths };
   },
@@ -3785,6 +3794,44 @@ export const ReviewItemAudioOperations = {
     db.prepare("DELETE FROM audio_markers WHERE audio_id = ? AND audio_type = 'review_item'").run(audioId);
     db.prepare('DELETE FROM review_item_audios WHERE id = ?').run(audioId);
     return { filePath: row?.file_path ?? null };
+  },
+};
+
+/**
+ * Images pasted onto the echo itself — authored in "Add to Echo", shown on the review card front
+ * alongside the item's notes and voice. Same file-vs-row contract as ReviewItemAudioOperations.
+ */
+export const ReviewItemImageOperations = {
+  getByItem(reviewItemId: number): any[] {
+    return getDatabase().prepare(
+      'SELECT * FROM review_item_images WHERE review_item_id = ? ORDER BY sort_order, id'
+    ).all(reviewItemId);
+  },
+
+  add(reviewItemId: number, filePath: string, thumbnailPath: string | null): any {
+    const db = getDatabase();
+    const sortOrder = (db.prepare(
+      'SELECT COUNT(*) AS cnt FROM review_item_images WHERE review_item_id = ?'
+    ).get(reviewItemId) as { cnt: number }).cnt;
+
+    const result = db.prepare(
+      `INSERT INTO review_item_images (review_item_id, file_path, thumbnail_path, sort_order)
+       VALUES (?, ?, ?, ?)`
+    ).run(reviewItemId, filePath, thumbnailPath, sortOrder);
+    touchReviewItem(db, reviewItemId);
+
+    return db.prepare('SELECT * FROM review_item_images WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  /** Returns the paths so the caller can unlink the files. */
+  delete(imageId: number): { filePath: string | null; thumbnailPath: string | null } {
+    const db = getDatabase();
+    const row = db.prepare(
+      'SELECT file_path, thumbnail_path FROM review_item_images WHERE id = ?'
+    ).get(imageId) as { file_path: string; thumbnail_path: string | null } | undefined;
+    touchReviewItemVia(db, 'review_item_images', imageId);
+    db.prepare('DELETE FROM review_item_images WHERE id = ?').run(imageId);
+    return { filePath: row?.file_path ?? null, thumbnailPath: row?.thumbnail_path ?? null };
   },
 };
 

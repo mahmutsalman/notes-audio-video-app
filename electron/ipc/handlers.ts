@@ -38,6 +38,7 @@ import {
   ReviewNoteAudioOperations,
   ReviewItemNoteOperations,
   ReviewItemAudioOperations,
+  ReviewItemImageOperations,
   ReviewCodeSnippetOperations,
   ReviewPresetOperations,
   HtmlNodesOperations,
@@ -76,6 +77,7 @@ import {
   saveReviewNoteImage,
   saveReviewNoteAudio,
   saveReviewItemAudio,
+  saveReviewItemImage,
   saveQuickCaptureAudio,
   deleteQuickCaptureFiles,
 } from '../services/fileStorage';
@@ -3396,6 +3398,19 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('reviewItemAudios:delete', async (_, audioId: number) => {
     const { filePath } = ReviewItemAudioOperations.delete(audioId);
     if (filePath) await fsp.unlink(filePath).catch(() => {});
+  });
+
+  // Images pasted onto the echo itself. Not in FTS (same item-level stance as the notes above).
+  ipcMain.handle('reviewItemImages:getByItem', (_, reviewItemId: number) =>
+    ReviewItemImageOperations.getByItem(reviewItemId));
+  ipcMain.handle('reviewItemImages:add', async (_, reviewItemId: number, imageBuffer: ArrayBuffer, extension?: string) => {
+    const { filePath, thumbnailPath } = await saveReviewItemImage(imageBuffer, extension);
+    return ReviewItemImageOperations.add(reviewItemId, filePath, thumbnailPath);
+  });
+  ipcMain.handle('reviewItemImages:delete', async (_, imageId: number) => {
+    const { filePath, thumbnailPath } = ReviewItemImageOperations.delete(imageId);
+    if (filePath) await fsp.unlink(filePath).catch(() => {});
+    if (thumbnailPath && thumbnailPath !== filePath) await fsp.unlink(thumbnailPath).catch(() => {});
   });
 
   // One scratch code pad per card. No reindex: review code is not in FTS yet (ADR-0009).

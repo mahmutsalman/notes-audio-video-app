@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { ReviewItem, ReviewMask, ReviewRating, ReviewPreset, ReviewNote, ReviewNoteKind, ReviewItemNote, ReviewItemAudio, AudioMarker } from '../../types';
+import type { ReviewItem, ReviewMask, ReviewRating, ReviewPreset, ReviewNote, ReviewNoteKind, ReviewItemNote, ReviewItemAudio, ReviewItemImage, AudioMarker } from '../../types';
 import { formatDueExact } from '../../utils/srsAlgorithm';
 import {
   previewRatings, applyRating, applyManual, applyManualDate,
@@ -62,6 +62,9 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   // Side content authored on the echo itself in "Add to Echo" — extra prompts beyond the masks.
   const [itemNotes, setItemNotes] = useState<ReviewItemNote[]>([]);
   const [itemAudios, setItemAudios] = useState<(ReviewItemAudio & { markers: AudioMarker[] })[]>([]);
+  const [itemImages, setItemImages] = useState<ReviewItemImage[]>([]);
+  // Enlarged side image (media:// url), or null when none is open.
+  const [enlargedItemImage, setEnlargedItemImage] = useState<string | null>(null);
   const [revealedMaskIds, setRevealedMaskIds] = useState<Set<number>>(new Set());
   const [allRevealed, setAllRevealed] = useState(false);
   // "Rate this card" shows the grading controls while leaving the masks blurred, so grading
@@ -202,8 +205,8 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
 
       // While the question popup is open it owns every key — Escape must close IT, not end the
       // session, and the arrows must page the question images, not the cards. Its own effect
-      // (below) handles them; this handler stands down entirely.
-      if (showQuestion) return;
+      // (below) handles them; this handler stands down entirely. Same for an enlarged side image.
+      if (showQuestion || enlargedItemImage) return;
 
       if (e.key === 'Escape') {
         // The code editor and an in-progress note edit own their own Escape.
@@ -238,7 +241,20 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [onSessionEnd, goPrev, goNext, editingNoteId, readOnly, showQuestion]);
+  }, [onSessionEnd, goPrev, goNext, editingNoteId, readOnly, showQuestion, enlargedItemImage]);
+
+  // Esc closes an enlarged side image rather than ending the session.
+  useEffect(() => {
+    if (!enlargedItemImage) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setEnlargedItemImage(null);
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [enlargedItemImage]);
 
   // The question popup owns the keyboard while it's open: Esc (and Q again) closes it rather than
   // ending the session, and ←/→ page the mark's question images rather than the cards. Registered
@@ -283,6 +299,8 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     timerTouched.current = false;
     window.electronAPI.reviewMasks.getByItem(current.id).then(setMasks);
     window.electronAPI.reviewItemNotes.getByItem(current.id).then(setItemNotes);
+    setEnlargedItemImage(null);
+    window.electronAPI.reviewItemImages.getByItem(current.id).then(setItemImages);
     window.electronAPI.reviewItemAudios.getByItem(current.id).then(async (audios: ReviewItemAudio[]) => {
       const withMarkers = await Promise.all(audios.map(async a => ({
         ...a,
@@ -716,7 +734,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
       <div className="px-5 py-4 border-t border-gray-800 flex flex-col gap-3">
         {/* The echo's own side notes + voice — the prompts that live on the card, not on a review.
             Always visible: they exist precisely so recall doesn't depend on the masks alone. */}
-        {(itemNotes.length > 0 || itemAudios.length > 0) && (
+        {(itemNotes.length > 0 || itemAudios.length > 0 || itemImages.length > 0) && (
           <div className="flex flex-col gap-2">
             {itemNotes.length > 0 && (
               <div className="flex items-start gap-2 flex-wrap">
@@ -727,6 +745,20 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                   >
                     📝 {n.body}
                   </span>
+                ))}
+              </div>
+            )}
+            {itemImages.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {itemImages.map(img => (
+                  <img
+                    key={img.id}
+                    src={window.electronAPI.paths.getFileUrl(img.thumbnail_path ?? img.file_path)}
+                    alt={img.caption ?? ''}
+                    onClick={() => setEnlargedItemImage(window.electronAPI.paths.getFileUrl(img.file_path))}
+                    className="h-12 w-12 object-cover rounded cursor-zoom-in border border-sky-800/60"
+                    title="Click to enlarge"
+                  />
                 ))}
               </div>
             )}
@@ -1076,6 +1108,21 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
               />
             </>
           )}
+        </div>
+      )}
+
+      {/* Enlarged side image (pasted onto the echo in "Add to Echo"). Esc / click outside closes. */}
+      {enlargedItemImage && (
+        <div
+          onClick={() => setEnlargedItemImage(null)}
+          className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-8 cursor-zoom-out"
+        >
+          <img
+            src={enlargedItemImage}
+            alt=""
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-full object-contain cursor-default rounded-lg"
+          />
         </div>
       )}
     </div>

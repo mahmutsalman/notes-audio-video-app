@@ -1759,6 +1759,28 @@ function runMigrations(db: Database.Database): void {
     console.log('Created review_item_audios table');
   }
 
+  // Images pasted onto the echo itself (Add-to-Echo side panel), alongside its notes and voice.
+  // Same contract as review_item_audios: rows cascade with the item, the FILES do not — every
+  // delete path must unlink them. Not in FTS / media_tags (item-level side content stance, ADR-0009).
+  const reviewItemImagesExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='review_item_images'"
+  ).get();
+  if (!reviewItemImagesExists) {
+    db.exec(`
+      CREATE TABLE review_item_images (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_item_id INTEGER NOT NULL REFERENCES review_items(id) ON DELETE CASCADE,
+        file_path      TEXT NOT NULL,
+        thumbnail_path TEXT,
+        caption        TEXT,
+        sort_order     INTEGER NOT NULL DEFAULT 0,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_review_item_images_item ON review_item_images(review_item_id);
+    `);
+    console.log('Created review_item_images table');
+  }
+
   // The "All captures" archive view scans every capture and filters by local day, tag and colour.
   // created_at had no index at all (the board view never needed one — it read the whole table), and
   // media_color_assignments was only indexed on (media_type, media_id), which is the wrong

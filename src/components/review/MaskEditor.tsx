@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { ReviewMask, ReviewItem, ReviewItemNote, ReviewItemAudio, MediaTagType } from '../../types';
+import type { ReviewMask, ReviewItem, ReviewItemNote, ReviewItemAudio, ReviewItemImage, MediaTagType } from '../../types';
 import { TagAutocomplete } from '../common/TagAutocomplete';
 import { IMAGE_COLORS, IMAGE_COLOR_KEYS } from '../../utils/imageColors';
 import { emitReviewChanged } from '../../utils/events';
@@ -67,6 +67,14 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
   const [newNoteText, setNewNoteText] = useState('');
   const [itemAudios, setItemAudios] = useState<ReviewItemAudio[]>([]);
   const [draftAudios, setDraftAudios] = useState<{ blob: Blob; durationSec: number; markers: PendingMarker[] }[]>([]);
+  // Images pasted onto the echo itself. Draft mode buffers the raw bytes (plus an object URL
+  // purely for preview) and writes them on Save, same lifecycle as draft audios.
+  const [itemImages, setItemImages] = useState<ReviewItemImage[]>([]);
+  const [draftImages, setDraftImages] = useState<{ buffer: ArrayBuffer; extension: string; url: string }[]>([]);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  // Enlarged pasted image (media:// url or draft object URL), or null when none is open.
+  const [enlargedImageSrc, setEnlargedImageSrc] = useState<string | null>(null);
   const [playingAudioKey, setPlayingAudioKey] = useState<string | null>(null);
   const playbackElRef = useRef<HTMLAudioElement | null>(null);
   const { startRecording, isRecording, target, pendingEchoAudio, clearPendingEchoAudio } = useAudioRecording();
@@ -95,11 +103,12 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [questionIndex, sourceImageSrcs.length]);
 
-  // Existing item: load its side notes + audios once.
+  // Existing item: load its side notes + audios + images once.
   useEffect(() => {
     if (draft || reviewItemId == null) return;
     window.electronAPI.reviewItemNotes.getByItem(reviewItemId).then(setItemNotes);
     window.electronAPI.reviewItemAudios.getByItem(reviewItemId).then(setItemAudios);
+    window.electronAPI.reviewItemImages.getByItem(reviewItemId).then(setItemImages);
   }, [draft, reviewItemId]);
 
   // Draft mode: the recording bar parks the finished blob in pendingEchoAudio — adopt it here.
@@ -124,6 +133,20 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
 
   // Stop playback when the editor unmounts — an orphaned element keeps playing.
   useEffect(() => () => { playbackElRef.current?.pause(); playbackElRef.current = null; }, []);
+
+  // Esc closes only the enlarged pasted image, never the editor underneath it (same contract
+  // as the question-image overlay above).
+  useEffect(() => {
+    if (enlargedImageSrc == null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setEnlargedImageSrc(null);
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [enlargedImageSrc]);
 
   const recordingHere = isRecording && (target?.type === 'review_item' || target?.type === 'review_item_draft');
 
@@ -183,6 +206,51 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
     if (playingAudioKey === `draft-${index}`) stopPlayback();
     setDraftAudios(prev => prev.filter((_, i) => i !== index));
   };
+
+  const handleAttachImageFromClipboard = async () => {
+    if (imageBusy) return;
+    setImageBusy(true);
+    setImageError(null);
+    try {
+      const result = await window.electronAPI.clipboard.readImage();
+      if (!result.success || !result.buffer) {
+        // Reading the clipboard is not permission-gated; an empty result means the
+        // clipboard genuinely holds no image (e.g. it holds text).
+        setImageError('No image in the clipboard');
+        return;
+      }
+      const buffer = result.buffer as unknown as ArrayBuffer;
+      const extension = result.extension ?? 'png';
+      if (draft) {
+        const url = URL.createObjectURL(new Blob([buffer]));
+        setDraftImages(prev => [...prev, { buffer, extension, url }]);
+      } else {
+        const saved = await window.electronAPI.reviewItemImages.add(reviewItemId!, buffer, extension);
+        setItemImages(prev => [...prev, saved]);
+      }
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
+  const handleDeleteImage = async (imageId: number) => {
+    await window.electronAPI.reviewItemImages.delete(imageId);
+    setItemImages(prev => prev.filter(i => i.id !== imageId));
+    setEnlargedImageSrc(null);
+  };
+
+  const handleDeleteDraftImage = (index: number) => {
+    setDraftImages(prev => {
+      URL.revokeObjectURL(prev[index]?.url);
+      return prev.filter((_, i) => i !== index);
+    });
+    setEnlargedImageSrc(null);
+  };
+
+  // Revoke draft preview URLs on unmount — Cancel/× discards the buffers, the URLs must not leak.
+  const draftImagesRef = useRef(draftImages);
+  draftImagesRef.current = draftImages;
+  useEffect(() => () => { draftImagesRef.current.forEach(d => URL.revokeObjectURL(d.url)); }, []);
 
   const toggleColor = async (key: string) => {
     if (!mediaTagType || mediaTagId == null) return;
@@ -347,6 +415,9 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
           caption: null,
         }));
       if (markers.length > 0) await window.electronAPI.audioMarkers.addBatch(markers);
+    }
+    for (const img of draftImages) {
+      await window.electronAPI.reviewItemImages.add(item.id, img.buffer, img.extension);
     }
     emitReviewChanged();
     onClose();
@@ -580,6 +651,64 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
             />
           </div>
 
+          {/* Images — pasted from the clipboard, shown on the review card front like the notes.
+              Draft images are buffered and written on Save; click any to enlarge. */}
+          <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-3 flex flex-col gap-2">
+            <p className="text-gray-400 text-xs">
+              Images{(itemImages.length + draftImages.length) > 0 && (
+                <span className="text-gray-500"> · {itemImages.length + draftImages.length}</span>
+              )}
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {itemImages.map(img => (
+                <div key={img.id} className="group/img relative">
+                  <img
+                    src={window.electronAPI.paths.getFileUrl(img.thumbnail_path ?? img.file_path)}
+                    alt={img.caption ?? ''}
+                    onClick={() => setEnlargedImageSrc(window.electronAPI.paths.getFileUrl(img.file_path))}
+                    className="h-12 w-12 object-cover rounded cursor-zoom-in border border-gray-700"
+                  />
+                  <button
+                    onClick={() => handleDeleteImage(img.id)}
+                    title="Delete this image"
+                    className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-600 text-white text-[10px] leading-none
+                               opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {draftImages.map((img, i) => (
+                <div key={`draft-${i}`} className="group/img relative" title="Saved with the echo">
+                  <img
+                    src={img.url}
+                    alt=""
+                    onClick={() => setEnlargedImageSrc(img.url)}
+                    className="h-12 w-12 object-cover rounded cursor-zoom-in border border-blue-700/60"
+                  />
+                  <button
+                    onClick={() => handleDeleteDraftImage(i)}
+                    title="Discard this image"
+                    className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-600 text-white text-[10px] leading-none
+                               opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={handleAttachImageFromClipboard}
+                disabled={imageBusy}
+                title="Paste an image from the clipboard"
+                className="h-12 w-12 rounded border border-dashed border-gray-600 text-gray-500 hover:border-blue-500
+                           hover:text-blue-400 flex items-center justify-center text-sm transition-colors disabled:opacity-50"
+              >
+                {imageBusy ? '…' : '＋'}
+              </button>
+              {imageError && <span className="text-[11px] text-gray-500">{imageError}</span>}
+            </div>
+          </div>
+
           {/* Voice — recorded through the SAME bottom recording bar as everywhere else, so the
               important / question / similar-question marker toggles (and voice commands) work here
               too. Draft recordings are buffered and written on Save. */}
@@ -783,6 +912,21 @@ export default function MaskEditor({ src, reviewItemId, existingMasks, onMasksCh
           <img
             src={sourceImageSrcs[questionIndex]}
             alt="The question this card came from"
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-full object-contain cursor-default"
+          />
+        </div>
+      )}
+
+      {/* Enlarged pasted image (the echo's own side images). Esc / click outside closes it. */}
+      {enlargedImageSrc && (
+        <div
+          onClick={() => setEnlargedImageSrc(null)}
+          className="fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-8 cursor-zoom-out"
+        >
+          <img
+            src={enlargedImageSrc}
+            alt=""
             onClick={(e) => e.stopPropagation()}
             className="max-w-full max-h-full object-contain cursor-default"
           />

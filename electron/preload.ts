@@ -1075,6 +1075,12 @@ const electronAPI = {
       ipcRenderer.invoke('reviewItemAudios:add', reviewItemId, audioBuffer, duration, extension),
     delete: (audioId: number) => ipcRenderer.invoke('reviewItemAudios:delete', audioId),
   },
+  reviewItemImages: {
+    getByItem: (reviewItemId: number) => ipcRenderer.invoke('reviewItemImages:getByItem', reviewItemId),
+    add: (reviewItemId: number, imageBuffer: ArrayBuffer, extension?: string) =>
+      ipcRenderer.invoke('reviewItemImages:add', reviewItemId, imageBuffer, extension),
+    delete: (imageId: number) => ipcRenderer.invoke('reviewItemImages:delete', imageId),
+  },
   reviewNotes: {
     add: (reviewItemId: number, kind: 'note' | 'missed', body: string, reviewEventId?: number | null, allowEmpty?: boolean) =>
       ipcRenderer.invoke('reviewNotes:add', reviewItemId, kind, body, reviewEventId, allowEmpty),

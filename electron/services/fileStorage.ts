@@ -998,6 +998,21 @@ export async function saveReviewNoteAudio(
   return { filePath };
 }
 
+/** Image pasted onto an echo (review item) itself, not onto one of its reflective notes. */
+export async function saveReviewItemImage(
+  imageBuffer: ArrayBuffer,
+  extension: string = 'png'
+): Promise<{ filePath: string; thumbnailPath: string | null }> {
+  const dir = path.join(getMediaDir(), 'review_items', 'images');
+  await fs.mkdir(dir, { recursive: true });
+
+  const uuid = uuidv4();
+  const filePath = path.join(dir, `${uuid}.${extension}`);
+  await fs.writeFile(filePath, Buffer.from(imageBuffer));
+
+  return { filePath, thumbnailPath: filePath };
+}
+
 /** Voice recording attached to an echo (review item) itself, not to one of its reflective notes. */
 export async function saveReviewItemAudio(
   audioBuffer: ArrayBuffer,

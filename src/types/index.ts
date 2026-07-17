@@ -983,6 +983,11 @@ export interface ElectronAPI {
     add: (reviewItemId: number, audioBuffer: ArrayBuffer, duration: number | null, extension?: string) => Promise<ReviewItemAudio>;
     delete: (audioId: number) => Promise<void>;
   };
+  reviewItemImages: {
+    getByItem: (reviewItemId: number) => Promise<ReviewItemImage[]>;
+    add: (reviewItemId: number, imageBuffer: ArrayBuffer, extension?: string) => Promise<ReviewItemImage>;
+    delete: (imageId: number) => Promise<void>;
+  };
   reviewCodeSnippets: {
     getByItem: (reviewItemId: number) => Promise<ReviewCodeSnippet | null>;
     save: (reviewItemId: number, code: string, language: string) => Promise<ReviewCodeSnippet>;
@@ -1561,6 +1566,17 @@ export interface ReviewItemAudio {
   review_item_id: number;
   file_path: string;
   duration: number | null;
+  sort_order: number;
+  created_at: string;
+}
+
+/** Image pasted onto the echo itself (Add-to-Echo side panel) — shown on the review card front. */
+export interface ReviewItemImage {
+  id: number;
+  review_item_id: number;
+  file_path: string;
+  thumbnail_path: string | null;
+  caption: string | null;
   sort_order: number;
   created_at: string;
 }
