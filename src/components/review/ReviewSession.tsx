@@ -82,6 +82,16 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   useEffect(() => {
     localStorage.setItem('echo.showCodePane', showCodePane ? '1' : '0');
   }, [showCodePane]);
+  // Focus mode — strips every chrome row (top bar, progress, source context, bottom controls)
+  // so only the card image remains. Built for screen recording, where the surrounding metadata
+  // reads as clutter on video. Remembered across sessions like the code pad: you turn it on for
+  // a recording, not for one card.
+  const [focusMode, setFocusMode] = useState(
+    () => localStorage.getItem('echo.focusMode') === '1'
+  );
+  useEffect(() => {
+    localStorage.setItem('echo.focusMode', focusMode ? '1' : '0');
+  }, [focusMode]);
   // The question popup. Closed by default: the source LINE is always visible (it tells you WHAT the
   // card is about), but the question IMAGE is a hint — opening it is a deliberate choice, and it
   // closes again on every card so a peek at one never carries into the next.
@@ -273,6 +283,14 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
 
       if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopImmediatePropagation(); goPrev(); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); e.stopImmediatePropagation(); goNext(); }
+      else if (e.key === 'f' || e.key === 'F') {
+        // F = strip the chrome down to just the image (and back). Deliberately keyboard-reachable:
+        // in focus mode the only visible control is one dim button, and while recording you want
+        // to flip it without hunting for it.
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setFocusMode(v => !v);
+      }
       else if (e.key === 'q' || e.key === 'Q') {
         // Q = "what was the question again?" — the whole point of the card having a mark.
         e.preventDefault();
@@ -584,9 +602,28 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col">
+      {/* Focus mode keeps a slim strip rather than removing the top row outright: the window is
+          frameless, so this bar is BOTH the drag handle and the clearance for the macOS traffic
+          lights. Drop it entirely and the card slides up underneath them. */}
+      {focusMode && (
+        <div className="titlebar-drag flex items-center justify-end px-4 h-9 shrink-0">
+          <button
+            onClick={() => setFocusMode(false)}
+            title="Show the session controls again (F)"
+            className="titlebar-no-drag text-gray-700 hover:text-gray-300 transition-colors p-1 rounded"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M4 8V6a2 2 0 012-2h2M16 4h2a2 2 0 012 2v2M20 16v2a2 2 0 01-2 2h-2M8 20H6a2 2 0 01-2-2v-2" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Top bar — titlebar-drag so empty space still moves the window; every button
           below is titlebar-no-drag so it stays clickable inside the macOS title strip
           (app-region is computed globally and ignores the overlay's z-index). */}
+      {!focusMode && (
       <div className="titlebar-drag flex items-center justify-between px-5 py-3 border-b border-gray-800">
         {/* Traffic light spacer */}
         <div className="w-16 flex-shrink-0" />
@@ -709,21 +746,37 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
               Go to original
             </button>
           )}
+
+          {/* Strip to just the image — for screen recording. */}
+          <button
+            onClick={() => setFocusMode(true)}
+            title="Focus mode — hide everything but the image (F)"
+            className="titlebar-no-drag text-gray-400 hover:text-blue-400 text-sm transition-colors flex items-center gap-1.5"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M4 8V6a2 2 0 012-2h2M16 4h2a2 2 0 012 2v2M20 16v2a2 2 0 01-2 2h-2M8 20H6a2 2 0 01-2-2v-2" />
+            </svg>
+            Focus
+          </button>
         </div>
       </div>
+      )}
 
       {/* Progress bar */}
+      {!focusMode && (
       <div className="h-1 bg-gray-800">
         <div
           className="h-1 bg-blue-600 transition-all duration-300"
           style={{ width: `${((currentIndex) / items.length) * 100}%` }}
         />
       </div>
+      )}
 
       {/* Source context — topic › recording, then the MARK (the actual question) on its own line.
           Without the mark line a card like "growing the window only ever helps" is unreviewable:
           you cannot recall an answer when you can't remember the question. */}
-      {(current.topic_name || current.recording_name || markSource) && (
+      {!focusMode && (current.topic_name || current.recording_name || markSource) && (
         <div className="px-5 py-2 space-y-1">
           {(current.topic_name || current.recording_name) && (
             <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -808,6 +861,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
       </div>
 
       {/* Bottom controls */}
+      {!focusMode && (
       <div className="px-5 py-4 border-t border-gray-800 flex flex-col gap-3">
         {/* The echo's own side notes + voice — the prompts that live on the card, not on a review.
             Always visible: they exist precisely so recall doesn't depend on the masks alone. */}
@@ -1096,6 +1150,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
           </div>
         )}
       </div>
+      )}
 
       {/* ── The question popup ──────────────────────────────────────────────────────────────────
           Sits above the whole session so the problem statement is readable while the card stays
