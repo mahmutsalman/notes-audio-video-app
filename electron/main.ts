@@ -74,7 +74,9 @@ async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    minWidth: 800,
+    // Low minWidth so the window can take a tall/narrow portrait shape
+    // (e.g. ~9:16 for vertical screen recording of the review session).
+    minWidth: 400,
     minHeight: 600,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
