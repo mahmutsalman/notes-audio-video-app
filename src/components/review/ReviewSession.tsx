@@ -195,6 +195,44 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     return () => area.removeEventListener('wheel', onWheel);
   }, [clampImgTranslate]);
 
+  // Press-and-drag to pan, alongside the wheel. Only meaningful while zoomed — at 1× the clamp
+  // pins the translate to 0 anyway, so we don't grab the pointer and swallow mask clicks.
+  const [dragging, setDragging] = useState(false);
+  const dragOriginRef = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  /** A drag ends in a click event on the canvas. Past the slop threshold that click is not a
+      mask reveal — the user was panning — so the next click is swallowed in the capture phase. */
+  const suppressClickRef = useRef(false);
+
+  const onImagePointerDown = useCallback((e: React.PointerEvent) => {
+    if (imgScaleRef.current <= 1 || e.button !== 0) return;
+    dragOriginRef.current = { x: e.clientX, y: e.clientY, tx: imgTranslate.x, ty: imgTranslate.y };
+    suppressClickRef.current = false;
+    setDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [imgTranslate]);
+
+  const onImagePointerMove = useCallback((e: React.PointerEvent) => {
+    const origin = dragOriginRef.current;
+    if (!origin) return;
+    const dx = e.clientX - origin.x;
+    const dy = e.clientY - origin.y;
+    if (!suppressClickRef.current && Math.hypot(dx, dy) > 4) suppressClickRef.current = true;
+    setImgTranslate(clampImgTranslate({ x: origin.tx + dx, y: origin.ty + dy }, imgScaleRef.current));
+  }, [clampImgTranslate]);
+
+  const onImagePointerUp = useCallback((e: React.PointerEvent) => {
+    if (!dragOriginRef.current) return;
+    dragOriginRef.current = null;
+    setDragging(false);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  }, []);
+
+  const onImageClickCapture = useCallback((e: React.MouseEvent) => {
+    if (!suppressClickRef.current) return;
+    suppressClickRef.current = false;
+    e.stopPropagation();
+  }, []);
+
   // Keyboard: Esc ends the session; ← / → skip between images (without rating);
   // Space shows the rating buttons without revealing the masks.
   //
@@ -718,7 +756,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
         </div>
       )}
 
-      {/* Image area — Cmd/Ctrl + wheel to zoom, scroll to pan when zoomed */}
+      {/* Image area — Cmd/Ctrl + wheel to zoom; scroll or press-and-drag to pan when zoomed */}
       {/* Scratch code pad above the card. The card keeps its own zoom/pan refs. */}
       <div className="flex-1 flex flex-col min-h-0">
         {showCodePane && (
@@ -737,7 +775,12 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
             <div
               ref={imageWrapRef}
               className="w-full h-full"
-              style={{ cursor: imgScale > 1 ? 'grab' : 'default' }}
+              style={{ cursor: imgScale > 1 ? (dragging ? 'grabbing' : 'grab') : 'default' }}
+              onPointerDown={onImagePointerDown}
+              onPointerMove={onImagePointerMove}
+              onPointerUp={onImagePointerUp}
+              onPointerCancel={onImagePointerUp}
+              onClickCapture={onImageClickCapture}
             >
               {/* Zoom/pan are handed to the canvas, which re-samples the source at the zoomed
                   size — no CSS transform, so no bitmap blur. See ADR-0010. */}
