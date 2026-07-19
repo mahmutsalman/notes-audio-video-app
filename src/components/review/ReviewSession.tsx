@@ -12,6 +12,7 @@ import MaskEditor from './MaskEditor';
 import ReviewNoteImages from './ReviewNoteImages';
 import ReviewNoteAudios from './ReviewNoteAudios';
 import ReviewCodePane from './ReviewCodePane';
+import ReviewHistoryPanel from './ReviewHistoryPanel';
 import ThemedAudioPlayer from '../audio/ThemedAudioPlayer';
 
 interface ReviewSessionProps {
@@ -82,6 +83,16 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   useEffect(() => {
     localStorage.setItem('echo.showCodePane', showCodePane ? '1' : '0');
   }, [showCodePane]);
+  // Past reviews of the CURRENT card, in a drawer beside it. Off by default and remembered like
+  // the code pad — an existing review flow is unchanged until you ask for the history.
+  const [showHistory, setShowHistory] = useState(
+    () => localStorage.getItem('echo.showHistory') === '1'
+  );
+  useEffect(() => {
+    localStorage.setItem('echo.showHistory', showHistory ? '1' : '0');
+  }, [showHistory]);
+  // True while the history drawer has its own full-screen image open — see ReviewHistoryPanel.
+  const [historyOverlay, setHistoryOverlay] = useState(false);
   // Focus mode — strips every chrome row (top bar, progress, source context, bottom controls)
   // so only the card image remains. Built for screen recording, where the surrounding metadata
   // reads as clutter on video. Remembered across sessions like the code pad: you turn it on for
@@ -270,7 +281,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
       // session, and the arrows must page the question images, not the cards. Its own effect
       // (below) handles them; this handler stands down entirely. Same for an enlarged side
       // image, and for the edit overlay (Escape must not end the session under the editor).
-      if (showQuestion || enlargedItemImage || showEditor) return;
+      if (showQuestion || enlargedItemImage || showEditor || historyOverlay) return;
 
       if (e.key === 'Escape') {
         // The code editor and an in-progress note edit own their own Escape.
@@ -290,6 +301,12 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
         e.preventDefault();
         e.stopImmediatePropagation();
         setFocusMode(v => !v);
+      }
+      else if (e.key === 'h' || e.key === 'H') {
+        // H = "what did I say last time?" — the drawer of past reviews for this card.
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setShowHistory(v => !v);
       }
       else if (e.key === 'q' || e.key === 'Q') {
         // Q = "what was the question again?" — the whole point of the card having a mark.
@@ -313,7 +330,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [onSessionEnd, goPrev, goNext, editingNoteId, readOnly, showQuestion, enlargedItemImage, showEditor]);
+  }, [onSessionEnd, goPrev, goNext, editingNoteId, readOnly, showQuestion, enlargedItemImage, showEditor, historyOverlay]);
 
   // Esc closes an enlarged side image rather than ending the session.
   useEffect(() => {
@@ -713,6 +730,22 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
             Code
           </button>
 
+          {/* Past reviews of this card — grades, intervals, and every note/picture/voice memo
+              logged against them. Read-only here; editing stays on the Echo detail page. */}
+          <button
+            onClick={() => setShowHistory(v => !v)}
+            title={showHistory ? 'Hide past reviews (H)' : 'Show past reviews of this card (H)'}
+            className={`titlebar-no-drag text-sm transition-colors flex items-center gap-1.5 ${
+              showHistory ? 'text-blue-400 hover:text-blue-300' : 'text-gray-400 hover:text-blue-400'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            History
+          </button>
+
           {/* Question. Rendered whenever the card HAS a mark — even if that mark has no question
               image yet. An earlier version only rendered when a question image existed, so on the
               36-of-38 cards without one the button simply vanished, which reads as "the feature
@@ -810,54 +843,69 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
       )}
 
       {/* Image area — Cmd/Ctrl + wheel to zoom; scroll or press-and-drag to pan when zoomed */}
-      {/* Scratch code pad above the card. The card keeps its own zoom/pan refs. */}
-      <div className="flex-1 flex flex-col min-h-0">
-        {showCodePane && (
-          <div className="h-[42%] min-h-[180px] max-h-[70%] shrink-0">
-            {/* Keyed on the card: remounting is what guarantees the pad reloads and the previous
-                card's pending autosave flushes before the next one loads. */}
-            <ReviewCodePane key={current.id} reviewItemId={current.id} readOnly={readOnly} />
-          </div>
-        )}
+      {/* Scratch code pad above the card. The card keeps its own zoom/pan refs.
+          The history drawer is a SIBLING of this column rather than an overlay, so the card
+          reflows to the remaining width instead of being covered — you read last time's note
+          while still looking at the card it's about. */}
+      <div className="flex-1 flex min-h-0">
+        <div className="flex-1 flex flex-col min-h-0">
+          {showCodePane && (
+            <div className="h-[42%] min-h-[180px] max-h-[70%] shrink-0">
+              {/* Keyed on the card: remounting is what guarantees the pad reloads and the previous
+                  card's pending autosave flushes before the next one loads. */}
+              <ReviewCodePane key={current.id} reviewItemId={current.id} readOnly={readOnly} />
+            </div>
+          )}
 
-        <div
-          ref={imageAreaRef}
-          className="flex-1 relative flex items-center justify-center px-4 py-2 overflow-hidden min-h-0"
-        >
-          {current.file_path && (
-            <div
-              ref={imageWrapRef}
-              className="w-full h-full"
-              style={{ cursor: imgScale > 1 ? (dragging ? 'grabbing' : 'grab') : 'default' }}
-              onPointerDown={onImagePointerDown}
-              onPointerMove={onImagePointerMove}
-              onPointerUp={onImagePointerUp}
-              onPointerCancel={onImagePointerUp}
-              onClickCapture={onImageClickCapture}
-            >
-              {/* Zoom/pan are handed to the canvas, which re-samples the source at the zoomed
-                  size — no CSS transform, so no bitmap blur. See ADR-0010. */}
-              <PixelatedImage
-                src={fileSrc}
-                masks={masks}
-                revealedMaskIds={revealedMaskIds}
-                onMaskClick={revealMask}
+          <div
+            ref={imageAreaRef}
+            className="flex-1 relative flex items-center justify-center px-4 py-2 overflow-hidden min-h-0"
+          >
+            {current.file_path && (
+              <div
+                ref={imageWrapRef}
                 className="w-full h-full"
-                zoom={imgScale}
-                pan={imgTranslate}
-              />
-            </div>
-          )}
-          {imgScale > 1 && (
-            <div
-              className={`absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/70 text-white/90 text-xs px-2 py-1
-                          rounded-full pointer-events-none transition-opacity duration-500
-                          ${showZoomBadge ? 'opacity-100' : 'opacity-0'}`}
-            >
-              {Math.round(imgScale * 100)}%
-            </div>
-          )}
+                style={{ cursor: imgScale > 1 ? (dragging ? 'grabbing' : 'grab') : 'default' }}
+                onPointerDown={onImagePointerDown}
+                onPointerMove={onImagePointerMove}
+                onPointerUp={onImagePointerUp}
+                onPointerCancel={onImagePointerUp}
+                onClickCapture={onImageClickCapture}
+              >
+                {/* Zoom/pan are handed to the canvas, which re-samples the source at the zoomed
+                    size — no CSS transform, so no bitmap blur. See ADR-0010. */}
+                <PixelatedImage
+                  src={fileSrc}
+                  masks={masks}
+                  revealedMaskIds={revealedMaskIds}
+                  onMaskClick={revealMask}
+                  className="w-full h-full"
+                  zoom={imgScale}
+                  pan={imgTranslate}
+                />
+              </div>
+            )}
+            {imgScale > 1 && (
+              <div
+                className={`absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/70 text-white/90 text-xs px-2 py-1
+                            rounded-full pointer-events-none transition-opacity duration-500
+                            ${showZoomBadge ? 'opacity-100' : 'opacity-0'}`}
+              >
+                {Math.round(imgScale * 100)}%
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Focus mode is "nothing but the card", so the drawer stands down there too — the toggle
+            state survives, and turning focus mode off brings it straight back. */}
+        {showHistory && !focusMode && (
+          <ReviewHistoryPanel
+            reviewItemId={current.id}
+            onClose={() => setShowHistory(false)}
+            onOverlayChange={setHistoryOverlay}
+          />
+        )}
       </div>
 
       {/* Bottom controls */}

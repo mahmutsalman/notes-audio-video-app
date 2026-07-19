@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { ReviewItem, ReviewEvent, ReviewItemStats, ReviewHeatmapDay, ReviewNote, ReviewNoteKind, ReviewNoteImage, ReviewNoteAudio } from '../types';
 import { formatDueLabel } from '../utils/srsAlgorithm';
 import { formatMarkSource, parseQuestionImages } from '../utils/marks';
-import { currentRetrievability, stateLabel, RATING_META } from '../utils/fsrs';
+import { currentRetrievability, stateLabel } from '../utils/fsrs';
 import HeatmapCalendar, { HEATMAP_WINDOWS, type HeatmapWindow } from '../components/echo/HeatmapCalendar';
 import ReviewNoteImages from '../components/review/ReviewNoteImages';
 import ReviewNoteAudios from '../components/review/ReviewNoteAudios';
+import { NoteThumbs, NoteVoicePlayback, ratingBadge, fmtDuration } from '../components/review/ReviewNotePreview';
 import ReviewSession from '../components/review/ReviewSession';
 
 /** Local 'YYYY-MM-DD' key for an ISO timestamp (matches the heatmap + SQLite localtime). */
@@ -16,20 +17,6 @@ function localDayKey(iso: string): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
-}
-
-function ratingBadge(e: ReviewEvent) {
-  if (e.rating == null) {
-    return { label: e.scheduling_mode === 'manual' ? 'Manual' : '—', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' };
-  }
-  return RATING_META[e.rating] ?? { label: String(e.rating), cls: 'bg-gray-100 text-gray-600' };
-}
-
-function fmtDuration(sec: number | null): string | null {
-  if (sec == null) return null;
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
 interface EchoImageDetailPageProps {
@@ -450,61 +437,6 @@ const NOTE_KINDS: { kind: ReviewNoteKind; placeholder: string }[] = [
   { kind: 'note', placeholder: 'What did you think? (Enter to log)' },
   { kind: 'missed', placeholder: 'What did you miss? (Enter to log)' },
 ];
-
-/** Play a note's voice notes without entering edit mode. Recording lives in ReviewNoteAudios. */
-function NoteVoicePlayback({ audios }: { audios: ReviewNoteAudio[] }) {
-  const [playingId, setPlayingId] = useState<number | null>(null);
-  const elRef = useRef<HTMLAudioElement | null>(null);
-  useEffect(() => () => { elRef.current?.pause(); elRef.current = null; }, []);
-  if (audios.length === 0) return null;
-
-  const play = (a: ReviewNoteAudio) => {
-    elRef.current?.pause();
-    if (playingId === a.id) { setPlayingId(null); return; }
-    const el = new Audio(window.electronAPI.paths.getFileUrl(a.file_path));
-    el.onended = () => setPlayingId(null);
-    elRef.current = el;
-    setPlayingId(a.id);
-    void el.play();
-  };
-
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {audios.map((a, i) => (
-        <button
-          key={a.id}
-          onClick={() => play(a)}
-          title={playingId === a.id ? 'Stop' : 'Play this voice note'}
-          className="flex items-center gap-1.5 rounded-full px-2.5 py-1 border border-gray-200 dark:border-dark-border
-                     bg-gray-50 dark:bg-dark-bg text-gray-600 dark:text-gray-300 text-[11px]
-                     hover:border-primary-400 transition-colors"
-        >
-          <span className="leading-none">{playingId === a.id ? '⏹' : '▶'}</span>
-          <span className="tabular-nums">
-            🎙 {a.duration != null ? `${Math.floor(a.duration / 60)}:${String(Math.floor(a.duration % 60)).padStart(2, '0')}` : `#${i + 1}`}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** Read-only thumbnail strip for a note's pictures. Editing lives in ReviewNoteImages. */
-function NoteThumbs({ images }: { images: ReviewNoteImage[] }) {
-  if (images.length === 0) return null;
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {images.map(img => (
-        <img
-          key={img.id}
-          src={window.electronAPI.paths.getFileUrl(img.thumbnail_path ?? img.file_path)}
-          alt={img.caption ?? ''}
-          className="h-12 w-12 object-cover rounded border border-gray-200 dark:border-dark-border"
-        />
-      ))}
-    </div>
-  );
-}
 
 function EventRow({ event, onSaved }: { event: ReviewEvent; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
