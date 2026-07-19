@@ -93,6 +93,18 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   }, [showHistory]);
   // True while the history drawer has its own full-screen image open — see ReviewHistoryPanel.
   const [historyOverlay, setHistoryOverlay] = useState(false);
+  // How many past reviews the current card has, shown on the History button. null = not loaded yet.
+  //
+  // This exists because an empty drawer is ambiguous: seven freshly-enrolled cards in a row each
+  // correctly said "no reviews logged yet", which is indistinguishable from a panel that stopped
+  // refreshing. The count on the button disambiguates it, and answers "is there anything here?"
+  // WITHOUT opening the drawer.
+  //
+  // Deliberately `getItemStats` (a COUNT aggregate) rather than the full `getByItem` tree: this
+  // runs for every card whether or not the drawer is open. It counts the same rows the drawer
+  // renders — manual reschedules included, which is why both say "reviews" and not "ratings" —
+  // so the button and the panel header cannot disagree.
+  const [historyCount, setHistoryCount] = useState<number | null>(null);
   // Focus mode — strips every chrome row (top bar, progress, source context, bottom controls)
   // so only the card image remains. Built for screen recording, where the surrounding metadata
   // reads as clutter on video. Remembered across sessions like the code pad: you turn it on for
@@ -386,6 +398,9 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     setEditingBody('');
     setAutoRecordNoteId(null);
     timerTouched.current = false;
+    setHistoryCount(null);
+    window.electronAPI.reviewEvents.getItemStats(current.id)
+      .then(s => setHistoryCount(s.total_reviews));
     window.electronAPI.reviewMasks.getByItem(current.id).then(setMasks);
     window.electronAPI.reviewItemNotes.getByItem(current.id).then(setItemNotes);
     setEnlargedItemImage(null);
@@ -734,9 +749,23 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
               logged against them. Read-only here; editing stays on the Echo detail page. */}
           <button
             onClick={() => setShowHistory(v => !v)}
-            title={showHistory ? 'Hide past reviews (H)' : 'Show past reviews of this card (H)'}
+            title={
+              historyCount === 0
+                ? "No past reviews — this is the first time you're seeing this card (H)"
+                : showHistory
+                  ? 'Hide past reviews (H)'
+                  : historyCount == null
+                    ? 'Show past reviews of this card (H)'
+                    : `Show the ${historyCount} past review${historyCount === 1 ? '' : 's'} of this card (H)`
+            }
             className={`titlebar-no-drag text-sm transition-colors flex items-center gap-1.5 ${
-              showHistory ? 'text-blue-400 hover:text-blue-300' : 'text-gray-400 hover:text-blue-400'
+              showHistory
+                ? 'text-blue-400 hover:text-blue-300'
+                : historyCount === 0
+                  // A new card is dimmed rather than hidden: the button vanishing would read as
+                  // "the feature isn't there" — the same trap the Question button already fixed.
+                  ? 'text-gray-600 hover:text-gray-400'
+                  : 'text-gray-400 hover:text-blue-400'
             }`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -744,6 +773,13 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                     d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             History
+            {historyCount != null && historyCount > 0 && (
+              <span className={`tabular-nums text-xs px-1.5 py-0.5 rounded-full ${
+                showHistory ? 'bg-blue-500/20 text-blue-300' : 'bg-gray-800 text-gray-400'
+              }`}>
+                {historyCount}
+              </span>
+            )}
           </button>
 
           {/* Question. Rendered whenever the card HAS a mark — even if that mark has no question
