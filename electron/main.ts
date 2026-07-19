@@ -9,6 +9,7 @@ import { QuickCaptureOperations, SettingsOperations } from './database/operation
 import { deleteQuickCaptureFiles } from './services/fileStorage';
 import { registerGlobalShortcuts, unregisterGlobalShortcuts, registerObsShortcut } from './shortcuts/globalShortcuts';
 import { registerScreenCaptureHandlers, unregisterScreenCaptureHandlers } from './screencapture/ipc-handlers';
+import { initRecordingAspect } from './windows/recordingAspect';
 
 // Force consistent app name and userData path (ensures dev and prod use same database)
 // This is critical: dev mode uses package.json 'name', prod uses 'productName'
@@ -95,6 +96,11 @@ async function createWindow(): Promise<void> {
   mainWindow.webContents.on('context-menu', (e) => {
     e.preventDefault();
   });
+
+  // Application menu + restore the saved recording aspect ratio.
+  // Installed before the window is shown so the restored shape is applied in
+  // one step rather than visibly snapping after first paint.
+  initRecordingAspect(() => mainWindow);
 
   // Show window when ready to avoid flash
   mainWindow.once('ready-to-show', () => {
