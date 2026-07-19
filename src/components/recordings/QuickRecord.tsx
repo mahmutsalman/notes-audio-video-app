@@ -431,9 +431,11 @@ export default function QuickRecord({ topicId, onRecordingSaved }: QuickRecordPr
       {/* FAB Button */}
       <button
         onClick={handleOpen}
-        className="fixed bottom-8 right-8 w-16 h-16 bg-primary-600 hover:bg-primary-700
+        className="fixed bottom-4 right-4 w-11 h-11 text-xl
+                   sm:bottom-8 sm:right-8 sm:w-16 sm:h-16 sm:text-2xl
+                   bg-primary-600 hover:bg-primary-700
                    text-white rounded-full shadow-lg hover:shadow-xl transition-all
-                   flex items-center justify-center text-2xl
+                   flex items-center justify-center
                    focus:outline-none focus:ring-4 focus:ring-primary-500/50"
         title="Add new recording"
       >

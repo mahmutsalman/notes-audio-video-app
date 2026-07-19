@@ -126,7 +126,7 @@ export default function TopicDetailPage() {
 
   if (topicLoading) {
     return (
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-4xl mx-auto">
         <div className="animate-pulse space-y-4">
           <div className="h-8 bg-gray-200 dark:bg-dark-border rounded w-1/3" />
           <div className="h-6 bg-gray-200 dark:bg-dark-border rounded w-1/4" />
@@ -154,7 +154,7 @@ export default function TopicDetailPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="mb-6">
         {/* Title row */}
@@ -201,8 +201,9 @@ export default function TopicDetailPage() {
         </div>
       </div>
 
-      {/* Recordings section */}
-      <div className="mb-20">
+      {/* Recordings section. The bottom margin is the scroll clearance for the
+          floating action buttons, which sit above this list at every width. */}
+      <div className="mb-24 sm:mb-28">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             Recordings ({recordings.length})

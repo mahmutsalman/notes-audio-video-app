@@ -85,7 +85,9 @@ export default function QuickReaderNote({ topicId, onRecordingSaved }: QuickRead
       <button
         onClick={handleCreate}
         disabled={isCreating}
-        className="fixed bottom-8 right-72 w-16 h-16 bg-violet-500 hover:bg-violet-600
+        className="fixed bottom-4 right-[10.75rem] w-11 h-11 text-xl
+                   sm:bottom-8 sm:right-72 sm:w-16 sm:h-16 sm:text-2xl
+                   bg-violet-500 hover:bg-violet-600
                    text-white rounded-full shadow-lg hover:shadow-xl transition-all
                    flex items-center justify-center
                    focus:outline-none focus:ring-4 focus:ring-violet-500/50

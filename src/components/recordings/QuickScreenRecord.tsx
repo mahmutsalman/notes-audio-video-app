@@ -247,7 +247,7 @@ export default function QuickScreenRecord({ topicId, onRecordingSaved, pendingRe
       <button
         onClick={handleOpen}
         disabled={isSaving}
-        className="fixed bottom-6 left-6 w-16 h-16 bg-purple-600 hover:bg-purple-700 text-white rounded-full shadow-lg flex items-center justify-center text-2xl transition-all hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed z-40"
+        className="fixed bottom-4 left-4 w-11 h-11 text-xl sm:bottom-6 sm:left-6 sm:w-16 sm:h-16 sm:text-2xl bg-purple-600 hover:bg-purple-700 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed z-40"
         title="Record Screen"
       >
         🎬

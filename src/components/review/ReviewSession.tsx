@@ -147,6 +147,17 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   // Reset zoom whenever the card changes
   useEffect(() => { setImgScale(1); setImgTranslate({ x: 0, y: 0 }); }, [currentIndex]);
 
+  // The zoom readout is feedback for the gesture, not a permanent chrome element.
+  // Left pinned it sat on top of the card content — on a screenshot of code that
+  // means covering the very text being read. Show it while zooming, then fade.
+  const [showZoomBadge, setShowZoomBadge] = useState(false);
+  useEffect(() => {
+    if (imgScale <= 1) { setShowZoomBadge(false); return; }
+    setShowZoomBadge(true);
+    const id = setTimeout(() => setShowZoomBadge(false), 1200);
+    return () => clearTimeout(id);
+  }, [imgScale]);
+
   // Cmd/Ctrl+scroll → zoom at cursor; plain scroll while zoomed → pan
   useEffect(() => {
     const area = imageAreaRef.current;
@@ -742,7 +753,11 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
             </div>
           )}
           {imgScale > 1 && (
-            <div className="absolute top-3 right-3 bg-black/60 text-white/80 text-xs px-2 py-1 rounded-full pointer-events-none">
+            <div
+              className={`absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/70 text-white/90 text-xs px-2 py-1
+                          rounded-full pointer-events-none transition-opacity duration-500
+                          ${showZoomBadge ? 'opacity-100' : 'opacity-0'}`}
+            >
               {Math.round(imgScale * 100)}%
             </div>
           )}

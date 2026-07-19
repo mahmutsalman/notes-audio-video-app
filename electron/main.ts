@@ -87,6 +87,11 @@ async function createWindow(): Promise<void> {
     },
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 15, y: 15 },
+    // The app draws its own title bar (the tab strip is the drag region), so the
+    // native window title must stay empty. With a full-size content view the
+    // system title is painted over the app's own header, and at narrow window
+    // widths it wraps onto several lines instead of truncating.
+    title: '',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f0f0f' : '#ffffff',
     show: false, // Don't show until ready
   });
@@ -94,6 +99,13 @@ async function createWindow(): Promise<void> {
   // Disable default context menu to allow custom context menu handling
   // This is critical for shift+right-click color cycling to work in production
   mainWindow.webContents.on('context-menu', (e) => {
+    e.preventDefault();
+  });
+
+  // Keep the native window title empty. Without this the renderer's <title> is
+  // pushed to the window on load and re-introduces the overlapping title text
+  // that the empty `title` option above is there to prevent.
+  mainWindow.on('page-title-updated', (e) => {
     e.preventDefault();
   });
 

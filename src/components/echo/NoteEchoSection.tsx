@@ -154,10 +154,12 @@ export default function NoteEchoSection({ recordingId }: { recordingId: number }
   return (
     <div className="mb-6 p-4 rounded-xl bg-blue-50/60 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/40">
       {/* Header — always visible */}
-      <div className="flex items-center gap-3">
+      {/* Wraps below `sm`: the toggle takes a full row and the action buttons drop
+          onto the next one, instead of the stats text and the buttons colliding. */}
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <button
           onClick={() => setExpanded(e => !e)}
-          className="flex items-center gap-2 text-left flex-1 min-w-0"
+          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-left w-full min-w-0 sm:w-auto sm:flex-1 sm:flex-nowrap"
           title={expanded ? 'Collapse' : 'Expand'}
         >
           <svg

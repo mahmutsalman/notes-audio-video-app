@@ -61,9 +61,11 @@ export default function QuickBookNote({ topicId, onRecordingSaved }: QuickBookNo
     <button
       onClick={handleCreate}
       disabled={isCreating}
-      className="fixed bottom-8 right-52 w-16 h-16 bg-indigo-500 hover:bg-indigo-600
+      className="fixed bottom-4 right-[7.5rem] w-11 h-11 text-xl
+                 sm:bottom-8 sm:right-52 sm:w-16 sm:h-16 sm:text-2xl
+                 bg-indigo-500 hover:bg-indigo-600
                  text-white rounded-full shadow-lg hover:shadow-xl transition-all
-                 flex items-center justify-center text-2xl
+                 flex items-center justify-center
                  focus:outline-none focus:ring-4 focus:ring-indigo-500/50
                  disabled:opacity-50 disabled:cursor-not-allowed"
       title="Add book note (PDF)"

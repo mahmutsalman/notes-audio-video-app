@@ -22,8 +22,9 @@ export default function TabBar() {
 
   return (
     <div className="h-8 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border flex items-stretch titlebar-drag flex-shrink-0">
-      {/* macOS traffic light spacer */}
-      <div className="w-16 flex-shrink-0" />
+      {/* macOS traffic light spacer. The buttons start at x=15 and the group is
+          ~55px wide, so 64px left them just barely overlapping the first tab. */}
+      <div className="w-20 flex-shrink-0" />
 
       {/* Tab list */}
       <div className="flex items-stretch overflow-x-auto flex-1 min-w-0" style={{ scrollbarWidth: 'none' }}>
