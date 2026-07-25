@@ -1814,21 +1814,34 @@ export default function RecordingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images]);
 
-  // Fetch file sizes for all media (videos, images, audios — recording + duration level)
+  // Fetch file sizes for all media (videos, images, audios — recording + duration level).
+  //
+  // Keyed on the joined paths rather than on the six source arrays. `images` and the
+  // three `activeDuration*` values above are rebuilt as fresh `[]` literals on every
+  // render whenever their fallback branch is taken (no mark selected, or the cache has
+  // no entry yet), so depending on array identity re-ran this effect on every commit.
+  // Each run resolved to a brand-new object from IPC, `setFileSizes` then scheduled
+  // another render, and that re-ran the effect — a self-sustaining render loop that
+  // burned 1-2 cores for as long as a recording stayed open. A string key changes only
+  // when the actual set of paths changes, which is the real input here.
+  const recVideos = recording?.videos ?? [];
+  const fileSizePathsKey = [
+    ...recVideos.map((v: { file_path: string }) => v.file_path),
+    ...images.map(i => i.file_path),
+    ...recordingAudios.map(a => a.file_path),
+    ...activeDurationVideos.map(v => v.file_path),
+    ...activeDurationImages.map(i => i.file_path),
+    ...activeDurationAudios.map(a => a.file_path),
+  ].filter(Boolean).join('\u0000'); // NUL: cannot occur in a POSIX path
+
   useEffect(() => {
-    const recVideos = recording?.videos ?? [];
-    const paths = [
-      ...recVideos.map((v: { file_path: string }) => v.file_path),
-      ...images.map(i => i.file_path),
-      ...recordingAudios.map(a => a.file_path),
-      ...activeDurationVideos.map(v => v.file_path),
-      ...activeDurationImages.map(i => i.file_path),
-      ...activeDurationAudios.map(a => a.file_path),
-    ].filter(Boolean);
-    if (paths.length === 0) return;
-    window.electronAPI.fs.getFileSizes(paths).then(setFileSizes);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recording?.videos, images, recordingAudios, activeDurationVideos, activeDurationImages, activeDurationAudios]);
+    if (!fileSizePathsKey) return;
+    let cancelled = false;
+    window.electronAPI.fs.getFileSizes(fileSizePathsKey.split('\u0000')).then(sizes => {
+      if (!cancelled) setFileSizes(sizes);
+    });
+    return () => { cancelled = true; };
+  }, [fileSizePathsKey]);
 
   // Fetch color labels for recording-level images
   useEffect(() => {
