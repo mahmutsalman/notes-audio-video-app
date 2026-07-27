@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, FC, Ref } from 'react';
 
 /**
  * Only the fields the viewer actually reads. Deliberately narrower than HtmlNode /
@@ -19,6 +20,29 @@ interface HtmlNodeViewerProps {
   onOpenInWindow: () => void;
 }
 
+/** Minimal surface of Electron's <webview> that this component drives. */
+interface WebviewElement extends HTMLElement {
+  src: string;
+  setZoomFactor(factor: number): void;
+  reloadIgnoringCache(): void;
+  send(channel: string, ...args: unknown[]): void;
+}
+
+/**
+ * React already ships a <webview> declaration, but it is modelled on the old Chrome
+ * <webview> tag and its attribute types do not match Electron's (plugins as boolean rather
+ * than the string the tag actually wants). Aliasing the tag to a component keeps this file's
+ * attribute set honest without redeclaring — and colliding with — the global JSX types.
+ */
+const WebView = 'webview' as unknown as FC<{
+  ref?: Ref<HTMLElement>;
+  src?: string;
+  preload?: string;
+  plugins?: string;
+  className?: string;
+  style?: CSSProperties;
+}>;
+
 /** Discrete stops rather than a continuous factor, so the +/- buttons land on round,
  *  repeatable values the way a browser's zoom does. */
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5] as const;
@@ -35,21 +59,32 @@ function nearestStepIndex(zoom: number): number {
 
 export default function HtmlNodeViewer({ node, onClose, onOpenInWindow }: HtmlNodeViewerProps) {
   const [zoom, setZoom] = useState(1);
-  // Bumped by the reload button. Rendered into the URL as ?v=<nonce> because these files are
-  // routinely edited on disk (the card's copy-path button exists so an AI can rewrite them),
-  // and without a changing URL Chromium serves the previous body from cache.
-  const [reloadNonce, setReloadNonce] = useState(0);
   const [loading, setLoading] = useState(true);
+  // The <webview> cannot be rendered until its preload URL is known, and that URL differs
+  // between dev and a packaged asar so it has to come from main.
+  const [preloadUrl, setPreloadUrl] = useState<string | null>(null);
+  const viewRef = useRef<WebviewElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Read inside the dom-ready handler, which would otherwise close over the initial zoom.
+  const zoomRef = useRef(zoom);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
   const isPdf = node.file_type === 'pdf';
   const fileName = node.file_path.split('/').pop() ?? '';
   const displayTitle = node.title || (isPdf ? 'Untitled PDF' : 'Untitled HTML');
 
-  const src = useMemo(() => {
-    const base = window.electronAPI.paths.getFileUrl(node.file_path);
-    return reloadNonce === 0 ? base : `${base}?v=${reloadNonce}`;
-  }, [node.file_path, reloadNonce]);
+  const src = useMemo(
+    () => window.electronAPI.paths.getFileUrl(node.file_path),
+    [node.file_path],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.htmlNodes.embedPreloadUrl()
+      .then(url => { if (!cancelled) setPreloadUrl(url); })
+      .catch(() => { if (!cancelled) setPreloadUrl(''); });
+    return () => { cancelled = true; };
+  }, []);
 
   const stepZoom = useCallback((direction: number) => {
     setZoom(z => {
@@ -62,12 +97,48 @@ export default function HtmlNodeViewer({ node, onClose, onOpenInWindow }: HtmlNo
 
   const reload = useCallback(() => {
     setLoading(true);
-    setReloadNonce(n => n + 1);
+    // Ignoring cache matters because these files are routinely rewritten on disk by an AI
+    // handed the path from the card's copy-path button.
+    viewRef.current?.reloadIgnoringCache();
   }, []);
 
-  // Escape closes; Cmd/Ctrl +/-/0 mirror the toolbar. These only fire while the app document
-  // holds focus — once you click into the framed document it owns the keyboard, and the
-  // toolbar buttons are then the way to zoom.
+  // Bridge to the guest: it reports Escape and its own zoom gestures back over sendToHost,
+  // because a focused guest document swallows every key and wheel event before the app sees it.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || preloadUrl === null) return;
+
+    const onIpc = (e: Event) => {
+      const { channel, args } = e as Event & { channel: string; args: unknown[] };
+      if (channel === 'close') onClose();
+      else if (channel === 'zoom') setZoom(args[0] as number);
+    };
+    const onDomReady = () => {
+      setLoading(false);
+      view.setZoomFactor(zoomRef.current);
+    };
+    const onStartLoading = () => setLoading(true);
+
+    view.addEventListener('ipc-message', onIpc);
+    view.addEventListener('dom-ready', onDomReady);
+    view.addEventListener('did-start-loading', onStartLoading);
+    return () => {
+      view.removeEventListener('ipc-message', onIpc);
+      view.removeEventListener('dom-ready', onDomReady);
+      view.removeEventListener('did-start-loading', onStartLoading);
+    };
+  }, [onClose, preloadUrl]);
+
+  // Push toolbar-initiated zoom into the guest. setZoomFactor is a real browser zoom — the
+  // document re-lays out and re-rasterises, so text stays sharp. A CSS transform would only
+  // stretch the frame's existing bitmap.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    try { view.setZoomFactor(zoom); } catch { /* not attached yet; dom-ready will apply it */ }
+  }, [zoom]);
+
+  // Same shortcuts as the guest preload, for while focus is still on the app chrome.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
@@ -80,9 +151,6 @@ export default function HtmlNodeViewer({ node, onClose, onOpenInWindow }: HtmlNo
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose, stepZoom, resetZoom]);
 
-  // Pinch / Cmd+scroll over the chrome around the document. Wheel events raised inside the
-  // iframe belong to that document and never reach us, so this covers the toolbar and the
-  // padding, not the page body.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -126,14 +194,8 @@ export default function HtmlNodeViewer({ node, onClose, onOpenInWindow }: HtmlNo
             <span className="text-xs text-gray-500 truncate hidden sm:inline">{fileName}</span>
           </div>
 
-          {/* Zoom */}
           <div className="shrink-0 flex items-center gap-0.5 mr-1">
-            <button
-              className={toolbarButton}
-              onClick={() => stepZoom(-1)}
-              disabled={atMinZoom}
-              title="Zoom out (⌘−)"
-            >
+            <button className={toolbarButton} onClick={() => stepZoom(-1)} disabled={atMinZoom} title="Zoom out (⌘−)">
               −
             </button>
             <button
@@ -143,12 +205,7 @@ export default function HtmlNodeViewer({ node, onClose, onOpenInWindow }: HtmlNo
             >
               {Math.round(zoom * 100)}%
             </button>
-            <button
-              className={toolbarButton}
-              onClick={() => stepZoom(1)}
-              disabled={atMaxZoom}
-              title="Zoom in (⌘+)"
-            >
+            <button className={toolbarButton} onClick={() => stepZoom(1)} disabled={atMaxZoom} title="Zoom in (⌘+)">
               +
             </button>
           </div>
@@ -163,11 +220,7 @@ export default function HtmlNodeViewer({ node, onClose, onOpenInWindow }: HtmlNo
           >
             ⧉
           </button>
-          <button
-            className={`${toolbarButton} text-lg leading-none`}
-            onClick={onClose}
-            title="Close (Esc)"
-          >
+          <button className={`${toolbarButton} text-lg leading-none`} onClick={onClose} title="Close (Esc)">
             ×
           </button>
         </div>
@@ -175,27 +228,21 @@ export default function HtmlNodeViewer({ node, onClose, onOpenInWindow }: HtmlNo
         {/* ── Document ────────────────────────────────────────────────────── */}
         <div className="flex-1 min-h-0 relative bg-white">
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400 pointer-events-none">
+            <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400 pointer-events-none z-10 bg-white">
               Loading…
             </div>
           )}
-          {/* The iframe is sized to the INVERSE of the zoom and then scaled back up, so its
-              internal viewport shrinks as you zoom in and the document reflows exactly as a
-              browser's zoom would. Scrolling therefore happens inside the frame and this
-              container never needs its own scrollbars. */}
-          <iframe
-            key={reloadNonce}
-            src={src}
-            title={displayTitle}
-            onLoad={() => setLoading(false)}
-            className="border-0 block"
-            style={{
-              width: `${100 / zoom}%`,
-              height: `${100 / zoom}%`,
-              transform: `scale(${zoom})`,
-              transformOrigin: 'top left',
-            }}
-          />
+          {preloadUrl !== null && (
+            <WebView
+              ref={viewRef as Ref<HTMLElement>}
+              src={src}
+              preload={preloadUrl || undefined}
+              // Chromium's PDF viewer is a plugin; without this a PDF node is a blank guest.
+              plugins="true"
+              className="w-full h-full"
+              style={{ display: 'flex' }}
+            />
+          )}
         </div>
       </div>
     </div>

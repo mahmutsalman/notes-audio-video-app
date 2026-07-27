@@ -38,6 +38,14 @@ export default defineConfig({
           },
         },
       },
+      {
+        entry: 'electron/windows/htmlNodeEmbedPreload.ts',
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+          },
+        },
+      },
     ]),
     renderer(),
   ],

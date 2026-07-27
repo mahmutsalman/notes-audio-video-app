@@ -3641,6 +3641,18 @@ export function setupIpcHandlers(): void {
     return HtmlNodesOperations.getById(id) ?? null;
   });
 
+  // The in-app viewer's <webview> needs its preload as an absolute file:// URL. The location
+  // differs between dev and a packaged asar, so it is resolved here rather than guessed in
+  // the renderer.
+  ipcMain.handle('htmlNodes:embedPreloadUrl', async () => {
+    const { app } = await import('electron');
+    const { pathToFileURL } = await import('url');
+    const pathMod = await import('path');
+    return pathToFileURL(
+      pathMod.default.join(app.getAppPath(), 'dist-electron', 'htmlNodeEmbedPreload.js')
+    ).toString();
+  });
+
   // ── Duration HTML Nodes ───────────────────────────────────────────────────
   ipcMain.handle('durationHtmlNodes:pickAndAdd', async (_, durationId: number) => {
     let sourcePath = getHtmlFileFromClipboard();

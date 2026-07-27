@@ -1029,6 +1029,7 @@ export interface ElectronAPI {
     delete: (id: number) => Promise<void>;
     open: (id: number) => Promise<void>;
     get: (id: number) => Promise<HtmlNode | null>;
+    embedPreloadUrl: () => Promise<string>;
   };
   durationHtmlNodes: {
     pickAndAdd: (durationId: number) => Promise<DurationHtmlNode | { error: string } | null>;

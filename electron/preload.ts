@@ -1168,6 +1168,8 @@ const electronAPI = {
       ipcRenderer.invoke('htmlNodes:open', id),
     get: (id: number) =>
       ipcRenderer.invoke('htmlNodes:get', id),
+    embedPreloadUrl: () =>
+      ipcRenderer.invoke('htmlNodes:embedPreloadUrl'),
   },
 
   durationHtmlNodes: {

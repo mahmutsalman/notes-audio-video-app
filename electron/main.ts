@@ -85,8 +85,12 @@ async function createWindow(): Promise<void> {
       nodeIntegration: false,
       sandbox: false, // Required for better-sqlite3
       // Chromium's built-in PDF viewer is a plugin. Without this a PDF node opened
-      // in the in-app viewer renders as a blank iframe instead of a paged document.
+      // in the in-app viewer renders as a blank frame instead of a paged document.
       plugins: true,
+      // The in-app document viewer embeds a <webview>. It needs a guest WebContents of
+      // its own so it can be zoomed with setZoomFactor — a plain iframe can only be CSS
+      // transformed, which rasterises the page and destroys text quality on zoom.
+      webviewTag: true,
     },
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 15, y: 15 },
