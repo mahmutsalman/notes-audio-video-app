@@ -10,6 +10,7 @@ import SearchConditionBuilder from '../components/search/SearchConditionBuilder'
 import { TagBrowser } from '../components/tags/TagBrowser';
 import { TagResultsView } from '../components/tags/TagResultsView';
 import ImageLightbox from '../components/common/ImageLightbox';
+import HtmlNodeViewer, { ViewerDocument } from '../components/common/HtmlNodeViewer';
 import { TagModal } from '../components/common/TagModal';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../context/AudioRecordingContext';
 import { useImageAudioPlayer } from '../context/ImageAudioPlayerContext';
@@ -369,6 +370,9 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number; contentType: string } | null>(null);
   const [lightboxImageColors, setLightboxImageColors] = useState<string[]>([]);
   const [imageAudiosMap, setImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
+  // A search hit carries only source_id, so the node is resolved over IPC on click before
+  // the in-app viewer can open.
+  const [htmlViewer, setHtmlViewer] = useState<ViewerDocument | null>(null);
 
   const audioRecording = useAudioRecording();
   const imageAudioPlayer = useImageAudioPlayer();
@@ -753,13 +757,16 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
         {/* Open HTML/PDF document in viewer window */}
         {(result.content_type === 'html_node' || result.content_type === 'duration_html_node') && (
           <button
-            onClick={e => {
+            onClick={async e => {
               e.stopPropagation();
-              if (result.content_type === 'html_node') {
-                window.electronAPI.htmlNodes.open(result.source_id);
-              } else {
-                window.electronAPI.durationHtmlNodes.open(result.source_id);
-              }
+              const node = result.content_type === 'html_node'
+                ? await window.electronAPI.htmlNodes.get(result.source_id)
+                : await window.electronAPI.durationHtmlNodes.get(result.source_id);
+              // A stale index can point at a deleted node; fall back to the window path
+              // rather than opening an empty viewer.
+              if (node) setHtmlViewer(node);
+              else if (result.content_type === 'html_node') window.electronAPI.htmlNodes.open(result.source_id);
+              else window.electronAPI.durationHtmlNodes.open(result.source_id);
             }}
             className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity self-center p-1.5 rounded hover:bg-gray-200 dark:hover:bg-dark-border text-blue-500 dark:text-blue-400"
             title="Open document"
@@ -904,6 +911,18 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
             setLightboxImageColors(updated);
           } : undefined}
           onGoToRecording={result.recording_id !== null && baseType(result.content_type) !== 'quick_capture_image' ? () => { setLightbox(null); onNavigate(result); } : undefined}
+        />
+      )}
+
+      {htmlViewer && (
+        <HtmlNodeViewer
+          node={htmlViewer}
+          onClose={() => setHtmlViewer(null)}
+          onOpenInWindow={() =>
+            result.content_type === 'html_node'
+              ? window.electronAPI.htmlNodes.open(htmlViewer.id)
+              : window.electronAPI.durationHtmlNodes.open(htmlViewer.id)
+          }
         />
       )}
     </div>

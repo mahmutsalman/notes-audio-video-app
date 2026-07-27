@@ -3635,6 +3635,12 @@ export function setupIpcHandlers(): void {
     openHtmlNodeWindow(id, node.file_path, node.title || 'Document', node.file_type);
   });
 
+  // A search hit carries only a source_id, so the in-app viewer needs a way to resolve one
+  // node's file_path and type without listing a whole recording.
+  ipcMain.handle('htmlNodes:get', async (_, id: number) => {
+    return HtmlNodesOperations.getById(id) ?? null;
+  });
+
   // ── Duration HTML Nodes ───────────────────────────────────────────────────
   ipcMain.handle('durationHtmlNodes:pickAndAdd', async (_, durationId: number) => {
     let sourcePath = getHtmlFileFromClipboard();
@@ -3681,6 +3687,10 @@ export function setupIpcHandlers(): void {
     if (!node) return;
     const { openHtmlNodeWindow } = await import('../windows/htmlNodeWindow');
     openHtmlNodeWindow(1000000 + id, node.file_path, node.title || 'Document', node.file_type);
+  });
+
+  ipcMain.handle('durationHtmlNodes:get', async (_, id: number) => {
+    return DurationHtmlNodesOperations.getById(id) ?? null;
   });
 
   console.log('IPC handlers registered');

@@ -4,6 +4,7 @@ import { useDurationAudioPlayer } from '../../context/DurationAudioPlayerContext
 import { useRecordingAudioPlayer } from '../../context/RecordingAudioPlayerContext';
 import { useAudioRecording, AUDIO_SAVED_EVENT } from '../../context/AudioRecordingContext';
 import ImageLightbox from '../common/ImageLightbox';
+import HtmlNodeViewer, { ViewerDocument } from '../common/HtmlNodeViewer';
 import SortableImageGrid from '../common/SortableImageGrid';
 import type { TaggedItems, TaggedCaptureImage, TaggedReviewNoteImage, TaggedChildImage, TaggedHtmlNode, TaggedDurationHtmlNode, AnyImageAudio } from '../../types';
 
@@ -61,6 +62,12 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
   const [childImageAudiosMap, setChildImageAudiosMap] = useState<Record<number, AnyImageAudio[]>>({});
   // Review-note images have no attached audio and no child images, so no audio map here.
   const [reviewNoteLightbox, setReviewNoteLightbox] = useState<{ rows: TaggedReviewNoteImage[]; index: number } | null>(null);
+
+  // In-app HTML/PDF viewer. `scope` selects the IPC channel for the "open in a separate
+  // window" fallback, since mark-level nodes live in their own table.
+  const [htmlViewer, setHtmlViewer] = useState<
+    { node: ViewerDocument; scope: 'recording' | 'duration' } | null
+  >(null);
 
   useEffect(() => {
     setLoading(true);
@@ -782,10 +789,7 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
                 <div
                   key={row.id}
                   className="group flex items-center gap-2 p-2 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg cursor-pointer hover:bg-violet-100 dark:hover:bg-violet-900/30 transition-colors"
-                  onClick={() => isDuration
-                    ? window.electronAPI.durationHtmlNodes.open(row.id)
-                    : window.electronAPI.htmlNodes.open(row.id)
-                  }
+                  onClick={() => setHtmlViewer({ node: row, scope: isDuration ? 'duration' : 'recording' })}
                 >
                   <span className={`shrink-0 text-xs font-bold px-1.5 py-0.5 rounded ${isPdf ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'}`}>
                     {isPdf ? 'PDF' : 'HTML'}
@@ -859,6 +863,18 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
           </div>
         </div>
       ))}
+
+      {htmlViewer && (
+        <HtmlNodeViewer
+          node={htmlViewer.node}
+          onClose={() => setHtmlViewer(null)}
+          onOpenInWindow={() =>
+            htmlViewer.scope === 'duration'
+              ? window.electronAPI.durationHtmlNodes.open(htmlViewer.node.id)
+              : window.electronAPI.htmlNodes.open(htmlViewer.node.id)
+          }
+        />
+      )}
     </div>
   );
 }

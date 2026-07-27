@@ -1028,6 +1028,7 @@ export interface ElectronAPI {
     updateTitle: (id: number, title: string | null) => Promise<void>;
     delete: (id: number) => Promise<void>;
     open: (id: number) => Promise<void>;
+    get: (id: number) => Promise<HtmlNode | null>;
   };
   durationHtmlNodes: {
     pickAndAdd: (durationId: number) => Promise<DurationHtmlNode | { error: string } | null>;
@@ -1035,6 +1036,7 @@ export interface ElectronAPI {
     updateTitle: (id: number, title: string | null) => Promise<void>;
     delete: (id: number) => Promise<void>;
     open: (id: number) => Promise<void>;
+    get: (id: number) => Promise<DurationHtmlNode | null>;
   };
 }
 

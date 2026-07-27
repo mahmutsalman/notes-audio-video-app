@@ -1166,6 +1166,8 @@ const electronAPI = {
       ipcRenderer.invoke('htmlNodes:delete', id),
     open: (id: number) =>
       ipcRenderer.invoke('htmlNodes:open', id),
+    get: (id: number) =>
+      ipcRenderer.invoke('htmlNodes:get', id),
   },
 
   durationHtmlNodes: {
@@ -1179,6 +1181,8 @@ const electronAPI = {
       ipcRenderer.invoke('durationHtmlNodes:delete', id),
     open: (id: number) =>
       ipcRenderer.invoke('durationHtmlNodes:open', id),
+    get: (id: number) =>
+      ipcRenderer.invoke('durationHtmlNodes:get', id),
   },
 };
 

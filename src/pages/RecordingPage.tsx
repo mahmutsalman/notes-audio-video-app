@@ -27,6 +27,7 @@ import Button from '../components/common/Button';
 import NotesEditor from '../components/common/NotesEditor';
 import CodeSnippetCard from '../components/code/CodeSnippetCard';
 import HtmlNodeCard from '../components/common/HtmlNodeCard';
+import HtmlNodeViewer from '../components/common/HtmlNodeViewer';
 import CodeSnippetModal from '../components/code/CodeSnippetModal';
 import ImageLightbox from '../components/common/ImageLightbox';
 import VideoLightbox from '../components/common/VideoLightbox';
@@ -266,6 +267,11 @@ export default function RecordingPage() {
     y: number;
   } | null>(null);
   const [tagModal, setTagModal] = useState<{ mediaType: MediaTagType; mediaId: number; title: string } | null>(null);
+  // The in-app HTML/PDF viewer. `scope` picks which IPC channel the "open in a separate window"
+  // button falls back to, since recording-level and duration-level nodes have separate tables.
+  const [htmlViewer, setHtmlViewer] = useState<
+    { node: HtmlNode | DurationHtmlNode; scope: 'recording' | 'duration' } | null
+  >(null);
   const [captionModal, setCaptionModal] = useState<{
     type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio';
     id: number;
@@ -3442,7 +3448,7 @@ export default function RecordingPage() {
                 <HtmlNodeCard
                   key={node.id}
                   node={node}
-                  onOpen={() => window.electronAPI.durationHtmlNodes.open(node.id)}
+                  onOpen={() => setHtmlViewer({ node, scope: 'duration' })}
                   onDelete={() => handleDeleteDurationHtmlNode(node.id)}
                   onUpdateTitle={title => handleUpdateDurationHtmlNodeTitle(node.id, title)}
                   onTagsClick={() => setTagModal({ mediaType: 'duration_html_node', mediaId: node.id, title: node.title || 'Document' })}
@@ -4036,7 +4042,7 @@ export default function RecordingPage() {
               <HtmlNodeCard
                 key={node.id}
                 node={node}
-                onOpen={() => window.electronAPI.htmlNodes.open(node.id)}
+                onOpen={() => setHtmlViewer({ node, scope: 'recording' })}
                 onDelete={() => handleDeleteHtmlNode(node.id)}
                 onUpdateTitle={title => handleUpdateHtmlNodeTitle(node.id, title)}
                 onTagsClick={() => setTagModal({ mediaType: 'html_node', mediaId: node.id, title: node.title || 'Document' })}
@@ -4862,6 +4868,20 @@ export default function RecordingPage() {
             Delete
           </button>
         </div>
+      )}
+
+      {/* In-app HTML / PDF viewer — the default for an HTML node card. The separate
+          BrowserWindow is still reachable from the ⧉ button inside it. */}
+      {htmlViewer && (
+        <HtmlNodeViewer
+          node={htmlViewer.node}
+          onClose={() => setHtmlViewer(null)}
+          onOpenInWindow={() =>
+            htmlViewer.scope === 'duration'
+              ? window.electronAPI.durationHtmlNodes.open(htmlViewer.node.id)
+              : window.electronAPI.htmlNodes.open(htmlViewer.node.id)
+          }
+        />
       )}
 
       {/* Tag Modal */}

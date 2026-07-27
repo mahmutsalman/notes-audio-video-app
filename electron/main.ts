@@ -84,6 +84,9 @@ async function createWindow(): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false, // Required for better-sqlite3
+      // Chromium's built-in PDF viewer is a plugin. Without this a PDF node opened
+      // in the in-app viewer renders as a blank iframe instead of a paged document.
+      plugins: true,
     },
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 15, y: 15 },
@@ -208,7 +211,11 @@ app.whenReady().then(async () => {
   // Register the media:// protocol handler with Range request support for video seeking
   protocol.handle('media', async (request) => {
     const url = request.url.replace('media://', '');
-    const filePath = decodeURIComponent(url);
+    // Split before decoding: getFileUrl percent-encodes each segment, so a literal '?'
+    // in a filename arrives as %3F and is never mistaken for a query separator. This lets
+    // the in-app viewer append ?v=<nonce> to force a reload past Chromium's cache after
+    // the file has been edited on disk.
+    const filePath = decodeURIComponent(url.split('?')[0]);
 
     try {
       const stat = fs.statSync(filePath);
@@ -230,6 +237,24 @@ app.whenReady().then(async () => {
         '.png': 'image/png',
         '.gif': 'image/gif',
         '.webp': 'image/webp',
+        // Document types + the sub-resources an imported HTML file may reference.
+        // Without a real Content-Type an .html served here is treated as a download
+        // rather than rendered, so the in-app viewer's iframe would come up blank.
+        // Relative paths inside a framed document resolve against media://, which is
+        // why stylesheets, scripts and fonts need entries too.
+        '.html': 'text/html; charset=utf-8',
+        '.htm': 'text/html; charset=utf-8',
+        '.pdf': 'application/pdf',
+        '.css': 'text/css; charset=utf-8',
+        '.js': 'text/javascript; charset=utf-8',
+        '.mjs': 'text/javascript; charset=utf-8',
+        '.json': 'application/json; charset=utf-8',
+        '.svg': 'image/svg+xml',
+        '.txt': 'text/plain; charset=utf-8',
+        '.woff': 'font/woff',
+        '.woff2': 'font/woff2',
+        '.ttf': 'font/ttf',
+        '.otf': 'font/otf',
       };
 
       const contentType = mimeTypes[ext] || 'application/octet-stream';
