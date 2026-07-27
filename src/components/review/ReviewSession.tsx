@@ -229,36 +229,57 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   }, [clampImgTranslate]);
 
   // Press-and-drag to pan, alongside the wheel. Only meaningful while zoomed — at 1× the clamp
-  // pins the translate to 0 anyway, so we don't grab the pointer and swallow mask clicks.
+  // pins the translate to 0 anyway, so we don't start a drag and risk swallowing mask clicks.
   const [dragging, setDragging] = useState(false);
   const dragOriginRef = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
   /** A drag ends in a click event on the canvas. Past the slop threshold that click is not a
       mask reveal — the user was panning — so the next click is swallowed in the capture phase. */
   const suppressClickRef = useRef(false);
+  // The move handler lives on window, so it reads the live translate from a ref rather than
+  // re-subscribing every time the pan changes.
+  const imgTranslateRef = useRef(imgTranslate);
+  useEffect(() => { imgTranslateRef.current = imgTranslate; }, [imgTranslate]);
 
   const onImagePointerDown = useCallback((e: React.PointerEvent) => {
     if (imgScaleRef.current <= 1 || e.button !== 0) return;
-    dragOriginRef.current = { x: e.clientX, y: e.clientY, tx: imgTranslate.x, ty: imgTranslate.y };
+    dragOriginRef.current = {
+      x: e.clientX, y: e.clientY,
+      tx: imgTranslateRef.current.x, ty: imgTranslateRef.current.y,
+    };
     suppressClickRef.current = false;
     setDragging(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }, [imgTranslate]);
-
-  const onImagePointerMove = useCallback((e: React.PointerEvent) => {
-    const origin = dragOriginRef.current;
-    if (!origin) return;
-    const dx = e.clientX - origin.x;
-    const dy = e.clientY - origin.y;
-    if (!suppressClickRef.current && Math.hypot(dx, dy) > 4) suppressClickRef.current = true;
-    setImgTranslate(clampImgTranslate({ x: origin.tx + dx, y: origin.ty + dy }, imgScaleRef.current));
-  }, [clampImgTranslate]);
-
-  const onImagePointerUp = useCallback((e: React.PointerEvent) => {
-    if (!dragOriginRef.current) return;
-    dragOriginRef.current = null;
-    setDragging(false);
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
   }, []);
+
+  // Drag-to-pan is tracked with window listeners, deliberately NOT setPointerCapture. Capture
+  // retargets the compatibility mouse events to the capture element, so `click` is dispatched at
+  // this wrapper instead of the canvas inside it — which silently killed click-to-reveal at every
+  // zoom above 1×: the pixelated region simply stopped responding once you zoomed. With window
+  // listeners the click still lands on the canvas, and only a genuine pan (past the slop
+  // threshold) is swallowed by onImageClickCapture below.
+  useEffect(() => {
+    if (!dragging) return;
+    const endDrag = () => { dragOriginRef.current = null; setDragging(false); };
+    const onMove = (e: PointerEvent) => {
+      const origin = dragOriginRef.current;
+      if (!origin) return;
+      const dx = e.clientX - origin.x;
+      const dy = e.clientY - origin.y;
+      if (!suppressClickRef.current && Math.hypot(dx, dy) > 4) suppressClickRef.current = true;
+      setImgTranslate(clampImgTranslate({ x: origin.tx + dx, y: origin.ty + dy }, imgScaleRef.current));
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
+    // Releasing the button outside the app never fires pointerup here, which would leave the
+    // image glued to the cursor; losing focus is the signal that the gesture is over.
+    window.addEventListener('blur', endDrag);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', endDrag);
+      window.removeEventListener('pointercancel', endDrag);
+      window.removeEventListener('blur', endDrag);
+    };
+  }, [dragging, clampImgTranslate]);
 
   const onImageClickCapture = useCallback((e: React.MouseEvent) => {
     if (!suppressClickRef.current) return;
@@ -897,15 +918,14 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
             ref={imageAreaRef}
             className="flex-1 relative flex items-center justify-center px-4 py-2 overflow-hidden min-h-0"
           >
+            {/* select-none on the wrapper: the only text in there is the hint/caption overlays, and
+                a pan drag used to sweep-select them into a blue highlight. Nothing worth copying. */}
             {current.file_path && (
               <div
                 ref={imageWrapRef}
-                className="w-full h-full"
+                className="w-full h-full select-none"
                 style={{ cursor: imgScale > 1 ? (dragging ? 'grabbing' : 'grab') : 'default' }}
                 onPointerDown={onImagePointerDown}
-                onPointerMove={onImagePointerMove}
-                onPointerUp={onImagePointerUp}
-                onPointerCancel={onImagePointerUp}
                 onClickCapture={onImageClickCapture}
               >
                 {/* Zoom/pan are handed to the canvas, which re-samples the source at the zoomed

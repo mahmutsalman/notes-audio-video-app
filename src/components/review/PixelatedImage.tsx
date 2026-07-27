@@ -20,6 +20,18 @@ interface PixelatedImageProps {
 /** Block sizes per pixelation level (1=nearly readable, 5=very hard), in zoom-1 CSS pixels. */
 const BLOCK_SIZES = [4, 6, 9, 14, 22] as const;
 
+/** Hint pill metrics at zoom 1, in CSS pixels. Every one of them is multiplied by the zoom
+ *  factor below, so the pill keeps its proportions instead of just growing its text. */
+const HINT_FONT = 14;
+const HINT_PAD_X = 6;
+const HINT_PAD_Y = 3;
+const HINT_GAP = 6;
+const HINT_MIN_WIDTH = 220;
+/** The pill scales WITH zoom — at a fixed size it shrank against the magnified mask until it was
+ *  unreadable at 5×. Growth saturates here because scaling all the way to 5× would lay a ~70px
+ *  pill across the surrounding image, hiding the very screenshot being read. */
+const HINT_MAX_SCALE = 3;
+
 export default function PixelatedImage({
   src,
   masks,
@@ -34,6 +46,8 @@ export default function PixelatedImage({
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [displaySize, setDisplaySize] = useState<{ w: number; h: number } | null>(null);
   const [hoveredMaskId, setHoveredMaskId] = useState<number | null>(null);
+  /** Separate from hoveredMaskId, which only tracks masks that have hint text to show. */
+  const [overClickableMask, setOverClickableMask] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Load image and measure it
@@ -175,6 +189,11 @@ export default function PixelatedImage({
     const mask = maskAtPoint(e.clientX, e.clientY);
     const id = mask && mask.hint_text ? mask.id : null;
     setHoveredMaskId(prev => (prev === id ? prev : id));
+    // While zoomed, the parent shows a grab cursor for pan — which reads as "this is a drag
+    // surface, not a button". Claim the cursor back over a mask so it still looks clickable.
+    // Skipped mid-drag (a button is down) so a pan keeps its grabbing cursor throughout.
+    const clickable = !!mask && !!onMaskClick && e.buttons === 0;
+    setOverClickableMask(prev => (prev === clickable ? prev : clickable));
   };
 
   return (
@@ -182,12 +201,16 @@ export default function PixelatedImage({
       <canvas
         ref={canvasRef}
         className="w-full h-full"
+        // 'inherit' rather than a value of its own, so the parent's grab/grabbing cursor still
+        // shows through everywhere except over a revealable mask.
+        style={{ cursor: overClickableMask ? 'pointer' : 'inherit' }}
         onClick={handleCanvasClick}
         onMouseMove={handleCanvasMouseMove}
-        onMouseLeave={() => setHoveredMaskId(null)}
+        onMouseLeave={() => { setHoveredMaskId(null); setOverClickableMask(false); }}
       />
       {/* Hint text overlays — shown only for the mask currently hovered, positioned through the
-          same zoom/pan transform as the canvas so they track the mask. */}
+          same zoom/pan transform as the canvas so they track the mask, and scaled by the same zoom
+          so the pill grows with the region it labels instead of shrinking against it. */}
       {naturalSize && displaySize && masks.map(mask => {
         if (revealedMaskIds.has(mask.id) || !mask.hint_text || hoveredMaskId !== mask.id) return null;
         const { w: dw, h: dh } = displaySize;
@@ -197,11 +220,42 @@ export default function PixelatedImage({
         const my0 = offsetY + mask.y * fitH;
         const left = cxc + zoom * (mx0 - cxc) + pan.x;
         const top = cyc + zoom * (my0 - cyc) + pan.y;
+
+        const s = Math.min(zoom, HINT_MAX_SCALE);
+        const fontSize = HINT_FONT * s;
+        const padX = HINT_PAD_X * s;
+        const padY = HINT_PAD_Y * s;
+        const gap = HINT_GAP * s;
+        const maskW = mask.w * fitW * zoom;
+        const maskH = mask.h * fitH * zoom;
+
+        const hintLeft = Math.max(4, left);
+        // The mask width is a FLOOR here, not a ceiling. Clamping the pill to the mask is what cut
+        // most hints down to a few characters — a hint is a tooltip, not image content, so it may
+        // legitimately be wider than the region it labels. Capped by the room remaining to the
+        // container edge so a long hint wraps instead of running out of the view.
+        const maxWidth = Math.min(Math.max(maskW, HINT_MIN_WIDTH * s), dw - hintLeft - 4);
+        // Estimated rather than measured: this only decides whether the pill fits above the mask,
+        // and measuring would cost a layout pass on every hover for a couple of pixels of accuracy.
+        const pillH = fontSize * 1.35 + padY * 2;
+        const aboveTop = top - gap - pillH;
+        // At high zoom the scaled gap can push the pill off the top edge, so it flips under the
+        // mask rather than being clipped away.
+        const flipBelow = aboveTop < 0;
+
         return (
           <div
             key={mask.id}
-            className="absolute pointer-events-none px-1.5 py-0.5 rounded bg-black/70 text-white text-[11px] max-w-[200px] truncate"
-            style={{ left, top: top - 22, maxWidth: mask.w * fitW * zoom }}
+            className="absolute pointer-events-none bg-black/80 text-white break-words line-clamp-3 shadow-lg"
+            style={{
+              left: hintLeft,
+              top: flipBelow ? top + maskH + gap : aboveTop,
+              maxWidth,
+              fontSize,
+              lineHeight: 1.35,
+              padding: `${padY}px ${padX}px`,
+              borderRadius: 4 * s,
+            }}
           >
             {mask.hint_text}
           </div>
