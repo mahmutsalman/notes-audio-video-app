@@ -6,9 +6,20 @@ interface PixelatedImageProps {
   masks: ReviewMask[];
   revealedMaskIds: Set<number>;
   onMaskClick?: (maskId: number) => void;
-  /** Right-click on an already-revealed mask puts it back. The counterpart of onMaskClick, and
-   *  the per-region version of the session's R shortcut, which re-blurs the whole card at once. */
-  onMaskHide?: (maskId: number) => void;
+  /**
+   * Left-click that hit no blurred mask. The session uses it to put back whatever right-click last
+   * blurred, so the reveal/re-blur loop needs no aiming.
+   */
+  onEmptyClick?: () => void;
+  /**
+   * Right-click anywhere on the image, carrying the REVEALED mask under the pointer or null if
+   * there was none. Deliberately reports rather than decides: which mask actually gets blurred is
+   * the session's policy (pointing wins, else most-recent, unless the scope toggle is on), and
+   * this component has no idea about reveal order or that toggle.
+   */
+  onContextMenuAt?: (maskId: number | null) => void;
+  /** Whether a left-click off a mask would restore something — drives the hint pill only. */
+  canRestore?: boolean;
   className?: string;
   /**
    * Zoom + pan folded INTO the canvas, not applied as a CSS transform on an ancestor (ADR-0010).
@@ -49,7 +60,9 @@ export default function PixelatedImage({
   masks,
   revealedMaskIds,
   onMaskClick,
-  onMaskHide,
+  onEmptyClick,
+  onContextMenuAt,
+  canRestore = false,
   className = '',
   zoom = 1,
   pan = { x: 0, y: 0 },
@@ -215,20 +228,20 @@ export default function PixelatedImage({
     return null;
   };
 
+  // Aiming at a blurred mask opens that one; a click that lands anywhere else asks the session to
+  // undo the last blur, which is what lets the whole loop run without moving the pointer.
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!onMaskClick) return;
-    const mask = maskAtPoint(e.clientX, e.clientY);
-    if (mask) onMaskClick(mask.id);
+    const mask = onMaskClick ? maskAtPoint(e.clientX, e.clientY) : null;
+    if (mask) onMaskClick!(mask.id);
+    else onEmptyClick?.();
   };
 
-  // Right-click a region you already opened to blur it again. preventDefault only on a hit, so a
-  // right-click anywhere else stays whatever the rest of the app makes of it.
+  // Right-click blurs, anywhere on the image. Always preventDefault, since the gesture is now the
+  // image's own everywhere rather than only over a revealed region.
   const handleCanvasContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!onMaskHide) return;
-    const mask = maskAtPoint(e.clientX, e.clientY, true);
-    if (!mask) return;
+    if (!onContextMenuAt) return;
     e.preventDefault();
-    onMaskHide(mask.id);
+    onContextMenuAt(maskAtPoint(e.clientX, e.clientY, true)?.id ?? null);
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -243,14 +256,23 @@ export default function PixelatedImage({
     const clickable = !!mask && !!onMaskClick && e.buttons === 0;
     setOverClickableMask(prev => (prev === clickable ? prev : clickable));
     // A revealed region looks exactly like the rest of the image, so nothing marks it as still
-    // interactive. The context-menu cursor is the one that says "right-click does something here"
-    // without adding any visible chrome over the answer being read.
-    const hideable = !!onMaskHide && !!maskAtPoint(e.clientX, e.clientY, true) && e.buttons === 0;
+    // interactive. The context-menu cursor is the one that says "right-click hits THIS one" —
+    // worth showing only over a revealed mask, since off one the gesture still works but picks
+    // its target from the stack rather than from the pointer.
+    const hideable = !!onContextMenuAt && !!maskAtPoint(e.clientX, e.clientY, true) && e.buttons === 0;
     setOverHideableMask(prev => (prev === hideable ? prev : hideable));
   };
 
+  // Hint pill copy. The gestures work anywhere on the image, which is not something a pointer
+  // cursor can convey on its own, so the pill says which ones are live right now. "Anywhere" is
+  // only claimed once it is true — before anything has been blurred, a left-click really does
+  // have to land on a mask.
   const canReveal = !!onMaskClick && masks.some(m => !revealedMaskIds.has(m.id));
-  const canHide = !!onMaskHide && masks.some(m => revealedMaskIds.has(m.id));
+  const canHide = !!onContextMenuAt && masks.some(m => revealedMaskIds.has(m.id));
+  const hintParts: string[] = [];
+  if (canRestore) hintParts.push('Left-click anywhere brings the last one back');
+  else if (canReveal) hintParts.push('Click a masked area to reveal');
+  if (canHide) hintParts.push(hintParts.length ? 'right-click blurs it again' : 'Right-click anywhere blurs the last one back');
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
@@ -325,11 +347,9 @@ export default function PixelatedImage({
       })}
       {/* Hint pill — names whichever gestures are actually available right now, so a fully
           revealed card advertises the way back instead of going silent. */}
-      {(canReveal || canHide) && (
+      {hintParts.length > 0 && (
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/60 text-white/70 text-xs px-3 py-1 rounded-full pointer-events-none">
-          {canReveal && 'Click a masked area to reveal'}
-          {canReveal && canHide && ' · '}
-          {canHide && 'Right-click a revealed one to blur it again'}
+          {hintParts.join(' · ')}
         </div>
       )}
     </div>

@@ -71,8 +71,32 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   // The read/update editor for the CURRENT card — the same MaskEditor the lightbox's ≋ chip
   // opens. Live autosave; the session's masks stay in sync via onMasksChanged.
   const [showEditor, setShowEditor] = useState(false);
-  const [revealedMaskIds, setRevealedMaskIds] = useState<Set<number>>(new Set());
-  const [allRevealed, setAllRevealed] = useState(false);
+  /**
+   * Masks revealed on this card, OLDEST FIRST. The order is the undo stack that right-click pops,
+   * so the array is the source of truth and the Set below is only the O(1) lookup the renderer
+   * wants. Keeping one source of truth is also why `allRevealed` is derived rather than stored —
+   * as a separate flag it could disagree with the set, and every reveal path had to remember to
+   * maintain it.
+   */
+  const [revealOrder, setRevealOrder] = useState<number[]>([]);
+  const revealedMaskIds = useMemo(() => new Set(revealOrder), [revealOrder]);
+  const allRevealed = masks.length === 0 || revealOrder.length === masks.length;
+  /**
+   * What right-click has put back, newest last — the redo stack. Left-clicking off a mask pops one
+   * batch and restores it. A batch is one mask in "last one" mode and every revealed mask in
+   * "everything" mode, so one right-click is always undone by exactly one left-click.
+   */
+  const [hiddenBatches, setHiddenBatches] = useState<number[][]>([]);
+  /**
+   * Right-click scope, remembered across sessions like focus mode and the code pad.
+   * false (default) = blur the last revealed one · true = blur every revealed one at once.
+   */
+  const [rightClickBlursAll, setRightClickBlursAll] = useState(
+    () => localStorage.getItem('echo.rightClickBlursAll') === '1'
+  );
+  useEffect(() => {
+    localStorage.setItem('echo.rightClickBlursAll', rightClickBlursAll ? '1' : '0');
+  }, [rightClickBlursAll]);
   // "Rate this card" shows the grading controls while leaving the masks blurred, so grading
   // does not force you to look at the answer. Revealing everything implies it too.
   const [ratingsRequested, setRatingsRequested] = useState(false);
@@ -160,27 +184,60 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   const goPrev = useCallback(() => setCurrentIndex(i => Math.max(0, i - 1)), []);
   const goNext = useCallback(() => setCurrentIndex(i => Math.min(items.length - 1, i + 1)), [items.length]);
 
+  // ── Reveal / re-blur stack ───────────────────────────────────────────────────────
+  //
+  // The drill this exists for: park the pointer on one masked region and flip it open and shut
+  // with left/right click as fast as you can memorise it, never moving the mouse. So neither
+  // gesture may require aiming, while both still allow it.
+  //
+  // These live up here beside goPrev/goNext rather than next to revealAll because the keydown
+  // effect below lists them as dependencies, and a `const` declared further down the body is
+  // still in its temporal dead zone when that deps array is built during render.
+  //
+  // Reads go through refs rather than the state values so the callbacks can stay dependency-free
+  // and never capture a stale stack — the same pattern the pan handlers above use for the live
+  // zoom/translate. Reading inside a state updater instead would mean calling setState from
+  // within one, which React may invoke twice, and "push a batch" is not idempotent.
+  const revealOrderRef = useRef<number[]>([]);
+  useEffect(() => { revealOrderRef.current = revealOrder; }, [revealOrder]);
+  const hiddenBatchesRef = useRef<number[][]>([]);
+  useEffect(() => { hiddenBatchesRef.current = hiddenBatches; }, [hiddenBatches]);
+
+  /** Blur a set of masks as ONE batch, so a single left-click brings back exactly what one
+   *  right-click took away. `ratingsRequested` is deliberately untouched — see hideAllMasks. */
+  const hideMasks = useCallback((ids: number[]) => {
+    if (ids.length === 0) return;
+    setRevealOrder(prev => prev.filter(id => !ids.includes(id)));
+    setHiddenBatches(prev => [...prev, ids]);
+  }, []);
+
+  /** Right-click with nothing revealed under the pointer: blur the most recently revealed one. */
+  const hideRecentMask = useCallback(() => {
+    const order = revealOrderRef.current;
+    if (order.length > 0) hideMasks([order[order.length - 1]]);
+  }, [hideMasks]);
+
   /**
-   * R = put the masks back. Re-blurs everything revealed on this card so it can be attempted a
-   * second time without leaving and re-entering the session — which would also cost the card's
-   * place in the queue, the study timer, and any note typed so far.
+   * R, the "Hide again" button, and right-click while the scope toggle is on: blur everything, so
+   * the whole card can be re-attempted without leaving and re-entering the session — which would
+   * also cost its place in the queue, the study timer, and any note typed so far.
    *
-   * `ratingsRequested` is deliberately NOT cleared: "I want to grade this" is an explicit act with
-   * Space as its own toggle. Only the reveal is undone, so a card opened with Reveal All re-seals
-   * its grading controls, while one where Space was pressed keeps them up.
-   *
-   * Guarded on masks.length because with no masks `allRevealed` is forced true by an effect keyed
-   * on `masks` — clearing it here would never be undone on this card, hiding the ratings for good.
-   *
-   * Lives up here beside goPrev/goNext rather than beside revealAll: the keydown effect below
-   * lists it as a dependency, and a `const` declared further down the body is still in its
-   * temporal dead zone when that deps array is built during render.
+   * `ratingsRequested` is NOT cleared: "I want to grade this" is an explicit act with Space as its
+   * own toggle. Only the reveal is undone, so a card opened with Reveal All re-seals its grading
+   * controls, while one where Space was pressed keeps them up.
    */
-  const reHideMasks = useCallback(() => {
-    if (masks.length === 0) return;
-    setRevealedMaskIds(new Set());
-    setAllRevealed(false);
-  }, [masks.length]);
+  const hideAllMasks = useCallback(() => {
+    hideMasks(revealOrderRef.current);
+  }, [hideMasks]);
+
+  /** Left-click off any blurred mask: undo the last blur, whatever its size. */
+  const restoreLastHidden = useCallback(() => {
+    const batches = hiddenBatchesRef.current;
+    if (batches.length === 0) return;
+    const batch = batches[batches.length - 1];
+    setHiddenBatches(prev => prev.slice(0, -1));
+    setRevealOrder(prev => [...prev, ...batch.filter(id => !prev.includes(id))]);
+  }, []);
 
   // ── Image zoom (Cmd/Ctrl + wheel), mirroring the ImageLightbox behavior ──────────
   const imageAreaRef = useRef<HTMLDivElement>(null);
@@ -371,11 +428,11 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
         setShowQuestion(true);
       }
       else if (e.key === 'r' || e.key === 'R') {
-        // R = re-blur. Revealing is one-way per card otherwise, so a second attempt meant leaving
-        // the session and coming back.
+        // R = re-blur the whole card, regardless of the right-click scope toggle. Revealing is
+        // one-way per card otherwise, so a second attempt meant leaving the session and coming back.
         e.preventDefault();
         e.stopImmediatePropagation();
-        reHideMasks();
+        hideAllMasks();
       }
       else if (e.code === 'Space') {
         // Toggle the grading controls, masks still blurred. Peek mode grades nothing.
@@ -393,7 +450,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [onSessionEnd, goPrev, goNext, reHideMasks, editingNoteId, readOnly, showQuestion, enlargedItemImage, showEditor, historyOverlay]);
+  }, [onSessionEnd, goPrev, goNext, hideAllMasks, editingNoteId, readOnly, showQuestion, enlargedItemImage, showEditor, historyOverlay]);
 
   // Esc closes an enlarged side image rather than ending the session.
   useEffect(() => {
@@ -434,8 +491,8 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   // Load masks + reset per-card state when the current item changes.
   useEffect(() => {
     if (!current) return;
-    setRevealedMaskIds(new Set());
-    setAllRevealed(false);
+    setRevealOrder([]);
+    setHiddenBatches([]);
     setRatingsRequested(false);
     setShowManualSchedule(false);
     setShowQuestion(false);
@@ -469,11 +526,6 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     window.electronAPI.reviewNotes.getDraftsByItem(current.id).then(setDraftNotes);
   }, [current?.id]);
 
-  // If no masks, consider auto-revealed
-  useEffect(() => {
-    if (masks.length === 0) setAllRevealed(true);
-  }, [masks]);
-
   // Study timer ticker.
   useEffect(() => {
     if (!timerRunning) return;
@@ -487,35 +539,31 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   };
 
   const revealMask = useCallback((maskId: number) => {
-    setRevealedMaskIds(prev => {
-      const next = new Set(prev);
-      next.add(maskId);
-      if (next.size === masks.length) setAllRevealed(true);
-      return next;
-    });
-  }, [masks.length]);
-
-  /**
-   * Right-click on one revealed region — the per-mask counterpart of R, for putting a single
-   * answer back rather than re-attempting the whole card.
-   *
-   * `allRevealed` drops because it no longer is: the flag means "size === masks.length", and
-   * revealMask re-raises it the moment the last one is opened again. Keeping the two in step is
-   * what makes the Reveal All button and the grading gate reappear correctly.
-   */
-  const hideMask = useCallback((maskId: number) => {
-    setRevealedMaskIds(prev => {
-      if (!prev.has(maskId)) return prev;
-      const next = new Set(prev);
-      next.delete(maskId);
-      return next;
-    });
-    setAllRevealed(false);
+    setRevealOrder(prev => (prev.includes(maskId) ? prev : [...prev, maskId]));
+    // Reopening a mask by hand takes it out of the redo stack: it is no longer waiting to be put
+    // back, and leaving it there would make a later left-click "restore" something already open.
+    setHiddenBatches(prev =>
+      prev.some(b => b.includes(maskId))
+        ? prev.map(b => b.filter(id => id !== maskId)).filter(b => b.length > 0)
+        : prev
+    );
   }, []);
 
+  /**
+   * Right-click policy. Pointing wins: a revealed mask under the pointer is the one that goes
+   * back, so precision is still available without a modifier. With no revealed mask under the
+   * pointer it falls back to the top of the stack, which is what makes the gesture work anywhere
+   * on the image. The scope toggle overrides both — "everything" means everything.
+   */
+  const handleContextMenuAt = useCallback((maskId: number | null) => {
+    if (rightClickBlursAll) hideAllMasks();
+    else if (maskId !== null) hideMasks([maskId]);
+    else hideRecentMask();
+  }, [rightClickBlursAll, hideAllMasks, hideMasks, hideRecentMask]);
+
   const revealAll = () => {
-    setRevealedMaskIds(new Set(masks.map(m => m.id)));
-    setAllRevealed(true);
+    setRevealOrder(prev => [...prev, ...masks.filter(m => !prev.includes(m.id)).map(m => m.id)]);
+    setHiddenBatches([]);
   };
 
 
@@ -984,7 +1032,9 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                   masks={masks}
                   revealedMaskIds={revealedMaskIds}
                   onMaskClick={revealMask}
-                  onMaskHide={hideMask}
+                  onEmptyClick={restoreLastHidden}
+                  onContextMenuAt={handleContextMenuAt}
+                  canRestore={hiddenBatches.length > 0}
                   className="w-full h-full"
                   zoom={imgScale}
                   pan={imgTranslate}
@@ -1059,12 +1109,12 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
           </div>
         )}
 
-        {/* Reveal All + "Rate this card" + "Hide again" + hint list.
-            The row outlives the reveal now: it used to vanish the moment `allRevealed` flipped,
-            which would have left R as the only way back and nothing on screen saying so.
-            The second clause is what stops it rendering as an empty div — the parent is a gapped
-            flex column, so a childless row still costs a visible gap. */}
-        {masks.length > 0 && (!allRevealed || revealedMaskIds.size > 0) && (
+        {/* Reveal All + "Rate this card" + "Hide again" + hints + right-click scope.
+            The row outlives the reveal: it used to vanish the moment `allRevealed` flipped, which
+            would leave R as the only way back with nothing on screen saying so. The scope toggle
+            is unconditional, so with masks present the row always has content and can never
+            render as a childless div (which would still cost a gap in this flex column). */}
+        {masks.length > 0 && (
           <div className="flex items-center gap-3 flex-wrap">
             {!allRevealed && (
               <>
@@ -1090,8 +1140,8 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
             {/* Only worth offering once something is actually showing. */}
             {revealedMaskIds.size > 0 && (
               <button
-                onClick={reHideMasks}
-                title="Blur the revealed areas again and re-attempt this card (R)"
+                onClick={hideAllMasks}
+                title="Blur every revealed area and re-attempt this card (R)"
                 className="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700
                            text-sm rounded-lg transition-colors flex items-center gap-2"
               >
@@ -1108,6 +1158,25 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                 💡 {m.hint_text}
               </span>
             ))}
+            {/* Right-click scope. Sits with the reveal controls because it only changes what a
+                right-click on the image does, and it is the kind of setting you flip once and
+                forget — hence localStorage rather than a per-card reset. Pushed to the far end so
+                it reads as a setting rather than another action, and last so the hint pills keep
+                their place beside the buttons they belong to. */}
+            <button
+              onClick={() => setRightClickBlursAll(v => !v)}
+              title={
+                rightClickBlursAll
+                  ? 'Right-click blurs every revealed area at once. Click to blur only the most recent instead.'
+                  : 'Right-click blurs the area under the pointer, or the most recently revealed one. Click to blur everything instead.'
+              }
+              className="ml-auto text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1.5"
+            >
+              Right-click blurs:
+              <span className="text-gray-300 border border-gray-700 rounded px-1.5 py-0.5">
+                {rightClickBlursAll ? 'everything' : 'last one'}
+              </span>
+            </button>
           </div>
         )}
 
