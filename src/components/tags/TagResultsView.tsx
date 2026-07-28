@@ -789,7 +789,12 @@ export function TagResultsView({ tagNames, onNavigate }: { tagNames: string[]; o
                 <div
                   key={row.id}
                   className="group flex items-center gap-2 p-2 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-lg cursor-pointer hover:bg-violet-100 dark:hover:bg-violet-900/30 transition-colors"
-                  onClick={() => setHtmlViewer({ node: row, scope: isDuration ? 'duration' : 'recording' })}
+                  onClick={() => {
+                    setHtmlViewer({ node: row, scope: isDuration ? 'duration' : 'recording' });
+                    // Stamp "last read" — fire and forget, nothing here displays it.
+                    if (isDuration) window.electronAPI.durationHtmlNodes.markOpened(row.id);
+                    else window.electronAPI.htmlNodes.markOpened(row.id);
+                  }}
                 >
                   <span className={`shrink-0 text-xs font-bold px-1.5 py-0.5 rounded ${isPdf ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'}`}>
                     {isPdf ? 'PDF' : 'HTML'}

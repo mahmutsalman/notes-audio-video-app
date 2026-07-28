@@ -1026,6 +1026,8 @@ export interface ElectronAPI {
     pickAndAdd: (recordingId: number) => Promise<HtmlNode | { error: string } | null>;
     list: (recordingId: number) => Promise<HtmlNode[]>;
     updateTitle: (id: number, title: string | null) => Promise<void>;
+    updateCaption: (id: number, caption: string | null) => Promise<HtmlNode>;
+    markOpened: (id: number) => Promise<HtmlNode | null>;
     delete: (id: number) => Promise<void>;
     open: (id: number) => Promise<void>;
     get: (id: number) => Promise<HtmlNode | null>;
@@ -1035,6 +1037,8 @@ export interface ElectronAPI {
     pickAndAdd: (durationId: number) => Promise<DurationHtmlNode | { error: string } | null>;
     list: (durationId: number) => Promise<DurationHtmlNode[]>;
     updateTitle: (id: number, title: string | null) => Promise<void>;
+    updateCaption: (id: number, caption: string | null) => Promise<DurationHtmlNode>;
+    markOpened: (id: number) => Promise<DurationHtmlNode | null>;
     delete: (id: number) => Promise<void>;
     open: (id: number) => Promise<void>;
     get: (id: number) => Promise<DurationHtmlNode | null>;
@@ -1174,9 +1178,11 @@ export interface HtmlNode {
   recording_id: number;
   file_path: string;
   title: string | null;
+  caption: string | null;
   file_type: 'html' | 'pdf';
   sort_order: number;
   created_at: string;
+  last_opened_at: string | null;
 }
 
 export interface DurationHtmlNode {
@@ -1184,9 +1190,11 @@ export interface DurationHtmlNode {
   duration_id: number;
   file_path: string;
   title: string | null;
+  caption: string | null;
   file_type: 'html' | 'pdf';
   sort_order: number;
   created_at: string;
+  last_opened_at: string | null;
 }
 
 export interface GlobalSearchResult {

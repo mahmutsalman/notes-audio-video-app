@@ -3622,6 +3622,16 @@ export function setupIpcHandlers(): void {
     scheduleSearchReindex();
   });
 
+  ipcMain.handle('htmlNodes:updateCaption', async (_, id: number, caption: string | null) => {
+    const node = HtmlNodesOperations.updateCaption(id, caption);
+    scheduleSearchReindex();
+    return node;
+  });
+
+  ipcMain.handle('htmlNodes:markOpened', async (_, id: number) => {
+    return HtmlNodesOperations.markOpened(id) ?? null;
+  });
+
   ipcMain.handle('htmlNodes:delete', async (_, id: number) => {
     const filePath = HtmlNodesOperations.delete(id);
     if (filePath) await deleteFile(filePath);
@@ -3631,6 +3641,7 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('htmlNodes:open', async (_, id: number) => {
     const node = HtmlNodesOperations.getById(id);
     if (!node) return;
+    HtmlNodesOperations.markOpened(id);
     const { openHtmlNodeWindow } = await import('../windows/htmlNodeWindow');
     openHtmlNodeWindow(id, node.file_path, node.title || 'Document', node.file_type);
   });
@@ -3688,6 +3699,16 @@ export function setupIpcHandlers(): void {
     scheduleSearchReindex();
   });
 
+  ipcMain.handle('durationHtmlNodes:updateCaption', async (_, id: number, caption: string | null) => {
+    const node = DurationHtmlNodesOperations.updateCaption(id, caption);
+    scheduleSearchReindex();
+    return node;
+  });
+
+  ipcMain.handle('durationHtmlNodes:markOpened', async (_, id: number) => {
+    return DurationHtmlNodesOperations.markOpened(id) ?? null;
+  });
+
   ipcMain.handle('durationHtmlNodes:delete', async (_, id: number) => {
     const filePath = DurationHtmlNodesOperations.delete(id);
     if (filePath) await deleteFile(filePath);
@@ -3697,6 +3718,7 @@ export function setupIpcHandlers(): void {
   ipcMain.handle('durationHtmlNodes:open', async (_, id: number) => {
     const node = DurationHtmlNodesOperations.getById(id);
     if (!node) return;
+    DurationHtmlNodesOperations.markOpened(id);
     const { openHtmlNodeWindow } = await import('../windows/htmlNodeWindow');
     openHtmlNodeWindow(1000000 + id, node.file_path, node.title || 'Document', node.file_type);
   });

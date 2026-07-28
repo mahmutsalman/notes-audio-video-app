@@ -1,5 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { HtmlNode, DurationHtmlNode } from '../../types';
+import { buildColorRings } from '../../utils/imageColors';
+import { formatDate, formatRelativeTime } from '../../utils/formatters';
 
 interface HtmlNodeCardProps {
   node: HtmlNode | DurationHtmlNode;
@@ -8,9 +10,13 @@ interface HtmlNodeCardProps {
   onUpdateTitle: (title: string | null) => void;
   onTagsClick?: () => void;
   tagCount?: number;
+  /** Color frame keys (media_color_assignments) — rendered as stacked rings like images */
+  colorKeys?: string[];
+  /** Right-click → context menu (caption, colors, tags…) — wired by the parent page */
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
-export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle, onTagsClick, tagCount = 0 }: HtmlNodeCardProps) {
+export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle, onTagsClick, tagCount = 0, colorKeys = [], onContextMenu }: HtmlNodeCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(node.title ?? '');
@@ -47,13 +53,16 @@ export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle, on
   const isPdf = node.file_type === 'pdf';
   const displayTitle = node.title || (isPdf ? 'Untitled PDF' : 'Untitled HTML');
   const fileName = node.file_path.split('/').pop() ?? '';
+  const colorRings = buildColorRings(colorKeys, 2);
 
   return (
     <div
       className="relative flex items-center gap-2 p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 select-none"
+      style={colorRings ? { boxShadow: colorRings } : undefined}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={isEditingTitle ? undefined : onOpen}
+      onContextMenu={onContextMenu}
     >
       {/* File type badge */}
       <span
@@ -77,14 +86,27 @@ export default function HtmlNodeCard({ node, onOpen, onDelete, onUpdateTitle, on
             onKeyDown={handleTitleKeyDown}
             onClick={e => e.stopPropagation()}
             className="w-full text-sm bg-transparent border-b border-blue-400 outline-none text-gray-800 dark:text-gray-200"
-            placeholder="Add caption…"
+            placeholder="Add title…"
           />
         ) : (
           <div className="flex flex-col min-w-0">
             <span className="text-sm text-gray-800 dark:text-gray-200 truncate" title={fileName}>
               {displayTitle}
             </span>
+            {node.caption && (
+              <span className="text-xs text-gray-600 dark:text-gray-400 italic truncate" title={node.caption}>
+                {node.caption}
+              </span>
+            )}
             <span className="text-xs text-gray-400 dark:text-gray-500 truncate">{fileName}</span>
+            <span
+              className="text-[10px] text-gray-400 dark:text-gray-500 truncate"
+              title={`Created ${formatDate(node.created_at)}${node.last_opened_at ? ` · Last read ${formatDate(node.last_opened_at)}` : ''}`}
+            >
+              created {formatRelativeTime(node.created_at)}
+              {' · '}
+              {node.last_opened_at ? `last read ${formatRelativeTime(node.last_opened_at)}` : 'never read'}
+            </span>
           </div>
         )}
       </div>

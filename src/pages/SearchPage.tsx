@@ -764,7 +764,12 @@ function ResultCard({ result, onNavigate }: ResultCardProps) {
                 : await window.electronAPI.durationHtmlNodes.get(result.source_id);
               // A stale index can point at a deleted node; fall back to the window path
               // rather than opening an empty viewer.
-              if (node) setHtmlViewer(node);
+              if (node) {
+                setHtmlViewer(node);
+                // Stamp "last read" — fire and forget, nothing here displays it.
+                if (result.content_type === 'html_node') window.electronAPI.htmlNodes.markOpened(result.source_id);
+                else window.electronAPI.durationHtmlNodes.markOpened(result.source_id);
+              }
               else if (result.content_type === 'html_node') window.electronAPI.htmlNodes.open(result.source_id);
               else window.electronAPI.durationHtmlNodes.open(result.source_id);
             }}

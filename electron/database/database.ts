@@ -1800,6 +1800,30 @@ function runMigrations(db: Database.Database): void {
     console.log('Added last_opened_at column to recordings table');
   }
 
+  // Migration: Add caption + last_opened_at to html_nodes and duration_html_nodes.
+  // caption is a user-visible note shown under the node title (same meaning as the images'
+  // caption column — title stays the rename target). last_opened_at mirrors the recordings
+  // column above: stamped whenever the document is viewed, shown as "last read …" on the card.
+  // Nullable: an existing node that has never been opened since this shipped shows no date.
+  const htmlNodeCols = db.prepare("PRAGMA table_info(html_nodes)").all() as { name: string }[];
+  if (!htmlNodeCols.some(c => c.name === 'caption')) {
+    db.exec('ALTER TABLE html_nodes ADD COLUMN caption TEXT');
+    console.log('Added caption column to html_nodes table');
+  }
+  if (!htmlNodeCols.some(c => c.name === 'last_opened_at')) {
+    db.exec('ALTER TABLE html_nodes ADD COLUMN last_opened_at DATETIME');
+    console.log('Added last_opened_at column to html_nodes table');
+  }
+  const durationHtmlNodeCols = db.prepare("PRAGMA table_info(duration_html_nodes)").all() as { name: string }[];
+  if (!durationHtmlNodeCols.some(c => c.name === 'caption')) {
+    db.exec('ALTER TABLE duration_html_nodes ADD COLUMN caption TEXT');
+    console.log('Added caption column to duration_html_nodes table');
+  }
+  if (!durationHtmlNodeCols.some(c => c.name === 'last_opened_at')) {
+    db.exec('ALTER TABLE duration_html_nodes ADD COLUMN last_opened_at DATETIME');
+    console.log('Added last_opened_at column to duration_html_nodes table');
+  }
+
   console.log('Database migrations completed');
 
   // Migration: Create FTS5 full-text search index
@@ -1999,19 +2023,21 @@ export function rebuildSearchIndex(): void {
       markerInsert.run(am.id, recordingId, am.caption + ' ' + am.marker_type);
     }
 
-    // HTML nodes — recording-level (parent_id = recording_id)
+    // HTML nodes — recording-level (parent_id = recording_id). Caption is folded into the
+    // same entry as the title so captions are searchable without a new content_type.
     database.exec(`
       INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
-      SELECT 'html_node', id, recording_id, COALESCE(title, '')
-      FROM html_nodes WHERE title IS NOT NULL AND title != ''
+      SELECT 'html_node', id, recording_id, TRIM(COALESCE(title, '') || ' ' || COALESCE(caption, ''))
+      FROM html_nodes
+      WHERE (title IS NOT NULL AND title != '') OR (caption IS NOT NULL AND caption != '')
     `);
 
     // HTML nodes — duration-level (parent_id = recording_id via durations join)
     database.exec(`
       INSERT INTO search_index(content_type, source_id, parent_id, searchable_text)
-      SELECT 'duration_html_node', hn.id, d.recording_id, COALESCE(hn.title, '')
+      SELECT 'duration_html_node', hn.id, d.recording_id, TRIM(COALESCE(hn.title, '') || ' ' || COALESCE(hn.caption, ''))
       FROM duration_html_nodes hn JOIN durations d ON d.id = hn.duration_id
-      WHERE hn.title IS NOT NULL AND hn.title != ''
+      WHERE (hn.title IS NOT NULL AND hn.title != '') OR (hn.caption IS NOT NULL AND hn.caption != '')
     `);
 
     // OCR text — recording-level images (parent_id = recording_id)

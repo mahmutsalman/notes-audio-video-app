@@ -260,9 +260,11 @@ export default function RecordingPage() {
   const [htmlNodeToDelete, setHtmlNodeToDelete] = useState<{ id: number; kind: 'recording' | 'duration' } | null>(null);
   const [htmlNodeTagCountMap, setHtmlNodeTagCountMap] = useState<Record<number, number>>({});
   const [durationHtmlNodeTagCountMap, setDurationHtmlNodeTagCountMap] = useState<Record<number, number>>({});
+  const [htmlNodeColorsCache, setHtmlNodeColorsCache] = useState<Record<number, string[]>>({});
+  const [durationHtmlNodeColorsCache, setDurationHtmlNodeColorsCache] = useState<Record<number, string[]>>({});
   const [contextMenu, setContextMenu] = useState<{
-    type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio';
-    item: Image | Video | DurationImage | DurationVideo | DurationAudio | Audio;
+    type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio' | 'htmlNode' | 'durationHtmlNode';
+    item: Image | Video | DurationImage | DurationVideo | DurationAudio | Audio | HtmlNode | DurationHtmlNode;
     x: number;
     y: number;
   } | null>(null);
@@ -273,7 +275,7 @@ export default function RecordingPage() {
     { node: HtmlNode | DurationHtmlNode; scope: 'recording' | 'duration' } | null
   >(null);
   const [captionModal, setCaptionModal] = useState<{
-    type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio';
+    type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio' | 'htmlNode' | 'durationHtmlNode';
     id: number;
     currentCaption: string;
   } | null>(null);
@@ -1559,6 +1561,34 @@ export default function RecordingPage() {
     setActiveDurationHtmlNodes(prev => prev.map(n => n.id === nodeId ? { ...n, title } : n));
   };
 
+  // Open a node in the in-app viewer, stamping last_opened_at ("last read") and reflecting
+  // the fresh timestamp on the card immediately.
+  const handleOpenHtmlNode = (node: HtmlNode) => {
+    setHtmlViewer({ node, scope: 'recording' });
+    window.electronAPI.htmlNodes.markOpened(node.id).then(updated => {
+      if (updated) setHtmlNodes(prev => prev.map(n => n.id === updated.id ? updated : n));
+    });
+  };
+
+  const handleOpenDurationHtmlNode = (node: DurationHtmlNode) => {
+    setHtmlViewer({ node, scope: 'duration' });
+    window.electronAPI.durationHtmlNodes.markOpened(node.id).then(updated => {
+      if (updated) setActiveDurationHtmlNodes(prev => prev.map(n => n.id === updated.id ? updated : n));
+    });
+  };
+
+  // Right-click on an HTML/PDF node card. Separate from handleContextMenu because html nodes
+  // have no group_color, so Shift+Right-Click color-cycling does not apply.
+  const handleHtmlNodeContextMenu = (
+    e: React.MouseEvent,
+    type: 'htmlNode' | 'durationHtmlNode',
+    node: HtmlNode | DurationHtmlNode
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ type, item: node, x: e.clientX, y: e.clientY });
+  };
+
   // Handle context menu for images/videos/audios
   const handleContextMenu = (
     e: React.MouseEvent,
@@ -1622,7 +1652,7 @@ export default function RecordingPage() {
   };
 
   // Open caption modal
-  const openCaptionModal = (type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio', id: number, currentCaption: string | null) => {
+  const openCaptionModal = (type: 'image' | 'video' | 'durationImage' | 'durationVideo' | 'durationAudio' | 'audio' | 'htmlNode' | 'durationHtmlNode', id: number, currentCaption: string | null) => {
     setCaptionModal({ type, id, currentCaption: currentCaption || '' });
     setCaptionText(currentCaption || '');
     setContextMenu(null);
@@ -1648,6 +1678,12 @@ export default function RecordingPage() {
         await updateDurationAudioCaption(captionModal.id, activeDurationId, trimmedCaption);
       } else if (captionModal.type === 'audio') {
         await updateAudioCaption(captionModal.id, trimmedCaption);
+      } else if (captionModal.type === 'htmlNode') {
+        const updated = await window.electronAPI.htmlNodes.updateCaption(captionModal.id, trimmedCaption);
+        setHtmlNodes(prev => prev.map(n => n.id === captionModal.id ? updated : n));
+      } else if (captionModal.type === 'durationHtmlNode') {
+        const updated = await window.electronAPI.durationHtmlNodes.updateCaption(captionModal.id, trimmedCaption);
+        setActiveDurationHtmlNodes(prev => prev.map(n => n.id === captionModal.id ? updated : n));
       }
     } catch (error) {
       console.error('Failed to save caption:', error);
@@ -1930,6 +1966,20 @@ export default function RecordingPage() {
       .then(setDurationVideoColorsCache);
   }, [activeDurationId, durationVideosCache]);
 
+  // Fetch color frames for recording-level HTML/PDF nodes
+  useEffect(() => {
+    if (!htmlNodes.length) { setHtmlNodeColorsCache({}); return; }
+    window.electronAPI.mediaColors.getBatch('html_node', htmlNodes.map(n => n.id))
+      .then(setHtmlNodeColorsCache);
+  }, [htmlNodes]);
+
+  // Fetch color frames for duration-level HTML/PDF nodes
+  useEffect(() => {
+    if (!activeDurationHtmlNodes.length) { setDurationHtmlNodeColorsCache({}); return; }
+    window.electronAPI.mediaColors.getBatch('duration_html_node', activeDurationHtmlNodes.map(n => n.id))
+      .then(setDurationHtmlNodeColorsCache);
+  }, [activeDurationHtmlNodes]);
+
   // Fetch tag counts for recording-level videos
   useEffect(() => {
     const recordingVideos = recording?.videos ?? [];
@@ -2084,6 +2134,16 @@ export default function RecordingPage() {
     const updated = await window.electronAPI.mediaColors.toggle('duration_video', videoId, colorKey);
     setDurationVideoColorsCache(prev => ({ ...prev, [videoId]: updated }));
     setContextMenuShowColors(false);
+  };
+
+  const handleToggleHtmlNodeColor = async (nodeId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('html_node', nodeId, colorKey);
+    setHtmlNodeColorsCache(prev => ({ ...prev, [nodeId]: updated }));
+  };
+
+  const handleToggleDurationHtmlNodeColor = async (nodeId: number, colorKey: string) => {
+    const updated = await window.electronAPI.mediaColors.toggle('duration_html_node', nodeId, colorKey);
+    setDurationHtmlNodeColorsCache(prev => ({ ...prev, [nodeId]: updated }));
   };
 
   const handleToggleRecordingImageAudioColor = async (audioId: number, colorKey: string) => {
@@ -3448,11 +3508,13 @@ export default function RecordingPage() {
                 <HtmlNodeCard
                   key={node.id}
                   node={node}
-                  onOpen={() => setHtmlViewer({ node, scope: 'duration' })}
+                  onOpen={() => handleOpenDurationHtmlNode(node)}
                   onDelete={() => handleDeleteDurationHtmlNode(node.id)}
                   onUpdateTitle={title => handleUpdateDurationHtmlNodeTitle(node.id, title)}
                   onTagsClick={() => setTagModal({ mediaType: 'duration_html_node', mediaId: node.id, title: node.title || 'Document' })}
                   tagCount={durationHtmlNodeTagCountMap[node.id] ?? 0}
+                  colorKeys={durationHtmlNodeColorsCache[node.id] ?? []}
+                  onContextMenu={e => handleHtmlNodeContextMenu(e, 'durationHtmlNode', node)}
                 />
               ))}
             </div>
@@ -4042,11 +4104,13 @@ export default function RecordingPage() {
               <HtmlNodeCard
                 key={node.id}
                 node={node}
-                onOpen={() => setHtmlViewer({ node, scope: 'recording' })}
+                onOpen={() => handleOpenHtmlNode(node)}
                 onDelete={() => handleDeleteHtmlNode(node.id)}
                 onUpdateTitle={title => handleUpdateHtmlNodeTitle(node.id, title)}
                 onTagsClick={() => setTagModal({ mediaType: 'html_node', mediaId: node.id, title: node.title || 'Document' })}
                 tagCount={htmlNodeTagCountMap[node.id] ?? 0}
+                colorKeys={htmlNodeColorsCache[node.id] ?? []}
+                onContextMenu={e => handleHtmlNodeContextMenu(e, 'htmlNode', node)}
               />
             ))}
           </div>
@@ -4701,7 +4765,8 @@ export default function RecordingPage() {
             {contextMenu.item.caption ? 'Edit Caption' : 'Add Caption'}
           </button>
           {(contextMenu.type === 'audio' || contextMenu.type === 'durationAudio' ||
-            contextMenu.type === 'video' || contextMenu.type === 'durationVideo') && (
+            contextMenu.type === 'video' || contextMenu.type === 'durationVideo' ||
+            contextMenu.type === 'htmlNode' || contextMenu.type === 'durationHtmlNode') && (
             contextMenuShowColors ? (
               <div className="px-2 py-2">
                 <div className="grid grid-cols-5 gap-1">
@@ -4710,6 +4775,8 @@ export default function RecordingPage() {
                       contextMenu.type === 'audio' ? (recordingAudioColorsCache[contextMenu.item.id] ?? []) :
                       contextMenu.type === 'durationAudio' ? (durationAudioColorsCache[contextMenu.item.id] ?? []) :
                       contextMenu.type === 'video' ? (videoColorsCache[contextMenu.item.id] ?? []) :
+                      contextMenu.type === 'htmlNode' ? (htmlNodeColorsCache[contextMenu.item.id] ?? []) :
+                      contextMenu.type === 'durationHtmlNode' ? (durationHtmlNodeColorsCache[contextMenu.item.id] ?? []) :
                       (durationVideoColorsCache[contextMenu.item.id] ?? []);
                     const active = itemColors.includes(key);
                     return (
@@ -4720,6 +4787,8 @@ export default function RecordingPage() {
                           contextMenu.type === 'audio' ? handleToggleRecordingAudioColor(contextMenu.item.id, key) :
                           contextMenu.type === 'durationAudio' ? handleToggleDurationAudioColor(contextMenu.item.id, key) :
                           contextMenu.type === 'video' ? handleToggleVideoColor(contextMenu.item.id, key) :
+                          contextMenu.type === 'htmlNode' ? handleToggleHtmlNodeColor(contextMenu.item.id, key) :
+                          contextMenu.type === 'durationHtmlNode' ? handleToggleDurationHtmlNodeColor(contextMenu.item.id, key) :
                           handleToggleDurationVideoColor(contextMenu.item.id, key)
                         }
                         className="w-6 h-6 rounded-full flex items-center justify-center relative border-2 transition-transform hover:scale-110"
@@ -4746,7 +4815,8 @@ export default function RecordingPage() {
           )}
           {(contextMenu.type === 'image' || contextMenu.type === 'durationImage' ||
             contextMenu.type === 'audio' || contextMenu.type === 'durationAudio' ||
-            contextMenu.type === 'video' || contextMenu.type === 'durationVideo') && (
+            contextMenu.type === 'video' || contextMenu.type === 'durationVideo' ||
+            contextMenu.type === 'htmlNode' || contextMenu.type === 'durationHtmlNode') && (
             <button
               className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-hover flex items-center gap-2"
               onClick={() => {
@@ -4755,8 +4825,14 @@ export default function RecordingPage() {
                   contextMenu.type === 'durationImage' ? 'duration_image' :
                   contextMenu.type === 'audio' ? 'audio' :
                   contextMenu.type === 'durationAudio' ? 'duration_audio' :
-                  contextMenu.type === 'video' ? 'video' : 'duration_video';
-                setTagModal({ mediaType, mediaId: contextMenu.item.id, title: contextMenu.item.caption || 'Video' });
+                  contextMenu.type === 'video' ? 'video' :
+                  contextMenu.type === 'htmlNode' ? 'html_node' :
+                  contextMenu.type === 'durationHtmlNode' ? 'duration_html_node' : 'duration_video';
+                const title =
+                  (contextMenu.type === 'htmlNode' || contextMenu.type === 'durationHtmlNode')
+                    ? ((contextMenu.item as HtmlNode | DurationHtmlNode).title || 'Document')
+                    : (contextMenu.item.caption || 'Video');
+                setTagModal({ mediaType, mediaId: contextMenu.item.id, title });
                 setContextMenu(null);
               }}
             >
@@ -4860,6 +4936,10 @@ export default function RecordingPage() {
                 handleDeleteDurationAudio(contextMenu.item.id);
               } else if (contextMenu.type === 'audio') {
                 handleDeleteRecordingAudio(contextMenu.item.id);
+              } else if (contextMenu.type === 'htmlNode') {
+                handleDeleteHtmlNode(contextMenu.item.id);
+              } else if (contextMenu.type === 'durationHtmlNode') {
+                handleDeleteDurationHtmlNode(contextMenu.item.id);
               }
               setContextMenu(null);
             }}

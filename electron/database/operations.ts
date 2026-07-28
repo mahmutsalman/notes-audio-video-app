@@ -2690,9 +2690,21 @@ export const ImageAnnotationsOperations = {
   },
 };
 
+// The only color keys ever written to media_color_assignments. Must stay in sync with
+// IMAGE_COLORS in src/utils/imageColors.ts — the renderer resolves each stored key against
+// that palette, and an unknown or empty key would render as a wrong/fallback frame (and in
+// palette-lookup code paths without a guard, crash the view). Reject bad keys at the write.
+const VALID_MEDIA_COLOR_KEYS = new Set([
+  'red', 'orange', 'amber', 'lime', 'emerald',
+  'teal', 'sky', 'violet', 'pink', 'slate',
+]);
+
 export const MediaColorOperations = {
   /** Toggle a color on any media item. Returns the updated color list. */
   toggle(mediaType: string, mediaId: number, colorKey: string): string[] {
+    if (!colorKey || !VALID_MEDIA_COLOR_KEYS.has(colorKey)) {
+      throw new Error(`Invalid color key: ${JSON.stringify(colorKey)}`);
+    }
     const db = getDatabase();
     const result = db.prepare(
       'INSERT OR IGNORE INTO media_color_assignments (media_type, media_id, color_key) VALUES (?, ?, ?)'
@@ -4290,6 +4302,19 @@ export const HtmlNodesOperations = {
     db.prepare('UPDATE html_nodes SET title = ? WHERE id = ?').run(title, id);
   },
 
+  updateCaption(id: number, caption: string | null): any {
+    const db = getDatabase();
+    db.prepare('UPDATE html_nodes SET caption = ? WHERE id = ?').run(caption, id);
+    return db.prepare('SELECT * FROM html_nodes WHERE id = ?').get(id);
+  },
+
+  /** Stamp the node as viewed now ("last read"). Returns the updated row for the UI. */
+  markOpened(id: number): any {
+    const db = getDatabase();
+    db.prepare('UPDATE html_nodes SET last_opened_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+    return db.prepare('SELECT * FROM html_nodes WHERE id = ?').get(id);
+  },
+
   getMaxSortOrder(recordingId: number): number {
     const db = getDatabase();
     const row = db.prepare('SELECT MAX(sort_order) as max_order FROM html_nodes WHERE recording_id = ?').get(recordingId) as any;
@@ -4328,6 +4353,19 @@ export const DurationHtmlNodesOperations = {
   updateTitle(id: number, title: string | null): void {
     const db = getDatabase();
     db.prepare('UPDATE duration_html_nodes SET title = ? WHERE id = ?').run(title, id);
+  },
+
+  updateCaption(id: number, caption: string | null): any {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_html_nodes SET caption = ? WHERE id = ?').run(caption, id);
+    return db.prepare('SELECT * FROM duration_html_nodes WHERE id = ?').get(id);
+  },
+
+  /** Stamp the node as viewed now ("last read"). Returns the updated row for the UI. */
+  markOpened(id: number): any {
+    const db = getDatabase();
+    db.prepare('UPDATE duration_html_nodes SET last_opened_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+    return db.prepare('SELECT * FROM duration_html_nodes WHERE id = ?').get(id);
   },
 
   getMaxSortOrder(durationId: number): number {

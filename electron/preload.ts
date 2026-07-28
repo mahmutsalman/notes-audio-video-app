@@ -1162,6 +1162,10 @@ const electronAPI = {
       ipcRenderer.invoke('htmlNodes:list', recordingId),
     updateTitle: (id: number, title: string | null) =>
       ipcRenderer.invoke('htmlNodes:updateTitle', id, title),
+    updateCaption: (id: number, caption: string | null) =>
+      ipcRenderer.invoke('htmlNodes:updateCaption', id, caption),
+    markOpened: (id: number) =>
+      ipcRenderer.invoke('htmlNodes:markOpened', id),
     delete: (id: number) =>
       ipcRenderer.invoke('htmlNodes:delete', id),
     open: (id: number) =>
@@ -1179,6 +1183,10 @@ const electronAPI = {
       ipcRenderer.invoke('durationHtmlNodes:list', durationId),
     updateTitle: (id: number, title: string | null) =>
       ipcRenderer.invoke('durationHtmlNodes:updateTitle', id, title),
+    updateCaption: (id: number, caption: string | null) =>
+      ipcRenderer.invoke('durationHtmlNodes:updateCaption', id, caption),
+    markOpened: (id: number) =>
+      ipcRenderer.invoke('durationHtmlNodes:markOpened', id),
     delete: (id: number) =>
       ipcRenderer.invoke('durationHtmlNodes:delete', id),
     open: (id: number) =>
