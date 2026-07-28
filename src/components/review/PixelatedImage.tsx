@@ -32,6 +32,15 @@ const HINT_MIN_WIDTH = 220;
  *  pill across the surrounding image, hiding the very screenshot being read. */
 const HINT_MAX_SCALE = 3;
 
+/** Subtle frame around each unrevealed mask so its EXTENT is visible even where the pixelation
+ *  blends into the surrounding image. Muted red at low alpha = a hint, not a box; stronger on
+ *  hover to pair with the pointer cursor. Width/radius are in CSS px and stay constant across
+ *  zoom — the outline is UI chrome, not image content, so it must not fatten when magnified. */
+const OUTLINE_COLOR = 'rgba(224, 92, 74, 0.55)';
+const OUTLINE_COLOR_HOVER = 'rgba(224, 92, 74, 0.9)';
+const OUTLINE_WIDTH = 1.5;
+const OUTLINE_RADIUS = 3;
+
 export default function PixelatedImage({
   src,
   masks,
@@ -48,6 +57,8 @@ export default function PixelatedImage({
   const [hoveredMaskId, setHoveredMaskId] = useState<number | null>(null);
   /** Separate from hoveredMaskId, which only tracks masks that have hint text to show. */
   const [overClickableMask, setOverClickableMask] = useState(false);
+  /** ANY unrevealed mask under the pointer (hint text or not) — drives the stronger outline. */
+  const [hoveredOutlineMaskId, setHoveredOutlineMaskId] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Load image and measure it
@@ -149,8 +160,19 @@ export default function PixelatedImage({
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(offCanvas, 0, 0, cols, rows, dstX, dstY, dstW, dstH);
       ctx.imageSmoothingEnabled = true;
+
+      // Frame the mask so its extent reads clearly against the image. Stroked half a line-width
+      // inside the rect so the outline hugs the pixelated area without spilling onto the image.
+      const lw = OUTLINE_WIDTH * dpr;
+      if (dstW > lw * 2 && dstH > lw * 2) {
+        ctx.strokeStyle = mask.id === hoveredOutlineMaskId ? OUTLINE_COLOR_HOVER : OUTLINE_COLOR;
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.roundRect(dstX + lw / 2, dstY + lw / 2, dstW - lw, dstH - lw, OUTLINE_RADIUS * dpr);
+        ctx.stroke();
+      }
     }
-  }, [naturalSize, displaySize, masks, revealedMaskIds, src, zoom, pan.x, pan.y]);
+  }, [naturalSize, displaySize, masks, revealedMaskIds, src, zoom, pan.x, pan.y, hoveredOutlineMaskId]);
 
   // Map a client point to fit-space, inverting the zoom/pan transform, so hit-testing stays correct
   // now that the zoom lives in the canvas rather than a CSS transform on an ancestor.
@@ -189,6 +211,8 @@ export default function PixelatedImage({
     const mask = maskAtPoint(e.clientX, e.clientY);
     const id = mask && mask.hint_text ? mask.id : null;
     setHoveredMaskId(prev => (prev === id ? prev : id));
+    const outlineId = mask ? mask.id : null;
+    setHoveredOutlineMaskId(prev => (prev === outlineId ? prev : outlineId));
     // While zoomed, the parent shows a grab cursor for pan — which reads as "this is a drag
     // surface, not a button". Claim the cursor back over a mask so it still looks clickable.
     // Skipped mid-drag (a button is down) so a pan keeps its grabbing cursor throughout.
@@ -206,7 +230,7 @@ export default function PixelatedImage({
         style={{ cursor: overClickableMask ? 'pointer' : 'inherit' }}
         onClick={handleCanvasClick}
         onMouseMove={handleCanvasMouseMove}
-        onMouseLeave={() => { setHoveredMaskId(null); setOverClickableMask(false); }}
+        onMouseLeave={() => { setHoveredMaskId(null); setOverClickableMask(false); setHoveredOutlineMaskId(null); }}
       />
       {/* Hint text overlays — shown only for the mask currently hovered, positioned through the
           same zoom/pan transform as the canvas so they track the mask, and scaled by the same zoom
