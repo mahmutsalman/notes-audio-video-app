@@ -160,6 +160,28 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
   const goPrev = useCallback(() => setCurrentIndex(i => Math.max(0, i - 1)), []);
   const goNext = useCallback(() => setCurrentIndex(i => Math.min(items.length - 1, i + 1)), [items.length]);
 
+  /**
+   * R = put the masks back. Re-blurs everything revealed on this card so it can be attempted a
+   * second time without leaving and re-entering the session — which would also cost the card's
+   * place in the queue, the study timer, and any note typed so far.
+   *
+   * `ratingsRequested` is deliberately NOT cleared: "I want to grade this" is an explicit act with
+   * Space as its own toggle. Only the reveal is undone, so a card opened with Reveal All re-seals
+   * its grading controls, while one where Space was pressed keeps them up.
+   *
+   * Guarded on masks.length because with no masks `allRevealed` is forced true by an effect keyed
+   * on `masks` — clearing it here would never be undone on this card, hiding the ratings for good.
+   *
+   * Lives up here beside goPrev/goNext rather than beside revealAll: the keydown effect below
+   * lists it as a dependency, and a `const` declared further down the body is still in its
+   * temporal dead zone when that deps array is built during render.
+   */
+  const reHideMasks = useCallback(() => {
+    if (masks.length === 0) return;
+    setRevealedMaskIds(new Set());
+    setAllRevealed(false);
+  }, [masks.length]);
+
   // ── Image zoom (Cmd/Ctrl + wheel), mirroring the ImageLightbox behavior ──────────
   const imageAreaRef = useRef<HTMLDivElement>(null);
   const imageWrapRef = useRef<HTMLDivElement>(null);
@@ -348,6 +370,13 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
         e.stopImmediatePropagation();
         setShowQuestion(true);
       }
+      else if (e.key === 'r' || e.key === 'R') {
+        // R = re-blur. Revealing is one-way per card otherwise, so a second attempt meant leaving
+        // the session and coming back.
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        reHideMasks();
+      }
       else if (e.code === 'Space') {
         // Toggle the grading controls, masks still blurred. Peek mode grades nothing.
         if (readOnly) return;
@@ -364,7 +393,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [onSessionEnd, goPrev, goNext, editingNoteId, readOnly, showQuestion, enlargedItemImage, showEditor, historyOverlay]);
+  }, [onSessionEnd, goPrev, goNext, reHideMasks, editingNoteId, readOnly, showQuestion, enlargedItemImage, showEditor, historyOverlay]);
 
   // Esc closes an enlarged side image rather than ending the session.
   useEffect(() => {
@@ -470,6 +499,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     setRevealedMaskIds(new Set(masks.map(m => m.id)));
     setAllRevealed(true);
   };
+
 
   /** Grading controls are up once you've either seen the answer or explicitly asked to grade. */
   const canRate = allRevealed || ratingsRequested;
@@ -1010,24 +1040,44 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
           </div>
         )}
 
-        {/* Reveal All + "Rate this card" + hint list */}
-        {!allRevealed && masks.length > 0 && (
+        {/* Reveal All + "Rate this card" + "Hide again" + hint list.
+            The row outlives the reveal now: it used to vanish the moment `allRevealed` flipped,
+            which would have left R as the only way back and nothing on screen saying so.
+            The second clause is what stops it rendering as an empty div — the parent is a gapped
+            flex column, so a childless row still costs a visible gap. */}
+        {masks.length > 0 && (!allRevealed || revealedMaskIds.size > 0) && (
           <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={revealAll}
-              className="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors"
-            >
-              Reveal All
-            </button>
-            {!readOnly && !ratingsRequested && (
+            {!allRevealed && (
+              <>
+                <button
+                  onClick={revealAll}
+                  className="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors"
+                >
+                  Reveal All
+                </button>
+                {!readOnly && !ratingsRequested && (
+                  <button
+                    onClick={() => setRatingsRequested(true)}
+                    title="Grade this card without revealing the masks (Space)"
+                    className="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700
+                               text-sm rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    Rate this card
+                    <kbd className="text-[10px] text-gray-500 border border-gray-700 rounded px-1 py-0.5">Space</kbd>
+                  </button>
+                )}
+              </>
+            )}
+            {/* Only worth offering once something is actually showing. */}
+            {revealedMaskIds.size > 0 && (
               <button
-                onClick={() => setRatingsRequested(true)}
-                title="Grade this card without revealing the masks (Space)"
+                onClick={reHideMasks}
+                title="Blur the revealed areas again and re-attempt this card (R)"
                 className="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700
                            text-sm rounded-lg transition-colors flex items-center gap-2"
               >
-                Rate this card
-                <kbd className="text-[10px] text-gray-500 border border-gray-700 rounded px-1 py-0.5">Space</kbd>
+                Hide again
+                <kbd className="text-[10px] text-gray-500 border border-gray-700 rounded px-1 py-0.5">R</kbd>
               </button>
             )}
             {masks.filter(m => !revealedMaskIds.has(m.id) && m.hint_text).map(m => (
