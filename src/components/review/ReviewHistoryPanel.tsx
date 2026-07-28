@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { ReviewEvent, ReviewNoteKind, ReviewNoteImage } from '../../types';
 import { NoteThumbs, NoteVoicePlayback, ratingBadge, fmtDuration } from './ReviewNotePreview';
+import ZoomableImageOverlay from './ZoomableImageOverlay';
 
 interface ReviewHistoryPanelProps {
   /** The echo whose past reviews to show. Changing it refetches. */
@@ -163,26 +164,15 @@ export default function ReviewHistoryPanel({ reviewItemId, onClose, onOverlayCha
         )}
       </div>
 
-      {/* A 380px column can't show a screenshot. Click a thumb to fill the window.
+      {/* A 380px column can't show a screenshot. Click a thumb to fill the window — with zoom.
           z-[70] clears the card and the drawer but stays under the question popup (z-[80]). */}
       {enlarged && (
-        <div
-          className="fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-8"
-          onClick={() => setEnlarged(null)}
-        >
-          <img
-            src={window.electronAPI.paths.getFileUrl(enlarged.file_path)}
-            alt={enlarged.caption ?? ''}
-            className="max-w-full max-h-full object-contain"
-          />
-          <button
-            onClick={() => setEnlarged(null)}
-            className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl leading-none"
-            title="Close (click anywhere)"
-          >
-            ✕
-          </button>
-        </div>
+        <ZoomableImageOverlay
+          src={window.electronAPI.paths.getFileUrl(enlarged.file_path)}
+          alt={enlarged.caption ?? ''}
+          zClassName="z-[70]"
+          onClose={() => setEnlarged(null)}
+        />
       )}
     </div>
   );

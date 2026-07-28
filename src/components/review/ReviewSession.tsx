@@ -13,6 +13,7 @@ import ReviewNoteAudios from './ReviewNoteAudios';
 import ReviewNoteAttachments from './ReviewNoteAttachments';
 import ReviewCodePane from './ReviewCodePane';
 import ReviewHistoryPanel from './ReviewHistoryPanel';
+import ZoomableImageOverlay from './ZoomableImageOverlay';
 import ThemedAudioPlayer from '../audio/ThemedAudioPlayer';
 
 interface ReviewSessionProps {
@@ -1422,19 +1423,14 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
         />
       )}
 
-      {/* Enlarged side image (pasted onto the echo in "Add to Echo"). Esc / click outside closes. */}
+      {/* Enlarged side image (pasted onto the echo in "Add to Echo"). Esc / click outside closes;
+          scroll/pinch zooms, drag pans, double-click toggles fit ↔ 2.5×. */}
       {enlargedItemImage && (
-        <div
-          onClick={() => setEnlargedItemImage(null)}
-          className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-8 cursor-zoom-out"
-        >
-          <img
-            src={enlargedItemImage}
-            alt=""
-            onClick={(e) => e.stopPropagation()}
-            className="max-w-full max-h-full object-contain cursor-default rounded-lg"
-          />
-        </div>
+        <ZoomableImageOverlay
+          src={enlargedItemImage}
+          zClassName="z-[60]"
+          onClose={() => setEnlargedItemImage(null)}
+        />
       )}
     </div>
   );
