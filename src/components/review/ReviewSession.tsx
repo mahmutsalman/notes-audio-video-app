@@ -1042,8 +1042,15 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
         )}
 
         {/* Reflective note panel — the "what did I think / what did I miss" log.
-            Study-only; hidden in Peek mode. */}
-        {!readOnly && canRate && (
+            Study-only; hidden in Peek mode.
+
+            WRITING is never gated: the panel is up from the first second of the card, because the
+            moment worth logging ("I have no idea what this is") happens BEFORE the reveal, and
+            making the box wait for Reveal All loses exactly that thought. READING stays gated:
+            until the same threshold that shows the rating buttons (reveal or "Rate this card"),
+            already-logged notes render as sealed chips — see the `!canRate` branch below — so a
+            note about the answer can't leak the answer. */}
+        {!readOnly && (
           <div className="flex flex-col gap-2">
             {!showNotePanel ? (
               <button
@@ -1067,7 +1074,49 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                           another stacked card and the whole bottom block grows, squeezing the card
                           image above it smaller with every note. */}
                       <div className={logged.length > 0 ? 'flex flex-col gap-1.5 max-h-[24vh] overflow-y-auto pr-0.5' : 'contents'}>
-                      {logged.map((n, i) => (
+                      {logged.map((n, i) => {
+                        // Pre-reveal, logged notes are sealed. Storage is identical — the row was
+                        // written by the exact same reviewNotes.add the post-reveal path uses —
+                        // only the RENDERING is withheld: no body, no images, no voice chips, no
+                        // edit (the textarea would echo the body back). The one exception is the
+                        // note whose mic is live right now: composing is naturally visible, so its
+                        // recorder renders until Stop saves the clip — then it seals like the rest.
+                        if (!canRate) {
+                          if (autoRecordNoteId === n.id) {
+                            return (
+                              <div
+                                key={n.id}
+                                className="flex items-center gap-2 rounded-lg bg-gray-800/60 border border-gray-700 px-3 py-1.5"
+                              >
+                                <span className="text-[10px] text-gray-500 tabular-nums shrink-0">{i + 1}</span>
+                                {/* audios={[]} so the freshly-saved chip never flashes up pre-reveal */}
+                                <ReviewNoteAudios
+                                  noteId={n.id}
+                                  audios={[]}
+                                  autoStart
+                                  onChange={auds => {
+                                    setDraftNotes(prev => prev.map(x =>
+                                      x.id === n.id ? { ...x, audios: [...(x.audios ?? []), ...auds] } : x
+                                    ));
+                                    setAutoRecordNoteId(null); // saved → joins the sealed pile
+                                  }}
+                                />
+                              </div>
+                            );
+                          }
+                          return (
+                            <div
+                              key={n.id}
+                              className="flex items-center gap-2 rounded-lg bg-gray-800/60 border border-gray-700 border-dashed px-3 py-1.5"
+                            >
+                              <span className="text-[10px] text-gray-500 tabular-nums shrink-0">{i + 1}</span>
+                              <span className="text-xs text-gray-500 select-none">
+                                🔒 Logged — hidden until you reveal or rate
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
                         <div
                           key={n.id}
                           className="group flex flex-col gap-1.5 rounded-lg bg-gray-800/60 border border-gray-700 px-3 py-1.5"
@@ -1124,7 +1173,8 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                             />
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                       </div>
                       <textarea
                         value={value}
