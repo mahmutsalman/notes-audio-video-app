@@ -5,8 +5,7 @@ import { formatDueLabel } from '../utils/srsAlgorithm';
 import { formatMarkSource, parseQuestionImages } from '../utils/marks';
 import { currentRetrievability, stateLabel } from '../utils/fsrs';
 import HeatmapCalendar, { HEATMAP_WINDOWS, type HeatmapWindow } from '../components/echo/HeatmapCalendar';
-import ReviewNoteImages from '../components/review/ReviewNoteImages';
-import ReviewNoteAudios from '../components/review/ReviewNoteAudios';
+import ReviewNoteAttachments from '../components/review/ReviewNoteAttachments';
 import { NoteThumbs, NoteVoicePlayback, ratingBadge, fmtDuration } from '../components/review/ReviewNotePreview';
 import ReviewSession from '../components/review/ReviewSession';
 
@@ -553,16 +552,12 @@ function EventRow({ event, onSaved }: { event: ReviewEvent; onSaved: () => void 
                       ✕
                     </button>
                   </div>
-                  <ReviewNoteImages
+                  <ReviewNoteAttachments
                     noteId={n.id}
                     images={n.images ?? []}
-                    onChange={imgs => { setNoteImages(n.id, imgs); onSaved(); }}
-                    variant="light"
-                  />
-                  <ReviewNoteAudios
-                    noteId={n.id}
                     audios={n.audios ?? []}
-                    onChange={auds => { setNoteAudios(n.id, auds); onSaved(); }}
+                    onImagesChange={imgs => { setNoteImages(n.id, imgs); onSaved(); }}
+                    onAudiosChange={auds => { setNoteAudios(n.id, auds); onSaved(); }}
                     variant="light"
                   />
                 </div>

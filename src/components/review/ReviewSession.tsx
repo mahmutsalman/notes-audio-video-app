@@ -9,8 +9,8 @@ import {
 import { formatMarkSource, parseQuestionImages } from '../../utils/marks';
 import PixelatedImage from './PixelatedImage';
 import MaskEditor from './MaskEditor';
-import ReviewNoteImages from './ReviewNoteImages';
 import ReviewNoteAudios from './ReviewNoteAudios';
+import ReviewNoteAttachments from './ReviewNoteAttachments';
 import ReviewCodePane from './ReviewCodePane';
 import ReviewHistoryPanel from './ReviewHistoryPanel';
 import ThemedAudioPlayer from '../audio/ThemedAudioPlayer';
@@ -1155,19 +1155,16 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                               ✕
                             </button>
                           </div>
-                          <div className="pl-5 flex flex-col gap-1.5">
-                            <ReviewNoteImages
+                          <div className="pl-5">
+                            <ReviewNoteAttachments
                               noteId={n.id}
                               images={n.images ?? []}
-                              onChange={imgs => setDraftNotes(prev =>
+                              audios={n.audios ?? []}
+                              autoStartAudio={autoRecordNoteId === n.id}
+                              onImagesChange={imgs => setDraftNotes(prev =>
                                 prev.map(x => x.id === n.id ? { ...x, images: imgs } : x)
                               )}
-                            />
-                            <ReviewNoteAudios
-                              noteId={n.id}
-                              audios={n.audios ?? []}
-                              autoStart={autoRecordNoteId === n.id}
-                              onChange={auds => setDraftNotes(prev =>
+                              onAudiosChange={auds => setDraftNotes(prev =>
                                 prev.map(x => x.id === n.id ? { ...x, audios: auds } : x)
                               )}
                             />
