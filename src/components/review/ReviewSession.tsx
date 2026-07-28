@@ -495,6 +495,24 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
     });
   }, [masks.length]);
 
+  /**
+   * Right-click on one revealed region — the per-mask counterpart of R, for putting a single
+   * answer back rather than re-attempting the whole card.
+   *
+   * `allRevealed` drops because it no longer is: the flag means "size === masks.length", and
+   * revealMask re-raises it the moment the last one is opened again. Keeping the two in step is
+   * what makes the Reveal All button and the grading gate reappear correctly.
+   */
+  const hideMask = useCallback((maskId: number) => {
+    setRevealedMaskIds(prev => {
+      if (!prev.has(maskId)) return prev;
+      const next = new Set(prev);
+      next.delete(maskId);
+      return next;
+    });
+    setAllRevealed(false);
+  }, []);
+
   const revealAll = () => {
     setRevealedMaskIds(new Set(masks.map(m => m.id)));
     setAllRevealed(true);
@@ -966,6 +984,7 @@ export default function ReviewSession({ items, onSessionEnd, readOnly = false }:
                   masks={masks}
                   revealedMaskIds={revealedMaskIds}
                   onMaskClick={revealMask}
+                  onMaskHide={hideMask}
                   className="w-full h-full"
                   zoom={imgScale}
                   pan={imgTranslate}

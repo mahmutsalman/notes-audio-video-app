@@ -6,6 +6,9 @@ interface PixelatedImageProps {
   masks: ReviewMask[];
   revealedMaskIds: Set<number>;
   onMaskClick?: (maskId: number) => void;
+  /** Right-click on an already-revealed mask puts it back. The counterpart of onMaskClick, and
+   *  the per-region version of the session's R shortcut, which re-blurs the whole card at once. */
+  onMaskHide?: (maskId: number) => void;
   className?: string;
   /**
    * Zoom + pan folded INTO the canvas, not applied as a CSS transform on an ancestor (ADR-0010).
@@ -46,6 +49,7 @@ export default function PixelatedImage({
   masks,
   revealedMaskIds,
   onMaskClick,
+  onMaskHide,
   className = '',
   zoom = 1,
   pan = { x: 0, y: 0 },
@@ -57,6 +61,8 @@ export default function PixelatedImage({
   const [hoveredMaskId, setHoveredMaskId] = useState<number | null>(null);
   /** Separate from hoveredMaskId, which only tracks masks that have hint text to show. */
   const [overClickableMask, setOverClickableMask] = useState(false);
+  /** Over an already-revealed mask, which right-click can put back. */
+  const [overHideableMask, setOverHideableMask] = useState(false);
   /** ANY unrevealed mask under the pointer (hint text or not) — drives the stronger outline. */
   const [hoveredOutlineMaskId, setHoveredOutlineMaskId] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -176,7 +182,15 @@ export default function PixelatedImage({
 
   // Map a client point to fit-space, inverting the zoom/pan transform, so hit-testing stays correct
   // now that the zoom lives in the canvas rather than a CSS transform on an ancestor.
-  const maskAtPoint = (clientX: number, clientY: number): ReviewMask | null => {
+  //
+  // `wantRevealed` picks which half of the masks to test: left-click reveals, so it hunts the
+  // hidden ones; right-click re-blurs, so it hunts the revealed ones. Same geometry either way —
+  // a revealed mask still occupies its rectangle, it just isn't painted over any more.
+  const maskAtPoint = (
+    clientX: number,
+    clientY: number,
+    wantRevealed = false,
+  ): ReviewMask | null => {
     if (!naturalSize || !displaySize) return null;
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
@@ -191,7 +205,7 @@ export default function PixelatedImage({
 
     const { offsetX, offsetY, fitW, fitH } = fitRect(dw, dh, naturalSize);
     for (const mask of masks) {
-      if (revealedMaskIds.has(mask.id)) continue;
+      if (revealedMaskIds.has(mask.id) !== wantRevealed) continue;
       const mx = offsetX + mask.x * fitW;
       const my = offsetY + mask.y * fitH;
       const mw = mask.w * fitW;
@@ -207,6 +221,16 @@ export default function PixelatedImage({
     if (mask) onMaskClick(mask.id);
   };
 
+  // Right-click a region you already opened to blur it again. preventDefault only on a hit, so a
+  // right-click anywhere else stays whatever the rest of the app makes of it.
+  const handleCanvasContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onMaskHide) return;
+    const mask = maskAtPoint(e.clientX, e.clientY, true);
+    if (!mask) return;
+    e.preventDefault();
+    onMaskHide(mask.id);
+  };
+
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const mask = maskAtPoint(e.clientX, e.clientY);
     const id = mask && mask.hint_text ? mask.id : null;
@@ -218,7 +242,15 @@ export default function PixelatedImage({
     // Skipped mid-drag (a button is down) so a pan keeps its grabbing cursor throughout.
     const clickable = !!mask && !!onMaskClick && e.buttons === 0;
     setOverClickableMask(prev => (prev === clickable ? prev : clickable));
+    // A revealed region looks exactly like the rest of the image, so nothing marks it as still
+    // interactive. The context-menu cursor is the one that says "right-click does something here"
+    // without adding any visible chrome over the answer being read.
+    const hideable = !!onMaskHide && !!maskAtPoint(e.clientX, e.clientY, true) && e.buttons === 0;
+    setOverHideableMask(prev => (prev === hideable ? prev : hideable));
   };
+
+  const canReveal = !!onMaskClick && masks.some(m => !revealedMaskIds.has(m.id));
+  const canHide = !!onMaskHide && masks.some(m => revealedMaskIds.has(m.id));
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
@@ -227,10 +259,16 @@ export default function PixelatedImage({
         className="w-full h-full"
         // 'inherit' rather than a value of its own, so the parent's grab/grabbing cursor still
         // shows through everywhere except over a revealable mask.
-        style={{ cursor: overClickableMask ? 'pointer' : 'inherit' }}
+        style={{ cursor: overClickableMask ? 'pointer' : overHideableMask ? 'context-menu' : 'inherit' }}
         onClick={handleCanvasClick}
+        onContextMenu={handleCanvasContextMenu}
         onMouseMove={handleCanvasMouseMove}
-        onMouseLeave={() => { setHoveredMaskId(null); setOverClickableMask(false); setHoveredOutlineMaskId(null); }}
+        onMouseLeave={() => {
+          setHoveredMaskId(null);
+          setOverClickableMask(false);
+          setOverHideableMask(false);
+          setHoveredOutlineMaskId(null);
+        }}
       />
       {/* Hint text overlays — shown only for the mask currently hovered, positioned through the
           same zoom/pan transform as the canvas so they track the mask, and scaled by the same zoom
@@ -285,10 +323,13 @@ export default function PixelatedImage({
           </div>
         );
       })}
-      {/* Click-to-reveal cursor hint */}
-      {masks.some(m => !revealedMaskIds.has(m.id)) && onMaskClick && (
+      {/* Hint pill — names whichever gestures are actually available right now, so a fully
+          revealed card advertises the way back instead of going silent. */}
+      {(canReveal || canHide) && (
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/60 text-white/70 text-xs px-3 py-1 rounded-full pointer-events-none">
-          Click a masked area to reveal
+          {canReveal && 'Click a masked area to reveal'}
+          {canReveal && canHide && ' · '}
+          {canHide && 'Right-click a revealed one to blur it again'}
         </div>
       )}
     </div>
