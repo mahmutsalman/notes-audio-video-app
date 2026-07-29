@@ -20,6 +20,19 @@ export default defineConfig({
         },
       },
       {
+        // Echo companion app's main process. Shares preload.ts with the main app, so every
+        // window.electronAPI namespace the review tree calls is already bridged.
+        entry: 'electron/echoMain.ts',
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: {
+              external: ['better-sqlite3', 'bufferutil', 'utf-8-validate'],
+            },
+          },
+        },
+      },
+      {
         entry: 'electron/preload.ts',
         onstart(options) {
           options.reload();
@@ -65,6 +78,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
+        echo: path.resolve(__dirname, 'echo.html'),
         regionSelector: path.resolve(__dirname, 'public/region-selector-simple.html'),
         obsStatusWindow: path.resolve(__dirname, 'public/obs-status-window.html'),
       },

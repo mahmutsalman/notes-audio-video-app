@@ -26,6 +26,13 @@ export function initDatabase(): Database.Database {
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  // More than one process opens this file: the main app, the Echo companion app, and the
+  // VPS sync connection. WAL allows concurrent readers with a single writer, but a writer
+  // that arrives mid-transaction gets SQLITE_BUSY — and better-sqlite3 is synchronous, so
+  // it throws immediately rather than waiting. rebuildSearchIndex() drops and rebuilds the
+  // whole FTS table, which is long enough to collide with an Echo rating or a code-pad
+  // autosave. Wait for the lock instead of losing the write.
+  db.pragma('busy_timeout = 5000');
 
   // Register custom function for HTML tag stripping (used by FTS rebuild)
   db.function('strip_html', (text: string | null) => {

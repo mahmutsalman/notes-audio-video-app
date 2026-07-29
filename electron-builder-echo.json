@@ -1,0 +1,33 @@
+{
+  "appId": "com.noteswithaudioandvideo.echo",
+  "productName": "Echo",
+  "directories": {
+    "output": "release-echo"
+  },
+  "extraMetadata": {
+    "main": "dist-electron/echoMain.js"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*",
+    "!mobile/**/*",
+    "!server/**/*",
+    "!sync/**/*"
+  ],
+  "asarUnpack": [
+    "node_modules/ffmpeg-static/**/*",
+    "node_modules/ffprobe-static/**/*"
+  ],
+  "mac": {
+    "target": "dir",
+    "icon": "resources/icons/echo.icns",
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "category": "public.app-category.productivity",
+    "extendInfo": {
+      "NSMicrophoneUsageDescription": "Echo needs microphone access to record voice notes on review cards"
+    }
+  }
+}
