@@ -1,4 +1,8 @@
-import { ipcMain, dialog, shell, nativeTheme, clipboard, desktopCapturer } from 'electron';
+// `app` is used throughout this file (getPath, dock, isPackaged, quit) but was never imported —
+// it only resolved because esbuild bundled this module into main.ts's scope, where main.ts's own
+// `app` import happened to be visible. The Echo entry does not reproduce that accident, so
+// `voiceModel:status` threw "ReferenceError: app is not defined" at runtime. Import it properly.
+import { app, ipcMain, dialog, shell, nativeTheme, clipboard, desktopCapturer } from 'electron';
 import {
   TopicsOperations,
   RecordingsOperations,
