@@ -8,6 +8,7 @@ import MaskEditor from '../components/review/MaskEditor';
 import { ReviewItemGridCard, ReviewItemListRow, BrowseCard, ReviewedTodayCard } from '../components/echo/EchoCards';
 import EchoTagFilter from '../components/echo/EchoTagFilter';
 import { EchoSortSelect, sortEchoItems, loadEchoSort, saveEchoSort, type EchoSortKey } from '../components/echo/EchoSort';
+import { EchoGroupSelect, EchoGroupHeader, groupEchoItems, loadEchoGroup, saveEchoGroup, type EchoGroupKey } from '../components/echo/EchoGroups';
 
 type FilterTab = 'due' | 'today' | 'all' | 'upcoming' | 'browse';
 type ViewMode = 'grid' | 'list';
@@ -33,6 +34,16 @@ export default function EchoPage() {
   // Sort applies to every tab; persisted so it survives restarts.
   const [sortKey, setSortKeyState] = useState<EchoSortKey>(() => loadEchoSort('page'));
   const setSortKey = (k: EchoSortKey) => { setSortKeyState(k); saveEchoSort('page', k); };
+  // Grouping applies to the item tabs (due/all/upcoming); persisted like the sort.
+  const [groupKey, setGroupKeyState] = useState<EchoGroupKey>(() => loadEchoGroup('page'));
+  const setGroupKey = (k: EchoGroupKey) => { setGroupKeyState(k); saveEchoGroup('page', k); };
+  // Collapsed group keys. Default is expanded, so a new recording is never silently hidden.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (key: string) => setCollapsedGroups(prev => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
 
   const loadItems = useCallback(async () => {
     const items = activeTags.length > 0
@@ -97,6 +108,20 @@ export default function EchoPage() {
   const startSession = () => {
     if (dueItems.length === 0) return;
     setSessionItems(dueItems);
+  };
+
+  // Grouping runs AFTER sorting, so each group keeps the active sort order internally.
+  const displayedGroups = groupEchoItems(displayedItems, groupKey);
+
+  /**
+   * Start a session for one group only. Filtered to due cards because a group on the All or
+   * Upcoming tab also contains cards that are not due yet — grading those early would corrupt
+   * their FSRS schedule. Returns silently if nothing in the group is actually due.
+   */
+  const startGroupSession = (items: ReviewItem[]) => {
+    const due = items.filter(i => new Date(i.next_review_at) <= now);
+    if (due.length === 0) return;
+    setSessionItems(due);
   };
 
   // Peek — browse the masked "front" of the currently-shown set (whatever tab is active),
@@ -231,7 +256,16 @@ export default function EchoPage() {
             </button>
           );
         })}
-        <EchoSortSelect value={sortKey} onChange={setSortKey} className="ml-auto" />
+        {/* Grouping only applies to the item tabs; Reviewed Today and Browse render their
+            own lists from different row types and are not grouped. */}
+        {filter !== 'today' && filter !== 'browse' && (
+          <EchoGroupSelect value={groupKey} onChange={setGroupKey} className="ml-auto" />
+        )}
+        <EchoSortSelect
+          value={sortKey}
+          onChange={setSortKey}
+          className={filter === 'today' || filter === 'browse' ? 'ml-auto' : ''}
+        />
       </div>
 
       {/* Tag filter — narrows every tab (ANY/OR) to echoes whose image carries a selected tag. */}
@@ -329,19 +363,42 @@ export default function EchoPage() {
               </div>
             )}
 
-            {viewMode === 'grid' ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {displayedItems.map(item => (
-                  <ReviewItemGridCard key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} onOpen={() => openDetail(item.id)} />
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {displayedItems.map(item => (
-                  <ReviewItemListRow key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} onOpen={() => openDetail(item.id)} />
-                ))}
-              </div>
-            )}
+            {displayedGroups.map(group => {
+              const collapsed = groupKey !== 'none' && collapsedGroups.has(group.key);
+              return (
+                <div key={group.key} className={groupKey === 'none' ? '' : 'mb-4'}>
+                  {groupKey !== 'none' && (
+                    <EchoGroupHeader
+                      group={group}
+                      collapsed={collapsed}
+                      onToggle={() => toggleGroup(group.key)}
+                      // Reviewed Today and Upcoming render their own lists elsewhere; on the
+                      // tabs that reach here, only offer Start where something is due.
+                      onStart={
+                        group.items.some(i => new Date(i.next_review_at) <= now)
+                          ? startGroupSession
+                          : undefined
+                      }
+                    />
+                  )}
+                  {!collapsed && (
+                    viewMode === 'grid' ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                        {group.items.map(item => (
+                          <ReviewItemGridCard key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} onOpen={() => openDetail(item.id)} />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {group.items.map(item => (
+                          <ReviewItemListRow key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} onOpen={() => openDetail(item.id)} />
+                        ))}
+                      </div>
+                    )
+                  )}
+                </div>
+              );
+            })}
           </>
         )}
       </div>
