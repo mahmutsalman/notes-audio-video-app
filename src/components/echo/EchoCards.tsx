@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react';
 import type { ReviewItem, BrowseReviewItem, ReviewedTodayItem } from '../../types';
 import { formatDueLabel } from '../../utils/srsAlgorithm';
 import { formatMarkSource, parseQuestionImages } from '../../utils/marks';
@@ -57,11 +58,17 @@ export function ReviewItemGridCard({
   onRemove,
   onEditMasks,
   onOpen,
+  openTitle = 'Open Echo history',
 }: {
   item: ReviewItem;
   onRemove: (id: number, e: React.MouseEvent) => void;
   onEditMasks: (item: ReviewItem, e: React.MouseEvent) => void;
-  onOpen: () => void;
+  /** Receives the click so callers can branch on Cmd/Ctrl-click. Handlers that ignore
+   *  the argument still satisfy this type. */
+  onOpen: (e: MouseEvent) => void;
+  /** Hover text for the card body. What a click does is tab-dependent (study vs history),
+   *  and the card cannot know which tab it is on, so the caller supplies the wording. */
+  openTitle?: string;
 }) {
   const isDue = new Date(item.next_review_at) <= new Date();
   const dueLabel = formatDueLabel(item.next_review_at);
@@ -75,7 +82,7 @@ export function ReviewItemGridCard({
     <div
       onClick={onOpen}
       className="relative rounded-xl overflow-hidden bg-gray-100 dark:bg-dark-surface group border border-gray-200 dark:border-dark-border cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
-      title="Open Echo history"
+      title={openTitle}
     >
       <div className="aspect-square relative overflow-hidden">
         {src ? (
@@ -127,11 +134,17 @@ export function ReviewItemListRow({
   onRemove,
   onEditMasks,
   onOpen,
+  openTitle = 'Open Echo history',
 }: {
   item: ReviewItem;
   onRemove: (id: number, e: React.MouseEvent) => void;
   onEditMasks: (item: ReviewItem, e: React.MouseEvent) => void;
-  onOpen: () => void;
+  /** Receives the click so callers can branch on Cmd/Ctrl-click. Handlers that ignore
+   *  the argument still satisfy this type. */
+  onOpen: (e: MouseEvent) => void;
+  /** Hover text for the card body. What a click does is tab-dependent (study vs history),
+   *  and the card cannot know which tab it is on, so the caller supplies the wording. */
+  openTitle?: string;
 }) {
   const isDue = new Date(item.next_review_at) <= new Date();
   const dueLabel = formatDueLabel(item.next_review_at);
@@ -145,7 +158,7 @@ export function ReviewItemListRow({
     <div
       onClick={onOpen}
       className="flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-50 dark:bg-dark-surface border border-gray-200 dark:border-dark-border hover:border-gray-300 dark:hover:border-dark-hover group transition-colors cursor-pointer"
-      title="Open Echo history"
+      title={openTitle}
     >
       <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-200 dark:bg-dark-hover">
         {src ? (

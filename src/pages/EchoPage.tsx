@@ -92,6 +92,30 @@ export default function EchoPage() {
 
   const openDetail = (id: number) => navigate(`/echo/${id}`);
 
+  /**
+   * What a click on a card does, per tab:
+   *
+   *   Due Now   → open it as a one-card study session (rating buttons, saves FSRS)
+   *   Upcoming  → open it read-only: masked question, reveal, but NO rating and nothing
+   *               written. These cards are not due; grading early would reschedule them.
+   *   All / Browse / Reviewed Today → the Echo history detail page, as before
+   *
+   * Cmd/Ctrl-click always reaches the detail page, from any tab — without it, Due Now would
+   * lose its only route to a card's history, stats and past notes.
+   */
+  const handleCardOpen = (item: ReviewItem, e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey) { openDetail(item.id); return; }
+    if (filter === 'due') { setSessionItems([item]); return; }
+    if (filter === 'upcoming') { setPeekItems([item]); return; }
+    openDetail(item.id);
+  };
+
+  /** Hover wording must match what handleCardOpen will actually do on this tab. */
+  const cardOpenTitle =
+    filter === 'due' ? 'Study this card now (⌘-click for its history)' :
+    filter === 'upcoming' ? 'Look at this card without grading it (⌘-click for its history)' :
+    'Open Echo history';
+
   const filterActive = activeTags.length > 0;
   const now = new Date();
 
@@ -385,13 +409,13 @@ export default function EchoPage() {
                     viewMode === 'grid' ? (
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                         {group.items.map(item => (
-                          <ReviewItemGridCard key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} onOpen={() => openDetail(item.id)} />
+                          <ReviewItemGridCard key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} onOpen={(e) => handleCardOpen(item, e)} openTitle={cardOpenTitle} />
                         ))}
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2">
                         {group.items.map(item => (
-                          <ReviewItemListRow key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} onOpen={() => openDetail(item.id)} />
+                          <ReviewItemListRow key={item.id} item={item} onRemove={handleRemove} onEditMasks={handleOpenMaskEditor} onOpen={(e) => handleCardOpen(item, e)} openTitle={cardOpenTitle} />
                         ))}
                       </div>
                     )
