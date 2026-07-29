@@ -5,6 +5,7 @@ node_modules/
 dist/
 dist-electron/
 release/
+release-echo/
 out/
 electron/native/screencapturekit/build/
 
@@ -81,6 +82,7 @@ docs/conventions.md
 docs/glossary.md
 docs/requirements.md
 docs/use-cases.md
+docs/echo-app.md
 
 # Temporary files
 *.tmp

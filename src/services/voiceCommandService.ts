@@ -1,5 +1,9 @@
-import { createModel } from 'vosk-browser';
 import type { AudioMarkerType } from '../types';
+
+// vosk-browser is ~6 MB of WASM glue and is only reachable once the user turns voice commands
+// on AND has downloaded the model. A static import pulled it into every bundle that touches
+// AudioRecordingContext — including Echo, which has no voice commands at all. Loaded on demand
+// in init() instead.
 
 const VOICE_MODEL_FILENAME = 'vosk-model-small-en-us-0.15.zip';
 const MODEL_URL = `vosk://${VOICE_MODEL_FILENAME}`;
@@ -52,6 +56,7 @@ class VoiceCommandService {
     }
     this.initPromise = (async () => {
       try {
+        const { createModel } = await import('vosk-browser');
         this.model = await createModel(MODEL_URL);
       } catch (err) {
         console.error('[VoiceCommand] Failed to load Vosk model:', err);

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Same policy as index.html minus frame-src: Echo has no in-app HTML/PDF viewer, so
+         nothing here frames a media:// document. media-src/img-src still need media: for
+         card images and voice notes. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' blob: data:; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; media-src 'self' file: blob: data: media:; img-src 'self' file: data: blob: media:; font-src * data: blob:;">
+    <title>Echo</title>
+  </head>
+  <body class="bg-white dark:bg-dark-bg text-gray-900 dark:text-gray-100">
+    <div id="root"></div>
+    <script type="module" src="/src/echoMain.tsx"></script>
+  </body>
+</html>
